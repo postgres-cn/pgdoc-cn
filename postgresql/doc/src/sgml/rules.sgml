@@ -1,0 +1,3470 @@
+<!-- doc/src/sgml/rules.sgml -->
+
+<chapter id="rules">
+<!-- 
+<title>The Rule System</title>
+ -->
+ <title>规则系统</title>
+
+ <indexterm zone="rules">
+  <!--
+  <primary>rule</primary>
+  -->
+  <primary>规则</primary>
+ </indexterm>
+
+<!--
+<para>
+     This chapter discusses the rule system in
+     <productname>PostgreSQL</productname>.  Production rule systems
+     are conceptually simple, but there are many subtle points
+     involved in actually using them.
+</para>
+-->
+<para>
+本章讨论<productname>PostgreSQL</productname>里的规则系统。
+生产规则系统的概念是很简单的，但是在实际使用的时候会碰到很多细节问题。
+</para>
+
+<!--
+<para>
+     Some other database systems define active database rules, which
+     are usually stored procedures and triggers.  In
+     <productname>PostgreSQL</productname>, these can be implemented
+     using functions and triggers as well.
+</para>
+-->
+<para>
+有些其它数据库系统定义动态的数据库规则。这些通常是存储过程和触发器，
+在<productname>PostgreSQL</productname>里，这些东西也可以通过函数和触发器来实现。
+</para>
+
+<!--
+<para>
+     The rule system (more precisely speaking, the query rewrite rule
+     system) is totally different from stored procedures and triggers.
+     It modifies queries to take rules into consideration, and then
+     passes the modified query to the query planner for planning and
+     execution.  It is very powerful, and can be used for many things
+     such as query language procedures, views, and versions.  The
+     theoretical foundations and the power of this rule system are
+     also discussed in <xref linkend="STON90b"> and <xref
+     linkend="ONG90">.
+</para>
+-->
+<para>
+规则系统(更准确地说是查询重写规则系统)是和存储过程和触发器完全不同的东西。
+它把查询修改为需要考虑规则的形式，然后把修改过的查询传递给查询规划器执行。
+这是非常有效的工具并且可以用于许多像查询语言过程、视图、版本等。
+这个规则系统的理论基础和能力在<xref linkend="STON90b">
+和<xref linkend="ONG90">里有讨论。
+</para>
+
+<sect1 id="querytree">
+<!--
+ <title>The Query Tree</title>
+ -->
+ <title>查询树</title>
+
+<indexterm zone="querytree">
+ <!-- 
+ <primary>query tree</primary>
+ -->
+ <primary>查询树</primary>
+</indexterm>
+
+<!--
+<para>
+    To understand how the rule system works it is necessary to know
+    when it is invoked and what its input and results are.
+</para>
+-->
+<para>
+要理解规则系统如何工作，首先要知道规则何时被激发以及它的输入和结果是什么。
+</para>
+
+<!--
+<para>
+    The rule system is located between the parser and the planner.
+    It takes the output of the parser, one query tree, and the user-defined
+    rewrite rules, which are also
+    query trees with some extra information, and creates zero or more
+    query trees as result. So its input and output are always things
+    the parser itself could have produced and thus, anything it sees
+    is basically representable as an <acronym>SQL</acronym> statement.
+</para>
+-->
+<para>
+规则系统位于分析器和规划器之间。以分析器输出的查询树以及用户定义的重写规则作为输入，
+重写规则也是一个查询树，只不过增加了一些扩展信息，然后创建零个或者多个查询树作为结果。
+所以它的输入和输出仍然是那些分析器可以生成的东西，因而任何规则系统看到的东西都是可以用
+<acronym>SQL</acronym>语句表达的。
+</para>
+
+<!--
+<para>
+    Now what is a query tree? It is an internal representation of an
+    <acronym>SQL</acronym> statement where the single parts that it is
+    built from are stored separately. These query trees can be shown
+    in the server log if you set the configuration parameters
+    <varname>debug_print_parse</varname>,
+    <varname>debug_print_rewritten</varname>, or
+    <varname>debug_print_plan</varname>.  The rule actions are also
+    stored as query trees, in the system catalog
+    <structname>pg_rewrite</structname>.  They are not formatted like
+    the log output, but they contain exactly the same information.
+</para>
+-->
+<para>
+那么什么是查询树呢?它是一个<acronym>SQL</acronym>语句的内部表现形式，
+这时组成该语句的每个独立部分都是分别存储的。如果你设置了配置参数
+<varname>debug_print_parse</varname>, <varname>debug_print_rewritten</varname>,
+或<varname>debug_print_plan</varname>，那么就可以在服务器日志中看到这些查询树。
+规则动作也是以查询树的方式存储的，存放在系统表<structname>pg_rewrite</structname>里面。
+不过不是用像调试输出那样的格式，但包含的内容是完全一样的。
+</para>
+
+<!--
+<para>
+    Reading a raw query tree requires some experience.  But since
+    <acronym>SQL</acronym> representations of query trees are
+    sufficient to understand the rule system, this chapter will not
+    teach how to read them.
+</para>
+-->
+<para>
+阅读一个裸查询树需要一定的经验，但是因为理解查询树的<acronym>SQL</acronym>
+表现就足以理解规则系统，所以这份文档将不会告诉你如何读取它们。
+</para>
+
+<para>
+<!--
+    When reading the <acronym>SQL</acronym> representations of the
+    query trees in this chapter it is necessary to be able to identify
+    the parts the statement is broken into when it is in the query tree
+    structure. The parts of a query tree are
+-->
+当读取本章中查询树的<acronym>SQL</acronym>表现时，
+必须能够识别该语句被分解后放在查询树里的成员。查询树的成员有
+<variablelist>
+    <varlistentry>
+    <term>
+        <!-- the command type -->
+命令类型(command type)
+    </term>
+    <listitem>
+<!-- 
+    <para>
+        This is a simple value telling which command
+        (<command>SELECT</command>, <command>INSERT</command>,
+        <command>UPDATE</command>, <command>DELETE</command>) produced
+        the query tree.
+    </para>
+ -->
+<para>
+这是一个简单的值，说明哪条命令(<command>SELECT</command>, <command>INSERT</command>,
+<command>UPDATE</command>, <command>DELETE</command>)生成这个查询树。
+</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+        <!-- the range table -->
+范围表(range table)
+    </term>
+      <!-- <indexterm><primary>range table</></> -->
+  <indexterm><primary>范围表</></>
+    <listitem>
+    <!--
+<para>
+        The range table is a list of relations that are used in the query.
+        In a <command>SELECT</command> statement these are the relations given after
+        the <literal>FROM</literal> key word.
+    </para>
+-->
+<para>
+范围表是一个查询中使用的关系的列表。在<command>SELECT</command>
+语句里就是在<literal>FROM</literal>关键字后面给出的关系。
+</para>
+
+    <!--
+<para>
+        Every range table entry identifies a table or view and tells
+        by which name it is called in the other parts of the query.
+        In the query tree, the range table entries are referenced by
+        number rather than by name, so here it doesn't matter if there
+        are duplicate names as it would in an <acronym>SQL</acronym>
+        statement. This can happen after the range tables of rules
+        have been merged in. The examples in this chapter will not have
+        this situation.
+    </para>
+-->
+<para>
+每个范围表表示一个表或一个视图，表明是查询里哪个成员调用了它。在查询树里，
+范围表是用代号而不是用名字引用的，所以这里不用像在<acronym>SQL</acronym>
+语句里一样关心是否有重名问题。这种情况在引入了规则的范围表后可能会发生。
+本章的例子将不讨论这种情况。
+</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+        <!-- the result relation -->
+结果关系(result relation)
+    </term>
+    <listitem>
+    <!--
+<para>
+        This is an index into the range table that identifies the
+        relation where the results of the query go.
+    </para>
+-->
+<para>
+这是一个范围表的索引，用于标识查询结果前往的表。
+</para>
+
+    <!--
+<para>
+        <command>SELECT</command> queries don't have a result
+        relation. (The special case of <command>SELECT INTO</command> is
+        mostly identical to <command>CREATE TABLE</command> followed by
+        <literal>INSERT ... SELECT</literal>, and is not discussed
+        separately here.)
+    </para>
+-->
+<para>
+<command>SELECT</command>查询通常没有结果关系。特例<command>SELECT INTO</command>
+几乎等于一个跟随<literal>INSERT ... SELECT</literal>
+的<command>CREATE TABLE</command>，所以这里就不单独讨论了。
+</para>
+
+    <!--
+<para>
+        For <command>INSERT</command>, <command>UPDATE</command>, and
+        <command>DELETE</command> commands, the result relation is the table
+        (or view!) where the changes are to take effect.
+    </para>
+-->
+<para>
+在<command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command>命令里，
+结果关系是更改发生影响的表或视图。
+</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+        <!-- the target list -->
+目标列(target list)
+    </term>
+    <!-- <indexterm><primary>target list</></> -->
+<indexterm><primary>目标列</></>
+    <listitem>
+    <!--
+<para>
+        The target list is a list of expressions that define the
+        result of the query.  In the case of a
+        <command>SELECT</command>, these expressions are the ones that
+        build the final output of the query.  They correspond to the
+        expressions between the key words <command>SELECT</command>
+        and <command>FROM</command>.  (<literal>*</literal> is just an
+        abbreviation for all the column names of a relation.  It is
+        expanded by the parser into the individual columns, so the
+        rule system never sees it.)
+    </para>
+-->
+<para>
+目标列是一列定义查询结果的表达式。在<command>SELECT</command>的情况下，
+这些表达式就是构建查询的最终输出的东西。它们是位于<command>SELECT</command>
+和<command>FROM</command>关键字之间的表达式(<literal>*</literal>
+只是表明一个关系的所有字段的缩写，它被分析器扩展为独立的字段，因此规则系统永远看不到它)。
+</para>
+
+    <!--
+<para>
+        <command>DELETE</command> commands don't need a normal target list
+        because they don't produce any result.  Instead, the rule system
+        adds a special <acronym>CTID</> entry to the empty target list,
+        to allow the executor to find the row to be deleted.
+        (<acronym>CTID</> is added when the result relation is an ordinary
+        table.  If it is a view, a whole-row variable is added instead,
+        as described in <xref linkend="rules-views-update">.)
+    </para>
+-->
+<para>
+<command>DELETE</command>不需要正常的目标列是因为它们不产生任何结果。
+相反的，规划器会向空目的标列中增加一条特殊的<acronym>CTID</>记录，
+以允许执行器找到被删除的行。（当结果关系是一个普通的表时添加<acronym>CTID</>。
+如果结果关系是一个视图，则添加所有的行变量，描述在<xref linkend="rules-views-update">。）
+</para>
+
+    <!--
+<para>
+        For <command>INSERT</command> commands, the target list describes
+        the new rows that should go into the result relation. It consists of the
+        expressions in the <literal>VALUES</> clause or the ones from the
+        <command>SELECT</command> clause in <literal>INSERT
+        ... SELECT</literal>.  The first step of the rewrite process adds
+        target list entries for any columns that were not assigned to by
+        the original command but have defaults.  Any remaining columns (with
+        neither a given value nor a default) will be filled in by the
+        planner with a constant null expression.
+    </para>
+-->
+<para>
+对于<command>INSERT</command>命令里面，目标列描述了应该进入结果关系的新行。
+这些行由那些在<literal>VALUES</>子句里的表达式或在<literal>INSERT ... SELECT</literal>
+语句里的<command>SELECT</command>子句里面的表达式构成。
+重写过程的第一步就是为任何不是由原始的查询赋值，并且有缺省值的字段增加目标列表项。
+任何其它的字段(既无给出值也无缺省值)将由规划器自动赋予一个常量 NULL 表达式。
+</para>
+
+    <!--
+<para>
+        For <command>UPDATE</command> commands, the target list
+        describes the new rows that should replace the old ones. In the
+        rule system, it contains just the expressions from the <literal>SET
+        column = expression</literal> part of the command.  The planner will
+        handle missing columns by inserting expressions that copy the values
+        from the old row into the new one.  Just as for <command>DELETE</>,
+        the rule system adds a <acronym>CTID</> or whole-row variable so that
+        the executor can identify the old row to be updated.
+    </para>
+-->
+<para>
+对于<command>UPDATE</command>命令，目标列描述应该替换旧行的新行。在规则系统里，
+它只包含来自命令的<literal>SET column = expression</literal>部分抽取的表达式。
+这时，规划器将通过插入从旧行抽取数据到新行的表达式的方法处理缺失的字段。
+就像对<command>DELETE</>，规则系统添加<acronym>CTID</>或整行变量使执行者可以识别要被更新的旧行。
+</para>
+
+    <!--
+<para>
+        Every entry in the target list contains an expression that can
+        be a constant value, a variable pointing to a column of one
+        of the relations in the range table, a parameter, or an expression
+        tree made of function calls, constants, variables, operators, etc.
+    </para>
+-->
+<para>
+目标列里的每个元素都包含着一个表达式，它可以为常量值、一个指向某个范围表里面的关系的一个字段的变量、
+一个参数、一个由函数调用/常量/变量/操作符等构成的表达式树。
+</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+        <!-- the qualification -->
+条件(qualification)
+    </term>
+    <listitem>
+    <!--
+<para>
+        The query's qualification is an expression much like one of
+        those contained in the target list entries. The result value of
+        this expression is a Boolean that tells whether the operation
+        (<command>INSERT</command>, <command>UPDATE</command>,
+        <command>DELETE</command>, or <command>SELECT</command>) for the
+        final result row should be executed or not. It corresponds to the <literal>WHERE</> clause
+        of an <acronym>SQL</acronym> statement.
+    </para>
+-->
+<para>
+查询条件是一个表达式，它非常类似那些包含在目标列里的条目。这个表达式的值是一个布尔值，
+通过此值来判断对最终结果行是否要执操作(<command>INSERT</command>, <command>UPDATE</command>,
+<command>DELETE</command>, 或 <command>SELECT</command>)。它是一个<acronym>SQL</acronym>
+语句的<literal>WHERE</>子句。
+</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+        <!-- the join tree -->
+连接树(join tree)
+    </term>
+    <listitem>
+    <!--
+<para>
+        The query's join tree shows the structure of the <literal>FROM</> clause.
+        For a simple query like <literal>SELECT ... FROM a, b, c</literal>, the join tree is just
+        a list of the <literal>FROM</> items, because we are allowed to join them in
+        any order.  But when <literal>JOIN</> expressions, particularly outer joins,
+        are used, we have to join in the order shown by the joins.
+        In that case, the join tree shows the structure of the <literal>JOIN</> expressions.  The
+        restrictions associated with particular <literal>JOIN</> clauses (from <literal>ON</> or
+        <literal>USING</> expressions) are stored as qualification expressions attached
+        to those join-tree nodes.  It turns out to be convenient to store
+        the top-level <literal>WHERE</> expression as a qualification attached to the
+        top-level join-tree item, too.  So really the join tree represents
+        both the <literal>FROM</> and <literal>WHERE</> clauses of a <command>SELECT</command>.
+    </para>
+-->
+<para>
+查询的连接树显示了<literal>FROM</>子句的结构。对于像<literal>SELECT ... FROM a, b, c</literal>
+这样的简单查询，连接树只是一个<literal>FROM</>项的简单列表，因为允许以任意顺序连接它们。
+但如果使用了<literal>JOIN</>表达式(尤其是外连接的时候)，就必须按照该连接显示的顺序进行连接。
+在这种情况下，连接树显示<literal>JOIN</>表达式的结构。与特定的<literal>JOIN</>子句(来自<literal>ON</>
+或<literal>USING</>表达式)相关的限制做为附加在那些连接树节点的条件表达式存储。
+事实证明把顶层<literal>WHERE</>表达式也当做附加在顶层连接树项的条件来存储是非常方便的。
+所以实际上连接树代表<command>SELECT</command>语句的<literal>FROM</>和<literal>WHERE</>子句。
+</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+        <!-- the others -->
+其它(others)
+    </term>
+    <listitem>
+    <!--
+<para>
+        The other parts of the query tree like the <literal>ORDER BY</>
+        clause aren't of interest here. The rule system
+        substitutes some entries there while applying rules, but that
+        doesn't have much to do with the fundamentals of the rule
+        system.
+    </para>
+-->
+<para>
+查询树的其它部分，像<literal>ORDER BY</>子句，不准备在这里讨论。
+规则系统在附加规则时将在那里(ORDER BY 子句)替换一些条目，但是这对于规则系统的基本原理并没有多大关系。
+</para>
+    </listitem>
+    </varlistentry>
+
+</variablelist>
+</para>
+</sect1>
+
+<sect1 id="rules-views">
+<!-- 
+<title>Views and the Rule System</title>
+ -->
+ <title>视图和规则系统</title>
+
+<indexterm zone="rules-views">
+<!--
+  <primary>rule</primary>
+ <secondary>and views</secondary>
+ -->
+  <primary>规则</primary>
+ <secondary>和视图</secondary>
+</indexterm>
+
+<indexterm zone="rules-views">
+<!--
+  <primary>view</>
+ <secondary>implementation through rules</>
+ -->
+  <primary>视图</>
+ <secondary>通过规则实现</>
+</indexterm>
+
+<para>
+<!--
+    Views in <productname>PostgreSQL</productname> are implemented
+    using the rule system. In fact, there is essentially no difference
+    between:
+-->
+<productname>PostgreSQL</productname>里的视图是通过规则系统来实现的。下面的命令：
+<programlisting>
+CREATE VIEW myview AS SELECT * FROM mytab;
+</programlisting>
+<!-- 
+    compared against the two commands:
+ -->
+ 实际上和下面两条命令：
+<programlisting>
+CREATE TABLE myview (<replaceable>same column list as mytab</replaceable>);
+CREATE RULE "_RETURN" AS ON SELECT TO myview DO INSTEAD
+    SELECT * FROM mytab;
+</programlisting>
+<!-- 
+    because this is exactly what the <command>CREATE VIEW</command>
+    command does internally.  This has some side effects. One of them
+    is that the information about a view in the
+    <productname>PostgreSQL</productname> system catalogs is exactly
+    the same as it is for a table. So for the parser, there is
+    absolutely no difference between a table and a view. They are the
+    same thing: relations.
+-->
+之间本质上没有区别，因为这就是<command>CREATE VIEW</command>命令在内部实际执行的内容。
+这样做有一些负作用。其中之一就是在<productname>PostgreSQL</productname>
+系统表里的视图的信息与一般表的信息完全一样。所以对于查询分析器来说，
+表和视图之间完全没有区别。它们是同样的事物：关系。
+</para>
+
+<sect2 id="rules-select">
+<!--
+ <title>How <command>SELECT</command> Rules Work</title>
+ -->
+ <title><command>SELECT</command>规则如何运转</title>
+
+<indexterm zone="rules-select">
+ <!--
+ <primary>rule</primary>
+ <secondary sortas="SELECT">for SELECT</secondary>
+ -->
+ <primary>规则</primary>
+ <secondary sortas="SELECT">for SELECT</secondary>
+</indexterm>
+
+<!--
+<para>
+    Rules <literal>ON SELECT</> are applied to all queries as the last step, even
+    if the command given is an <command>INSERT</command>,
+    <command>UPDATE</command> or <command>DELETE</command>. And they
+    have different semantics from rules on the other command types in that they modify the
+    query tree in place instead of creating a new one.  So
+    <command>SELECT</command> rules are described first.
+</para>
+-->
+<para>
+<literal>ON SELECT</>的规则在最后一步应用于所有查询，哪怕给出的是一条<command>INSERT</command>,
+<command>UPDATE</command> 或 <command>DELETE</command>命令。而且与其它命令类型上的规则有不同的语意，
+那就是它们在现场修改查询树而不是创建一个新的查询树。所以先介绍<command>SELECT</command>规则。
+</para>
+
+<!--
+<para>
+    Currently, there can be only one action in an <literal>ON SELECT</> rule, and it must
+    be an unconditional <command>SELECT</> action that is <literal>INSTEAD</>. This restriction was
+    required to make rules safe enough to open them for ordinary users, and
+    it restricts <literal>ON SELECT</> rules to act like views.
+</para>
+-->
+<para>
+目前，一个<literal>ON SELECT</>规则里只能有一个动作，而且它必须是一个无条件的<literal>INSTEAD</>
+(取代)的<command>SELECT</>动作。有这个限制是为了令规则安全到普通用户也可以打开它们，
+并且它限制<literal>ON SELECT</>规则使之行为类似视图。
+</para>
+
+<!--
+<para>
+    The examples for this chapter are two join views that do some
+    calculations and some more views using them in turn.  One of the
+    two first views is customized later by adding rules for
+    <command>INSERT</command>, <command>UPDATE</command>, and
+    <command>DELETE</command> operations so that the final result will
+    be a view that behaves like a real table with some magic
+    functionality.  This is not such a simple example to start from and
+    this makes things harder to get into. But it's better to have one
+    example that covers all the points discussed step by step rather
+    than having many different ones that might mix up in mind.
+</para>
+-->
+<para>
+本文档的例子是两个连接视图，它们做一些运算并且因此会涉及到更多视图的使用。
+这两个视图之一稍后将利用对<command>INSERT</command>, <command>UPDATE</command>,
+<command>DELETE</command>操作附加规则的方法自定义，
+这样做最终的结果就是这个视图表现得像一个具有一些特殊功能的真正的表。
+这个例子不适合于开始的简单易懂的例子，从这个例子开始讲可能会让讲解变得有些难以理解。
+但是用一个覆盖所有关键点的例子来一步一步讨论要比举很多例子搞乱思维好。
+</para>
+
+<para>
+<!--
+For the example, we need a little <literal>min</literal> function that
+returns the lower of 2 integer values. We create that as:
+-->
+比如，需要一个小巧的<literal>min</literal>函数用于返回两个整数值中较小的那个。用下面方法创建它：
+<programlisting>
+CREATE FUNCTION min(integer, integer) RETURNS integer AS $$
+    SELECT CASE WHEN $1 &lt; $2 THEN $1 ELSE $2 END
+$$ LANGUAGE SQL STRICT;
+</programlisting>
+</para>
+
+<!--
+<para>
+    The real tables we need in the first two rule system descriptions
+    are these:
+
+<programlisting>
+CREATE TABLE shoe_data (
+    shoename   text,          &#045;- primary key
+    sh_avail   integer,       &#045;- available number of pairs
+    slcolor    text,          &#045;- preferred shoelace color
+    slminlen   real,          &#045;- minimum shoelace length
+    slmaxlen   real,          &#045;- maximum shoelace length
+    slunit     text           &#045;- length unit
+);
+
+CREATE TABLE shoelace_data (
+    sl_name    text,          &#045;- primary key
+    sl_avail   integer,       &#045;- available number of pairs
+    sl_color   text,          &#045;- shoelace color
+    sl_len     real,          &#045;- shoelace length
+    sl_unit    text           &#045;- length unit
+);
+
+CREATE TABLE unit (
+    un_name    text,          &#045;- primary key
+    un_fact    real           &#045;- factor to transform to cm
+);
+</programlisting>
+
+    As you can see, they represent shoe-store data.
+</para>
+-->
+<para>
+头两个规则系统要用到的表如下：
+<programlisting>
+CREATE TABLE shoe_data (
+    shoename   text,          -- 主键
+    sh_avail   integer,       -- (鞋的)可用对数
+    slcolor    text,          -- 首选的鞋带颜色
+    slminlen   real,          -- 鞋带最短长度
+    slmaxlen   real,          -- 鞋带最长长度
+    slunit     text           -- 长度单位
+);
+
+CREATE TABLE shoelace_data (
+    sl_name    text,          -- 主键
+    sl_avail   integer,       -- (鞋的)可用对数
+    sl_color   text,          -- 鞋带颜色
+    sl_len     real,          -- 鞋带长度
+    sl_unit    text           -- 长度单位
+);
+
+CREATE TABLE unit (
+    un_name    text,          -- 主键
+    un_fact    real           -- 转换成厘米的系数
+);
+</programlisting>
+你可以看到，这些表代表鞋店的数据。
+</para>
+
+<para>
+    <!-- The views are created as: -->
+视图创建为：
+<programlisting>
+CREATE VIEW shoe AS
+    SELECT sh.shoename,
+           sh.sh_avail,
+           sh.slcolor,
+           sh.slminlen,
+           sh.slminlen * un.un_fact AS slminlen_cm,
+           sh.slmaxlen,
+           sh.slmaxlen * un.un_fact AS slmaxlen_cm,
+           sh.slunit
+      FROM shoe_data sh, unit un
+     WHERE sh.slunit = un.un_name;
+
+CREATE VIEW shoelace AS
+    SELECT s.sl_name,
+           s.sl_avail,
+           s.sl_color,
+           s.sl_len,
+           s.sl_unit,
+           s.sl_len * u.un_fact AS sl_len_cm
+      FROM shoelace_data s, unit u
+     WHERE s.sl_unit = u.un_name;
+
+CREATE VIEW shoe_ready AS
+    SELECT rsh.shoename,
+           rsh.sh_avail,
+           rsl.sl_name,
+           rsl.sl_avail,
+           min(rsh.sh_avail, rsl.sl_avail) AS total_avail
+      FROM shoe rsh, shoelace rsl
+     WHERE rsl.sl_color = rsh.slcolor
+       AND rsl.sl_len_cm &gt;= rsh.slminlen_cm
+       AND rsl.sl_len_cm &lt;= rsh.slmaxlen_cm;
+</programlisting>
+<!-- 
+    The <command>CREATE VIEW</command> command for the
+    <literal>shoelace</literal> view (which is the simplest one we
+    have) will create a relation <literal>shoelace</> and an entry in
+    <structname>pg_rewrite</structname> that tells that there is a
+    rewrite rule that must be applied whenever the relation <literal>shoelace</>
+    is referenced in a query's range table.  The rule has no rule
+    qualification (discussed later, with the non-<command>SELECT</> rules, since
+    <command>SELECT</> rules currently cannot have them) and it is <literal>INSTEAD</>. Note
+    that rule qualifications are not the same as query qualifications.
+    The action of our rule has a query qualification.
+    The action of the rule is one query tree that is a copy of the
+    <command>SELECT</command> statement in the view creation command.
+-->
+创建<literal>shoelace</literal>视图的<command>CREATE VIEW</command>命令(也是用到的最简单的一个)
+将创建一个<literal>shoelace</>关系并且在<structname>pg_rewrite</structname>表里增加一个记录，
+告诉系统有一个重写规则应用于所有范围表里引用了<literal>shoelace</>关系的查询。
+该规则没有规则条件(将在非<command>SELECT</>规则讨论，因为目前的<command>SELECT</>
+规则不可能有这些东西)并且它是<literal>INSTEAD</>(取代)型的。要注意规则条件与查询条件不一样。
+规则动作有一个查询条件。规则的动作是一个查询树，这个查询是树视图创建命令中的
+<command>SELECT</command>语句的一个拷贝。
+</para>
+    <note>
+    <!--
+<para>
+    The two extra range
+    table entries for <literal>NEW</> and <literal>OLD</> that you can see in
+    the <structname>pg_rewrite</structname> entry aren't of interest
+    for <command>SELECT</command> rules.
+    </para>
+-->
+<para>
+你在表<structname>pg_rewrite</structname>里看到的两个额外的用于<literal>NEW</>
+和<literal>OLD</>的范围表记录对<command>SELECT</command>规则不感兴趣。
+</para>
+    </note>
+
+<para>
+<!--
+    Now we populate <literal>unit</literal>, <literal>shoe_data</literal>
+    and <literal>shoelace_data</literal> and run a simple query on a view:
+-->
+现在填充<literal>unit</literal>, <literal>shoe_data</literal>,<literal>shoelace_data</literal>，
+并且在视图上运行一个简单的查询：
+<programlisting>
+INSERT INTO unit VALUES ('cm', 1.0);
+INSERT INTO unit VALUES ('m', 100.0);
+INSERT INTO unit VALUES ('inch', 2.54);
+
+INSERT INTO shoe_data VALUES ('sh1', 2, 'black', 70.0, 90.0, 'cm');
+INSERT INTO shoe_data VALUES ('sh2', 0, 'black', 30.0, 40.0, 'inch');
+INSERT INTO shoe_data VALUES ('sh3', 4, 'brown', 50.0, 65.0, 'cm');
+INSERT INTO shoe_data VALUES ('sh4', 3, 'brown', 40.0, 50.0, 'inch');
+
+INSERT INTO shoelace_data VALUES ('sl1', 5, 'black', 80.0, 'cm');
+INSERT INTO shoelace_data VALUES ('sl2', 6, 'black', 100.0, 'cm');
+INSERT INTO shoelace_data VALUES ('sl3', 0, 'black', 35.0 , 'inch');
+INSERT INTO shoelace_data VALUES ('sl4', 8, 'black', 40.0 , 'inch');
+INSERT INTO shoelace_data VALUES ('sl5', 4, 'brown', 1.0 , 'm');
+INSERT INTO shoelace_data VALUES ('sl6', 0, 'brown', 0.9 , 'm');
+INSERT INTO shoelace_data VALUES ('sl7', 7, 'brown', 60 , 'cm');
+INSERT INTO shoelace_data VALUES ('sl8', 1, 'brown', 40 , 'inch');
+
+SELECT * FROM shoelace;
+
+ sl_name   | sl_avail | sl_color | sl_len | sl_unit | sl_len_cm
+-----------+----------+----------+--------+---------+-----------
+ sl1       |        5 | black    |     80 | cm      |        80
+ sl2       |        6 | black    |    100 | cm      |       100
+ sl7       |        7 | brown    |     60 | cm      |        60
+ sl3       |        0 | black    |     35 | inch    |      88.9
+ sl4       |        8 | black    |     40 | inch    |     101.6
+ sl8       |        1 | brown    |     40 | inch    |     101.6
+ sl5       |        4 | brown    |      1 | m       |       100
+ sl6       |        0 | brown    |    0.9 | m       |        90
+(8 rows)
+</programlisting>
+   </para>
+   
+<para>
+<!--
+    This is the simplest <command>SELECT</command> you can do on our
+    views, so we take this opportunity to explain the basics of view
+    rules.  The <literal>SELECT * FROM shoelace</literal> was
+    interpreted by the parser and produced the query tree:
+-->
+这是可以在视图上做的最简单的<command>SELECT</command>，所以把它作为解释视图规则的基本命令。
+<literal>SELECT * FROM shoelace</literal>被分析器解释成下面的查询树:
+<programlisting>
+SELECT shoelace.sl_name, shoelace.sl_avail,
+       shoelace.sl_color, shoelace.sl_len,
+       shoelace.sl_unit, shoelace.sl_len_cm
+  FROM shoelace shoelace;
+</programlisting>
+<!-- 
+    and this is given to the rule system. The rule system walks through the
+    range table and checks if there are rules
+    for any relation. When processing the range table entry for
+    <literal>shoelace</literal> (the only one up to now) it finds the
+    <literal>_RETURN</literal> rule with the query tree:
+ -->
+然后把这些交给规则系统。规则系统把范围表(range table)过滤一遍，检查一下有没有适用任何关系的规则。
+当为<literal>shoelace</literal>记录处理范围表时(到目前为止唯一的一个)，
+它会发现查询树里有<literal>_RETURN</literal>规则，查询树类似下面这样:
+<programlisting>
+SELECT s.sl_name, s.sl_avail,
+       s.sl_color, s.sl_len, s.sl_unit,
+       s.sl_len * u.un_fact AS sl_len_cm
+  FROM shoelace old, shoelace new,
+       shoelace_data s, unit u
+ WHERE s.sl_unit = u.un_name;
+</programlisting>
+</para>
+
+<para>
+<!--
+    To expand the view, the rewriter simply creates a subquery range-table
+    entry containing the rule's action query tree, and substitutes this
+    range table entry for the original one that referenced the view.  The
+    resulting rewritten query tree is almost the same as if you had typed:
+-->
+为扩展该视图，重写器简单地创建一个子查询范围表记录，它包含规则动作的查询树，
+然后用这个范围表记录取代原先引用视图的那个。生成的重写查询树几乎与你键入的那个一样：
+<programlisting>
+SELECT shoelace.sl_name, shoelace.sl_avail,
+       shoelace.sl_color, shoelace.sl_len,
+       shoelace.sl_unit, shoelace.sl_len_cm
+  FROM (SELECT s.sl_name,
+               s.sl_avail,
+               s.sl_color,
+               s.sl_len,
+               s.sl_unit,
+               s.sl_len * u.un_fact AS sl_len_cm
+          FROM shoelace_data s, unit u
+         WHERE s.sl_unit = u.un_name) shoelace;
+</programlisting>
+
+<!-- 
+     There is one difference however: the subquery's range table has two
+     extra entries <literal>shoelace old</> and <literal>shoelace new</>.  These entries don't
+     participate directly in the query, since they aren't referenced by
+     the subquery's join tree or target list.  The rewriter uses them
+     to store the access privilege check information that was originally present
+     in the range-table entry that referenced the view.  In this way, the
+     executor will still check that the user has proper privileges to access
+     the view, even though there's no direct use of the view in the rewritten
+     query. 
+-->
+不过还是有一个区别：子查询范围表有两个额外的记录<literal>shoelace old</>
+和<literal>shoelace new</>。这些记录并不直接参与查询，
+因为它们没有被子查询的连接树或者目标列表引用。
+重写器用它们存储最初出现在引用视图的范围表里面的访问权限检查。这样，
+执行器仍然会检查该用户是否有访问视图的合适权限，即使在重写查询里面没有对视图的直接使用也如此。
+</para>
+
+<!--
+<para>
+    That was the first rule applied.  The rule system will continue checking
+    the remaining range-table entries in the top query (in this example there
+    are no more), and it will recursively check the range-table entries in
+    the added subquery to see if any of them reference views.  (But it
+    won't expand <literal>old</> or <literal>new</> &mdash; otherwise we'd have infinite recursion!)
+    In this example, there are no rewrite rules for <literal>shoelace_data</> or <literal>unit</>,
+    so rewriting is complete and the above is the final result given to
+    the planner.
+</para>
+-->
+<para>
+这是应用的第一个规则。规则系统继续检查顶层查询里剩下的范围表记录(本例中没有了)，
+并且它在加进来的子查询中递归地检查范围表记录，看看其中有没有引用视图的
+(不过这样不会扩展<literal>old</>或<literal>new</>，否则会无穷递归下去!)。
+在这个例子中，没有用于<literal>shoelace_data</>或<literal>unit</>的重写规则，
+所以重写结束并且上面的就是给规划器的最终结果。
+</para>
+
+<para>
+<!--
+    Now we want to write a query that finds out for which shoes currently in the store
+    we have the matching shoelaces (color and length) and where the
+    total number of exactly matching pairs is greater or equal to two.
+-->
+现在想写这么一个查询：这个查询找出目前在店里有配对鞋带的鞋子（颜色和长度），
+并且配对的鞋带数大于或等于二。
+<programlisting>
+SELECT * FROM shoe_ready WHERE total_avail &gt;= 2;
+
+ shoename | sh_avail | sl_name | sl_avail | total_avail
+----------+----------+---------+----------+-------------
+ sh1      |        2 | sl1     |        5 |           2
+ sh3      |        4 | sl7     |        7 |           4
+(2 rows)
+</programlisting>
+</para>
+
+<para>
+<!--
+    The output of the parser this time is the query tree:
+-->
+这回分析器的输出是查询树:
+<programlisting>
+SELECT shoe_ready.shoename, shoe_ready.sh_avail,
+       shoe_ready.sl_name, shoe_ready.sl_avail,
+       shoe_ready.total_avail
+  FROM shoe_ready shoe_ready
+ WHERE shoe_ready.total_avail &gt;= 2;
+</programlisting>
+<!-- 
+    The first rule applied will be the one for the
+    <literal>shoe_ready</literal> view and it results in the
+    query tree:
+ -->
+应用的第一个规则将是用于<literal>shoe_ready</literal>视图的，结果是生成查询树:
+<programlisting>
+SELECT shoe_ready.shoename, shoe_ready.sh_avail,
+       shoe_ready.sl_name, shoe_ready.sl_avail,
+       shoe_ready.total_avail
+  FROM (SELECT rsh.shoename,
+               rsh.sh_avail,
+               rsl.sl_name,
+               rsl.sl_avail,
+               min(rsh.sh_avail, rsl.sl_avail) AS total_avail
+          FROM shoe rsh, shoelace rsl
+         WHERE rsl.sl_color = rsh.slcolor
+           AND rsl.sl_len_cm &gt;= rsh.slminlen_cm
+           AND rsl.sl_len_cm &lt;= rsh.slmaxlen_cm) shoe_ready
+ WHERE shoe_ready.total_avail &gt;= 2;
+</programlisting>
+<!-- 
+    Similarly, the rules for <literal>shoe</literal> and
+    <literal>shoelace</literal> are substituted into the range table of
+    the subquery, leading to a three-level final query tree:
+ -->
+与上面类似，用于<literal>shoe</literal>和 <literal>shoelace</literal>
+的规则替换到子查询范围表里，生成一个最终的三层查询树：
+<programlisting>
+SELECT shoe_ready.shoename, shoe_ready.sh_avail,
+       shoe_ready.sl_name, shoe_ready.sl_avail,
+       shoe_ready.total_avail
+  FROM (SELECT rsh.shoename,
+               rsh.sh_avail,
+               rsl.sl_name,
+               rsl.sl_avail,
+               min(rsh.sh_avail, rsl.sl_avail) AS total_avail
+          FROM (SELECT sh.shoename,
+                       sh.sh_avail,
+                       sh.slcolor,
+                       sh.slminlen,
+                       sh.slminlen * un.un_fact AS slminlen_cm,
+                       sh.slmaxlen,
+                       sh.slmaxlen * un.un_fact AS slmaxlen_cm,
+                       sh.slunit
+                  FROM shoe_data sh, unit un
+                 WHERE sh.slunit = un.un_name) rsh,
+               (SELECT s.sl_name,
+                       s.sl_avail,
+                       s.sl_color,
+                       s.sl_len,
+                       s.sl_unit,
+                       s.sl_len * u.un_fact AS sl_len_cm
+                  FROM shoelace_data s, unit u
+                 WHERE s.sl_unit = u.un_name) rsl
+         WHERE rsl.sl_color = rsh.slcolor
+           AND rsl.sl_len_cm &gt;= rsh.slminlen_cm
+           AND rsl.sl_len_cm &lt;= rsh.slmaxlen_cm) shoe_ready
+ WHERE shoe_ready.total_avail &gt; 2;
+</programlisting>
+   </para>
+   <!--
+<para>
+    It turns out that the planner will collapse this tree into a
+    two-level query tree: the bottommost <command>SELECT</command>
+    commands will be <quote>pulled up</quote> into the middle
+    <command>SELECT</command> since there's no need to process them
+    separately.  But the middle <command>SELECT</command> will remain
+    separate from the top, because it contains aggregate functions.
+    If we pulled those up it would change the behavior of the topmost
+    <command>SELECT</command>, which we don't want.  However,
+    collapsing the query tree is an optimization that the rewrite
+    system doesn't have to concern itself with.
+   </para>
+-->
+<para>
+最后规划器会把这个树压缩成一个两层查询树：最下层的<command>SELECT</command>
+将<quote>拖到</quote>中间的<command>SELECT</command>中，因为没有必要分别处理它们。
+但是中间的<command>SELECT</command>仍然和顶层的分开，因为它包含聚集函数。
+如果把它们也拉进来，那它就会修改最顶层<command>SELECT</command>的行为，
+那可不是想要的。不过，压缩查询树是重写系统自己不需要关心的优化操作。
+</para>
+</sect2>
+
+<sect2>
+<!--
+ <title>View Rules in Non-<command>SELECT</command> Statements</title>
+ -->
+ <title>非 <command>SELECT</command> 语句的视图规则</title>
+
+<!--
+<para>
+    Two details of the query tree aren't touched in the description of
+    view rules above. These are the command type and the result relation.
+    In fact, the command type is not needed by view rules, but the result
+    relation may affect the way in which the query rewriter works, because
+    special care needs to be taken if the result relation is a view.
+</para>
+-->
+<para>
+有两个查询树的细节在上面的视图规则中没有涉及到。就是命令类型和结果关系。实际上，
+视图规则不需要命令类型，但是结果关系可能会影响查询重写的工作方式，
+因为如果结果关系是一个视图则需要特别的注意。
+</para>
+
+
+<para>
+ <!--
+ There are only a few differences between a query tree for a
+    <command>SELECT</command> and one for any other
+    command. Obviously, they have a different command type and for a
+    command other than a <command>SELECT</command>, the result
+    relation points to the range-table entry where the result should
+    go.  Everything else is absolutely the same.  So having two tables
+    <literal>t1</> and <literal>t2</> with columns <literal>a</> and
+    <literal>b</>, the query trees for the two statements:
+-->
+一个<command>SELECT</command>的查询树和用于其它命令的查询树只有少数几个区别。显然，
+它们的命令类型不同并且对于<command>SELECT</command>之外的命令，
+结果关系指向结果将前往的范围表入口。任何其它东西都完全是一样的。
+所以如果有两个表<literal>t1</>和<literal>t2</>分别有字段<literal>a</>和<literal>b</>，
+下面两个语句的查询树：
+<programlisting>
+SELECT t2.b FROM t1, t2 WHERE t1.a = t2.a;
+
+UPDATE t1 SET b = t2.b FROM t2 WHERE t1.a = t2.a;
+</programlisting>
+<!-- 
+    are nearly identical.  In particular:
+ -->
+ 几乎是一样的。特别是：
+    <itemizedlist>
+        <listitem>
+ <!-- 
+ <para>
+            The range tables contain entries for the tables <literal>t1</> and <literal>t2</>.
+        </para>
+ -->
+<para>
+范围表包含表<literal>t1</>和<literal>t2</>的记录。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            The target lists contain one variable that points to column
+            <literal>b</> of the range table entry for table <literal>t2</>.
+        </para>
+-->
+<para>
+目标列表包含一个变量，该变量指向表<literal>t2</>的范围表入口的<literal>b</>字段。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            The qualification expressions compare the columns <literal>a</> of both
+            range-table entries for equality.
+        </para>
+-->
+<para>
+条件表达式比较两个范围的字段<literal>a</>以寻找相等行。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            The join trees show a simple join between <literal>t1</> and <literal>t2</>.
+        </para>
+-->
+<para>
+连接树显示<literal>t1</>和<literal>t2</>之间的简单连接。
+</para>
+        </listitem>
+    </itemizedlist>
+   </para>
+   
+<para>
+<!--
+    The consequence is, that both query trees result in similar
+    execution plans: They are both joins over the two tables. For the
+    <command>UPDATE</command> the missing columns from <literal>t1</> are added to
+    the target list by the planner and the final query tree will read
+    as:
+-->
+结果是，两个查询树生成相似的执行规划：它们都是两个表的连接。对于<command>UPDATE</command>
+语句来说，规划器把<literal>t1</>缺失的字段追加到目标列因而最终查询树看起来像：
+<programlisting>
+UPDATE t1 SET a = t1.a, b = t2.b FROM t2 WHERE t1.a = t2.a;
+</programlisting>
+<!-- 
+    and thus the executor run over the join will produce exactly the
+    same result set as:
+ -->
+ 因此执行器在连接上运行的结果和下面语句是完全一样的：
+<programlisting>
+SELECT t1.a, t2.b FROM t1, t2 WHERE t1.a = t2.a;
+</programlisting>
+<!-- 
+    But there is a little problem in
+    <command>UPDATE</command>: the part of the executor plan that does
+    the join does not care what the results from the join are
+    meant for. It just produces a result set of rows. The fact that
+    one is a <command>SELECT</command> command and the other is an
+    <command>UPDATE</command> is handled higher up in the executor, where
+    it knows that this is an <command>UPDATE</command>, and it knows that
+    this result should go into table <literal>t1</>. But which of the rows
+    that are there has to be replaced by the new row?
+-->
+但是在<command>UPDATE</command>里有点问题：做链接的执行器计划部分不关心连接结果的含义是什么。
+它只是产生一个行的结果集。一个是<command>SELECT</command>
+命令而另一个是<command>UPDATE</command>命令实际是在执行器的更高级处理的，
+这里知道这是一个<command>UPDATE</command>，而且它还知道结果要记录到表<literal>t1</>里去。
+但是现有的记录中的哪一行要被新行取代呢?
+</para>
+
+<para>
+<!--
+    To resolve this problem, another entry is added to the target list
+    in <command>UPDATE</command> (and also in
+    <command>DELETE</command>) statements: the current tuple ID
+    (<acronym>CTID</>).<indexterm><primary>CTID</></>
+    This is a system column containing the
+    file block number and position in the block for the row. Knowing
+    the table, the <acronym>CTID</> can be used to retrieve the
+    original row of <literal>t1</> to be updated.  After adding the
+    <acronym>CTID</> to the target list, the query actually looks like:
+-->
+要解决这个问题，在<command>UPDATE</command>和<command>DELETE</command>
+语句的目标列表里面增加了另外一个入口：当前的行 ID (<acronym>CTID</>)。<indexterm><primary>CTID</></>
+这是一个有着特殊特性的系统字段。它包含行在文件块中的块编号和位置信息。在已知表的情况下，
+可以通过<acronym>CTID</>检索最初的需要更新的<literal>t1</>行。
+在把<acronym>CTID</>加到目标列表中去以后，查询看上去实际上像这样：
+<programlisting>
+SELECT t1.a, t2.b, t1.ctid FROM t1, t2 WHERE t1.a = t2.a;
+</programlisting>
+<!-- 
+    Now another detail of <productname>PostgreSQL</productname> enters
+    the stage. Old table rows aren't overwritten, and this
+    is why <command>ROLLBACK</command> is fast. In an <command>UPDATE</command>,
+    the new result row is inserted into the table (after stripping the
+    <acronym>CTID</>) and in the row header of the old row, which the
+    <acronym>CTID</> pointed to, the <literal>cmax</> and
+    <literal>xmax</> entries are set to the current command counter
+    and current transaction ID. Thus the old row is hidden, and after
+    the transaction commits the vacuum cleaner can eventually remove
+    the dead row.
+-->
+现在，另一个<productname>PostgreSQL</productname>的细节进入到这个阶段里了。这时，
+表中的旧行还没有被覆盖，这就是为什么<command>ROLLBACK</command>飞快的原因。
+在一个<command>UPDATE</command>里，新的结果行插入到表里(在剥除<acronym>CTID</>之后)
+并且把<acronym>CTID</>指向的旧数据行的行头里面的<literal>cmax</>和<literal>xmax</>
+设置为当前命令计数器和当前事务 ID 。这样旧的行就被隐藏起来并且在事务提交之后，
+vacuum 清理器就可以真正把它们删除掉。
+</para>
+
+<!--
+<para>
+    Knowing all that, we can simply apply view rules in absolutely
+    the same way to any command. There is no difference.
+</para>
+-->
+<para>
+知道了这些，就可以简单的把视图的规则应用到任意命令中。规则和命令没有区别。
+</para>
+</sect2>
+
+<sect2>
+<!--
+ <title>The Power of Views in <productname>PostgreSQL</productname></title>
+ -->
+ <title><productname>PostgreSQL</productname>里视图的强大能力</title>
+
+<!--
+<para>
+    The above demonstrates how the rule system incorporates view
+    definitions into the original query tree. In the second example, a
+    simple <command>SELECT</command> from one view created a final
+    query tree that is a join of 4 tables (<literal>unit</> was used twice with
+    different names).
+</para>
+-->
+<para>
+上面演示了规则系统如何融合视图定义到初始查询树中去。在第二个例子里，
+一个简单的对视图的<command>SELECT</command>创建了一个四表联合的查询树
+(<literal>unit</>以不同的名称用了两次)。
+</para>
+
+<!--
+<para>
+    The benefit of implementing views with the rule system is,
+    that the planner has all
+    the information about which tables have to be scanned plus the
+    relationships between these tables plus the restrictive
+    qualifications from the views plus the qualifications from
+    the original query
+    in one single query tree. And this is still the situation
+    when the original query is already a join over views.
+    The planner has to decide which is
+    the best path to execute the query, and the more information
+    the planner has, the better this decision can be. And
+    the rule system as implemented in <productname>PostgreSQL</productname>
+    ensures, that this is all information available about the query
+    up to that point.
+</para>
+-->
+<para>
+在规则系统里实现视图的好处是，规划器在一个查询树里拥有所有信息：
+应该扫描哪个表+表之间的关系+视图的资格限制+初始查询的资格(条件)。
+并且仍然是在最初的查询已经是一个视图的联合的情况下。现在规划器必须决定执行查询的最优路径。
+规划器拥有越多信息，它的决策就越好。并且<productname>PostgreSQL</productname>
+里的规则系统的实现保证这些信息是此时能获得的有关该查询的所有信息。
+</para>
+</sect2>
+
+<sect2 id="rules-views-update">
+<!-- 
+<title>Updating a View</title>
+ -->
+ <title>更新一个视图</title>
+
+<!--
+<para>
+    What happens if a view is named as the target relation for an
+    <command>INSERT</command>, <command>UPDATE</command>, or
+    <command>DELETE</command>?  Doing the substitutions
+    described above would give a query tree in which the result
+    relation points at a subquery range-table entry, which will not
+    work.  There are several ways in which <productname>PostgreSQL</>
+    can support the appearance of updating a view, however.
+</para>
+-->
+<para>
+如果视图命名为<command>INSERT</command>, <command>UPDATE</command>,<command>DELETE</command>
+的目标关系会怎样?在完成上面描述的替换之后，就有一个这样的查询树：
+结果关系指向一个是子查询的范围表记录，这样可不能运行。
+在<productname>PostgreSQL</>中有几种方式支持更新一个视图的外观。
+</para>
+
+<!--
+<para>
+    If the subquery selects from a single base relation and is simple
+    enough, the rewriter can automatically replace the subquery with the
+    underlying base relation so that the <command>INSERT</command>,
+    <command>UPDATE</command>, or <command>DELETE</command> is applied to
+    the base relation in the appropriate way.  Views that are
+    <quote>simple enough</> for this are called <firstterm>automatically
+    updatable</>.  For detailed information on the kinds of view that can
+    be automatically updated, see <xref linkend="sql-createview">.
+</para>
+-->
+<para>
+如果子查询从一个单一的基本关系选择或者足够简单，重写可以自动的用底层的基本关系替代子查询，
+所以<command>INSERT</command>，<command>UPDATE</command> 或 <command>DELETE</command>
+以适当的方式应用于基本关系。视图因为<quote>足够简单</>而被称为<firstterm>可自动更新的</>。
+有关这种可以自动更新的视图的更详细的信息请参阅<xref linkend="sql-createview">。
+</para>
+
+<!--
+<para>
+    Alternatively, the operation may be handled by a user-provided
+    <literal>INSTEAD OF</> trigger on the view.
+    Rewriting works slightly differently
+    in this case.  For <command>INSERT</command>, the rewriter does
+    nothing at all with the view, leaving it as the result relation
+    for the query.  For <command>UPDATE</command> and
+    <command>DELETE</command>, it's still necessary to expand the
+    view query to produce the <quote>old</> rows that the command will
+    attempt to update or delete.  So the view is expanded as normal,
+    but another unexpanded range-table entry is added to the query
+    to represent the view in its capacity as the result relation.
+</para>
+-->
+<para>
+或者，操作可能通过一个用户提供的在视图上的<literal>INSTEAD OF</>触发器处理。
+重写工作在这种情况下略有不同。对于<command>INSERT</command>，
+重写并不对视图做什么，让它作为查询的结果关系。对于<command>UPDATE</command>和
+<command>DELETE</command>，重写仍然需要扩展视图查询，产生命令将要更新或删除的<quote>old</>
+行。所以，视图正常扩展，但是另外一个不扩展的范围表条目添加到查询中，
+代表视图作为结果关系。
+</para>
+
+<!--
+<para>
+    The problem that now arises is how to identify the rows to be
+    updated in the view. Recall that when the result relation
+    is a table, a special <acronym>CTID</> entry is added to the target
+    list to identify the physical locations of the rows to be updated.
+    This does not work if the result relation is a view, because a view
+    does not have any <acronym>CTID</>, since its rows do not have
+    actual physical locations. Instead, for an <command>UPDATE</command>
+    or <command>DELETE</command> operation, a special <literal>wholerow</>
+    entry is added to the target list, which expands to include all
+    columns from the view. The executor uses this value to supply the
+    <quote>old</> row to the <literal>INSTEAD OF</> trigger.  It is
+    up to the trigger to work out what to update based on the old and
+    new row values.
+</para>
+-->
+<para>
+现在出现的问题是如何识别出视图中要更新的行。回想当结果关系是一个表时，
+一个特殊的<acronym>CTID</>条目被添加到目标列表，以识别出要被更新的行的物理位置。
+如果结果关系是一个视图这将不会工作，因为视图没有任何<acronym>CTID</>，
+因为它的行没有真实的物理位置。相反，对于<command>UPDATE</command>或
+<command>DELETE</command>操作，一个特殊的<literal>wholerow</>
+条目被添加到目标列表，它扩大到包含视图的所有列。执行器使用这个值提供<quote>old</>
+行到<literal>INSTEAD OF</>触发器。由触发器基于旧行和新行值找出来的需要更新什么。
+</para>
+
+<!--
+<para>
+    Another possibility is for the user to define <literal>INSTEAD</>
+    rules that specify substitute actions for <command>INSERT</command>,
+    <command>UPDATE</command>, and <command>DELETE</command> commands on
+    a view. These rules will rewrite the command, typically into a command
+    that updates one or more tables, rather than views. That is the topic
+    of the next section.
+</para>
+-->
+<para>
+另外一个可能是用户定义<literal>INSTEAD</>规则，为视图上的<command>INSERT</command>,
+<command>UPDATE</command>, 和 <command>DELETE</command>命令指定替代动作。
+这些规则将重写命令，通常进入一个命令更新一个或更多的表，而不是视图。
+这是下一节的主题。
+</para>
+
+<!--
+<para>
+    Note that rules are evaluated first, rewriting the original query
+    before it is planned and executed. Therefore, if a view has
+    <literal>INSTEAD OF</> triggers as well as rules on <command>INSERT</>,
+    <command>UPDATE</>, or <command>DELETE</>, then the rules will be
+    evaluated first, and depending on the result, the triggers may not be
+    used at all.
+</para>
+-->
+<para>
+请注意，首先评估规则，在规划和执行之前重写原先的查询。因此，
+如果一个视图有<literal>INSTEAD OF</>触发器，也有在<command>INSERT</>,
+<command>UPDATE</>, 或 <command>DELETE</>上的规则，那么规则将被首先评估，
+根据评估结果，触发器可能不会使用。
+</para>
+
+<!--
+<para>
+    Automatic rewriting of an <command>INSERT</command>,
+    <command>UPDATE</command>, or <command>DELETE</command> query on a
+    simple view is always tried last. Therefore, if a view has rules or
+    triggers, they will override the default behavior of automatically
+    updatable views.
+</para>
+-->
+<para>
+在一个简单视图上的<command>INSERT</command>, <command>UPDATE</command>, 或
+<command>DELETE</command>查询的自动重写总是最后尝试。因此，
+如果一个视图有规则或触发器，他们将覆盖自动更新视图的缺省行为。
+</para>
+
+<!--
+<para>
+    If there are no <literal>INSTEAD</> rules or <literal>INSTEAD OF</>
+    triggers for the view, and the rewriter cannot automatically rewrite
+    the query as an update on the underlying base relation, an error will
+    be thrown because the executor cannot update a view as such.
+</para>
+-->
+<para>
+如果视图上没有<literal>INSTEAD</>规则或<literal>INSTEAD OF</>触发器，
+并且重写不能作为一个在底层基本关系上的更新自动重写查询，
+那么将抛出一个错误，因为执行器不能像这样的更新视图。
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1 id="rules-materializedviews">
+<!--
+ <title>Materialized Views</title>
+ -->
+ <title>物化视图</title>
+
+<indexterm zone="rules-materializedviews">
+ <!--
+ <primary>rule</primary>
+ <secondary>and materialized views</secondary>
+ -->
+ <primary>规则</primary>
+ <secondary>和物化视图</secondary>
+</indexterm>
+
+<indexterm zone="rules-materializedviews">
+ <!-- 
+ <primary>materialized view</>
+ <secondary>implementation through rules</>
+ -->
+ <primary>物化视图</>
+ <secondary>通过规则实现</>
+</indexterm>
+
+<indexterm zone="rules-materializedviews">
+ <!--
+ <primary>view</>
+ <secondary>materialized</>
+ -->
+ <primary>视图</>
+ <secondary>物化</>
+</indexterm>
+
+<para>
+<!--
+    Materialized views in <productname>PostgreSQL</productname> use the
+    rule system like views do, but persist the results in a table-like form.
+    The main differences between:
+-->
+<productname>PostgreSQL</productname>里的物化视图像视图那样使用规则系统，
+但是用类表的形式保存结果。
+<programlisting>
+CREATE MATERIALIZED VIEW mymatview AS SELECT * FROM mytab;
+</programlisting>
+
+    <!-- and: -->
+和：
+<programlisting>
+CREATE TABLE mymatview AS SELECT * FROM mytab;
+</programlisting>
+<!-- 
+    are that the materialized view cannot subsequently be directly updated
+    and that the query used to create the materialized view is stored in
+    exactly the same way that a view's query is stored, so that fresh data
+    can be generated for the materialized view with:
+-->
+之间最主要的区别是物化视图不能随后直接被更新，并且创建物化视图的查询就像视图的查询存储那样存储，
+所以新数据可以用下面命令产生：
+
+<programlisting>
+REFRESH MATERIALIZED VIEW mymatview;
+</programlisting>
+<!-- 
+    The information about a materialized view in the
+    <productname>PostgreSQL</productname> system catalogs is exactly
+    the same as it is for a table or view. So for the parser, a
+    materialized view is a relation, just like a table or a view.  When
+    a materialized view is referenced in a query, the data is returned
+    directly from the materialized view, like from a table; the rule is
+    only used for populating the materialized view.
+-->
+<productname>PostgreSQL</productname>系统目录中有关物化视图的信息和表或视图的信息一样。
+所以对于解析器，物化视图是一个关系，就像一个表或一个视图。当在查询中引用一个物化视图时，
+数据直接从物化视图返回，就像从一个表返回；规则只是用来填充物化视图。
+</para>
+
+<para>
+ <!--
+ While access to the data stored in a materialized view is often much
+    faster than accessing the underlying tables directly or through a view,
+    the data is not always current; yet sometimes current data is not needed.
+    Consider a table which records sales:
+-->
+当访问存储在物化视图中的数据时，通常比直接访问底层表或通过一个视图更快，
+数据并不总是当前的；然而有时不需要当前数据。考虑一个记录销售的表：
+<!-- 
+<programlisting>
+CREATE TABLE invoice (
+    invoice_no    integer        PRIMARY KEY,
+    seller_no     integer,       &#045;- ID of salesperson
+    invoice_date  date,          &#045;- date of sale
+    invoice_amt   numeric(13,2)  &#045;- amount of sale
+);
+</programlisting>
+ -->
+ <programlisting>
+CREATE TABLE invoice (
+    invoice_no    integer        PRIMARY KEY,
+    seller_no     integer,       -- 销售人员的ID
+    invoice_date  date,          -- 销售日期
+    invoice_amt   numeric(13,2)  -- 销售数量
+);
+</programlisting>
+<!-- 
+    If people want to be able to quickly graph historical sales data, they
+    might want to summarize, and they may not care about the incomplete data
+    for the current date:
+-->
+如果人们希望能够快速的图形化历史销售数据，他们可能想要汇总，
+可能不关心当前未完成的数据：
+<programlisting>
+CREATE MATERIALIZED VIEW sales_summary AS
+  SELECT
+      seller_no,
+      invoice_date,
+      sum(invoice_amt)::numeric(13,2) as sales_amt
+    FROM invoice
+    WHERE invoice_date < CURRENT_DATE
+    GROUP BY
+      seller_no,
+      invoice_date
+    ORDER BY
+      seller_no,
+      invoice_date;
+
+CREATE UNIQUE INDEX sales_summary_seller
+  ON sales_summary (seller_no, invoice_date);
+</programlisting>
+<!-- 
+    This materialized view might be useful for displaying a graph in the
+    dashboard created for salespeople.  A job could be scheduled to update
+    the statistics each night using this SQL statement:
+-->
+物化视图可以用来在为销售人员创建的控制面板上显示图形。
+可以使用下面的SQL语句在每天晚上更新统计数据：
+<programlisting>
+REFRESH MATERIALIZED VIEW sales_summary;
+</programlisting>
+</para>
+
+<para>
+<!--
+    Another use for a materialized view is to allow faster access to data
+    brought across from a remote system, through a foreign data wrapper.
+    A simple example using <literal>file_fdw</literal> is below, with timings,
+    but since this is using cache on the local system the performance
+    difference on a foreign data wrapper to a remote system could be greater.
+
+    Setup:
+-->
+物化视图的另一个用处是允许对远程系统中的数据快速访问，通过一个外部数据封装器。
+下面是一个简单的使用<literal>file_fdw</literal>的例子，有计时，
+但是因为这是使用的在本地系统的缓存，外部数据封装器到远程系统的性能可能更大。
+<programlisting>
+CREATE EXTENSION file_fdw;
+CREATE SERVER local_file FOREIGN DATA WRAPPER file_fdw;
+CREATE FOREIGN TABLE words (word text NOT NULL)
+  SERVER local_file
+  OPTIONS (filename '/etc/dictionaries-common/words');
+CREATE MATERIALIZED VIEW wrd AS SELECT * FROM words;
+CREATE UNIQUE INDEX wrd_word ON wrd (word);
+CREATE EXTENSION pg_trgm;
+CREATE INDEX wrd_trgm ON wrd USING gist (word gist_trgm_ops);
+VACUUM ANALYZE wrd;
+</programlisting>
+<!-- 
+    Now let's spell-check a word.  Using <literal>file_fdw</literal> directly:
+ -->
+ 现在让我们拼写检查一个单词。直接使用<literal>file_fdw</literal>：
+<programlisting>
+SELECT count(*) FROM words WHERE word = 'caterpiler';
+
+ count 
+-------
+     0
+(1 row)
+</programlisting>
+<!-- 
+    The plan is:
+ -->
+ 计划是：
+<programlisting>
+ Aggregate  (cost=4125.19..4125.20 rows=1 width=0) (actual time=26.013..26.014 rows=1 loops=1)
+   ->  Foreign Scan on words  (cost=0.00..4124.70 rows=196 width=0) (actual time=26.011..26.011 rows=0 loops=1)
+         Filter: (word = 'caterpiler'::text)
+         Rows Removed by Filter: 99171
+         Foreign File: /etc/dictionaries-common/words
+         Foreign File Size: 938848
+ Total runtime: 26.081 ms
+</programlisting>
+<!-- 
+    If the materialized view is used instead, the query is much faster:
+ -->
+ 如果使用物化视图，查询更快速：
+<programlisting>
+ Aggregate  (cost=4.44..4.45 rows=1 width=0) (actual time=0.074..0.074 rows=1 loops=1)
+   ->  Index Only Scan using wrd_word on wrd  (cost=0.42..4.44 rows=1 width=0) (actual time=0.071..0.071 rows=0 loops=1)
+         Index Cond: (word = 'caterpiler'::text)
+         Heap Fetches: 0
+ Total runtime: 0.119 ms
+</programlisting>
+<!-- 
+    Either way, the word is spelled wrong, so let's look for what we might
+    have wanted.  Again using <literal>file_fdw</literal>:
+ -->
+ 无论哪种方式，这个词的拼写是错误的，所以我们看看我们想要的。还是使用<literal>file_fdw</literal>：
+<programlisting>
+SELECT word FROM words ORDER BY word <-> 'caterpiler' LIMIT 10;
+
+     word     
+---------------
+ cater
+ caterpillar
+ Caterpillar
+ caterpillars
+ caterpillar's
+ Caterpillar's
+ caterer
+ caterer's
+ caters
+ catered
+(10 rows)
+</programlisting>
+
+<programlisting>
+ Limit  (cost=2195.70..2195.72 rows=10 width=32) (actual time=218.904..218.906 rows=10 loops=1)
+   ->  Sort  (cost=2195.70..2237.61 rows=16765 width=32) (actual time=218.902..218.904 rows=10 loops=1)
+         Sort Key: ((word <-> 'caterpiler'::text))
+         Sort Method: top-N heapsort  Memory: 25kB
+         ->  Foreign Scan on words  (cost=0.00..1833.41 rows=16765 width=32) (actual time=0.046..200.965 rows=99171 loops=1)
+               Foreign File: /etc/dictionaries-common/words
+               Foreign File Size: 938848
+ Total runtime: 218.966 ms
+</programlisting>
+<!-- 
+    Using the materialized view:
+ -->
+ 使用物化视图：
+<programlisting>
+ Limit  (cost=0.28..1.02 rows=10 width=9) (actual time=24.916..25.079 rows=10 loops=1)
+   ->  Index Scan using wrd_trgm on wrd  (cost=0.28..7383.70 rows=99171 width=9) (actual time=24.914..25.076 rows=10 loops=1)
+         Order By: (word <-> 'caterpiler'::text)
+ Total runtime: 25.884 ms
+</programlisting>
+<!-- 
+    If you can tolerate periodic update of the remote data to the local
+    database, the performance benefit can be substantial.
+-->
+如果你能允许定期更新远程数据到本地数据库，会带来可观的性能优势。
+</para>
+
+</sect1>
+
+<sect1 id="rules-update">
+<!--
+ <title>Rules on <command>INSERT</>, <command>UPDATE</>, and <command>DELETE</></title>
+ -->
+ <title>在 <command>INSERT</>, <command>UPDATE</>, 和 <command>DELETE</>上的规则</title>
+
+<indexterm zone="rules-update">
+ <!-- 
+ <primary>rule</primary>
+ <secondary sortas="INSERT">for INSERT</secondary> 
+ -->
+ <primary>规则</primary>
+ <secondary sortas="INSERT">for INSERT</secondary>
+</indexterm>
+
+<indexterm zone="rules-update">
+ <!-- 
+ <primary>rule</primary>
+ <secondary sortas="UPDATE">for UPDATE</secondary>
+ -->
+ <primary>规则</primary>
+ <secondary sortas="UPDATE">for UPDATE</secondary>
+</indexterm>
+
+<indexterm zone="rules-update">
+ <!-- 
+ <primary>rule</primary>
+ <secondary sortas="DELETE">for DELETE</secondary>
+ -->
+ <primary>规则</primary>
+ <secondary sortas="DELETE">for DELETE</secondary>
+</indexterm>
+
+
+<para>
+<!-- 
+    Rules that are defined on <command>INSERT</>, <command>UPDATE</>,
+    and <command>DELETE</> are significantly different from the view rules
+    described in the previous section. First, their <command>CREATE
+    RULE</command> command allows more:
+-->
+定义在<command>INSERT</>, <command>UPDATE</>, <command>DELETE</>
+上的规则与前一章描述的视图规则完全不同。首先，他们的<command>CREATE RULE</command>命令允许更多：
+    <itemizedlist>
+        <listitem>
+<!--
+        <para>
+            They are allowed to have no action.
+        </para>
+-->
+<para>
+它们可以没有动作。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            They can have multiple actions.
+        </para>
+-->
+<para>
+它们可以有多个动作。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            They can be <literal>INSTEAD</> or <literal>ALSO</> (the default).
+        </para>
+-->
+<para>
+他们可以是<literal>INSTEAD</>或<literal>ALSO</>(缺省)。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            The pseudorelations <literal>NEW</> and <literal>OLD</> become useful.
+        </para>
+-->
+<para>
+伪关系<literal>NEW</>和<literal>OLD</>变得有用了。
+</para>
+        </listitem>
+
+        <listitem>
+        <!--
+<para>
+            They can have rule qualifications.
+        </para>
+-->
+<para>
+它们可以有规则资格条件。
+</para>
+        </listitem>
+    </itemizedlist>
+<!-- 
+    Second, they don't modify the query tree in place. Instead they
+    create zero or more new query trees and can throw away the
+    original one.
+-->
+第二，它们不是就地修改查询树，而是创建零个或多个新查询树并且可能把原始的那个扔掉。
+</para>
+
+<sect2>
+<!-- <title>How Update Rules Work</title> -->
+<title>更新规则是如何运转的</title>
+
+<para>
+<!-- 
+    Keep the syntax:
+ -->
+ 把下面语法：
+<programlisting>
+CREATE [ OR REPLACE ] RULE <replaceable class="parameter">name</replaceable> AS ON <replaceable class="parameter">event</replaceable>
+    TO <replaceable class="parameter">table</replaceable> [ WHERE <replaceable class="parameter">condition</replaceable> ]
+    DO [ ALSO | INSTEAD ] { NOTHING | <replaceable class="parameter">command</replaceable> | ( <replaceable class="parameter">command</replaceable> ; <replaceable class="parameter">command</replaceable> ... ) }
+</programlisting>
+<!-- 
+    in mind.
+    In the following, <firstterm>update rules</> means rules that are defined
+    on <command>INSERT</>, <command>UPDATE</>, or <command>DELETE</>.
+-->
+牢牢记住。在随后的内容里，<firstterm>update rules</>(更新规则)意思是定义在
+<command>INSERT</>, <command>UPDATE</>, 或 <command>DELETE</>上的规则。
+</para>
+
+<!--
+<para>
+    Update rules get applied by the rule system when the result
+    relation and the command type of a query tree are equal to the
+    object and event given in the <command>CREATE RULE</command> command.
+    For update rules, the rule system creates a list of query trees.
+    Initially the query-tree list is empty.
+    There can be zero (<literal>NOTHING</> key word), one, or multiple actions.
+    To simplify, we will look at a rule with one action. This rule
+    can have a qualification or not and it can be <literal>INSTEAD</> or
+    <literal>ALSO</> (the default).
+</para>
+-->
+<para>
+如果查询树的结果关系和命令类型与<command>CREATE RULE</command>命令里给出的对象和事件一样的话，
+规则系统就把更新规则应用上去。对于更新规则，规则系统创建一个查询树列表。
+一开始查询树是空的，这里可以有零个(<literal>NOTHING</>关键字)、一个、或多个动作。
+为简单起见，先看一个只有一个动作的规则。这个规则可以有零个或一个条件并且它可以是
+<literal>INSTEAD</>或<literal>ALSO</>(缺省)。
+</para>
+
+<!--
+<para>
+    What is a rule qualification? It is a restriction that tells
+    when the actions of the rule should be done and when not. This
+    qualification can only reference the pseudorelations <literal>NEW</> and/or <literal>OLD</>,
+    which basically represent the relation that was given as object (but with a
+    special meaning).
+</para>
+-->
+<para>
+何为规则条件?它是一个限制条件，告诉规则动作什么时候要做，什么时候不要做。
+这个条件可以只引用<literal>NEW</>和/或<literal>OLD</>伪关系，
+它们基本上是代表以对象形式给出的基本关系(但是有着特殊含义)。
+</para>
+  
+<para>
+ <!--
+ So we have three cases that produce the following query trees for
+    a one-action rule.
+-->
+所以，对这个单动作的规则生成查询树，有下面三种情况。
+    <variablelist>
+     <varlistentry>
+<!-- 
+      <term>No qualification, with either <literal>ALSO</> or
+      <literal>INSTEAD</></term> 
+  -->
+  <term>没有条件，也没有<literal>ALSO</>或<literal>INSTEAD</></term>
+      <listitem>
+<!-- 
+       <para>
+        the query tree from the rule action with the original query
+        tree's qualification added
+       </para>
+ -->
+<para>
+来自规则动作的查询树，附加了原始查询树的条件。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!-- 
+  <term>Qualification given and <literal>ALSO</></term> 
+  -->
+  <term>给出了条件，有<literal>ALSO</></term>
+      <listitem>
+       <!--
+<para>
+        the query tree from the rule action with the rule
+        qualification and the original query tree's qualification
+        added
+       </para>
+-->
+<para>
+来自规则动作的带有规则条件的查询树并且附加了原始查询树的条件。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!--
+  <term>Qualification given and <literal>INSTEAD</></term>
+  -->
+  <term>给出了条件，有<literal>INSTEAD</></term>
+      <listitem>
+       <!--
+<para>
+        the query tree from the rule action with the rule
+        qualification and the original query tree's qualification; and
+        the original query tree with the negated rule qualification
+        added
+       </para>
+-->
+<para>
+来自规则动作带有规则条件的查询树以及原始查询树的条件；以及附加了相反规则条件的原始查询树。
+</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+<!-- 
+    Finally, if the rule is <literal>ALSO</>, the unchanged original query tree is
+    added to the list. Since only qualified <literal>INSTEAD</> rules already add the
+    original query tree, we end up with either one or two output query trees
+    for a rule with one action.
+-->
+最后，如果规则是<literal>ALSO</>，那么最初未修改的查询树被加入到列表。
+因为只有合格的<literal>INSTEAD</>规则已经在初始的查询树里面，
+所以对于单动作规则最终得到一个或者两个查询树。
+</para>
+
+<!--
+<para>
+    For <literal>ON INSERT</> rules, the original query (if not suppressed by <literal>INSTEAD</>)
+    is done before any actions added by rules.  This allows the actions to
+    see the inserted row(s).  But for <literal>ON UPDATE</> and <literal>ON
+    DELETE</> rules, the original query is done after the actions added by rules.
+    This ensures that the actions can see the to-be-updated or to-be-deleted
+    rows; otherwise, the actions might do nothing because they find no rows
+    matching their qualifications.
+</para>
+-->
+<para>
+对于<literal>ON INSERT</>规则，原来的查询(如果没有被<literal>INSTEAD</>取代)
+是在任何规则增加的动作之前完成的。这样就允许动作看到插入的行。但是对<literal>ON UPDATE</>
+和<literal>ON DELETE</>规则，原来的查询是在规则增加的动作之后完成的。
+这样就确保动作可以看到将要更新或者将要删除的行；否则，动作可能什么也不做，
+因为它们发现没有符合它们要求的行。
+</para>
+
+<!--
+<para>
+    The query trees generated from rule actions are thrown into the
+    rewrite system again, and maybe more rules get applied resulting
+    in more or less query trees.
+    So a rule's actions must have either a different
+    command type or a different result relation than the rule itself is
+    on, otherwise this recursive process will end up in an infinite loop.
+    (Recursive expansion of a rule will be detected and reported as an
+    error.)
+</para>
+-->
+<para>
+从规则动作生成的查询树被再次送到重写系统，并且可能附加更多的规则，结果是更多的或更少的查询树。
+所以规则动作必须是另一个命令类型或者和规则所在的关系不同的另一个结果关系。
+否则这样的递归过程就会没完没了(规则的递规展开会被检测到，并当作一个错误报告)。
+</para>
+
+<!--
+<para>
+    The query trees found in the actions of the
+    <structname>pg_rewrite</structname> system catalog are only
+    templates. Since they can reference the range-table entries for
+    <literal>NEW</> and <literal>OLD</>, some substitutions have to be made before they can be
+    used. For any reference to <literal>NEW</>, the target list of the original
+    query is searched for a corresponding entry. If found, that
+    entry's expression replaces the reference. Otherwise, <literal>NEW</> means the
+    same as <literal>OLD</> (for an <command>UPDATE</command>) or is replaced by
+    a null value (for an <command>INSERT</command>). Any reference to <literal>OLD</> is
+    replaced by a reference to the range-table entry that is the
+    result relation.
+</para>
+-->
+<para>
+在<structname>pg_rewrite</structname>系统表中 action 里的查询树只是模板。
+因为他们可以引用范围表的<literal>NEW</>和<literal>OLD</>，在使用它们之前必须做一些调整。
+对于任何对<literal>NEW</>的引用，都要先在初始查询的目标列中搜索对应的条目。如果找到，
+把该条目表达式放到引用里。否则<literal>NEW</>和<literal>OLD</>的含义一样(对于<command>UPDATE</command>)
+或者被 NULL 替代(对于<command>INSERT</command>)。任何对<literal>OLD</>
+的引用都用结果关系的范围表的引用替换。
+</para>
+
+<!--
+<para>
+    After the system is done applying update rules, it applies view rules to the
+    produced query tree(s).  Views cannot insert new update actions so
+    there is no need to apply update rules to the output of view rewriting.
+</para>
+-->
+<para>
+在系统完成更新规则的附加之后，它再附加视图规则到生成的查询树上。视图无法插入新的更新动作，
+所以没有必要向视图重写的输出附加更新规则。
+</para>
+
+<sect3>
+<!--
+ <title>A First Rule Step by Step</title>
+ -->
+ <title>循序渐进的第一个规则</title>
+
+<para>
+<!--
+    Say we want to trace changes to the <literal>sl_avail</> column in the
+    <literal>shoelace_data</literal> relation. So we set up a log table
+    and a rule that conditionally writes a log entry when an
+    <command>UPDATE</command> is performed on
+    <literal>shoelace_data</literal>.
+-->
+假设希望跟踪<literal>shoelace_data</literal>关系中的<literal>sl_avail</>字段。
+所以设置一个日志表和一条规则，这条规则每次在用<command>UPDATE</command>更新
+<literal>shoelace_data</literal>表时都要往数据库里写一条记录。
+<programlisting>
+<!-- 
+CREATE TABLE shoelace_log (
+    sl_name    text,          &#045;- shoelace changed
+    sl_avail   integer,       &#045;- new available value
+    log_who    text,          &#045;- who did it
+    log_when   timestamp      &#045;- when
+);
+ -->
+ CREATE TABLE shoelace_log (
+    sl_name    text,          -- 鞋带变化了
+    sl_avail   integer,       -- 新的可用数值
+    log_who    text,          -- 谁干的
+    log_when   timestamp      -- 什么时候
+);
+
+CREATE RULE log_shoelace AS ON UPDATE TO shoelace_data
+    WHERE NEW.sl_avail &lt;&gt; OLD.sl_avail
+    DO INSERT INTO shoelace_log VALUES (
+                                    NEW.sl_name,
+                                    NEW.sl_avail,
+                                    current_user,
+                                    current_timestamp
+                                );
+</programlisting>
+</para>
+
+<para>
+<!--
+    Now someone does:
+-->
+现在有人键入：
+<programlisting>
+UPDATE shoelace_data SET sl_avail = 6 WHERE sl_name = 'sl7';
+</programlisting>
+<!-- 
+    and we look at the log table:
+ -->
+ 然后看看日志表：
+<programlisting>
+SELECT * FROM shoelace_log;
+
+ sl_name | sl_avail | log_who | log_when                        
+---------+----------+---------+----------------------------------
+ sl7     |        6 | Al      | Tue Oct 20 16:14:45 1998 MET DST
+(1 row)
+</programlisting>
+   </para>
+<para>
+<!-- 
+    That's what we expected. What happened in the background is the following.
+    The parser created the query tree:
+-->
+这是想要的。后端发生的事情如下。分析器创建查询树：
+<programlisting>
+UPDATE shoelace_data SET sl_avail = 6
+  FROM shoelace_data shoelace_data
+ WHERE shoelace_data.sl_name = 'sl7';
+</programlisting>
+<!-- 
+    There is a rule <literal>log_shoelace</literal> that is <literal>ON UPDATE</> with the rule
+    qualification expression:
+-->
+这里是一个带有条件表达式的<literal>ON UPDATE</>规则<literal>log_shoelace</literal>：
+<programlisting>
+NEW.sl_avail &lt;&gt; OLD.sl_avail
+</programlisting>
+<!-- 
+    and the action:
+ -->
+ 和动作：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       new.sl_name, new.sl_avail,
+       current_user, current_timestamp )
+  FROM shoelace_data new, shoelace_data old;
+</programlisting>
+<!-- 
+    (This looks a little strange since you cannot normally write
+    <literal>INSERT ... VALUES ... FROM</>.  The <literal>FROM</>
+    clause here is just to indicate that there are range-table entries
+    in the query tree for <literal>new</> and <literal>old</>.
+    These are needed so that they can be referenced by variables in
+    the <command>INSERT</command> command's query tree.)
+-->
+这个输出看起来有点奇怪，因为你不能写<literal>INSERT ... VALUES ... FROM</>。
+这里的<literal>FROM</>子句只是表示查询树里有用于<literal>new</>和<literal>old</>
+的范围表记录。这些东西的存在是因为这样一来它们就可以被<command>INSERT</command>
+命令的查询树里的变量引用。
+</para>
+
+<para>
+<!-- 
+    The rule is a qualified <literal>ALSO</> rule, so the rule system
+    has to return two query trees: the modified rule action and the original
+    query tree. In step 1, the range table of the original query is
+    incorporated into the rule's action query tree. This results in:
+ -->
+该规则是一个有条件的<literal>ALSO</>规则，所以规则系统必须返回两个查询树：
+更改过的规则动作和原始查询树。在第一步里，原始查询的范围表集成到规则动作查询树里。生成：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       new.sl_name, new.sl_avail,
+       current_user, current_timestamp )
+  FROM shoelace_data new, shoelace_data old,
+       <emphasis>shoelace_data shoelace_data</emphasis>;
+</programlisting>
+<!-- 
+    In step 2, the rule qualification is added to it, so the result set
+    is restricted to rows where <literal>sl_avail</> changes:
+-->
+第二步把规则条件增加进去，所以结果集限制为<literal>sl_avail</>改变了的行：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       new.sl_name, new.sl_avail,
+       current_user, current_timestamp )
+  FROM shoelace_data new, shoelace_data old,
+       shoelace_data shoelace_data
+ <emphasis>WHERE new.sl_avail &lt;&gt; old.sl_avail</emphasis>;
+</programlisting>
+<!-- 
+    (This looks even stranger, since <literal>INSERT ... VALUES</> doesn't have
+    a <literal>WHERE</> clause either, but the planner and executor will have no
+    difficulty with it.  They need to support this same functionality
+    anyway for <literal>INSERT ... SELECT</>.)
+-->
+这个东西看起来更奇怪，因为<literal>INSERT ... VALUES</>也没有<literal>WHERE</>子句，
+不过规划器和执行器对此并不在意。它们毕竟还要为<literal>INSERT ... SELECT</>支持这种功能。
+   </para>
+<para>
+<!-- 
+    In step 3, the original query tree's qualification is added,
+    restricting the result set further to only the rows that would have been touched
+    by the original query:
+-->
+第三步把原始查询树的条件加进去，把结果集进一步限制成只有被初始查询树改变的行：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       new.sl_name, new.sl_avail,
+       current_user, current_timestamp )
+  FROM shoelace_data new, shoelace_data old,
+       shoelace_data shoelace_data
+ WHERE new.sl_avail &lt;&gt; old.sl_avail
+   <emphasis>AND shoelace_data.sl_name = 'sl7'</emphasis>;
+</programlisting>
+   </para>
+<para>
+<!-- 
+    Step 4 replaces references to <literal>NEW</> by the target list entries from the
+    original query tree or by the matching variable references
+    from the result relation:
+ -->
+第四步把<literal>NEW</>引用替换为从原始查询树来的目标列或从结果关系来的相匹配的变量引用：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       <emphasis>shoelace_data.sl_name</emphasis>, <emphasis>6</emphasis>,
+       current_user, current_timestamp )
+  FROM shoelace_data new, shoelace_data old,
+       shoelace_data shoelace_data
+ WHERE <emphasis>6</emphasis> &lt;&gt; old.sl_avail
+   AND shoelace_data.sl_name = 'sl7';
+</programlisting>
+   </para>
+
+   
+<para>
+<!--
+    Step 5 changes <literal>OLD</> references into result relation references:
+-->
+第五步用结果关系引用把<literal>OLD</>引用替换掉：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       shoelace_data.sl_name, 6,
+       current_user, current_timestamp )
+  FROM shoelace_data new, shoelace_data old,
+       shoelace_data shoelace_data
+ WHERE 6 &lt;&gt; <emphasis>shoelace_data.sl_avail</emphasis>
+   AND shoelace_data.sl_name = 'sl7';
+</programlisting>
+   </para>
+<para>
+<!-- 
+    That's it.  Since the rule is <literal>ALSO</>, we also output the
+    original query tree.  In short, the output from the rule system
+    is a list of two query trees that correspond to these statements:
+-->
+这就成了。因为规则<literal>ALSO</>还输出原始查询树。简而言之，
+从规则系统输出的是一个两个查询树的列表，与下面语句相同：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       shoelace_data.sl_name, 6,
+       current_user, current_timestamp )
+  FROM shoelace_data
+ WHERE 6 &lt;&gt; shoelace_data.sl_avail
+   AND shoelace_data.sl_name = 'sl7';
+
+UPDATE shoelace_data SET sl_avail = 6
+ WHERE sl_name = 'sl7';
+</programlisting>
+<!-- 
+    These are executed in this order, and that is exactly what
+    the rule was meant to do.
+-->
+这就是执行的顺序以及规则要做的事情。
+   </para>
+<para>
+<!-- 
+    The substitutions and the added qualifications
+    ensure that, if the original query would be, say:
+-->
+做的替换和追加的条件用于确保如果原始的查询是下面这样：
+<programlisting>
+UPDATE shoelace_data SET sl_color = 'green'
+ WHERE sl_name = 'sl7';
+</programlisting>
+<!-- 
+    no log entry would get written.  In that case, the original query
+    tree does not contain a target list entry for
+    <literal>sl_avail</>, so <literal>NEW.sl_avail</> will get
+    replaced by <literal>shoelace_data.sl_avail</>.  Thus, the extra
+    command generated by the rule is:
+ -->
+就不会有日期记录写到表里。因为这回原始查询树不包含有关<literal>sl_avail</>
+的目标列表，<literal>NEW.sl_avail</>将被<literal>shoelace_data.sl_avail</>代替，
+所以，规则生成的额外命令是：
+<programlisting>
+INSERT INTO shoelace_log VALUES (
+       shoelace_data.sl_name, <emphasis>shoelace_data.sl_avail</emphasis>,
+       current_user, current_timestamp )
+  FROM shoelace_data
+ WHERE <emphasis>shoelace_data.sl_avail</emphasis> &lt;&gt; shoelace_data.sl_avail
+   AND shoelace_data.sl_name = 'sl7';
+</programlisting>
+<!-- 
+    and that qualification will never be true.
+-->
+并且条件将永远不可能是真值。
+   </para>
+<para>
+<!-- 
+    It will also work if the original query modifies multiple rows. So
+    if someone issued the command:
+-->
+如果最初的查询修改多个行，它也能运行。所以如果写出下面命令：
+<programlisting>
+UPDATE shoelace_data SET sl_avail = 0
+ WHERE sl_color = 'black';
+</programlisting>
+<!-- 
+    four rows in fact get updated (<literal>sl1</>, <literal>sl2</>, <literal>sl3</>, and <literal>sl4</>).
+    But <literal>sl3</> already has <literal>sl_avail = 0</>.   In this case, the original
+    query trees qualification is different and that results
+    in the extra query tree:
+ -->
+实际上有四行被更新(<literal>sl1</>, <literal>sl2</>, <literal>sl3</>, 和<literal>sl4</>)。
+但<literal>sl3</>已经是<literal>sl_avail = 0</>。这回，原始的查询树条件已经不一样了，
+结果是规则生成下面的额外查询树：
+<programlisting>
+INSERT INTO shoelace_log
+SELECT shoelace_data.sl_name, 0,
+       current_user, current_timestamp
+  FROM shoelace_data
+ WHERE 0 &lt;&gt; shoelace_data.sl_avail
+   AND <emphasis>shoelace_data.sl_color = 'black'</emphasis>;
+</programlisting>
+<!-- 
+    being generated by the rule.  This query tree will surely insert
+    three new log entries. And that's absolutely correct.
+-->
+这个查询树将肯定插入三个新的日志记录。这也是完全正确的。
+</para>
+
+<!--
+<para>
+    Here we can see why it is important that the original query tree
+    is executed last.  If the <command>UPDATE</command> had been
+    executed first, all the rows would have already been set to zero, so the
+    logging <command>INSERT</command> would not find any row where
+    <literal>0 &lt;&gt; shoelace_data.sl_avail</literal>.
+</para>
+-->
+<para>
+到这里就明白为什么原始查询树最后执行非常重要。如果<command>UPDATE</command>将先被执行，
+所有的行都已经设为零，所以记日志的<command>INSERT</command>将不能找到任何符合
+<literal>0 &lt;&gt; shoelace_data.sl_avail</literal>条件的行。
+</para>
+</sect3>
+
+</sect2>
+
+<sect2 id="rules-update-views">
+<!-- 
+<title>Cooperation with Views</title>
+ -->
+ <title>与视图合作</title>
+
+<!--
+ <indexterm zone="rules-update-views"><primary>view</><secondary>updating</></>
+ -->
+ <indexterm zone="rules-update-views"><primary>视图</><secondary>更新</></>
+
+<para>
+<!-- 
+    A simple way to protect view relations from the mentioned
+    possibility that someone can try to run <command>INSERT</command>,
+    <command>UPDATE</command>, or <command>DELETE</command> on them is
+    to let those query trees get thrown away.  So we could create the rules:
+ -->
+一个保护视图关系，使其避免有人可以在其中<command>INSERT</command>, <command>UPDATE</command>,
+ <command>DELETE</command>的简单方法是让那些查询树被丢弃。创建下面规则：
+<programlisting>
+CREATE RULE shoe_ins_protect AS ON INSERT TO shoe
+    DO INSTEAD NOTHING;
+CREATE RULE shoe_upd_protect AS ON UPDATE TO shoe
+    DO INSTEAD NOTHING;
+CREATE RULE shoe_del_protect AS ON DELETE TO shoe
+    DO INSTEAD NOTHING;
+</programlisting>
+<!-- 
+    If someone now tries to do any of these operations on the view
+    relation <literal>shoe</literal>, the rule system will
+    apply these rules. Since the rules have
+    no actions and are <literal>INSTEAD</>, the resulting list of
+    query trees will be empty and the whole query will become
+    nothing because there is nothing left to be optimized or
+    executed after the rule system is done with it.
+-->
+如果现在任何人试图对视图关系<literal>shoe</literal>做上面的任何操作，
+规则系统将应用这些规则。因为这些规则没有动作而且是<literal>INSTEAD</>，
+结果是生成的查询树将是空的并且整个查询将变得空空如也，
+因为经过规则系统处理后没有什么东西剩下来用于优化或执行了。
+</para>
+
+<para>
+<!-- 
+    A more sophisticated way to use the rule system is to
+    create rules that rewrite the query tree into one that
+    does the right operation on the real tables. To do that
+    on the <literal>shoelace</literal> view, we create
+    the following rules:
+ -->
+一个更复杂的使用规则系统的方法是用规则系统创建一个重写查询树的规则，
+使查询树对真实的表进行正确的操作。要在视图<literal>shoelace</literal>上做这个工作，创建下面规则：
+<programlisting>
+CREATE RULE shoelace_ins AS ON INSERT TO shoelace
+    DO INSTEAD
+    INSERT INTO shoelace_data VALUES (
+           NEW.sl_name,
+           NEW.sl_avail,
+           NEW.sl_color,
+           NEW.sl_len,
+           NEW.sl_unit
+    );
+
+CREATE RULE shoelace_upd AS ON UPDATE TO shoelace
+    DO INSTEAD
+    UPDATE shoelace_data
+       SET sl_name = NEW.sl_name,
+           sl_avail = NEW.sl_avail,
+           sl_color = NEW.sl_color,
+           sl_len = NEW.sl_len,
+           sl_unit = NEW.sl_unit
+     WHERE sl_name = OLD.sl_name;
+
+CREATE RULE shoelace_del AS ON DELETE TO shoelace
+    DO INSTEAD
+    DELETE FROM shoelace_data
+     WHERE sl_name = OLD.sl_name;
+</programlisting>
+   </para>
+<para>
+<!-- 
+    If you want to support <literal>RETURNING</> queries on the view,
+    you need to make the rules include <literal>RETURNING</> clauses that
+    compute the view rows.  This is usually pretty trivial for views on a
+    single table, but it's a bit tedious for join views such as
+    <literal>shoelace</literal>.  An example for the insert case is:
+ -->
+如果你打算在视图上支持<literal>RETURNING</>查询，就要让规则包含<literal>RETURNING</>
+计算视图行数的子句。这对于基于单个表的视图来说通常非常琐碎，但是连接诸如
+<literal>shoelace</literal>之类的视图很单调乏味。一个插入情况的例子如下：
+<programlisting>
+CREATE RULE shoelace_ins AS ON INSERT TO shoelace
+    DO INSTEAD
+    INSERT INTO shoelace_data VALUES (
+           NEW.sl_name,
+           NEW.sl_avail,
+           NEW.sl_color,
+           NEW.sl_len,
+           NEW.sl_unit
+    )
+    RETURNING
+           shoelace_data.*,
+           (SELECT shoelace_data.sl_len * u.un_fact
+            FROM unit u WHERE shoelace_data.sl_unit = u.un_name);
+</programlisting>
+<!-- 
+    Note that this one rule supports both <command>INSERT</> and
+    <command>INSERT RETURNING</> queries on the view &mdash; the
+    <literal>RETURNING</> clause is simply ignored for <command>INSERT</>.
+-->
+注意，这个规则同时支持该视图上的<command>INSERT</>和<command>INSERT RETURNING</>查询，
+<command>INSERT</>将简单的忽略<literal>RETURNING</>子句。
+   </para>
+<para>
+<!-- 
+    Now assume that once in a while, a pack of shoelaces arrives at
+    the shop and a big parts list along with it.  But you don't want
+    to manually update the <literal>shoelace</literal> view every
+    time.  Instead we setup two little tables: one where you can
+    insert the items from the part list, and one with a special
+    trick. The creation commands for these are:
+ -->
+假设现在有一包鞋带到达商店，还有一个大的部件列表。但是不想每次都手工更新
+<literal>shoelace</literal>视图。取而代之的是创建了两个小表：
+一个是可以从到货清单中插入东西，另一个是一个特殊的技巧。创建这些的命令如下：
+<programlisting>
+CREATE TABLE shoelace_arrive (
+    arr_name    text,
+    arr_quant   integer
+);
+
+CREATE TABLE shoelace_ok (
+    ok_name     text,
+    ok_quant    integer
+);
+
+CREATE RULE shoelace_ok_ins AS ON INSERT TO shoelace_ok
+    DO INSTEAD
+    UPDATE shoelace
+       SET sl_avail = sl_avail + NEW.ok_quant
+     WHERE sl_name = NEW.ok_name;
+</programlisting>
+
+<!-- 
+    Now you can fill the table <literal>shoelace_arrive</literal> with
+    the data from the parts list:
+ -->
+现在你可以用来自部件列表的数据填充表<literal>shoelace_arrive</literal>了：
+<programlisting>
+SELECT * FROM shoelace_arrive;
+
+ arr_name | arr_quant
+----------+-----------
+ sl3      |        10
+ sl6      |        20
+ sl8      |        20
+(3 rows)
+</programlisting>
+<!-- 
+    Take a quick look at the current data:
+ -->
+ 让我们迅速地看一眼当前的数据，
+
+<programlisting>
+SELECT * FROM shoelace;
+
+ sl_name  | sl_avail | sl_color | sl_len | sl_unit | sl_len_cm
+----------+----------+----------+--------+---------+-----------
+ sl1      |        5 | black    |     80 | cm      |        80
+ sl2      |        6 | black    |    100 | cm      |       100
+ sl7      |        6 | brown    |     60 | cm      |        60
+ sl3      |        0 | black    |     35 | inch    |      88.9
+ sl4      |        8 | black    |     40 | inch    |     101.6
+ sl8      |        1 | brown    |     40 | inch    |     101.6
+ sl5      |        4 | brown    |      1 | m       |       100
+ sl6      |        0 | brown    |    0.9 | m       |        90
+(8 rows)
+</programlisting>
+
+<!-- 
+    Now move the arrived shoelaces in:
+ -->
+ 把到货鞋带移到(shoelace_ok)中：
+<programlisting>
+INSERT INTO shoelace_ok SELECT * FROM shoelace_arrive;
+</programlisting>
+<!-- 
+    and check the results:
+ -->
+ 然后检查结果：
+<programlisting>
+SELECT * FROM shoelace ORDER BY sl_name;
+
+ sl_name  | sl_avail | sl_color | sl_len | sl_unit | sl_len_cm
+----------+----------+----------+--------+---------+-----------
+ sl1      |        5 | black    |     80 | cm      |        80
+ sl2      |        6 | black    |    100 | cm      |       100
+ sl7      |        6 | brown    |     60 | cm      |        60
+ sl4      |        8 | black    |     40 | inch    |     101.6
+ sl3      |       10 | black    |     35 | inch    |      88.9
+ sl8      |       21 | brown    |     40 | inch    |     101.6
+ sl5      |        4 | brown    |      1 | m       |       100
+ sl6      |       20 | brown    |    0.9 | m       |        90
+(8 rows)
+
+SELECT * FROM shoelace_log;
+
+ sl_name | sl_avail | log_who| log_when                        
+---------+----------+--------+----------------------------------
+ sl7     |        6 | Al     | Tue Oct 20 19:14:45 1998 MET DST
+ sl3     |       10 | Al     | Tue Oct 20 19:25:16 1998 MET DST
+ sl6     |       20 | Al     | Tue Oct 20 19:25:16 1998 MET DST
+ sl8     |       21 | Al     | Tue Oct 20 19:25:16 1998 MET DST
+(4 rows)
+</programlisting>
+</para>
+<para>
+<!-- 
+    It's a long way from the one <literal>INSERT ... SELECT</literal>
+    to these results. And the description of the query-tree
+    transformation will be the last in this chapter.  First, there is
+    the parser's output:
+ -->
+从<literal>INSERT ... SELECT</literal>语句到这个结果经过了长长的一段过程。
+而且对查询树转化的描述将是本文档的最后。首先是生成分析器输出：
+<programlisting>
+INSERT INTO shoelace_ok
+SELECT shoelace_arrive.arr_name, shoelace_arrive.arr_quant
+  FROM shoelace_arrive shoelace_arrive, shoelace_ok shoelace_ok;
+</programlisting>
+<!-- 
+    Now the first rule <literal>shoelace_ok_ins</literal> is applied and turns this
+    into:
+ -->
+现在应用第一条规则<literal>shoelace_ok_ins</literal>把它转换成：
+<programlisting>
+UPDATE shoelace
+   SET sl_avail = shoelace.sl_avail + shoelace_arrive.arr_quant
+  FROM shoelace_arrive shoelace_arrive, shoelace_ok shoelace_ok,
+       shoelace_ok old, shoelace_ok new,
+       shoelace shoelace
+ WHERE shoelace.sl_name = shoelace_arrive.arr_name;
+</programlisting>
+<!-- 
+    and throws away the original <command>INSERT</command> on
+    <literal>shoelace_ok</literal>.  This rewritten query is passed to
+    the rule system again, and the second applied rule
+    <literal>shoelace_upd</literal> produces:
+ -->
+并且把原始的对<literal>shoelace_ok</literal>的<command>INSERT</command>丢弃掉。
+这样重写后的查询再次传入规则系统并且第二次应用了规则<literal>shoelace_upd</literal>生成：
+<programlisting>
+UPDATE shoelace_data
+   SET sl_name = shoelace.sl_name,
+       sl_avail = shoelace.sl_avail + shoelace_arrive.arr_quant,
+       sl_color = shoelace.sl_color,
+       sl_len = shoelace.sl_len,
+       sl_unit = shoelace.sl_unit
+  FROM shoelace_arrive shoelace_arrive, shoelace_ok shoelace_ok,
+       shoelace_ok old, shoelace_ok new,
+       shoelace shoelace, shoelace old,
+       shoelace new, shoelace_data shoelace_data
+ WHERE shoelace.sl_name = shoelace_arrive.arr_name
+   AND shoelace_data.sl_name = shoelace.sl_name;
+</programlisting>
+<!-- 
+    Again it's an <literal>INSTEAD</> rule and the previous query tree is trashed.
+    Note that this query still uses the view <literal>shoelace</literal>.
+    But the rule system isn't finished with this step, so it continues
+    and applies the <literal>_RETURN</literal> rule on it, and we get:
+ -->
+同样这是一个<literal>INSTEAD</>规则并且前一个查询树被丢弃掉。
+注意这个查询仍然是使用视图<literal>shoelace</literal>，但是规则系统还没有完成这一步，
+所以它继续在这上面应用规则<literal>_RETURN</literal>，然后得到：
+<programlisting>
+UPDATE shoelace_data
+   SET sl_name = s.sl_name,
+       sl_avail = s.sl_avail + shoelace_arrive.arr_quant,
+       sl_color = s.sl_color,
+       sl_len = s.sl_len,
+       sl_unit = s.sl_unit
+  FROM shoelace_arrive shoelace_arrive, shoelace_ok shoelace_ok,
+       shoelace_ok old, shoelace_ok new,
+       shoelace shoelace, shoelace old,
+       shoelace new, shoelace_data shoelace_data,
+       shoelace old, shoelace new,
+       shoelace_data s, unit u
+ WHERE s.sl_name = shoelace_arrive.arr_name
+   AND shoelace_data.sl_name = s.sl_name;
+</programlisting>
+<!-- 
+    Finally, the rule <literal>log_shoelace</literal> gets applied,
+    producing the extra query tree:
+ -->
+最后，应用规则<literal>log_shoelace</literal>，生成额外的查询树：
+<programlisting>
+INSERT INTO shoelace_log
+SELECT s.sl_name,
+       s.sl_avail + shoelace_arrive.arr_quant,
+       current_user,
+       current_timestamp
+  FROM shoelace_arrive shoelace_arrive, shoelace_ok shoelace_ok,
+       shoelace_ok old, shoelace_ok new,
+       shoelace shoelace, shoelace old,
+       shoelace new, shoelace_data shoelace_data,
+       shoelace old, shoelace new,
+       shoelace_data s, unit u,
+       shoelace_data old, shoelace_data new
+       shoelace_log shoelace_log
+ WHERE s.sl_name = shoelace_arrive.arr_name
+   AND shoelace_data.sl_name = s.sl_name
+   AND (s.sl_avail + shoelace_arrive.arr_quant) &lt;&gt; s.sl_avail;
+</programlisting>
+<!-- 
+    After that the rule system runs out of rules and returns the
+    generated query trees.
+-->
+这样，在规则系统用完所有的规则后返回生成的查询树。
+   </para>
+<para>
+<!-- 
+    So we end up with two final query trees that are equivalent to the
+    <acronym>SQL</acronym> statements:
+ -->
+ 所以最终得到两个等效于下面<acronym>SQL</acronym>语句的查询树：
+<programlisting>
+INSERT INTO shoelace_log
+SELECT s.sl_name,
+       s.sl_avail + shoelace_arrive.arr_quant,
+       current_user,
+       current_timestamp
+  FROM shoelace_arrive shoelace_arrive, shoelace_data shoelace_data,
+       shoelace_data s
+ WHERE s.sl_name = shoelace_arrive.arr_name
+   AND shoelace_data.sl_name = s.sl_name
+   AND s.sl_avail + shoelace_arrive.arr_quant &lt;&gt; s.sl_avail;
+
+UPDATE shoelace_data
+   SET sl_avail = shoelace_data.sl_avail + shoelace_arrive.arr_quant
+  FROM shoelace_arrive shoelace_arrive,
+       shoelace_data shoelace_data,
+       shoelace_data s
+ WHERE s.sl_name = shoelace_arrive.sl_name
+   AND shoelace_data.sl_name = s.sl_name;
+</programlisting>
+<!-- 
+    The result is that data coming from one relation inserted into another,
+    changed into updates on a third, changed into updating
+    a fourth plus logging that final update in a fifth
+    gets reduced into two queries.
+-->
+结果是从一个关系来的数据插入到另一个中，到了第三个中变成更新，
+在到第四个中变成更新加上记日志，最后在第五个规则中缩减为两个查询。
+</para>
+
+<para>
+<!-- 
+    There is a little detail that's a bit ugly. Looking at the two
+    queries, it turns out that the <literal>shoelace_data</literal>
+    relation appears twice in the range table where it could
+    definitely be reduced to one. The planner does not handle it and
+    so the execution plan for the rule systems output of the
+    <command>INSERT</command> will be
+ -->
+有一个小细节有点让人难受。看看生成的两个查询，会发现<literal>shoelace_data</literal>
+关系在范围表中出现了两次而实际上绝对可以缩为一次。因为规划器不处理这些，
+所以对规则系统输出的<command>INSERT</command>的执行规划会是
+<literallayout class="monospaced">
+Nested Loop
+  -&gt;  Merge Join
+        -&gt;  Seq Scan
+              -&gt;  Sort
+                    -&gt;  Seq Scan on s
+        -&gt;  Seq Scan
+              -&gt;  Sort
+                    -&gt;  Seq Scan on shoelace_arrive
+  -&gt;  Seq Scan on shoelace_data
+</literallayout>
+<!-- 
+    while omitting the extra range table entry would result in a
+ -->
+在省略多余的范围表后的结果将是
+<literallayout class="monospaced">
+Merge Join
+  -&gt;  Seq Scan
+        -&gt;  Sort
+              -&gt;  Seq Scan on s
+  -&gt;  Seq Scan
+        -&gt;  Sort
+              -&gt;  Seq Scan on shoelace_arrive
+</literallayout>
+<!-- 
+    which produces exactly the same entries in the log table.  Thus,
+    the rule system caused one extra scan on the table
+    <literal>shoelace_data</literal> that is absolutely not
+    necessary. And the same redundant scan is done once more in the
+    <command>UPDATE</command>. But it was a really hard job to make
+    that all possible at all.
+-->
+这也会在日志关系中生成完全一样的记录。因此，规则系统导致对表<literal>shoelace_data</literal>
+的一次多余的扫描，而且同样多余的扫描会在<command>UPDATE</command>里也一样多做一次。
+不过要想把这些不足去掉是一样太困难的活了。
+</para>
+
+<para>
+<!-- 
+    Now we make a final demonstration of the
+    <productname>PostgreSQL</productname> rule system and its power.
+    Say you add some shoelaces with extraordinary colors to your
+    database:
+ -->
+最后对<productname>PostgreSQL</productname>规则系统及其功能做一个演示。
+假设你向你的数据库中添加一些比较罕见的鞋带：
+<programlisting>
+INSERT INTO shoelace VALUES ('sl9', 0, 'pink', 35.0, 'inch', 0.0);
+INSERT INTO shoelace VALUES ('sl10', 1000, 'magenta', 40.0, 'inch', 0.0);
+</programlisting>
+<!-- 
+    We would like to make a view to check which
+    <literal>shoelace</literal> entries do not fit any shoe in color.
+    The view for this is:
+ -->
+建立一个视图检查哪种<literal>shoelace</literal>记录在颜色上和任何鞋子都不相配。
+用于这个的视图是：
+<programlisting>
+CREATE VIEW shoelace_mismatch AS
+    SELECT * FROM shoelace WHERE NOT EXISTS
+        (SELECT shoename FROM shoe WHERE slcolor = sl_color);
+</programlisting>
+<!-- 
+    Its output is:
+ -->
+ 它的输出是：
+<programlisting>
+SELECT * FROM shoelace_mismatch;
+
+ sl_name | sl_avail | sl_color | sl_len | sl_unit | sl_len_cm
+---------+----------+----------+--------+---------+-----------
+ sl9     |        0 | pink     |     35 | inch    |      88.9
+ sl10    |     1000 | magenta  |     40 | inch    |     101.6
+</programlisting>
+   </para>
+<para>
+<!--
+    Now we want to set it up so that mismatching shoelaces that are
+    not in stock are deleted from the database.
+    To make it a little harder for <productname>PostgreSQL</productname>,
+    we don't delete it directly. Instead we create one more view:
+-->
+现在想这样设置：没有库存的不匹配的鞋带都从数据库中删除。为了让这事对
+<productname>PostgreSQL</productname>有点难度，不直接删除它们。
+取而代之的是再创建一个视图:
+<programlisting>
+CREATE VIEW shoelace_can_delete AS
+    SELECT * FROM shoelace_mismatch WHERE sl_avail = 0;
+</programlisting>
+<!-- 
+    and do it this way:
+ -->
+ 然后用下面方法做：
+<programlisting>
+DELETE FROM shoelace WHERE EXISTS
+    (SELECT * FROM shoelace_can_delete
+             WHERE sl_name = shoelace.sl_name);
+</programlisting>
+<!-- 
+    <foreignphrase>Voil&agrave;</foreignphrase>:
+ -->
+ <foreignphrase>所以&agrave;</foreignphrase>:
+<programlisting>
+SELECT * FROM shoelace;
+
+ sl_name | sl_avail | sl_color | sl_len | sl_unit | sl_len_cm
+---------+----------+----------+--------+---------+-----------
+ sl1     |        5 | black    |     80 | cm      |        80
+ sl2     |        6 | black    |    100 | cm      |       100
+ sl7     |        6 | brown    |     60 | cm      |        60
+ sl4     |        8 | black    |     40 | inch    |     101.6
+ sl3     |       10 | black    |     35 | inch    |      88.9
+ sl8     |       21 | brown    |     40 | inch    |     101.6
+ sl10    |     1000 | magenta  |     40 | inch    |     101.6
+ sl5     |        4 | brown    |      1 | m       |       100
+ sl6     |       20 | brown    |    0.9 | m       |        90
+(9 rows)
+</programlisting>
+   </para>
+   <!--
+<para>
+    A <command>DELETE</command> on a view, with a subquery qualification that
+    in total uses 4 nesting/joined views, where one of them
+    itself has a subquery qualification containing a view
+    and where calculated view columns are used,
+    gets rewritten into
+    one single query tree that deletes the requested data
+    from a real table.
+</para>
+-->
+<para>
+对一个视图的<command>DELETE</command>，这个视图带有一个总共使用了四个嵌套/连接的视图的子查询条件，
+这四个视图之一本身有一个拥有对一个视图的子查询条件，该条件计算使用的视图的列；
+最后重写成了一个查询树，该查询树从一个真正的表里面把需要删除的数据删除。
+</para>
+
+<!--
+<para>
+    There are probably only a few situations out in the real world
+    where such a construct is necessary. But it makes you feel
+    comfortable that it works.
+</para>
+-->
+<para>
+我想在现实世界里只有很少的机会需要上面的这样的构造。但这些东西能运转肯定让你舒服。
+</para>
+</sect2>
+
+</sect1>
+
+<sect1 id="rules-privileges">
+<!--
+ <title>Rules and Privileges</title>
+ -->
+ <title>规则和权限</title>
+
+<indexterm zone="rules-privileges">
+ <!--
+ <primary>privilege</primary>
+ <secondary sortas="Regeln">with rules</secondary>
+ -->
+ <primary>权限</primary>
+ <secondary sortas="Regeln">和规则</secondary>
+</indexterm>
+
+<indexterm zone="rules-privileges">
+ <!--
+ <primary>privilege</primary>
+ <secondary sortas="Sichten">with views</secondary>
+ -->
+ <primary>权限</primary>
+ <secondary sortas="Sichten">和视图</secondary>
+</indexterm>
+
+<!--
+<para>
+    Due to rewriting of queries by the <productname>PostgreSQL</productname>
+    rule system, other tables/views than those used in the original
+    query get accessed. When update rules are used, this can include write access
+    to tables.
+</para>
+-->
+<para>
+由于<productname>PostgreSQL</productname>规则系统对查询的重写，
+非初始查询指定的其它表/视图被访问。使用更新规则的时候，这可能包括对表的写权限。
+</para>
+
+<!--
+<para>
+    Rewrite rules don't have a separate owner. The owner of
+    a relation (table or view) is automatically the owner of the
+    rewrite rules that are defined for it.
+    The <productname>PostgreSQL</productname> rule system changes the
+    behavior of the default access control system. Relations that
+    are used due to rules get checked against the
+    privileges of the rule owner, not the user invoking the rule.
+    This means that a user only needs the required privileges
+    for the tables/views that he names explicitly in his queries.
+</para>
+-->
+<para>
+重写规则并不拥有一个独立的所有者。关系(表或视图)的所有者自动成为重写规则的缺省所有者。
+<productname>PostgreSQL</productname>规则系统改变缺省的访问控制系统的特性。
+因规则而使用的关系要对定义规则所有者进行权限检查，而不是激活规则的用户，
+这意味着一个用户只需要对他的查询里明确指定的表/视图拥有所需的权限就可进行操作。
+</para>
+
+<para>
+<!--
+     For example: A user has a list of phone numbers where some of
+    them are private, the others are of interest for the secretary of the office.
+    He can construct the following:
+ -->
+例如：某用户有一个电话号码列表，其中一些是私人的，另外的一些是办公室秘书需要的。
+他可以用下面方法构建查询：
+<programlisting>
+CREATE TABLE phone_data (person text, phone text, private boolean);
+CREATE VIEW phone_number AS
+    SELECT person, CASE WHEN NOT private THEN phone END AS phone
+    FROM phone_data;
+GRANT SELECT ON phone_number TO secretary;
+</programlisting>
+<!-- 
+    Nobody except him (and the database superusers) can access the
+    <literal>phone_data</> table. But because of the <command>GRANT</>,
+    the secretary can run a <command>SELECT</command> on the
+    <literal>phone_number</> view. The rule system will rewrite the
+    <command>SELECT</command> from <literal>phone_number</> into a
+    <command>SELECT</command> from <literal>phone_data</>.
+    Since the user is the owner of
+    <literal>phone_number</> and therefore the owner of the rule, the
+    read access to <literal>phone_data</> is now checked against his
+    privileges and the query is permitted. The check for accessing
+    <literal>phone_number</> is also performed, but this is done
+    against the invoking user, so nobody but the user and the
+    secretary can use it.
+-->
+除了他以外(还有数据库超级用户)没有人可以访问<literal>phone_data</>表。
+但因为<command>GRANT</>的原因，秘书可以从<literal>phone_number</>
+视图上运行<command>SELECT</command>。规则系统将把从<literal>phone_number</>
+里的<command>SELECT</command>重写为从<literal>phone_data</>里的
+<command>SELECT</command>。因为用户是<literal>phone_number</>的所有者，
+因此也是规则的所有者，所以现在要检查他对<literal>phone_data</>的读访问的权限，
+而这个查询是被允许的。同时也要检查访问<literal>phone_number</>的权限，
+但这是对一个被撤消权限的用户进行检查的，所以除了用户自己和秘书外没有人可以使用它。
+</para>
+
+<!--
+<para>
+    The privileges are checked rule by rule. So the secretary is for now the
+    only one who can see the public phone numbers. But the secretary can setup
+    another view and grant access to that to the public. Then, anyone
+    can see the <literal>phone_number</> data through the secretary's view.
+    What the secretary cannot do is to create a view that directly
+    accesses <literal>phone_data</>.  (Actually he can, but it will not work since
+    every access will be denied during the permission checks.)
+    And as soon as the user will notice, that the secretary opened
+    his <literal>phone_number</> view, he can revoke his access. Immediately, any
+    access to the secretary's view would fail.
+</para>
+-->
+<para>
+权限检查是按规则逐条进行的。所以此时的秘书是唯一的一个可以看到公共电话号码的人。
+但秘书可以设立另一个视图并且赋予该视图公共权限。这样，
+任何人都可以通过秘书的视图看到<literal>phone_number</>数据。
+秘书不能做的事情是创建一个直接访问<literal>phone_data</>的视图(实际上他是可以的，
+但没有任何作用，因为每个访问都会因通不过权限检查而被踢出事务)。而且用户很快会认识到，
+秘书开放了他的<literal>phone_number</>视图后，他还可以撤消他的访问权限。这样，
+所有对秘书视图的访问马上就失效了。
+</para>
+
+<!--
+<para>
+    One might think that this rule-by-rule checking is a security
+    hole, but in fact it isn't.   But if it did not work this way, the secretary
+    could set up a table with the same columns as <literal>phone_number</> and
+    copy the data to there once per day. Then it's his own data and
+    he can grant access to everyone he wants. A
+    <command>GRANT</command> command means, <quote>I trust you</quote>.
+    If someone you trust does the thing above, it's time to
+    think it over and then use <command>REVOKE</command>.
+</para>
+-->
+<para>
+有些人会认为这种逐条规则的检查是一个安全漏洞，但事实上不是。如果这样做不能奏效，
+秘书将必须建立一个与<literal>phone_number</>有相同字段的表并且每天拷贝一次数据进去。
+那么这是他自己的数据因而可以赋予其它人访问的权力。一个<command>GRANT</command>
+意味着<quote>我信任你</quote>。如果某个你信任的人做了上面的事情，
+那你就该想想是否该<command>REVOKE</command>了。
+</para>
+
+<para>
+<!-- 
+    Note that while views can be used to hide the contents of certain
+    columns using the technique shown above, they cannot be used to reliably
+    conceal the data in unseen rows unless the
+    <literal>security_barrier</literal> flag has been set.  For example,
+    the following view is insecure: 
+-->
+请注意，当视图可以用来隐藏使用了上面的技术的特定的内容时，
+它们不能用来可靠地隐藏在不可视的行的数据，除非已经设置了<literal>security_barrier</literal>
+标志。例如，下面的视图是不安全的：
+<programlisting>
+CREATE VIEW phone_number AS
+    SELECT person, phone FROM phone_data WHERE phone NOT LIKE '412%';
+</programlisting>
+<!-- 
+    This view might seem secure, since the rule system will rewrite any
+    <command>SELECT</command> from <literal>phone_number</> into a
+    <command>SELECT</command> from <literal>phone_data</> and add the
+    qualification that only entries where <literal>phone</> does not begin
+    with 412 are wanted.  But if the user can create his or her own functions,
+    it is not difficult to convince the planner to execute the user-defined
+    function prior to the <function>NOT LIKE</function> expression.
+    For example: 
+-->
+这个视图可能看起来是安全的，因为规则系统将重写<literal>phone_number</>里面的任意
+<command>SELECT</command>到<literal>phone_data</>里面的<command>SELECT</command>，
+并且添加只有不是以412开头的<literal>phone</>才是所需要的条目的条件。
+但是如果用户可以创建他或她自己的函数，那么使规划器在<function>NOT LIKE</function>
+表达式之前执行用户定义的函数也不困难。例如：
+<programlisting>
+CREATE FUNCTION tricky(text, text) RETURNS bool AS $$
+BEGIN
+    RAISE NOTICE '% => %', $1, $2;
+    RETURN true;
+END
+$$ LANGUAGE plpgsql COST 0.0000000000000000000001;
+
+SELECT * FROM phone_number WHERE tricky(person, phone);
+</programlisting>
+<!-- 
+    Every person and phone number in the <literal>phone_data</> table will be
+    printed as a <literal>NOTICE</literal>, because the planner will choose to
+    execute the inexpensive <function>tricky</function> function before the
+    more expensive <function>NOT LIKE</function>.  Even if the user is
+    prevented from defining new functions, built-in functions can be used in
+    similar attacks.  (For example, most casting functions include their
+    input values in the error messages they produce.) 
+-->
+<literal>phone_data</>表里的每个人和电话号码将作为一个<literal>NOTICE</literal>打印，
+因为规划器将在更多的昂贵的<function>NOT LIKE</function>之前执行
+廉价的<function>tricky</function>函数。即使阻止了用户定义新的函数，
+内建的函数可以用在类似的安全系统里。（例如，
+大多数转换函数在他们产生的错误信息中包含他们的输入值。）
+</para>
+
+<!--
+<para>
+    Similar considerations apply to update rules. In the examples of
+    the previous section, the owner of the tables in the example
+    database could grant the privileges <literal>SELECT</>,
+    <literal>INSERT</>, <literal>UPDATE</>, and <literal>DELETE</> on
+    the <literal>shoelace</> view to someone else, but only
+    <literal>SELECT</> on <literal>shoelace_log</>. The rule action to
+    write log entries will still be executed successfully, and that
+    other user could see the log entries.  But he cannot create fake
+    entries, nor could he manipulate or remove existing ones.  In this
+    case, there is no possibility of subverting the rules by convincing
+    the planner to alter the order of operations, because the only rule
+    which references <literal>shoelace_log</> is an unqualified
+    <literal>INSERT</>.  This might not be true in more complex scenarios.
+</para>
+-->
+<para>
+类似的注意事项应用于更新规则。在上一章的例子里，例子数据库里的表的所有者可以把
+<literal>shoelace</>视图的<literal>SELECT</>, <literal>INSERT</>, <literal>UPDATE</>, 
+<literal>DELETE</>权限赋予其他人。但对<literal>shoelace_log</>只有<literal>SELECT</>权限。
+写日志记录的规则动作仍然可以成功的执行。并且其它用户可以看到日志记录。
+但他不能创建伪记录，而且他也不能对现有记录进行修改或删除。
+在这种情况下，不能通过使规划器改变操作的顺序来推翻规则，
+因为唯一引用<literal>shoelace_log</>的规则是一个未修饰的<literal>INSERT</>。
+在更复杂的情形中这可能不是真的。
+</para>
+
+<para>
+<!-- 
+    When it is necessary for a view to provide row-level security, the
+    <literal>security_barrier</literal> attribute should be applied to
+    the view.  This prevents maliciously-chosen functions and operators from
+    being invoked on rows until after the view has done its work.  For
+    example, if the view shown above had been created like this, it would
+    be secure: 
+-->
+当必须为视图提供行级别的安全性时，<literal>security_barrier</literal>
+属性应该应用于视图。这样就阻止了在行上调用恶意的选择函数和操作，直到视图完成了它的工作。
+例如，如果上面显示的视图像这样创建，它将是安全的：
+<programlisting>
+CREATE VIEW phone_number WITH (security_barrier) AS
+    SELECT person, phone FROM phone_data WHERE phone NOT LIKE '412%';
+</programlisting>
+<!-- 
+    Views created with the <literal>security_barrier</literal> may perform
+    far worse than views created without this option.  In general, there is
+    no way to avoid this: the fastest possible plan must be rejected
+    if it may compromise security.  For this reason, this option is not
+    enabled by default.
+-->
+带有<literal>security_barrier</literal>创建视图可能执行起来更糟糕。
+通常，这是没有办法避免的：如果可能危及安全，那么最快可能的计划必须拒绝。
+因为这个原因，缺省不启用这个选项。
+</para>
+
+<!--
+<para>
+    The query planner has more flexibility when dealing with functions that
+    have no side effects.  Such functions are referred to as <literal>LEAKPROOF</literal>, and
+    include many simple, commonly used operators, such as many equality
+    operators.  The query planner can safely allow such functions to be evaluated
+    at any point in the query execution process, since invoking them on rows
+    invisible to the user will not leak any information about the unseen rows.
+    In contrast, a function that might throw an error depending on the values
+    received as arguments (such as one that throws an error in the event of
+    overflow or division by zero) are not leak-proof, and could provide
+    significant information about the unseen rows if applied before the security
+    view's row filters.
+</para>
+-->
+<para>
+当处理的函数没有副作用时，查询计划器有更大的灵活性。这样的函数被称为<literal>LEAKPROOF</literal>，
+包括许多简单、常用的操作符，例如许多相等操作符。查询计划器可以安全的允许这样的函数在查询执行过程的任何时候评估。
+因为在行上不可见的调用它们不会给用户泄露任何关于不可见行的信息。相反的，
+一个函数可能会抛出一个错误，取决于作为参数（例如在溢出或除以零的情况下抛出一个错误）
+接收到的值是非防止泄露的，并且如果在安全视图的行过滤器之前应用可能提供重要的关于不可见行的信息。
+</para>
+
+<!--
+<para>
+    It is important to understand that even a view created with the
+    <literal>security_barrier</literal> option is intended to be secure only
+    in the limited sense that the contents of the invisible tuples will not be
+    passed to possibly-insecure functions.  The user may well have other means
+    of making inferences about the unseen data; for example, they can see the
+    query plan using <command>EXPLAIN</command>, or measure the run time of
+    queries against the view.  A malicious attacker might be able to infer
+    something about the amount of unseen data, or even gain some information
+    about the data distribution or most common values (since these things may
+    affect the run time of the plan; or even, since they are also reflected in
+    the optimizer statistics, the choice of plan).  If these types of "covert
+    channel" attacks are of concern, it is probably unwise to grant any access
+    to the data at all.
+</para>
+-->
+<para>
+理解这个是重要的，即使视图创建时带有了<literal>security_barrier</literal>选项，
+狭义来讲，为了安全，只有不可见元组的内容不会被传送到可能不安全的函数。
+用户很可能对于推断不可见的数据有其他的意思；例如，他们使用<command>EXPLAIN</command>
+看到查询计划，或测量查询在视图上的运行时间。恶意攻击者也许能够推断不可见数据的数量，
+或者甚至获得一些关于数据分布或常见值的信息（因为这些事情可能影响计划的运行时间；
+甚至，因为他们也反映在优化器的统计数据中，计划的选择）。如果关心了这些"covert channel"
+类型的攻击，那么给这些数据授予任何权限可能是不明智的。
+</para>
+</sect1>
+
+<sect1 id="rules-status">
+<!--
+ <title>Rules and Command Status</title>
+ -->
+ <title>规则和命令状态</title>
+
+<!--
+<para>
+    The <productname>PostgreSQL</productname> server returns a command
+    status string, such as <literal>INSERT 149592 1</>, for each
+    command it receives.  This is simple enough when there are no rules
+    involved, but what happens when the query is rewritten by rules?
+</para>
+-->
+<para>
+<productname>PostgreSQL</productname>服务器为它收到的每个命令返回一个命令状态字符串，
+比如<literal>INSERT 149592 1</>。如果没有涉及规则，那么这些就很简单，
+但是如果查询是被规则重写的又会怎样呢?
+</para>
+
+<para>
+<!-- 
+    Rules affect the command status as follows:
+ -->
+ 规则对命令状态的影响如下：
+    <itemizedlist>
+     <listitem>
+<!--
+      <para>
+       If there is no unconditional <literal>INSTEAD</> rule for the query, then
+       the originally given query will be executed, and its command
+       status will be returned as usual.  (But note that if there were
+       any conditional <literal>INSTEAD</> rules, the negation of their qualifications
+       will have been added to the original query.  This might reduce the
+       number of rows it processes, and if so the reported status will
+       be affected.)
+      </para>
+-->
+<para>
+如果查询不存在无条件的<literal>INSTEAD</>规则，那么最初给出的查询将会被执行，
+并且它的命令状态将像平常一样返回。但是请注意如果存在任何条件<literal>INSTEAD</>规则，
+那么他们的条件的反条件将会已经加到最初的查询里了。这样可能会减少它处理的行数，
+如果这样的话，报告状态将受影响。
+</para>
+     </listitem>
+
+     <listitem>
+      <!--
+<para>
+       If there is any unconditional <literal>INSTEAD</> rule for the query, then
+       the original query will not be executed at all.  In this case,
+       the server will return the command status for the last query
+       that was inserted by an <literal>INSTEAD</> rule (conditional or
+       unconditional) and is of the same command type
+       (<command>INSERT</command>, <command>UPDATE</command>, or
+       <command>DELETE</command>) as the original query.  If no query
+       meeting those requirements is added by any rule, then the
+       returned command status shows the original query type and
+       zeroes for the row-count and OID fields.
+      </para>
+-->
+<para>
+如果查询有任何无条件的<literal>INSTEAD</>规则，那么最初的查询将完全不会被执行。
+在这种情况下，服务器将返回由<literal>INSTEAD</>规则(条件的或非条件的)
+插入的最后一条和源查询同命令类型(<command>INSERT</command>, <command>UPDATE</command>, 或
+<command>DELETE</command>)查询的命令状态。如果规则添加的查询都不符合这些要求，
+那么返回的命令状态显示源查询类型而行计数和 OID 字段为零。
+</para>
+     </listitem>
+    </itemizedlist>
+
+<!-- 
+    (This system was established in <productname>PostgreSQL</> 7.3.
+    In versions before that, the command status might show different
+    results when rules exist.) 
+-->
+（这个系统是在<productname>PostgreSQL</> 7.3建立的。在之前的版本里，
+命令状态可能在规则退出时显示不同的结果。）
+</para>
+
+<!--
+<para>
+    The programmer can ensure that any desired <literal>INSTEAD</> rule is the one
+    that sets the command status in the second case, by giving it the
+    alphabetically last rule name among the active rules, so that it
+    gets applied last.
+</para>
+-->
+<para>
+程序员可以用下面的方法确保任何需要的<literal>INSTEAD</>规则都是在上面第二种情况里设置命令状态的规则：
+给这个规则命名为字母顺序最后一个活动的规则，这样它就最后附加。
+</para>
+</sect1>
+
+<sect1 id="rules-triggers">
+<!-- 
+<title>Rules Versus Triggers</title> 
+-->
+<title>规则与触发器的比较</title>
+
+<indexterm zone="rules-triggers">
+ <!-- 
+ <primary>rule</primary>
+ <secondary sortas="Trigger">compared with triggers</secondary> 
+ -->
+ <primary>规则</primary>
+ <secondary sortas="Trigger">与触发器比较</secondary>
+</indexterm>
+
+<indexterm zone="rules-triggers">
+ <!-- 
+ <primary>trigger</primary>
+ <secondary sortas="Regeln">compared with rules</secondary> 
+ -->
+ <primary>触发器</primary>
+ <secondary sortas="Regeln">与规则比较</secondary>
+</indexterm>
+
+<!--
+<para>
+    Many things that can be done using triggers can also be
+    implemented using the <productname>PostgreSQL</productname>
+    rule system.  One of the things that cannot be implemented by
+    rules are some kinds of constraints, especially foreign keys. It is possible
+    to place a qualified rule that rewrites a command to <literal>NOTHING</>
+    if the value of a column does not appear in another table.
+    But then the data is silently thrown away and that's
+    not a good idea. If checks for valid values are required,
+    and in the case of an invalid value an error message should
+    be generated, it must be done by a trigger.
+</para>
+-->
+<para>
+许多用触发器可以干的事情同样也可以用<productname>PostgreSQL</productname>规则系统来实现。
+目前不能用规则来实现的东西之一是某些约束，特别是外键。
+可能在某字段的值没有在另一个表里出现的情况下用一条有条件的规则把查询重写为<literal>NOTHING</>。
+不过这样做数据就会被不声不响的扔掉，因而这也不是一个好主意。如果需要检查有效的值，
+而且如果是无效值出现时要生成一个错误信息，这种情况下要用触发器来做。
+</para>
+
+<!--
+<para>
+    In this chapter, we focused on using rules to update views. All of
+    the update rule examples in this chapter can also be implemented
+    using <literal>INSTEAD OF</> triggers on the views.  Writing such
+    triggers is often easier than writing rules, particularly if complex
+    logic is required to perform the update.
+</para>
+-->
+<para>
+在本节中，我们专注于使用规则更新视图。本节中的所有更新规则的示例也可以使用在视图上的
+<literal>INSTEAD OF</>触发器实现。编写这样的触发器通常比编写规则要容易，
+尤其是需要复杂的逻辑执行更新时。
+</para>
+
+<!--
+<para>
+    For the things that can be implemented by both, which is best
+    depends on the usage of the database.
+    A trigger is fired once for each affected row. A rule modifies
+    the query or generates an additional query. So if many
+    rows are affected in one statement, a rule issuing one extra
+    command is likely to be faster than a trigger that is
+    called for every single row and must re-determine what to do
+    many times.  However, the trigger approach is conceptually far
+    simpler than the rule approach, and is easier for novices to get right.
+</para>
+-->
+<para>
+对于两者都可用的情况，哪个更好取决于对数据库的使用。触发器为每个涉及到的行执行一次。
+规则修改查询或生成额外的查询。所以如果在一个语句中涉及到多行，
+一个生成额外查询的规则通常可能会比一个对每一行都分别执行一次(而且要重新决定做什么很多次)
+的触发器快一些。不过，触发器的方法从概念上要远比规则的方法简单，并且很容易让新手可以做正确事情。
+</para>
+
+<para>
+<!-- 
+    Here we show an example of how the choice of rules versus triggers
+    plays out in one situation.  There are two tables:
+-->
+下面展示一个在同一个情况下选择规则与触发器的对比例子。例如这里有两个表：
+<programlisting>
+CREATE TABLE computer (
+<!-- 
+    hostname        text,    &#045;- indexed
+    manufacturer    text     &#045;- indexed 
+-->
+hostname        text,    -- 已索引
+    manufacturer    text     -- 已索引
+);
+
+CREATE TABLE software (
+    <!-- 
+software        text,    &#045;- indexed
+    hostname        text     &#045;- indexed 
+-->
+software        text,    -- 已索引
+    hostname        text     -- 已索引
+);
+</programlisting>
+<!-- 
+    Both tables have many thousands of rows and the indexes on
+    <structfield>hostname</> are unique.  The rule or trigger should
+    implement a constraint that deletes rows from <literal>software</>
+    that reference a deleted computer.  The trigger would use this command:
+-->
+两个表都有好几千行，并且<structfield>hostname</>上的索引是唯一的。规则/触发器应该实现这样一个约束，
+这个约束从<literal>software</>表中删除引用已删除计算机的行。触发器可以用下面这条命令：
+<programlisting>
+DELETE FROM software WHERE hostname = $1;
+</programlisting>
+<!-- 
+    Since the trigger is called for each individual row deleted from
+    <literal>computer</>, it can prepare and save the plan for this
+    command and pass the <structfield>hostname</> value in the
+    parameter.  The rule would be written as:
+-->
+因为触发器是为从<literal>computer</>里面删除的每一个独立的行调用一次，
+那么它可以准备并且保存这个命令的规划，把<structfield>hostname</>作为参数传递。
+规则应该这样写：
+<programlisting>
+CREATE RULE computer_del AS ON DELETE TO computer
+    DO DELETE FROM software WHERE hostname = OLD.hostname;
+</programlisting>
+   </para>
+
+<para>
+<!--     Now we look at different types of deletes. In the case of a:
+ -->
+ 现在看看这两种不同的删除。在下面情况：
+<programlisting>
+DELETE FROM computer WHERE hostname = 'mypc.local.net';
+</programlisting>
+<!-- 
+    the table <literal>computer</> is scanned by index (fast), and the
+    command issued by the trigger would also use an index scan (also fast).
+    The extra command from the rule would be:
+-->
+对表<literal>computer</>使用索引(快速)进行扫描并且由触发器声明的查询也用索引进行扫描(同样快速)。
+规则里多出来的查询是一个：
+<programlisting>
+DELETE FROM software WHERE computer.hostname = 'mypc.local.net'
+                       AND software.hostname = computer.hostname;
+</programlisting>
+<!-- 
+    Since there are appropriate indexes setup, the planner
+    will create a plan of
+-->
+因为已经建立了合适的索引，规划器将创建一个下面的规划
+<literallayout class="monospaced">
+Nestloop
+  -&gt;  Index Scan using comp_hostidx on computer
+  -&gt;  Index Scan using soft_hostidx on software
+</literallayout>
+<!-- 
+    So there would be not that much difference in speed between
+    the trigger and the rule implementation.
+-->
+所以在规则和触发器的实现之间没有太多的速度差别。
+   </para>
+
+<para>
+<!-- 
+    With the next delete we want to get rid of all the 2000 computers
+    where the <structfield>hostname</> starts with
+    <literal>old</>. There are two possible commands to do that. One
+    is:
+-->
+下面的删除希望删掉所有 2000 个<structfield>hostname</>以<literal>old</>开头的计算机(记录)。
+有两个可能的用于这个用途的查询。一个是：
+<programlisting>
+DELETE FROM computer WHERE hostname &gt;= 'old'
+                       AND hostname &lt;  'ole'
+</programlisting>
+<!-- 
+    The command added by the rule will be:
+ -->
+ 规则增加的命令是：
+<programlisting>
+DELETE FROM software WHERE computer.hostname &gt;= 'old' AND computer.hostname &lt; 'ole'
+                       AND software.hostname = computer.hostname;
+</programlisting>
+<!-- 
+    with the plan
+ -->
+ 查询的规划将会是
+<literallayout class="monospaced">
+Hash Join
+  -&gt;  Seq Scan on software
+  -&gt;  Hash
+    -&gt;  Index Scan using comp_hostidx on computer
+</literallayout>
+<!-- 
+    The other possible command is:
+ -->
+ 另一个可能的查询是：
+<programlisting>
+DELETE FROM computer WHERE hostname ~ '^old';
+</programlisting>
+<!-- 
+    which results in the following executing plan for the command
+    added by the rule:
+ -->
+ 它由规则增加执行规划是：
+<literallayout class="monospaced">
+Nestloop
+  -&gt;  Index Scan using comp_hostidx on computer
+  -&gt;  Index Scan using soft_hostidx on software
+</literallayout>
+<!-- 
+    This shows, that the planner does not realize that the
+    qualification for <structfield>hostname</> in
+    <literal>computer</> could also be used for an index scan on
+    <literal>software</> when there are multiple qualification
+    expressions combined with <literal>AND</>, which is what it does
+    in the regular-expression version of the command. The trigger will
+    get invoked once for each of the 2000 old computers that have to be
+    deleted, and that will result in one index scan over
+    <literal>computer</> and 2000 index scans over
+    <literal>software</>. The rule implementation will do it with two
+    commands that use indexes.  And it depends on the overall size of
+    the table <literal>software</> whether the rule will still be faster in the
+    sequential scan situation. 2000 command executions from the trigger over the SPI
+    manager take some time, even if all the index blocks will soon be in the cache.
+-->
+这表明，规划器不能认识到表<literal>computer</>里的<structfield>hostname</>
+的条件在多个条件表达式以<literal>AND</>的方式组合在一起时同样可以用于<literal>software</>上的索引扫描，
+就像在用正则表达式的查询里一样。触发器将在任何 2000 个要被删除的旧计算机里被调用一次，
+结果是对<literal>computer</>的一次索引扫描和对<literal>software</>的 2000 次索引扫描。
+规则的实现将会使用两个使用索引的命令来完成。所以<literal>software</>
+表的实际大小决定了规则进行顺序扫描后是否仍然更快。即使所有要使用的索引块都很快在缓冲里出现，
+执行 2000 个在 SPI 管理器上的查询仍然要花不少时间。
+</para>
+
+<para>
+<!-- 
+    The last command we look at is:
+ -->
+ 我们要看的最后一个查询是：
+<programlisting>
+DELETE FROM computer WHERE manufacturer = 'bim';
+</programlisting>
+<!-- 
+    Again this could result in many rows to be deleted from
+    <literal>computer</>. So the trigger will again run many commands
+    through the executor.  The command generated by the rule will be:
+ -->
+同样，这也会导致从<literal>computer</>表里删除多行。
+所以触发器同样会向执行器提交很多查询。规则生成的命令将会是：
+<programlisting>
+DELETE FROM software WHERE computer.manufacturer = 'bim'
+                       AND software.hostname = computer.hostname;
+</programlisting>
+<!-- 
+    The plan for that command will again be the nested loop over two
+    index scans, only using a different index on <literal>computer</>:
+ -->
+但规则规划又将是对两个索引扫描的嵌套循环。不过使用了<literal>computer</>的另外一个索引：
+<programlisting>
+Nestloop
+  -&gt;  Index Scan using comp_manufidx on computer
+  -&gt;  Index Scan using soft_hostidx on software
+</programlisting>
+<!-- 
+    In any of these cases, the extra commands from the rule system
+    will be more or less independent from the number of affected rows
+    in a command.
+-->
+在任何一种情况下，从规则系统出来的额外查询都或多或少与查询中涉及到的行数量相对独立。
+</para>
+
+<![IGNORE[
+<!-- What's happening with this?  If it doesn't come back, remove this section. -->
+<para>
+    Another situation is cases on <command>UPDATE</command> where it depends on the
+    change of an attribute if an action should be performed or
+    not. The only way to
+    create a rule as in the shoelace_log example is to do it with
+    a rule qualification. That results in an extra query that is
+    performed always, even if the attribute of interest cannot
+    change at all because it does not appear in the target list
+    of the initial query. When this is enabled again, it will be
+    one more advantage of rules over triggers. Optimization of
+    a trigger must fail by definition in this case, because the
+    fact that its actions will only be done when a specific attribute
+    is updated is hidden in its functionality. The definition of
+    a trigger only allows to specify it on row level, so whenever a
+    row is touched, the trigger must be called to make its
+    decision. The rule system will know it by looking up the
+    target list and will suppress the additional query completely
+    if the attribute isn't touched. So the rule, qualified or not,
+    will only do its scans if there ever could be something to do.
+</para>
+]]>
+
+<!--
+<para>
+    The summary is, rules will only be significantly slower than
+    triggers if their actions result in large and badly qualified
+    joins, a situation where the planner fails.
+</para>
+-->
+<para>
+概括来说，规则只是在它们的动作生成了又大又烂的条件连接时才比触发器有较大速度差异，
+这时规划器将失效。
+</para>
+</sect1>
+
+</chapter>

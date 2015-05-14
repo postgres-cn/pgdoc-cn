@@ -1,0 +1,460 @@
+<!--
+doc/src/sgml/ref/reindex.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="SQL-REINDEX">
+ <refmeta>
+  <refentrytitle>REINDEX</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <!--
+<refmiscinfo>SQL - Language Statements</refmiscinfo>
+-->
+<refmiscinfo>SQL - 语句</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>REINDEX</refname>
+  <!-- 
+  <refpurpose>rebuild indexes</refpurpose> 
+  -->
+  <refpurpose>重建索引</refpurpose>
+ </refnamediv>
+
+ <indexterm zone="sql-reindex">
+  <primary>REINDEX</primary>
+ </indexterm>
+
+ <refsynopsisdiv>
+<synopsis>
+REINDEX { INDEX | TABLE | DATABASE | SYSTEM } <replaceable class="PARAMETER">name</replaceable> [ FORCE ]
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <!--
+<title>Description</title>
+-->
+<title>描述</title>
+
+  
+<para>
+<!-- 
+   <command>REINDEX</command> rebuilds an index using the data
+   stored in the index's table, replacing the old copy of the index. There are
+   several scenarios in which to use <command>REINDEX</command>:
+-->
+<command>REINDEX</command>使用存储在索引表中的数据重建索引，替换旧的索引的副本。
+使用<command>REINDEX</command>有两个主要原因：
+   <itemizedlist>
+    <listitem>
+ <!--
+ <para>
+      An index has become corrupted, and no longer contains valid
+      data. Although in theory this should never happen, in
+      practice indexes can become corrupted due to software bugs or
+      hardware failures.  <command>REINDEX</command> provides a
+      recovery method.
+     </para>
+-->
+<para>
+索引崩溃，并且不再包含有效的数据。尽管理论上这是不可能发生的，
+但实际上索引会因为软件毛病或者硬件问题而崩溃。<command>REINDEX</command>提供了一个恢复方法。
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      An index has become <quote>bloated</>, that it is contains many
+      empty or nearly-empty pages.  This can occur with B-tree indexes in
+      <productname>PostgreSQL</productname> under certain uncommon access
+      patterns. <command>REINDEX</command> provides a way to reduce
+      the space consumption of the index by writing a new version of
+      the index without the dead pages. See <xref
+      linkend="routine-reindex"> for more information.
+     </para>
+-->
+<para>
+索引变得<quote>臃肿</>，包含大量的空页或接近空页。
+这个问题在某些罕见访问模式时会发生在 B-tree 索引上。<command>REINDEX</command>
+通过写一个不带无用索引页的新索引提供了缩小索引空间消耗的途径。
+参阅<xref linkend="routine-reindex">获取更多信息。
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      You have altered a storage parameter (such as fillfactor)
+      for an index, and wish to ensure that the change has taken full effect.
+     </para>
+-->
+<para>
+为索引更改了存储参数(例如填充因子)，并且希望这个更改完全生效。
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      An index build with the <literal>CONCURRENTLY</> option failed, leaving
+      an <quote>invalid</> index. Such indexes are useless but it can be
+      convenient to use <command>REINDEX</> to rebuild them. Note that
+      <command>REINDEX</> will not perform a concurrent build. To build the
+      index without interfering with production you should drop the index and
+      reissue the <command>CREATE INDEX CONCURRENTLY</> command.
+     </para>
+-->
+<para>
+使用<literal>CONCURRENTLY</>选项创建索引失败，留下了一个<quote>非法</>索引。
+这样的索引毫无用处，但是可以通过<command>REINDEX</>重建新索引来覆盖。注意，
+<command>REINDEX</>不能并发创建。要在生产环境中重建索引并且尽可能减小对尖峰负载的影响，
+可以先删除旧索引，然后使用<command>CREATE INDEX CONCURRENTLY</>命令重建新索引。
+</para>
+    </listitem>
+
+   </itemizedlist></para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Parameters</title>
+-->
+<title>参数</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>INDEX</literal></term>
+    <listitem>
+     <!--
+<para>
+      Recreate the specified index.
+     </para>
+-->
+<para>
+重新建立指定的索引。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLE</literal></term>
+    <listitem>
+     <!--
+<para>
+      Recreate all indexes of the specified table.  If the table has a
+      secondary <quote>TOAST</> table, that is reindexed as well.
+     </para>
+-->
+<para>
+重新建立指定表的所有索引。如果表有从属的<quote>TOAST</>表，那么这个表也会重新索引。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DATABASE</literal></term>
+    <listitem>
+     <!--
+<para>
+      Recreate all indexes within the current database.
+      Indexes on shared system catalogs are also processed.
+      This form of <command>REINDEX</command> cannot be executed inside a
+      transaction block.
+     </para>
+-->
+<para>
+重建当前数据库里的所有索引。也处理在共享系统表上的索引。
+这种形式的<command>REINDEX</command>不能在事务块中执行。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SYSTEM</literal></term>
+    <listitem>
+     <!--
+<para>
+      Recreate all indexes on system catalogs within the current database.
+      Indexes on shared system catalogs are included.
+      Indexes on user tables are not processed.
+      This form of <command>REINDEX</command> cannot be executed inside a
+      transaction block.
+     </para>
+-->
+<para>
+在当前数据库上重建所有系统表上的索引。包括在共享系统表上的索引。不会处理在用户表上的索引。
+这种形式的<command>REINDEX</command>不能在事务块中执行。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">name</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The name of the specific index, table, or database to be
+      reindexed.  Index and table names can be schema-qualified.
+      Presently, <command>REINDEX DATABASE</> and <command>REINDEX SYSTEM</>
+      can only reindex the current database, so their parameter must match
+      the current database's name.
+     </para>
+-->
+<para>
+需要重建索引的索引、表、数据库的名称。表和索引名可以有模式修饰。目前，
+<command>REINDEX DATABASE</>和<command>REINDEX SYSTEM</>只能重建当前数据库的索引，
+因此其参数必须匹配当前数据库的名字。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORCE</literal></term>
+    <listitem>
+     <!--
+<para>
+      This is an obsolete option; it is ignored if specified.
+     </para>
+-->
+<para>
+这是一个废弃的选项，如果声明，会被忽略。
+</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Notes</title>
+-->
+<title>注意</title>
+
+  <!--
+<para>
+   If you suspect corruption of an index on a user table, you can
+   simply rebuild that index, or all indexes on the table, using
+   <command>REINDEX INDEX</command> or <command>REINDEX TABLE</command>.
+  </para>
+-->
+<para>
+如果你怀疑一个用户表上的索引崩溃了，你可以简单地使用<command>REINDEX INDEX</command>
+重建该索引，或者使用<command>REINDEX TABLE</command>重建该表上的所有索引。
+</para>
+
+  <!--
+<para>
+   Things are more difficult if you need to recover from corruption of
+   an index on a system table.  In this case it's important for the
+   system to not have used any of the suspect indexes itself.
+   (Indeed, in this sort of scenario you might find that server
+   processes are crashing immediately at start-up, due to reliance on
+   the corrupted indexes.)  To recover safely, the server must be started
+   with the <option>-P</option> option, which prevents it from using
+   indexes for system catalog lookups.
+  </para>
+-->
+<para>
+如果你从一个崩溃的系统表索引上恢复，事情会更棘手一些。这种情况下，
+系统必须不能使用任何有疑问的索引。实际上，在这种情况下，
+你可能发现服务器进程在启动之后马上就崩溃了，因为依赖于崩溃了的索引。要想安全恢复，
+服务器必须带着<option>-P</option>选项启动，它禁止服务器在查找系统表的时候使用索引。
+</para>
+
+  <!--
+<para>
+   One way to do this is to shut down the server and start a single-user
+   <productname>PostgreSQL</productname> server
+   with the <option>-P</option> option included on its command line.
+   Then, <command>REINDEX DATABASE</>, <command>REINDEX SYSTEM</>,
+   <command>REINDEX TABLE</>, or <command>REINDEX INDEX</> can be
+   issued, depending on how much you want to reconstruct.  If in
+   doubt, use <command>REINDEX SYSTEM</> to select
+   reconstruction of all system indexes in the database.  Then quit
+   the single-user server session and restart the regular server.
+   See the <xref linkend="app-postgres"> reference page for more
+   information about how to interact with the single-user server
+   interface.
+  </para>
+-->
+<para>
+达到这个目的的一个方法是停止服务器然后带着<option>-P</option>
+命令行选项启动一个独立的<productname>PostgreSQL</productname>服务器。然后，
+根据你希望恢复的程度，发出<command>REINDEX DATABASE</>, <command>REINDEX SYSTEM</>, 
+<command>REINDEX TABLE</>,  <command>REINDEX INDEX</>命令。如果还有怀疑，
+使用<command>REINDEX SYSTEM</>选择重新构造数据库中全部的系统索引。
+然后退出独立服务器会话并且重启普通的服务器。参阅<xref linkend="app-postgres">
+手册页获取有关如何与独立服务器交互的信息。
+</para>
+
+  <!--
+<para>
+   Alternatively, a regular server session can be started with
+   <option>-P</option> included in its command line options.
+   The method for doing this varies across clients, but in all
+   <application>libpq</>-based clients, it is possible to set
+   the <envar>PGOPTIONS</envar> environment variable to <literal>-P</>
+   before starting the client.  Note that while this method does not
+   require locking out other clients, it might still be wise to prevent
+   other users from connecting to the damaged database until repairs
+   have been completed.
+  </para>
+-->
+<para>
+另外，一个普通的会话可以在其命令行选项里使用<option>-P</option>选项启动。
+这么做的方法因不同的客户端而异，但是在所有基于<application>libpq</>的客户端上，
+都可以通过在启动客户端之前设置<envar>PGOPTIONS</envar>环境变量为<literal>-P</>来实现。
+请注意尽管这个方法并不要求锁住其它客户端，但是禁止其它客户端连接受损的数据库，
+直到完成修补是一个明智的选择。
+</para>
+
+  <!--
+<para>
+   <command>REINDEX</command> is similar to a drop and recreate of the index
+   in that the index contents are rebuilt from scratch.  However, the locking
+   considerations are rather different.  <command>REINDEX</> locks out writes
+   but not reads of the index's parent table.  It also takes an exclusive lock
+   on the specific index being processed, which will block reads that attempt
+   to use that index.  In contrast, <command>DROP INDEX</> momentarily takes
+   exclusive lock on the parent table, blocking both writes and reads.  The
+   subsequent <command>CREATE INDEX</> locks out writes but not reads; since
+   the index is not there, no read will attempt to use it, meaning that there
+   will be no blocking but reads might be forced into expensive sequential
+   scans.
+  </para>
+-->
+<para>
+<command>REINDEX</command>类似于删除并重建索引，表现在它们都是从零开始重建。不过，
+从锁的角度考虑，两者是有区别的。<command>REINDEX</>锁住对索引的父表的写操作，
+但是不锁读操作。并且它还在被处理的特定索引上保持一个排他锁，
+这样它将阻止试图使用该索引的读操作。相比之下，<command>DROP INDEX</>
+在父表上短暂的保持一个排他锁，同时锁住读和写。随后的<command>CREATE INDEX</>
+锁住写操作但是不会锁住读操作；因为索引还不存在，所以不会有试图使用它的读操作，
+意味着操作中不会有阻塞，只不过读操作会被迫只能使用顺序扫描。
+</para>
+
+  <!--
+<para>
+   Reindexing a single index or table requires being the owner of that
+   index or table.  Reindexing a database requires being the owner of
+   the database (note that the owner can therefore rebuild indexes of
+   tables owned by other users).  Of course, superusers can always
+   reindex anything.
+  </para>
+-->
+<para>
+对一个索引或者表进行重建索引，要求你是该索引或者表的所有者。
+对一个数据库重建索引要求你是该数据库的所有者(注意，可以重建其它用户拥有的索引)。
+当然，超级用户总是可以重建所有索引。
+</para>
+
+  <!--
+<para>
+   Prior to <productname>PostgreSQL</productname> 8.1, <command>REINDEX
+   DATABASE</> processed only system indexes, not all indexes as one would
+   expect from the name.  This has been changed to reduce the surprise
+   factor.  The old behavior is available as <command>REINDEX SYSTEM</>.
+  </para>
+-->
+<para>
+<productname>PostgreSQL</productname> 8.1之前，<command>REINDEX DATABASE</>
+只处理系统索引，而不是人们从名字猜测的那样，处理所有索引。这个行为现在已经改变了，
+以减少意外的因素。旧的行为可以通过<command>REINDEX SYSTEM</>获得。
+</para>
+
+  <!--
+<para>
+   Prior to <productname>PostgreSQL</productname> 7.4, <command>REINDEX
+   TABLE</> did not automatically process TOAST tables, and so those had
+   to be reindexed by separate commands.  This is still possible, but
+   redundant.
+  </para>
+-->
+<para>
+<productname>PostgreSQL</productname> 7.4之前，<command>REINDEX TABLE</>
+并不自动处理 TOAST 表，因此这些表必须用独立的命令进行处理。这么做仍然可以，
+但是已经多余了。
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Examples</title>
+-->
+<title>例子</title>
+
+  <!--
+<para>
+   Rebuild a single index:
+
+<programlisting>
+REINDEX INDEX my_index;
+</programlisting>
+  </para>
+-->
+<para>
+重建一个单独的索引：
+<programlisting>
+REINDEX INDEX my_index;
+</programlisting>
+</para>
+
+  <!--
+<para>
+   Rebuild all the indexes on the table <literal>my_table</literal>:
+
+<programlisting>
+REINDEX TABLE my_table;
+</programlisting>
+  </para>
+-->
+<para>
+重建表<literal>my_table</literal>上的所有索引：
+<programlisting>
+REINDEX TABLE my_table;
+</programlisting>
+</para>
+
+  <!--
+<para>
+   Rebuild all indexes in a particular database, without trusting the
+   system indexes to be valid already:
+
+<programlisting>
+$ <userinput>export PGOPTIONS="-P"</userinput>
+$ <userinput>psql broken_db</userinput>
+...
+broken_db=&gt; REINDEX DATABASE broken_db;
+broken_db=&gt; \q
+</programlisting></para>
+-->
+<para>
+重建一个数据库上的所有系统索引，不管系统索引是否仍然有效：
+<programlisting>
+$ <userinput>export PGOPTIONS="-P"</userinput>
+$ <userinput>psql broken_db</userinput>
+...
+broken_db=&gt; REINDEX DATABASE broken_db;
+broken_db=&gt; \q
+</programlisting>
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Compatibility</title>
+-->
+<title>兼容性</title>
+
+  <!--
+<para>
+   There is no <command>REINDEX</command> command in the SQL standard.
+  </para>
+-->
+<para>
+SQL 标准里没有<command>REINDEX</command>命令。
+</para>
+ </refsect1>
+</refentry>

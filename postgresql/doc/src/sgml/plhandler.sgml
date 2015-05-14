@@ -1,0 +1,346 @@
+<!-- doc/src/sgml/plhandler.sgml -->
+
+ <chapter id="plhandler">
+<!--
+   <title>Writing A Procedural Language Handler</title>
+-->
+   <title>书写一个过程语言处理器</title>
+
+   <indexterm zone="plhandler">
+<!--
+    <primary>procedural language</primary>
+    <secondary>handler for</secondary>
+-->
+    <primary>过程语言</primary>
+    <secondary>的处理器</secondary>
+   </indexterm>
+
+   <para>
+<!--
+    All calls to functions that are written in a language other than
+    the current <quote>version 1</quote> interface for compiled
+    languages (this includes functions in user-defined procedural languages,
+    functions written in SQL, and functions using the version 0 compiled
+    language interface) go through a <firstterm>call handler</firstterm>
+    function for the specific language.  It is the responsibility of
+    the call handler to execute the function in a meaningful way, such
+    as by interpreting the supplied source text.  This chapter outlines
+    how a new procedural language's call handler can be written.
+-->
+调用函数的时候，如果函数的书写语言不是目前的<quote>版本-1</quote>的编译语言接口
+(这包括用户定义的过程语言写的函数，用SQL写的函数，以及用版本0的编译语言接口写的函数)，都会通过一个<firstterm>调用处理器</firstterm>处理具体的语言。
+调用处理器有责任用一种有意义的方法执行这个函数，比如说解析所提供的文本等等。
+本章简介如何书写一个新的过程语言调用处理器。
+   </para>
+
+   <para>
+<!--
+    The call handler for a procedural language is a
+    <quote>normal</quote> function that must be written in a compiled
+    language such as C, using the version-1 interface, and registered
+    with <productname>PostgreSQL</productname> as taking no arguments
+    and returning the type <type>language_handler</type>.  This
+    special pseudotype identifies the function as a call handler and
+    prevents it from being called directly in SQL commands.
+    For more details on C language calling conventions and dynamic loading,
+    see <xref linkend="xfunc-c">.
+-->
+过程语言的调用处理器是一个<quote>普通</quote>的函数，必须使用一种编译语言来写，比如 C ，使用版本-1的接口，并且在<productname>PostgreSQL</productname>里注册成接受零个参数并且返回类型为<type>language_handler</type>。
+这个特殊的伪类型标识该函数为一个调用处理器并且避免它直接在 SQL 命令中被调用。
+关于C语言调用规范以及动态加载的更过细节请参考<xref linkend="xfunc-c">。
+   </para>
+
+   <para>
+<!--
+    The call handler is called in the same way as any other function:
+    It receives a pointer to a
+    <structname>FunctionCallInfoData</structname> <type>struct</> containing
+    argument values and information about the called function, and it
+    is expected to return a <type>Datum</type> result (and possibly
+    set the <structfield>isnull</structfield> field of the
+    <structname>FunctionCallInfoData</structname> structure, if it wishes
+    to return an SQL null result).  The difference between a call
+    handler and an ordinary callee function is that the
+    <structfield>flinfo-&gt;fn_oid</structfield> field of the
+    <structname>FunctionCallInfoData</structname> structure will contain
+    the OID of the actual function to be called, not of the call
+    handler itself.  The call handler must use this field to determine
+    which function to execute.  Also, the passed argument list has
+    been set up according to the declaration of the target function,
+    not of the call handler.
+-->
+调用处理器的调用方式和其它函数一样：它接受一个指向一个 <structname>FunctionCallInfoData</structname> <type>struct</>的指针，
+这个指针包含参数值和有关被调用的函数的信息，并且预期它返回一个<type>Datum</type>结果(如果它希望返回一个 SQL 的空结果，那么可能设置 <structfield>isnull</structfield> 字段)。
+调用处理器和普通的被调函数的区别是 <structname>FunctionCallInfoData</structname> 结构的 <structfield>flinfo-&gt;fn_oid</structfield> 字段包含实际要调用的函数的 OID ，而不是调用处理器自身。
+调用处理器必须使用这个字段判断要执行哪个函数。通常，传递进来的参数列表也是按照目标函数的声明设置的，而不是给调用处理器设置的。
+   </para>
+
+   <para>
+<!--
+    It's up to the call handler to fetch the entry of the function from the
+    <classname>pg_proc</classname> system catalog and to analyze the argument
+    and return types of the called function. The <literal>AS</> clause from the
+    <command>CREATE FUNCTION</command> command for the function will be found
+    in the <literal>prosrc</literal> column of the
+    <classname>pg_proc</classname> row. This is commonly source
+    text in the procedural language, but in theory it could be something else,
+    such as a path name to a file, or anything else that tells the call handler
+    what to do in detail.
+-->
+从系统表<classname>pg_proc</classname>里抓取函数入口以及分析被调函数的参数和返回类型就是调用处理器的事了。
+来自<command>CREATE FUNCTION</command>命令中的<literal>AS</> 子句将会在<classname>pg_proc</classname> 行的 <literal>prosrc</literal> 字段中找到。
+这个通常是过程语言本身的源文本，但也可以是别的东西，比如一个指向某个文件的路径名，或者任何告诉调用处理器如何详细处理的东西。
+   </para>
+
+   <para>
+<!--
+    Often, the same function is called many times per SQL statement.
+    A call handler can avoid repeated lookups of information about the
+    called function by using the
+    <structfield>flinfo-&gt;fn_extra</structfield> field.  This will
+    initially be <symbol>NULL</>, but can be set by the call handler to point at
+    information about the called function.  On subsequent calls, if
+    <structfield>flinfo-&gt;fn_extra</structfield> is already non-<symbol>NULL</>
+    then it can be used and the information lookup step skipped.  The
+    call handler must make sure that
+    <structfield>flinfo-&gt;fn_extra</structfield> is made to point at
+    memory that will live at least until the end of the current query,
+    since an <structname>FmgrInfo</structname> data structure could be
+    kept that long.  One way to do this is to allocate the extra data
+    in the memory context specified by
+    <structfield>flinfo-&gt;fn_mcxt</structfield>; such data will
+    normally have the same lifespan as the
+    <structname>FmgrInfo</structname> itself.  But the handler could
+    also choose to use a longer-lived memory context so that it can cache
+    function definition information across queries.
+-->
+通常，每个 SQL 语句里面可能要调用同一个函数多次。
+调用处理器可以利用<structfield>flinfo-&gt;fn_extra</structfield>字段避免重复地查找有关被调函数的信息。
+这个字段初始为<symbol>NULL</>，但是可以被调用处理器设置为指向有关被调函数的信息。
+在随后的调用中，如果<structfield>flinfo-&gt;fn_extra</structfield>已经为非 NULL ，那么就可以直接使用它而免于重新查找信息。
+调用处理器必须确保<structfield>flinfo-&gt;fn_extra</structfield>是用于指向一块至少会生存到当前查询结束的内存区里，因为一个<structname>FmgrInfo</structname> 数据结构将会保存那么长的时间。
+一个实现这个要求的方法是在 <structfield>flinfo-&gt;fn_mcxt</structfield>声明的内存环境里分配一块额外的数据；这样的数据通常和 <structname>FmgrInfo</structname> 自己有一样的生命期。
+但是处理器也可以同样选择使用一个更长生存期的环境，这样它就可以跨查询缓存函数定义。
+   </para>
+
+   <para>
+<!--
+    When a procedural-language function is invoked as a trigger, no arguments
+    are passed in the usual way, but the
+    <structname>FunctionCallInfoData</structname>'s
+    <structfield>context</structfield> field points at a
+    <structname>TriggerData</structname> structure, rather than being <symbol>NULL</>
+    as it is in a plain function call.  A language handler should
+    provide mechanisms for procedural-language functions to get at the trigger
+    information.
+-->
+在过程语言函数以触发器的形式调用的时候，就没有什么参数以通常的方式传递进来，
+而是 <structname>FunctionCallInfoData</structname> 的 <structfield>context</structfield> 字段指向一个
+<structname>TriggerData</structname> 结构，而不是像普通函数调用里面的 <symbol>NULL</>那样。
+一个语言处理器应该为过程语言函数提供获取触发器信息的机制。
+   </para>
+
+   <para>
+<!--
+    This is a template for a procedural-language handler written in C:
+-->
+下面是一个用 C 写的存储过程语言处理器的模版：
+<programlisting>
+#include "postgres.h"
+#include "executor/spi.h"
+#include "commands/trigger.h"
+#include "fmgr.h"
+#include "access/heapam.h"
+#include "utils/syscache.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"
+
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
+
+PG_FUNCTION_INFO_V1(plsample_call_handler);
+
+Datum
+plsample_call_handler(PG_FUNCTION_ARGS)
+{
+    Datum          retval;
+
+    if (CALLED_AS_TRIGGER(fcinfo))
+    {
+        /*
+<!--
+         * Called as a trigger procedure
+-->
+         * 作为触发器过程调用
+         */
+        TriggerData    *trigdata = (TriggerData *) fcinfo-&gt;context;
+
+        retval = ...
+    }
+    else
+    {
+        /*
+<!--
+         * Called as a function
+-->
+         * 作为函数调用
+         */
+
+        retval = ...
+    }
+
+    return retval;
+}
+</programlisting>
+<!--
+    Only a few thousand lines of code have to be added instead of the
+    dots to complete the call handler.
+-->
+在打点的地方放上几千行代码就可以完成调用处理器。
+   </para>
+
+   <para>
+<!--
+    After having compiled the handler function into a loadable module
+    (see <xref linkend="dfunc">), the following commands then
+    register the sample procedural language:
+-->
+在把处理器函数编译成一个可加载的模块(参阅<xref linkend="dfunc">)之后，下面的命令就可以注册这个例子过程语言：
+<programlisting>
+CREATE FUNCTION plsample_call_handler() RETURNS language_handler
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C;
+CREATE LANGUAGE plsample
+    HANDLER plsample_call_handler;
+</programlisting>
+   </para>
+
+   <para>
+<!--
+    Although providing a call handler is sufficient to create a minimal
+    procedural language, there are two other functions that can optionally
+    be provided to make the language more convenient to use.  These
+    are a <firstterm>validator</firstterm> and an
+    <firstterm>inline handler</firstterm>.  A validator can be provided
+    to allow language-specific checking to be done during
+    <xref linkend="sql-createfunction">.
+    An inline handler can be provided to allow the language to support
+    anonymous code blocks executed via the <xref linkend="sql-do"> command.
+-->
+尽管提供一个调用处理器对创建一个最小的过程语言已经足够了，但是还有另外两个可选的函数如果也能提供的话将会让这个语言更加容易使用。
+它们是<firstterm>有效性验证函数</firstterm>和<firstterm>内联处理器</firstterm>。
+提供有效性验证函数将会允许<xref linkend="sql-createfunction">时进行语言方面的检查。
+提供内联处理器将会允许该语言支持通过<xref linkend="sql-do">命令执行的匿名代码块。
+   </para>
+
+   <para>
+<!--
+    If a validator is provided by a procedural language, it
+    must be declared as a function taking a single parameter of type
+    <type>oid</>.  The validator's result is ignored, so it is customarily
+    declared to return <type>void</>.  The validator will be called at
+    the end of a <command>CREATE FUNCTION</> command that has created
+    or updated a function written in the procedural language.
+    The passed-in OID is the OID of the function's <classname>pg_proc</>
+    row.  The validator must fetch this row in the usual way, and do
+    whatever checking is appropriate.  Typical checks include verifying
+    that the function's argument and result types are supported by the
+    language, and that the function's body is syntactically correct
+    in the language.  If the validator finds the function to be okay,
+    it should just return.  If it finds an error, it should report that
+    via the normal <function>ereport()</> error reporting mechanism.
+    Throwing an error will force a transaction rollback and thus prevent
+    the incorrect function definition from being committed.
+-->
+如果过程语言提供了有效性验证函数，必须将它声明为带单个<type>oid</>类型参数的函数。
+有效性验证函数的返回结果会被忽略，因此习惯上将其声明为返回<type>void</>。
+有效性验证函数在<command>CREATE FUNCTION</>命令执行的末尾被调用，这时已经创建或者更新了一个使用这个过程语言书写的函数。
+传入的OID是这个函数在<classname>pg_proc</>中对应行的OID。
+有效性验证函数必须以通常的方式获取这一行并做一些恰当的检查。
+通常的检查包括：确认函数的参数和结果类型是被该语言支持的，函数体是符合该语言语法的。
+如果有效性验证函数发现函数是正确的，只需要返回就可以了。
+如果发现了错误应该通过<function>ereport()</>报告错误。
+抛出一个错误将强行回滚事务并避免了不正确的函数定义被提交。
+   </para>
+
+   <para>
+<!--
+    Validator functions should typically honor the <xref
+    linkend="guc-check-function-bodies"> parameter: if it is turned off then
+    any expensive or context-sensitive checking should be skipped.
+    In particular, this parameter is turned off by <application>pg_dump</>
+    so that it can load procedural language functions without worrying
+    about possible dependencies of the function bodies on other database
+    objects.  (Because of this requirement, the call handler should avoid
+    assuming that the validator has fully checked the function.  The point
+    of having a validator is not to let the call handler omit checks, but
+    to notify the user immediately if there are obvious errors in a
+    <command>CREATE FUNCTION</> command.)
+    
+    While the choice of exactly what to check is mostly left to the
+    discretion of the validator function, note that the core
+    <command>CREATE FUNCTION</> code only executes <literal>SET</> clauses
+    attached to a function when <varname>check_function_bodies</> is on.
+    
+    Therefore, checks whose results might be affected by GUC parameters
+    definitely should be skipped when <varname>check_function_bodies</> is
+    off, to avoid false failures when reloading a dump.
+-->
+有效性验证函数通常应该遵循<xref linkend="guc-check-function-bodies">参数的设置。
+如果被设置为无效，任何昂贵的或依赖于上下文的检查应该被跳过。
+这个参数会被<application>pg_dump</>关闭，这样就不用担心函数体对其他数据库中的对象有依赖关系了。
+（因为这个要求，调用处理器不应该假定有效性验证函数已经做过了完整的检查。
+有效性验证函数存在的目的并不是让调用处理器可以省略检查，而是为了在<command>CREATE FUNCTION</>命令中包含明显的错误时可以立即通知用户）
+精确的选择要检查哪些东西是由有效性验证函数决定的，注意当<varname>check_function_bodies</>有效时，核心的<command>CREATE FUNCTION</>代码仅执行附加在函数上<literal>SET</>子句。
+因此，当<varname>check_function_bodies</>无效时，很明显应该跳过哪些东西的结果将被GUC参数影响的检查，以避免加载dump时出现错误的失败。
+   </para>
+
+   <para>
+<!--
+    If an inline handler is provided by a procedural language, it
+    must be declared as a function taking a single parameter of type
+    <type>internal</>.  The inline handler's result is ignored, so it is
+    customarily declared to return <type>void</>.  The inline handler
+    will be called when a <command>DO</> statement is executed specifying
+    the procedural language.  The parameter actually passed is a pointer
+    to an <structname>InlineCodeBlock</> struct, which contains information
+    about the <command>DO</> statement's parameters, in particular the
+    text of the anonymous code block to be executed.  The inline handler
+    should execute this code and return.
+-->
+如果过程语言提供了内联处理器，必须将它声明为带单个<type>internal</>类型参数的函数。
+内联处理器的返回结果会被忽略，因此习惯上将其声明为返回<type>void</>。
+当一个使用该语言的<command>DO</>语句执行时，内联处理器将被调用。
+实际传递的参数是一个<structname>InlineCodeBlock</>结构的指针。
+这个结构包含了<command>DO</>语句的参数信息，尤其是要执行的匿名代码块的文本。
+内联处理器将执行这个代码并返回。
+   </para>
+
+   <para>
+<!--
+    It's recommended that you wrap all these function declarations,
+    as well as the <command>CREATE LANGUAGE</> command itself, into
+    an <firstterm>extension</> so that a simple <command>CREATE EXTENSION</>
+    command is sufficient to install the language.  See
+    <xref linkend="extend-extensions"> for information about writing
+    extensions.
+-->
+建议打包所有这些函数的声明以及<command>CREATE LANGUAGE</>命令自身到一个<firstterm>扩展</>中，
+这样只需要一个简单的<command>CREATE EXTENSION</>命令就可以安装这个语言了。
+关于书写扩展的方法，请参考<xref linkend="extend-extensions"> 。
+   </para>
+
+   <para>
+<!--
+    The procedural languages included in the standard distribution
+    are good references when trying to write your own language handler.
+    Look into the <filename>src/pl</> subdirectory of the source tree.
+    The <xref linkend="sql-createlanguage">
+    reference page also has some useful details.
+-->
+如果想书写自己的调用处理器，那么包含在标准发布里面的过程语言是很好的例子。参考一下源代码树中的<filename>src/pl</> 子目录。
+<xref linkend="sql-createlanguage">参考页面中也有一些有用的信息。
+   </para>
+
+ </chapter>

@@ -1,0 +1,217 @@
+<!-- doc/src/sgml/pgrowlocks.sgml -->
+
+<sect1 id="pgrowlocks" xreflabel="pgrowlocks">
+ <title>pgrowlocks</title>
+
+ <indexterm zone="pgrowlocks">
+  <primary>pgrowlocks</primary>
+ </indexterm>
+
+ <!--
+<para>
+  The <filename>pgrowlocks</filename> module provides a function to show row
+  locking information for a specified table.
+ </para>
+-->
+<para>
+<filename>pgrowlocks</filename>模块提供一个显示指定的表的行锁定信息的函数。
+</para>
+
+ <sect2>
+  <!--
+  <title>Overview</title>
+  -->
+  <title>概述</title>
+
+  <indexterm>
+   <primary>pgrowlocks</primary>
+  </indexterm>
+
+<synopsis>
+pgrowlocks(text) returns setof record
+</synopsis>
+
+  <!--
+<para>
+   The parameter is the name of a table.  The result is a set of records,
+   with one row for each locked row within the table.  The output columns
+   are shown in <xref linkend="pgrowlocks-columns">.
+  </para>
+-->
+<para>
+该参数是一个表的名字。结果是一组记录，一行代表表中的一个锁定的行。
+输出字段在<xref linkend="pgrowlocks-columns">中显示。
+</para>
+
+  <table id="pgrowlocks-columns">
+   <!--
+   <title><function>pgrowlocks</> Output Columns</title>
+   -->
+   <title><function>pgrowlocks</> 输出字段</title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <!--
+  <entry>Name</entry>
+      <entry>Type</entry>
+      <entry>Description</entry>
+  -->
+  <entry>名字</entry>
+      <entry>类型</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+    <tbody>
+
+     <row>
+      <entry><structfield>locked_row</structfield></entry>
+      <entry><type>tid</type></entry>
+      <!--
+  <entry>Tuple ID (TID) of locked row</entry>
+  -->
+  <entry>锁定的行的元组 ID (TID)</entry>
+     </row>
+     <row>
+      <entry><structfield>locker</structfield></entry>
+      <entry><type>xid</type></entry>
+      <!--
+  <entry>Transaction ID of locker, or multixact ID if multitransaction</entry>
+  -->
+  <entry>锁定的事务 ID，或如果是多事务则为 multixact ID</entry>
+     </row>
+     <row>
+      <entry><structfield>multi</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <!--
+  <entry>True if locker is a multitransaction</entry>
+  -->
+  <entry>如果锁定的是多事务则为真</entry>
+     </row>
+     <row>
+      <entry><structfield>xids</structfield></entry>
+      <entry><type>xid[]</type></entry>
+      <!--
+  <entry>Transaction IDs of lockers (more than one if multitransaction)</entry>
+  -->
+  <entry>锁定的事务 ID(如果有多个事务则为多个)</entry>
+     </row>
+     <row>
+      <entry><structfield>lock_type</structfield></entry>
+      <entry><type>text[]</type></entry>
+      <!--
+  <entry>Lock mode of lockers (more than one if multitransaction),
+       an array of <literal>Key Share</>, <literal>Share</>,
+       <literal>For No Key Update</>, <literal>No Key Update</>,
+       <literal>For Update</>, <literal>Update</>.</entry>
+   -->
+   <entry>锁定的锁模式 (如果有多个事务则为多个)，
+       一些 <literal>Key Share</>， <literal>Share</>，
+       <literal>For No Key Update</>， <literal>No Key Update</>，
+       <literal>For Update</>， <literal>Update</>。</entry>
+     </row>
+
+     <row>
+      <entry><structfield>pids</structfield></entry>
+      <entry><type>integer[]</type></entry>
+      <!--
+  <entry>Process IDs of locking backends (more than one if multitransaction)</entry>
+  -->
+  <entry>锁定后端的过程 ID (如果有多个事务则为多个)</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <!--
+<para>
+   <function>pgrowlocks</function> takes <literal>AccessShareLock</> for the
+   target table and reads each row one by one to collect the row locking
+   information.  This is not very speedy for a large table.  Note that:
+  </para>
+-->
+<para>
+<function>pgrowlocks</function>将<literal>AccessShareLock</>作为目标表，
+并且一行一行的读取行以采集行锁的信息。这对于大表来说不是非常快。请注意；
+</para>
+
+  <orderedlist>
+   <listitem>
+    <!--
+<para>
+    If the table as a whole is exclusive-locked by someone else,
+    <function>pgrowlocks</function> will be blocked.
+    </para>
+-->
+<para>
+如果表作为一个整体是被他人排他锁的，那么<function>pgrowlocks</function>将被阻塞。
+</para>
+   </listitem>
+   <listitem>
+    <!--
+<para>
+     <function>pgrowlocks</function> is not guaranteed to produce a
+     self-consistent snapshot.  It is possible that a new row lock is taken,
+     or an old lock is freed, during its execution.
+    </para>
+-->
+<para>
+<function>pgrowlocks</function>不保证生成一个自我一致的快照。
+在执行期间，获得一个新的行锁或释放一个旧锁都是可能的。
+</para>
+   </listitem>
+  </orderedlist>
+
+<para>
+<!-- 
+   <function>pgrowlocks</function> does not show the contents of locked
+   rows. If you want to take a look at the row contents at the same time, you
+   could do something like this: 
+   -->
+   <function>pgrowlocks</function>并不显示锁定的行的内容。
+   如果你希望同一时间查看行的内容，你可以像下面这样做：
+
+<programlisting>
+SELECT * FROM accounts AS a, pgrowlocks('accounts') AS p
+  WHERE p.locked_row = a.ctid;
+</programlisting>
+
+   <!--
+   Be aware however that (as of <productname>PostgreSQL</> 8.3) such a
+   query will be very inefficient.
+   -->
+   不论如何都要小心(自<productname>PostgreSQL</> 8.3起)，这样一个查询将会是非常低效率的。
+  </para>
+ </sect2>
+
+ <sect2>
+  <!--
+  <title>Sample Output</title>
+  -->
+  <title>示例输出</title>
+
+<screen>
+test=# SELECT * FROM pgrowlocks('t1');
+ locked_row | lock_type | locker | multi |   xids    |     pids
+------------+-----------+--------+-------+-----------+---------------
+      (0,1) | Shared    |     19 | t     | {804,805} | {29066,29068}
+      (0,2) | Shared    |     19 | t     | {804,805} | {29066,29068}
+      (0,3) | Exclusive |    804 | f     | {804}     | {29066}
+      (0,4) | Exclusive |    804 | f     | {804}     | {29066}
+(4 rows)
+</screen>
+ </sect2>
+
+ <sect2>
+  <!--
+  <title>Author</title>
+  -->
+  <title>作者</title>
+
+<para>
+   Tatsuo Ishii
+  </para>
+ </sect2>
+
+</sect1>

@@ -1,0 +1,1216 @@
+<!-- doc/src/sgml/pltcl.sgml -->
+
+ <chapter id="pltcl">
+  <!-- 
+  <title>PL/Tcl - Tcl Procedural Language</title> 
+  -->
+  <title>PL/Tcl - Tcl 过程语言</title>
+
+  <indexterm zone="pltcl">
+   <primary>PL/Tcl</primary>
+  </indexterm>
+
+  <indexterm zone="pltcl">
+   <primary>Tcl</primary>
+  </indexterm>
+
+  <!--
+<para>
+   PL/Tcl is a loadable procedural language for the
+   <productname>PostgreSQL</productname> database system
+   that enables the <ulink url="http://www.tcl.tk/">
+   Tcl language</ulink> to be used to write functions and
+   trigger procedures.
+  </para>
+-->
+<para>
+PL/Tcl 是一种用于<productname>PostgreSQL</productname>数据库系统的可加载的过程化语言，
+它让我们可以用<ulink url="http://www.tcl.tk/">Tcl 语言</ulink>来书写函数和触发器过程。
+</para>
+
+  <!-- **** PL/Tcl overview **** -->
+
+  <sect1 id="pltcl-overview">
+   <!-- 
+   <title>Overview</title> 
+   -->
+   <title>概述</title>
+
+   <!--
+<para>
+    PL/Tcl offers most of the capabilities a function writer has in
+    the C language, with a few restrictions, and with the addition of
+    the powerful string processing libraries that are available for
+    Tcl.
+   </para>
+-->
+<para>
+PL/Tcl 提供 C 语言里面函数开发者所拥有的大多数功能，只有一点点限制除外，
+另外Tcl还可以使用强大的字符串处理库。
+</para>
+   <!--
+<para>
+    One compelling <emphasis>good</emphasis> restriction is that
+    everything is executed from within the safety of the context of a
+    Tcl interpreter.  In addition to the limited command set of safe
+    Tcl, only a few commands are available to access the database via
+    SPI and to raise messages via <function>elog()</>.  PL/Tcl
+    provides no way to access internals of the database server or to
+    gain OS-level access under the permissions of the
+    <productname>PostgreSQL</productname> server process, as a C
+    function can do.  Thus, unprivileged database users can be trusted
+    to use this language; it does not give them unlimited authority.
+   </para>
+-->
+<para>
+<emphasis>好</emphasis>的限制是，所有东西都是在一个安全的 Tcl 解释器里面运行的。
+除了一个有限的 Tcl 安全命令集外，只有很少的几个命令可以通过 SPI 访问数据库以及通过
+<function>elog()</>生成错误信息。不像 C 函数那样，
+Tcl 没有办法访问数据库后端内部或者获得 OS 级的<productname>PostgreSQL</productname>
+服务器进程的权限。因此，任何非特权的数据库用户都可以被允许使用这种语言。
+</para>
+   <!--
+<para>
+    The other notable implementation restriction is that Tcl functions
+    cannot be used to create input/output functions for new data
+    types.
+   </para>
+-->
+<para>
+另外的实现级限制是 Tcl 过程不能用于创建新数据库类型的输入/输出函数。
+</para>
+   <!--
+<para>
+    Sometimes it is desirable to write Tcl functions that are not restricted
+    to safe Tcl.  For example, one might want a Tcl function that sends
+    email.  To handle these cases, there is a variant of <application>PL/Tcl</> called <literal>PL/TclU</>
+    (for untrusted Tcl).  This is the exact same language except that a full
+    Tcl interpreter is used.  <emphasis>If <application>PL/TclU</> is used, it must be
+    installed as an untrusted procedural language</emphasis> so that only
+    database superusers can create functions in it.  The writer of a <application>PL/TclU</>
+    function must take care that the function cannot be used to do anything
+    unwanted, since it will be able to do anything that could be done by
+    a user logged in as the database administrator.
+   </para>
+-->
+<para>
+有时候需要写一些不受安全 Tcl 限制的 Tcl 函数，比如，可能需要一个可以发送邮件的 Tcl 函数。
+要处理这样的问题，有一个<application>PL/Tcl</>的变种，叫<literal>PL/TclU</>(不可信的 Tcl)。
+这个语言和 PL/Tcl 是完全一样的，只不过使用了一个完整的 Tcl 解释器。<emphasis>如果你使用了
+<application>PL/TclU</>，那么你必须把它安装成一种不可信的过程语言</emphasis>，
+这样只有数据库超级用户可以用它创建函数。<application>PL/TclU</>函数的作者必须注意：
+你写的函数一定不要做任何预算外的事情，因为它能干所有数据库管理员能干的事情。
+</para>
+   <!--
+<para>
+    The shared object code for the <application>PL/Tcl</> and
+    <application>PL/TclU</> call handlers is automatically built and
+    installed in the <productname>PostgreSQL</productname> library
+    directory if Tcl support is specified in the configuration step of
+    the installation procedure.  To install <application>PL/Tcl</>
+    and/or <application>PL/TclU</> in a particular database, use the
+    <command>CREATE EXTENSION</> command or the
+    <command>createlang</command> program, for example
+    <literal>createlang pltcl <replaceable>dbname</></literal> or
+    <literal>createlang pltclu <replaceable>dbname</></literal>.
+   </para>
+-->
+<para>
+如果在安装过程的配置步骤中声明了 Tcl 支持，那么<application>PL/Tcl</>和<application>PL/TclU</>
+的调用处理器是在制作时自动制作并安装到<productname>PostgreSQL</productname>库目录中去的。
+要在某个特定的数据库中安装<application>PL/Tcl</>和/或<application>PL/TclU</>，
+那么你可以使用<command>CREATE EXTENSION</>命令或<command>createlang</command>程序。
+比如<literal>createlang pltcl <replaceable>dbname</></literal>或
+<literal>createlang pltclu <replaceable>dbname</></literal>。
+</para>
+  </sect1>
+
+  <!-- **** PL/Tcl description **** -->
+
+   <sect1 id="pltcl-functions">
+    <!--
+<title>PL/Tcl Functions and Arguments</title>
+-->
+<title>PL/Tcl 函数和参数</title>
+
+<para>
+<!-- 
+     To create a function in the <application>PL/Tcl</> language, use
+     the standard <xref linkend="sql-createfunction"> syntax:
+ -->
+ 要用<application>PL/Tcl</>语言创建一个函数，使用标准的<xref linkend="sql-createfunction">语法：
+
+<programlisting>
+CREATE FUNCTION <replaceable>funcname</replaceable> (<replaceable>argument-types</replaceable>) RETURNS <replaceable>return-type</replaceable> AS $$
+    # PL/Tcl function body
+$$ LANGUAGE pltcl;
+</programlisting>
+
+     <!-- 
+ <application>PL/TclU</> is the same, except that the language has to be specified as
+     <literal>pltclu</>. 
+ -->
+ <application>PL/TclU</>是一样的，除了语言应该声明为<literal>pltclu</>之外。
+    </para>
+
+    <!--
+<para>
+     The body of the function is simply a piece of Tcl script.
+     When the function is called, the argument values are passed as
+     variables <literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal> to the
+     Tcl script.  The result is returned
+     from the Tcl code in the usual way, with a <literal>return</literal>
+     statement.
+    </para>
+-->
+<para>
+函数体就是一段 Tcl 代码。当在一个查询里面调用这个函数，参数是作为变量
+<literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal>传递给 Tcl 脚本的。
+结果是用通常的方法从 Tcl 代码中返回的，就是用一个<literal>return</literal>语句。
+</para>
+
+<para>
+<!-- 
+     For example, a function
+     returning the greater of two integer values could be defined as:
+ -->
+ 比如，一个简单的返回两个整数值中较大值的函数可以这样定义：
+<programlisting>
+CREATE FUNCTION tcl_max(integer, integer) RETURNS integer AS $$
+    if {$1 &gt; $2} {return $1}
+    return $2
+$$ LANGUAGE pltcl STRICT;
+</programlisting>
+<!-- 
+     Note the clause <literal>STRICT</>, which saves us from
+     having to think about null input values: if a null value is passed, the
+     function will not be called at all, but will just return a null
+     result automatically.
+-->
+请注意<literal>STRICT</>子句，它让我们可以不用考虑输入为 NULL 的情况：
+如果传递了一个 NULL ，该函数实际上就不会被调用，而只是自动返回一个 NULL 结果。
+    </para>
+
+    
+<para>
+<!--
+     In a nonstrict function,
+     if the actual value of an argument is null, the corresponding
+     <literal>$<replaceable>n</replaceable></literal> variable will be set to an empty string.
+     To detect whether a particular argument is null, use the function
+     <literal>argisnull</>.  For example, suppose that we wanted <function>tcl_max</function>
+     with one null and one nonnull argument to return the nonnull
+     argument, rather than null:
+-->
+如果是一个不严格的函数且一个参数的实际值是 NULL ，那么对应的<literal>$<replaceable>n</replaceable></literal>
+变量将被设置为一个空字符串。要检测一个特定的参数是否为 NULL ，可以使用<literal>argisnull</>函数。
+比如，假设要求<function>tcl_max</function>在一个参数为 null 而另外一个为非 null 时返回非 null 参数，
+而不是 null ：
+<programlisting>
+CREATE FUNCTION tcl_max(integer, integer) RETURNS integer AS $$
+    if {[argisnull 1]} {
+        if {[argisnull 2]} { return_null }
+        return $2
+    }
+    if {[argisnull 2]} { return $1 }
+    if {$1 &gt; $2} {return $1}
+    return $2
+$$ LANGUAGE pltcl;
+</programlisting>
+    </para>
+
+    <!--
+<para>
+     As shown above,
+     to return a null value from a PL/Tcl function, execute
+     <literal>return_null</literal>.  This can be done whether the
+     function is strict or not.
+    </para>
+-->
+<para>
+如上所述，要从 PL/Tcl 函数中返回一个 NULL 数值，可以执行<literal>return_null</literal>。
+不管函数是否严格，都可以这么做。
+</para>
+
+<para>
+<!-- 
+     Composite-type arguments are passed to the function as Tcl
+     arrays.  The element names of the array are the attribute names
+     of the composite type. If an attribute in the passed row has the
+     null value, it will not appear in the array. Here is an example:
+ -->
+复合类型的参数是当做 Tcl 数组传递给函数的。数组中的元素名字就是复合类型里的属性名字。
+如果在传递的行中某个属性为 NULL 数值，那它就不会在数组中出现。下面是一个例子：
+<programlisting>
+CREATE TABLE employee (
+    name text,
+    salary integer,
+    age integer
+);
+
+CREATE FUNCTION overpaid(employee) RETURNS boolean AS $$
+    if {200000.0 &lt; $1(salary)} {
+        return "t"
+    }
+    if {$1(age) &lt; 30 &amp;&amp; 100000.0 &lt; $1(salary)} {
+        return "t"
+    }
+    return "f"
+$$ LANGUAGE pltcl;
+</programlisting>
+    </para>
+
+    <!--
+<para>
+     There is currently no support for returning a composite-type
+     result value, nor for returning sets.
+    </para>
+-->
+<para>
+目前没有返回复合类型结果的支持。也不支持返回结果集。
+</para>
+
+    <!--
+<para>
+     <application>PL/Tcl</> does not currently have full support for
+     domain types: it treats a domain the same as the underlying scalar
+     type.  This means that constraints associated with the domain will
+     not be enforced.  This is not an issue for function arguments, but
+     it is a hazard if you declare a <application>PL/Tcl</> function
+     as returning a domain type.
+    </para>
+-->
+<para>
+<application>PL/Tcl</>目前还不是完全支持域类型：它看待域类型和下层的标量类型是一样的。
+这就意味着与域关联的约束将不会被强制。对于函数参数，这不是什么问题，
+但是如果你把<application>PL/Tcl</>函数声明为返回一个域类型，那么就有危险。
+</para>
+
+   </sect1>
+
+   <sect1 id="pltcl-data">
+    <!-- 
+<title>Data Values in PL/Tcl</title>
+-->
+<title>PL/Tcl里的数据值</title>
+
+    <!--
+<para>
+     The argument values supplied to a PL/Tcl function's code are simply
+     the input arguments converted to text form (just as if they had been
+     displayed by a <command>SELECT</> statement).  Conversely, the
+     <literal>return</>
+     command will accept any string that is acceptable input format for
+     the function's declared return type.  So, within the PL/Tcl function,
+     all values are just text strings.
+    </para>
+-->
+<para>
+提供给 PL/Tcl 函数脚本的参数值都只是转换成文本形式的输入参数(就像它们用<command>SELECT</>
+语句显示出来的那样)。相反，<literal>return</>
+可以用任何可以为函数所声明的返回类型接受的输入格式的字符串。因此，在 PL/Tcl 函数里，
+所有数值只是文本字符串。
+</para>
+
+   </sect1>
+
+   <sect1 id="pltcl-global">
+    <!-- 
+<title>Global Data in PL/Tcl</title> 
+-->
+<title>PL/Tcl里的全局量</title>
+
+    <indexterm zone="pltcl-global">
+     <!-- 
+ <primary>global data</primary>
+     <secondary>in PL/Tcl</secondary> 
+ -->
+ <primary>全局量</primary>
+     <secondary>在PL/Tcl里</secondary>
+    </indexterm>
+
+    <!--
+<para>
+     Sometimes it
+     is useful to have some global data that is held between two
+     calls to a function or is shared between different functions.
+     This is easily done in PL/Tcl, but there are some restrictions that
+     must be understood.
+    </para>
+-->
+<para>
+有时候在两次过程函数调用或者不同的函数之间保存一些全局数据是非常有用的。
+在PL/Tcl里实现这个目标相当容易，但是这里有一些限制必须熟悉。
+</para>
+
+    <!--
+<para>
+     For security reasons, PL/Tcl executes functions called by any one SQL
+     role in a separate Tcl interpreter for that role.  This prevents
+     accidental or malicious interference by one user with the behavior of
+     another user's PL/Tcl functions.  Each such interpreter will have its own
+     values for any <quote>global</> Tcl variables.  Thus, two PL/Tcl
+     functions will share the same global variables if and only if they are
+     executed by the same SQL role.  In an application wherein a single
+     session executes code under multiple SQL roles (via <literal>SECURITY
+     DEFINER</> functions, use of <command>SET ROLE</>, etc) you may need to
+     take explicit steps to ensure that PL/Tcl functions can share data.  To
+     do that, make sure that functions that should communicate are owned by
+     the same user, and mark them <literal>SECURITY DEFINER</>.  You must of
+     course take care that such functions can't be used to do anything
+     unintended.
+    </para>
+-->
+<para>
+由于安全原因，PL/Tcl通过一个在单独的Tcl解释器里的SQL角色执行函数调用。
+通过有另外一个用户的PL/Tcl函数行为的用户阻止了偶然的或恶意的干扰。
+每个这样的干扰对于任意的<quote>全局</> Tcl变量将有它自己的值。
+因此，当且仅当他们通过同一个SQL角色执行时，两个PL/Tcl函数才分享相同的全局变量。
+在一个多个SQL角色下的单个会话执行脚本的应用中（通过<literal>SECURITY DEFINER</>函数，
+使用<command>SET ROLE</>等等）可能需要采取明确的步骤确保PL/Tcl函数可以分享数据。
+要做到这点，确保可以通讯的函数属于同一个用户，并且标识它们<literal>SECURITY DEFINER</>。
+当然必须注意这种函数不能用来做任何计划外的动作。
+</para>
+
+    <!--
+<para>
+     All PL/TclU functions used in a session execute in the same Tcl
+     interpreter, which of course is distinct from the interpreter(s)
+     used for PL/Tcl functions.  So global data is automatically shared
+     between PL/TclU functions.  This is not considered a security risk
+     because all PL/TclU functions execute at the same trust level,
+     namely that of a database superuser.
+    </para>
+-->
+<para>
+所有在一个会话中使用的PL/TclU函数在同一个Tcl解释器里执行，不同于用于PL/Tcl函数的解释器。
+所以全局数据自动在PL/TclU函数间分享。没有考虑安全风险，因为所有PL/TclU函数在同一个可靠地级别执行，
+即数据库超级用户。
+</para>
+
+    <!--
+<para>
+     To help protect PL/Tcl functions from unintentionally interfering
+     with each other, a global
+     array is made available to each function via the <function>upvar</>
+     command. The global name of this variable is the function's internal
+     name, and the local name is <literal>GD</>.  It is recommended that
+     <literal>GD</> be used
+     for persistent private data of a function.  Use regular Tcl global
+     variables only for values that you specifically intend to be shared among
+     multiple functions.  (Note that the <literal>GD</> arrays are only
+     global within a particular interpreter, so they do not bypass the
+     security restrictions mentioned above.)
+    </para>
+-->
+<para>
+为了保护 PL/Tcl 过程相互之间不至于互相干扰，每个过程可以通过<function>upvar</>
+命令访问一个全局数组。此变量的全局名称是过程的内部名称，其局部名称是<literal>GD</>。
+建议使用<literal>GD</>作为函数的永久私有状态数据的存储。
+而把普通的 Tcl 全局变量只用于那些你想在多个过程之间共享的变量。
+（请注意，<literal>GD</>数组只在一个特定的解释器里是全局的，所以它们没有绕开上面提到的安全限制。）
+</para>
+
+    <!--
+<para>
+     An example of using <literal>GD</> appears in the
+     <function>spi_execp</function> example below.
+    </para>
+-->
+<para>
+一个使用<literal>GD</>的例子在下面的<function>spi_execp</function>例子里显示。
+</para>
+   </sect1>
+
+   <sect1 id="pltcl-dbaccess">
+    <!-- 
+<title>Database Access from PL/Tcl</title> 
+-->
+<title>在PL/Tcl里访问数据库</title>
+
+    
+<para>
+<!-- 
+     The following commands are available to access the database from
+     the body of a PL/Tcl function:
+ -->
+在 PL/Tcl 过程体里有下面的命令可以用于访问数据库：
+    <variablelist>
+
+     <varlistentry>
+      <term><literal><function>spi_exec</function> <optional role="tcl">-count <replaceable>n</replaceable></optional> <optional role="tcl">-array <replaceable>name</replaceable></optional> <replaceable>command</replaceable> <optional role="tcl"><replaceable>loop-body</replaceable></optional></literal></term>
+      <listitem>
+<!--
+       <para>
+        Executes an SQL command given as a string.  An error in the command
+        causes an error to be raised.  Otherwise, the return value of <function>spi_exec</function>
+        is the number of rows processed (selected, inserted, updated, or
+        deleted) by the command, or zero if the command is a utility
+        statement.  In addition, if the command is a <command>SELECT</> statement, the
+        values of the selected columns are placed in Tcl variables as
+        described below.
+       </para>
+-->
+<para>
+执行一个以字符串形式给出的 SQL 查询。查询中的错误会导致抛出一个错误。否则，
+<function>spi_exec</function>的返回值是命令处理的行数(选出、插入、更新、删除)，
+如果该命令是一个功能性语句则返回零。另外，如果查询是一条<command>SELECT</>语句，
+那么选出的字段值按照下面描述的方法放在 Tcl 变量中。
+</para>
+       <!--
+<para>
+        The optional <literal>-count</> value tells
+        <function>spi_exec</function> the maximum number of rows
+        to process in the command.  The effect of this is comparable to
+        setting up a query as a cursor and then saying <literal>FETCH <replaceable>n</></>.
+       </para>
+-->
+<para>
+可选的<literal>-count</>值告诉<function>spi_exec</function>在该查询中处理的最大的行数。
+其效果和把查询设置为一个游标，然后说<literal>FETCH <replaceable>n</></>是一样的。
+</para>
+       <!--
+<para>
+        If the command is a <command>SELECT</> statement, the values of the
+        result columns are placed into Tcl variables named after the columns.
+        If the <literal>-array</> option is given, the column values are
+        instead stored into the named associative array, with the
+        column names used as array indexes.
+       </para>
+-->
+<para>
+如果查询是一个<command>SELECT</>语句，那么其结果列的数值将放在用各字段名命名的 Tcl 变量中。
+如果给出了<literal>-array</>选项，那么字段值将放到这个命名的相关数组中，字段名用做数组索引。
+</para>
+       <!--
+<para>
+        If the command is a <command>SELECT</> statement and no <replaceable>loop-body</>
+        script is given, then only the first row of results are stored into
+        Tcl variables; remaining rows, if any, are ignored.  No storing occurs
+        if the
+        query returns no rows.  (This case can be detected by checking the
+        result of <function>spi_exec</function>.)  For example:
+<programlisting>
+spi_exec "SELECT count(*) AS cnt FROM pg_proc"
+</programlisting>
+
+        will set the Tcl variable <literal>$cnt</> to the number of rows in
+        the <structname>pg_proc</> system catalog.
+       </para>
+-->
+<para>
+如果查询是<command>SELECT</>语句并且没有给出<replaceable>loop-body</>脚本，
+那么只有结果的头一行会存储到 Tcl 变量中；如果还有其它行的话，将会被忽略。
+如果查询没有返回任何行，那么不会存储什么数据(这个情况可以通过检查<function>spi_exec</function>
+的结果来判断)。比如：
+<programlisting>
+spi_exec "SELECT count(*) AS cnt FROM pg_proc"
+</programlisting>
+将设置 Tcl 变量<literal>$cnt</>设为系统表<structname>pg_proc</>中的行数。
+</para>
+       <!--
+<para>
+        If the optional <replaceable>loop-body</> argument is given, it is
+        a piece of Tcl script that is executed once for each row in the
+        query result.  (<replaceable>loop-body</> is ignored if the given
+        command is not a <command>SELECT</>.)  The values of the current row's columns
+        are stored into Tcl variables before each iteration.  For example:
+
+<programlisting>
+spi_exec -array C "SELECT * FROM pg_class" {
+    elog DEBUG "have table $C(relname)"
+}
+</programlisting>
+
+        will print a log message for every row of <literal>pg_class</>.  This
+        feature works similarly to other Tcl looping constructs; in
+        particular <literal>continue</> and <literal>break</> work in the
+        usual way inside the loop body.
+       </para>
+-->
+<para>
+如果给出了可选的<replaceable>loop-body</>参数，那么它就是一小段 Tcl 脚本，
+它会为查询结果中的每一行执行一次(注意：如果给出的查询不是<command>SELECT</>，
+那么忽略<replaceable>loop-body</>)。在每次迭代之前，
+当前行的字段的数值都存储到 Tcl 变量中去了。比如：
+<programlisting>
+spi_exec -array C "SELECT * FROM pg_class" {
+    elog DEBUG "have table $C(relname)"
+}
+</programlisting>
+将为<literal>pg_class</>的每一行打印一行日志信息。这个特性和其它 Tcl 循环构造的运做方式类似；
+特别是<literal>continue</>和<literal>break</>在循环体中的作用和平常是一样的。
+</para>
+       <!--
+<para>
+        If a column of a query result is null, the target
+        variable for it is <quote>unset</> rather than being set.
+       </para>
+-->
+<para>
+如果一个查询结果的某个字段是 NULL ，那么其目标变量就是<quote>unset</>而不会设置上什么东西。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><function>spi_prepare</function> <replaceable>query</replaceable> <replaceable>typelist</replaceable></term>
+      <listitem>
+       <!--
+<para>
+        Prepares and saves a query plan for later execution.  The
+        saved plan will be retained for the life of the current
+        session.<indexterm><primary>preparing a query</>
+        <secondary>in PL/Tcl</></>
+       </para>
+-->
+<para>
+为后面的执行准备并保存一个查询规划。保存的规划的生命期就是当前会话的生命期。
+<indexterm><primary>准备一个查询</> <secondary>在PL/Tcl里</></>
+</para>
+       <!--
+<para>
+        The query can use parameters, that is, placeholders for
+        values to be supplied whenever the plan is actually executed.
+        In the query string, refer to parameters
+        by the symbols <literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal>.
+        If the query uses parameters, the names of the parameter types
+        must be given as a Tcl list.  (Write an empty list for
+        <replaceable>typelist</replaceable> if no parameters are used.)
+       </para>
+-->
+<para>
+查询可以使用参数，这些参数是规划实际执行的时候提供的数值的占位符。在查询字符串里，
+用符号<literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal>引用各个参数。
+如果查询使用了参数，那么参数类型名必需以一个 Tcl 列表的形式给出。如果没有使用参数，那么给
+<replaceable>typelist</replaceable>写一个空列表。
+</para>
+       <!--
+<para>
+        The return value from <function>spi_prepare</function> is a query ID
+        to be used in subsequent calls to <function>spi_execp</function>. See
+        <function>spi_execp</function> for an example.
+       </para>
+-->
+<para>
+<function>spi_prepare</function>的返回值是一个可以在随后的<function>spi_execp</function>
+调用中使用的查询 ID 。参阅<function>spi_execp</function>获取例子。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal><function>spi_execp</> <optional role="tcl">-count <replaceable>n</replaceable></optional> <optional role="tcl">-array <replaceable>name</replaceable></optional> <optional role="tcl">-nulls <replaceable>string</replaceable></optional> <replaceable>queryid</replaceable> <optional role="tcl"><replaceable>value-list</replaceable></optional> <optional role="tcl"><replaceable>loop-body</replaceable></optional></literal></term>
+      <listitem>
+       <!--
+<para>
+        Executes a query previously prepared with <function>spi_prepare</>.
+        <replaceable>queryid</replaceable> is the ID returned by
+        <function>spi_prepare</>.  If the query references parameters,
+        a <replaceable>value-list</replaceable> must be supplied.  This
+        is a Tcl list of actual values for the parameters.  The list must be
+        the same length as the parameter type list previously given to
+        <function>spi_prepare</>.  Omit <replaceable>value-list</replaceable>
+        if the query has no parameters.
+       </para>
+-->
+<para>
+执行一个前面用<function>spi_prepare</>准备的查询。<replaceable>queryid</replaceable>是
+<function>spi_prepare</>返回的 ID 。如果该查询引用了参数，那么必需提供一个<replaceable>value-list</replaceable>：
+这是一个 Tcl 列表，里面包含那些参数的实际数值。这个列表的长度必需和前面给<function>spi_prepare</>
+提供的参数类型列表的长度一样长。如果查询没有参数，那么省略<replaceable>value-list</replaceable>。
+</para>
+       <!--
+<para>
+        The optional value for <literal>-nulls</> is a string of spaces and
+        <literal>'n'</> characters telling <function>spi_execp</function>
+        which of the parameters are null values. If given, it must have exactly the
+        same length as the <replaceable>value-list</replaceable>.  If it
+        is not given, all the parameter values are nonnull.
+       </para>
+-->
+<para>
+<literal>-nulls</>可选的数值是一个空白字符串和字符<literal>'n'</>，告诉<function>spi_execp</function>
+哪些参数是 NULL 。如果给出，那么它必需和<replaceable>value-list</replaceable>的长度相同。
+如果没有给出，那么所有参数值都是非 NULL 。
+</para>
+       <!--
+<para>
+        Except for the way in which the query and its parameters are specified,
+        <function>spi_execp</> works just like <function>spi_exec</>.
+        The <literal>-count</>, <literal>-array</>, and
+        <replaceable>loop-body</replaceable> options are the same,
+        and so is the result value.
+       </para>
+-->
+<para>
+除了查询及其参数声明的方式之外，<function>spi_execp</>的使用方法基本上和
+<function>spi_exec</>一样。<literal>-count</>, <literal>-array</>, <replaceable>loop-body</replaceable>
+选项都是一样的，结果数值也一样。
+</para>
+       
+<para>
+<!-- 
+        Here's an example of a PL/Tcl function using a prepared plan:
+ -->
+ 下面是一个使用预备规划的 PL/Tcl 函数的例子：
+<programlisting>
+CREATE FUNCTION t1_count(integer, integer) RETURNS integer AS $$
+    if {![ info exists GD(plan) ]} {
+        # prepare the saved plan on the first call
+        set GD(plan) [ spi_prepare \
+                "SELECT count(*) AS cnt FROM t1 WHERE num &gt;= \$1 AND num &lt;= \$2" \
+                [ list int4 int4 ] ]
+    }
+    spi_execp -count 1 $GD(plan) [ list $1 $2 ]
+    return $cnt
+$$ LANGUAGE pltcl;
+</programlisting>
+<!--
+        We need backslashes inside the query string given to
+        <function>spi_prepare</> to ensure that the
+        <literal>$<replaceable>n</replaceable></> markers will be passed
+        through to <function>spi_prepare</> as-is, and not replaced by Tcl
+        variable substitution.
+-->
+需要在给<function>spi_prepare</>的查询字符串里放反斜杠，以确保<literal>$<replaceable>n</replaceable></>
+标记会原样传递给<function>spi_prepare</>，而不是被 Tcl 的变量代换替换掉。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <indexterm>
+       <primary>spi_lastoid</primary>
+      </indexterm>
+      <term><function>spi_lastoid</></term>
+      <listitem>
+       <!--
+<para>
+        Returns the OID of the row inserted by the last
+        <function>spi_exec</> or <function>spi_execp</>, if the
+        command was a single-row <command>INSERT</> and the modified
+        table contained OIDs.  (If not, you get zero.)
+       </para>
+-->
+<para>
+如果该查询是单行<command>INSERT</>并且被修改的表包含 OID ，则返回最后的
+<function>spi_exec</>或<function>spi_execp</>查询插入的行的 OID 。如果不是，将得到零。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><function>quote</> <replaceable>string</replaceable></term>
+      <listitem>
+
+<para>
+<!-- 
+        Doubles all occurrences of single quote and backslash characters
+        in the given string.  This can be used to safely quote strings
+        that are to be inserted into SQL commands given
+        to <function>spi_exec</function> or
+        <function>spi_prepare</function>.
+        For example, think about an SQL command string like:
+ -->
+在给出的字符串里将所由单引号和反斜杠字符复制成双份。它可以用于安全地处理那些要输入到
+<function>spi_exec</function>或<function>spi_prepare</function>中的 SQL 命令中的引号包围字符串。
+比如，假如一个 SQL 命令看起来像这样:
+<programlisting>
+"SELECT '$val' AS ret"
+</programlisting>
+<!-- 
+        where the Tcl variable <literal>val</> actually contains
+        <literal>doesn't</literal>. This would result
+        in the final command string:
+ -->
+这里的 Tcl 变量<literal>val</>实际上包含<literal>doesn't</literal>。
+这样最后的命令字符串会是这样：
+<programlisting>
+SELECT 'doesn't' AS ret
+</programlisting>
+<!-- 
+        which would cause a parse error during
+        <function>spi_exec</function> or
+        <function>spi_prepare</function>.
+        To work properly, the submitted command should contain:
+ -->
+而这个字符串在<function>spi_exec</function>或<function>spi_prepare</function>
+的时候会导致一个分析错误。为了能工作正常，提交的命令应该包含：
+<programlisting>
+SELECT 'doesn''t' AS ret
+</programlisting>
+<!-- 
+        which can be formed in PL/Tcl using:
+ -->
+ 在 PL/Tcl 中可以这样构造：
+<programlisting>
+"SELECT '[ quote $val ]' AS ret"
+</programlisting>
+<!-- 
+        One advantage of <function>spi_execp</function> is that you don't
+        have to quote parameter values like this, since the parameters are never
+        parsed as part of an SQL command string.
+-->
+<function>spi_execp</function> 的一个优点是你不需要像这样引号包围参数值，
+因为参数绝不会当做 SQL 查询字符串的一部分被分析。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <indexterm>
+       <primary>elog</primary>
+       <secondary>in PL/Tcl</secondary>
+      </indexterm>
+      <term><function>elog</> <replaceable>level</replaceable> <replaceable>msg</replaceable></term>
+      <listitem>
+       <!--
+<para>
+        Emits a log or error message. Possible levels are
+        <literal>DEBUG</>, <literal>LOG</>, <literal>INFO</>,
+        <literal>NOTICE</>, <literal>WARNING</>, <literal>ERROR</>, and
+        <literal>FATAL</>. <literal>ERROR</>
+        raises an error condition; if this is not trapped by the surrounding
+        Tcl code, the error propagates out to the calling query, causing
+        the current transaction or subtransaction to be aborted.  This
+        is effectively the same as the Tcl <literal>error</> command.
+        <literal>FATAL</> aborts the transaction and causes the current
+        session to shut down.  (There is probably no good reason to use
+        this error level in PL/Tcl functions, but it's provided for
+        completeness.)  The other levels only generate messages of different
+        priority levels.
+        Whether messages of a particular priority are reported to the client,
+        written to the server log, or both is controlled by the
+        <xref linkend="guc-log-min-messages"> and
+        <xref linkend="guc-client-min-messages"> configuration
+        variables. See <xref linkend="runtime-config"> for more
+        information.
+       </para>
+-->
+<para>
+发出一个日志或者错误消息。可能的级别是<literal>DEBUG</>, <literal>LOG</>, <literal>INFO</>,
+ <literal>NOTICE</>, <literal>WARNING</>, <literal>ERROR</> 和 <literal>FATAL</>。
+<literal>ERROR</>抛出一个错误条件：如果没有被周围的Tcl代码捕获，那么该错误传到调用的查询中，
+导致当前事务或子事务退出。作用和Tcl的<literal>error</>命令相同。<literal>FATAL</>
+退出当前事务并且导致当前会话关闭(可能在 PL/Tcl 函数里没有什么理由使用这个错误级别，
+提供它主要是为了完整)。其他级别只产生不同的优先级信息。
+某个优先级别的信息是报告给客户端还是写到服务器日志，还是两个都做是由<xref linkend="guc-log-min-messages">
+和<xref linkend="guc-client-min-messages">配置变量控制的。参阅<xref linkend="runtime-config">获取更多细节。
+</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+    </para>
+
+   </sect1>
+
+   <sect1 id="pltcl-trigger">
+    <!-- 
+<title>Trigger Procedures in PL/Tcl</title> 
+-->
+<title>PL/Tcl里的触发器过程</title>
+
+    <indexterm>
+     <!-- 
+ <primary>trigger</primary>
+     <secondary>in PL/Tcl</secondary> 
+ -->
+ <primary>触发器</primary>
+     <secondary>在PL/Tcl里</secondary>
+    </indexterm>
+
+    <!--
+<para>
+     Trigger procedures can be written in PL/Tcl.
+     <productname>PostgreSQL</productname> requires that a procedure that is to be called
+     as a trigger must be declared as a function with no arguments
+     and a return type of <literal>trigger</>.
+    </para>
+-->
+<para>
+触发器过程可以用 PL/Tcl 写。<productname>PostgreSQL</productname>
+要求当做触发器调用的过程必需声明为没有参数并且返回类型为<literal>trigger</>的函数。
+</para>
+    
+<para>
+<!-- 
+     The information from the trigger manager is passed to the procedure body
+     in the following variables:
+ -->
+ 触发器管理器传递给过程体的信息是通过下面变量传递的：
+     <variablelist>
+
+      <varlistentry>
+       <term><varname>$TG_name</varname></term>
+       <listitem>
+<!--
+        <para>
+         The name of the trigger from the <command>CREATE TRIGGER</command> statement.
+        </para>
+-->
+<para>
+<command>CREATE TRIGGER</command>语句里的触发器名称。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_relid</varname></term>
+       <listitem>
+        <!--
+<para>
+         The object ID of the table that caused the trigger procedure
+         to be invoked.
+        </para>
+-->
+<para>
+导致触发器被调用的表的对象 ID 。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_table_name</varname></term>
+       <listitem>
+        <!--
+<para>
+         The name of the table that caused the trigger procedure
+         to be invoked.
+        </para>
+-->
+<para>
+导致触发器被调用的表的名字。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_table_schema</varname></term>
+       <listitem>
+        <!--
+<para>
+         The schema of the table that caused the trigger procedure
+         to be invoked.
+        </para>
+-->
+<para>
+导致触发器被调用的表的模式。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_relatts</varname></term>
+       <listitem>
+        <!--
+<para>
+         A Tcl list of the table column names, prefixed with an empty list
+         element. So looking up a column name in the list with <application>Tcl</>'s
+         <function>lsearch</> command returns the element's number starting
+         with 1 for the first column, the same way the columns are customarily
+         numbered in <productname>PostgreSQL</productname>.  (Empty list
+         elements also appear in the positions of columns that have been
+         dropped, so that the attribute numbering is correct for columns
+         to their right.)
+        </para>
+-->
+<para>
+以一个空表元素为前导的表中字段名称的 Tcl 列表。所以用<application>Tcl</>命令<function>lsearch</>
+在列表里查找元素名称时，返回的从 1 开始计数的正整数，与<productname>PostgreSQL</productname>
+里字段编号的传统一样。已经被删除掉的字段位置的空的列表元素仍然会出现，这样，
+属性编号与字段的对应就是正确的。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_when</varname></term>
+       <listitem>
+        <!--
+<para>
+         The string <literal>BEFORE</>, <literal>AFTER</>, or
+         <literal>INSTEAD OF</>, depending on the type of trigger event.
+        </para>
+-->
+<para>
+由触发器事件类型决定的字符串<literal>BEFORE</>, <literal>AFTER</> 或 <literal>INSTEAD OF</>
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_level</varname></term>
+       <listitem>
+        <!--
+<para>
+         The string <literal>ROW</> or <literal>STATEMENT</> depending on the
+         type of trigger event.
+        </para>
+-->
+<para>
+由触发器事件类型决定的字符串<literal>ROW</>或<literal>STATEMENT</>
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_op</varname></term>
+       <listitem>
+        <!--
+<para>
+         The string <literal>INSERT</>, <literal>UPDATE</>,
+         <literal>DELETE</>, or <literal>TRUNCATE</> depending on the type of
+         trigger event.
+        </para>
+-->
+<para>
+由触发器事件类型决定的字符串<literal>INSERT</>, <literal>UPDATE</>, <literal>DELETE</>或<literal>TRUNCATE</>
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$NEW</varname></term>
+       <listitem>
+        <!--
+<para>
+         An associative array containing the values of the new table
+         row for <command>INSERT</> or <command>UPDATE</> actions, or
+         empty for <command>DELETE</>.  The array is indexed by column
+         name.  Columns that are null will not appear in the array.
+         This is not set for statement-level triggers.
+        </para>
+-->
+<para>
+一个关联数组，包含<command>INSERT</>或<command>UPDATE</>动作的新表行值，
+如果是<command>DELETE</>则为空。该数组是用字段名做索引的。那些为空的字段不会在数组中出现。
+这不是为语句级别的触发器设置的。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$OLD</varname></term>
+       <listitem>
+        <!--
+<para>
+         An associative array containing the values of the old table
+         row for <command>UPDATE</> or <command>DELETE</> actions, or
+         empty for <command>INSERT</>.  The array is indexed by column
+         name.  Columns that are null will not appear in the array.
+         This is not set for statement-level triggers.
+        </para>
+-->
+<para>
+一个关联数组，包含<command>UPDATE</>或<command>DELETE</>动作的新表行，
+如果是<command>INSERT</>则为空。该数组是用字段名做索引的。那些为空的字段不会在数组中出现。
+这不是为语句级别的触发器设置的。
+</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$args</varname></term>
+       <listitem>
+        <!--
+<para>
+         A Tcl list of the arguments to the procedure as given in the
+         <command>CREATE TRIGGER</command> statement. These arguments are also accessible as
+         <literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal> in the procedure body.
+        </para>
+-->
+<para>
+如同在<command>CREATE TRIGGER</command>语句里给出的参数一样的 Tcl 程序参数表。
+这些参数在过程体里可以通过<literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal>
+来访问。
+</para>
+       </listitem>
+      </varlistentry>
+
+     </variablelist>
+    </para>
+
+    <!--
+<para>
+     The return value from a trigger procedure can be one of the strings
+     <literal>OK</> or <literal>SKIP</>, or a list as returned by the
+     <literal>array get</> Tcl command. If the return value is <literal>OK</>,
+     the operation (<command>INSERT</>/<command>UPDATE</>/<command>DELETE</>) that fired the trigger will proceed
+     normally. <literal>SKIP</> tells the trigger manager to silently suppress
+     the operation for this row. If a list is returned, it tells PL/Tcl to
+     return a modified row to the trigger manager. This is only meaningful
+     for row-level <literal>BEFORE</> <command>INSERT</> or <command>UPDATE</>
+     triggers for which the modified row will be inserted instead of the one
+     given in <varname>$NEW</>; or for row-level <literal>INSTEAD OF</>
+     <command>INSERT</> or <command>UPDATE</> triggers where the returned row
+     is used to support <command>INSERT RETURNING</> and
+     <command>UPDATE RETURNING</> commands. The return value is ignored for
+     other types of triggers.
+    </para>
+-->
+<para>
+触发器过程返回的值是字符串<literal>OK</>或<literal>SKIP</>之一，或者一个像<literal>array get</>
+ Tcl 命令返回的数组那样的东西。如果返回值是<literal>OK</>，触发触发器的操作
+(<command>INSERT</>/<command>UPDATE</>/<command>DELETE</>)将会正常进行。<literal>SKIP</>
+告诉触发器管理器不声不响地忽略该行的操作。如果返回一个数组，
+那么它告诉 PL/Tcl 返回一个修改后的行给触发器管理器。这仅仅对行级别的<literal>BEFORE</> <command>INSERT</> 
+或 <command>UPDATE</>触发器有意义，修改的行而不是<varname>$NEW</>里面给出的行被插入；
+或对于行级别的<literal>INSTEAD OF</> <command>INSERT</> 或 <command>UPDATE</>触发器，
+返回的行用来提供给<command>INSERT RETURNING</>或<command>UPDATE RETURNING</>命令。
+其他触发器类型忽略返回值。
+</para>
+
+<para>
+<!-- 
+     Here's a little example trigger procedure that forces an integer value
+     in a table to keep track of the number of updates that are performed on the
+     row. For new rows inserted, the value is initialized to 0 and then
+     incremented on every update operation.
+ -->
+下面是一个小的触发器过程的例子，它强制表内的一个整数值对行的更新次数进行跟踪。
+对插入的新行，该值初始化为 0 并且在每次更新操作中加一。 
+<programlisting>
+CREATE FUNCTION trigfunc_modcount() RETURNS trigger AS $$
+    switch $TG_op {
+        INSERT {
+            set NEW($1) 0
+        }
+        UPDATE {
+            set NEW($1) $OLD($1)
+            incr NEW($1)
+        }
+        default {
+            return OK
+        }
+    }
+    return [array get NEW]
+$$ LANGUAGE pltcl;
+
+CREATE TABLE mytab (num integer, description text, modcnt integer);
+
+CREATE TRIGGER trig_mytab_modcount BEFORE INSERT OR UPDATE ON mytab
+    FOR EACH ROW EXECUTE PROCEDURE trigfunc_modcount('modcnt');
+</programlisting>
+<!-- 
+     Notice that the trigger procedure itself does not know the column
+     name; that's supplied from the trigger arguments.  This lets the
+     trigger procedure be reused with different tables.
+-->
+请注意触发器过程本身并不知道字段名字；那些是从触发器参数中提供的。
+这样就可以让将触发器过程复用于不同的表。
+    </para>
+   </sect1>
+
+   <sect1 id="pltcl-unknown">
+       <!-- 
+   <title>Modules and the <function>unknown</> Command</title>
+   -->
+   <title>模块和<function>unknown</>的命令</title>
+       <!--
+<para>
+        PL/Tcl has support for autoloading Tcl code when used.
+        It recognizes a special table, <literal>pltcl_modules</>, which
+        is presumed to contain modules of Tcl code.  If this table
+        exists, the module <literal>unknown</> is fetched from the table
+        and loaded into the Tcl interpreter immediately before the first
+        execution of a PL/Tcl function in a database session.  (This
+        happens separately for each Tcl interpreter, if more than one is
+        used in a session; see <xref linkend="pltcl-global">.)
+       </para>
+-->
+<para>
+PL/Tcl 使用时支持自动加载 Tcl 代码。它识别一个特殊的<literal>pltcl_modules</>表，
+该表被认为包含 Tcl 代码的模块。如果存在这个表，则在数据库会话中的PL/Tcl函数第一次执行之前，
+从该表中抓取<literal>unknown</>模块并加载到 Tcl 解释器中。（如果在一个会话中有多个，
+将单独为每个Tcl解释器发生；参阅<xref linkend="pltcl-global">。）
+</para>
+       <!--
+<para>
+        While the <literal>unknown</> module could actually contain any
+        initialization script you need, it normally defines a Tcl
+        <function>unknown</> procedure that is invoked whenever Tcl does
+        not recognize an invoked procedure name.  <application>PL/Tcl</>'s standard version
+        of this procedure tries to find a module in <literal>pltcl_modules</>
+        that will define the required procedure.  If one is found, it is
+        loaded into the interpreter, and then execution is allowed to
+        proceed with the originally attempted procedure call.  A
+        secondary table <literal>pltcl_modfuncs</> provides an index of
+        which functions are defined by which modules, so that the lookup
+        is reasonably quick.
+       </para>
+-->
+<para>
+因为<literal>unknown</>模块实际上可以包含任何你需要的初始化脚本，它通常是定义为一个Tcl 
+<literal>unknown</>过程，在 Tcl 不能识别一个调用的过程名的时候就调用它。<application>PL/Tcl</>
+这个过程的标准版本试图在<literal>pltcl_modules</>里找到一个定义所需要过程的模块。
+如果找到一个，那么把它加载入解释器，然后允许继续按照原来的过程调用处理。另外还定义了一个
+<literal>pltcl_modfuncs</>表，它提供了哪个函数由哪个模块定义的索引，因此查找过程相当快。
+</para>
+       <!--
+<para>
+        The <productname>PostgreSQL</productname> distribution includes
+        support scripts to maintain these tables:
+        <command>pltcl_loadmod</>, <command>pltcl_listmod</>,
+        <command>pltcl_delmod</>, as well as source for the standard
+        <literal>unknown</> module in <filename>share/unknown.pltcl</>.  This module
+        must be loaded
+        into each database initially to support the autoloading mechanism.
+       </para>
+-->
+<para>
+<productname>PostgreSQL</productname>包括维护这些表的支持脚本：<command>pltcl_loadmod</>, 
+<command>pltcl_listmod</>, <command>pltcl_delmod</>以及标准<filename>share/unknown.pltcl</>
+中<literal>unknown</>模块的源代码。这个模块必须一开始就加载入每个数据库才能支持自动加载机制。
+</para>
+       <!--
+<para>
+        The tables <literal>pltcl_modules</> and <literal>pltcl_modfuncs</>
+        must be readable by all, but it is wise to make them owned and
+        writable only by the database administrator.  As a security
+        precaution, PL/Tcl will ignore <literal>pltcl_modules</> (and thus,
+        not attempt to load the <literal>unknown</> module) unless it is
+        owned by a superuser.  But update privileges on this table can be
+        granted to other users, if you trust them sufficiently.
+       </para>
+-->
+<para>
+表<literal>pltcl_modules</>和<literal>pltcl_modfuncs</>必需可以为所有人读取，
+但是把它做成只有数据库管理员可写并拥有是明智的。作为一个安全预防，
+PL/Tcl将忽略<literal>pltcl_modules</>（并且因此，不尝试加载<literal>unknown</>模块）
+除非它被超级用户所有。但是这个表上的更新权限可以赋予给其他用户，如果你足够信任他们。
+</para>
+   </sect1>
+
+   <sect1 id="pltcl-procnames">
+    <!-- 
+<title>Tcl Procedure Names</title>
+-->
+<title>Tcl 过程名字</title>
+
+    <!--
+<para>
+     In <productname>PostgreSQL</productname>, the same function name can be used for
+     different function definitions as long as the number of arguments or their types
+     differ. Tcl, however, requires all procedure names to be distinct.
+     PL/Tcl deals with this by making the internal Tcl procedure names contain
+     the object
+     ID of the function from the system table <structname>pg_proc</> as part of their name. Thus,
+     <productname>PostgreSQL</productname> functions with the same name
+     and different argument types will be different Tcl procedures, too.  This
+     is not normally a concern for a PL/Tcl programmer, but it might be visible
+     when debugging.
+    </para>
+-->
+<para>
+在<productname>PostgreSQL</productname>里，同一个函数名字可以用于不同的函数定义，
+只要参数个数或者它们的类型不同。不过，Tcl 要求所有的过程名字都是唯一的。
+PL/Tcl 通过把内部 Tcl 过程名字包含该函数来自系统表<structname>pg_proc</>
+的对象 ID 作为名字的一部分来处理这些问题。
+因此同名不同参数类型的<productname>PostgreSQL</productname>函数也将会有不同的 Tcl 过程名。
+这个问题通常对 PL/Tcl 程序员而言不算啥，但是在调试的时候可能会看到。
+</para>
+
+   </sect1>
+ </chapter>

@@ -1,0 +1,722 @@
+<!-- doc/src/sgml/user-manag.sgml -->
+
+<chapter id="user-manag">
+ <!-- 
+ <title>Database Roles</title> 
+ -->
+ <title>数据库角色</title>
+
+ <!--
+<para>
+  <productname>PostgreSQL</productname> manages database access permissions
+  using the concept of <firstterm>roles</>.  A role can be thought of as
+  either a database user, or a group of database users, depending on how
+  the role is set up.  Roles can own database objects (for example,
+  tables) and can assign privileges on those objects to other roles to
+  control who has access to which objects.  Furthermore, it is possible
+  to grant <firstterm>membership</> in a role to another role, thus
+  allowing the member role to use privileges assigned to another role.
+ </para>
+-->
+<para>
+<productname>PostgreSQL</productname>使用<firstterm>角色</>的概念管理数据库访问权限。
+根据角色自身的设置不同，一个角色可以看做是一个数据库用户，或者一组数据库用户。
+角色可以拥有数据库对象(比如表)以及可以把这些对象上的权限赋予其它角色，
+以控制谁拥有访问哪些对象的权限。另外，我们也可以把一个角色的<firstterm>成员</>
+权限赋予其它角色，这样就允许成员角色使用分配给另一个角色的权限。
+</para>
+
+ <!--
+<para>
+  The concept of roles subsumes the concepts of <quote>users</> and
+  <quote>groups</>.  In <productname>PostgreSQL</productname> versions
+  before 8.1, users and groups were distinct kinds of entities, but now
+  there are only roles.  Any role can act as a user, a group, or both.
+ </para>
+-->
+<para>
+角色的概念替换了<quote>用户</>和<quote>组</>。在<productname>PostgreSQL</productname>
+版本 8.1 之前，用户和组是独立类型的记录，但现在它们只是角色。
+任何角色都可以是一个用户、一个组、或者两者。
+</para>
+
+ <!--
+<para>
+  This chapter describes how to create and manage roles.
+  More information about the effects of role privileges on various
+  database objects can be found in <xref linkend="ddl-priv">.
+ </para>
+-->
+<para>
+本章描述如何创建和管理角色。更多各种数据库对象角色权限效果的信息可以在<xref linkend="ddl-priv">找到。
+</para>
+
+ <sect1 id="database-roles">
+  <!-- 
+  <title>Database Roles</title> 
+  -->
+  <title>数据库角色</title>
+
+  <indexterm zone="database-roles">
+   <!-- 
+   <primary>role</primary> 
+   -->
+   <primary>角色</primary>
+  </indexterm>
+
+  <indexterm zone="database-roles">
+   <!-- 
+   <primary>user</primary> 
+   -->
+   <primary>用户</primary>
+  </indexterm>
+
+  <indexterm>
+   <primary>CREATE ROLE</primary>
+  </indexterm>
+
+  <indexterm>
+   <primary>DROP ROLE</primary>
+  </indexterm>
+
+<para>
+<!--
+   Database roles are conceptually completely separate from
+   operating system users. In practice it might be convenient to
+   maintain a correspondence, but this is not required. Database roles
+   are global across a database cluster installation (and not
+   per individual database). To create a role use the <xref
+   linkend="sql-createrole"> SQL command:
+-->
+数据库角色从概念上与操作系统用户是完全无关的。在实际使用中把它们对应起来可能比较方便，
+但这不是必须的。数据库角色在整个数据库集群中是全局的(而不是每个库不同)。
+要创建一个角色，使用 SQL 命令<xref linkend="sql-createrole">执行：
+<synopsis>
+CREATE ROLE <replaceable>name</replaceable>;
+</synopsis>
+<!-- 
+   <replaceable>name</replaceable> follows the rules for SQL
+   identifiers: either unadorned without special characters, or
+   double-quoted.  (In practice, you will usually want to add additional
+   options, such as <literal>LOGIN</>, to the command.  More details appear
+   below.)  To remove an existing role, use the analogous
+   <xref linkend="sql-droprole"> command: 
+-->
+<replaceable>name</replaceable>遵循 SQL 标识的规则：要么完全没有特殊字符，
+要么用双引号包围(实际上你通常会给命令增加额外的选项，比如<literal>LOGIN</>。
+下面显示更多细节)。要删除一个现有角色，使用类似的<xref linkend="sql-droprole">命令：
+<synopsis>
+DROP ROLE <replaceable>name</replaceable>;
+</synopsis>
+  </para>
+
+  <indexterm>
+   <primary>createuser</primary>
+  </indexterm>
+
+  <indexterm>
+   <primary>dropuser</primary>
+  </indexterm>
+
+<para>
+<!--
+   For convenience, the programs <xref linkend="app-createuser">
+   and <xref linkend="app-dropuser"> are provided as wrappers
+   around these SQL commands that can be called from the shell command
+   line:
+-->
+为了方便，程序<xref linkend="app-createuser">和<xref linkend="app-dropuser">
+提供了对了这些 SQL 命令的封装。我们可以在 shell 命令上直接调用它们：
+<synopsis>
+createuser <replaceable>name</replaceable>
+dropuser <replaceable>name</replaceable>
+</synopsis>
+  </para>
+ 
+<para>
+ <!--
+   To determine the set of existing roles, examine the <structname>pg_roles</>
+   system catalog, for example
+-->
+要检查现有角色的集合，可以检查<structname>pg_roles</>系统表，比如：
+<synopsis>
+SELECT rolname FROM pg_roles;
+</synopsis>
+<!-- 
+   The <xref linkend="app-psql"> program's <literal>\du</> meta-command
+   is also useful for listing the existing roles. 
+-->
+<xref linkend="app-psql">的元命令<literal>\du</>也可以用于列出现有角色。
+  </para>
+
+  <!--
+<para>
+   In order to bootstrap the database system, a freshly initialized
+   system always contains one predefined role. This role is always
+   a <quote>superuser</>, and by default (unless altered when running
+   <command>initdb</command>) it will have the same name as the
+   operating system user that initialized the database
+   cluster. Customarily, this role will be named
+   <literal>postgres</literal>. In order to create more roles you
+   first have to connect as this initial role.
+  </para>
+-->
+<para>
+为了能创建初始数据库系统，新建立的数据库总是包含一个预定义的<quote>超级用户</>角色，
+并且缺省时(除非在运行<command>initdb</command>时更改过)
+他将和初始化该数据库集群的用户有相同的名称。通常，这个角色名叫<literal>postgres</literal>。
+为了创建更多角色，你必须首先以这个初始用户角色连接。
+</para>
+
+  <!--
+<para>
+   Every connection to the database server is made using the name of some
+   particular role, and this role determines the initial access privileges for
+   commands issued in that connection.
+   The role name to use for a particular database
+   connection is indicated by the client that is initiating the
+   connection request in an application-specific fashion. For example,
+   the <command>psql</command> program uses the
+   <option>-U</option> command line option to indicate the role to
+   connect as.  Many applications assume the name of the current
+   operating system user by default (including
+   <command>createuser</> and <command>psql</>).  Therefore it
+   is often convenient to maintain a naming correspondence between
+   roles and operating system users.
+  </para>
+-->
+<para>
+每一个和数据库的连接都必须用一个角色身份进行，这个角色决定在该连接上的初始权限。
+特定数据库连接的角色名是在初始化连接请求的时候声明的。比如，<command>psql</command>
+程序使用<option>-U</option>命令行选项声明它代表的角色。
+许多应用以当前操作系统的用户名为缺省角色名(这样的应用包括<command>createuser</>和<command>psql</>)。
+所以，在系统用户和数据库角色之间有某种命名关系会让我们工作方便很多。
+</para>
+
+  <!--
+<para>
+   The set of database roles a given client connection can connect as
+   is determined by the client authentication setup, as explained in
+   <xref linkend="client-authentication">. (Thus, a client is not
+   limited to connect as the role matching
+   its operating system user, just as a person's login name
+   need not match her real name.)  Since the role
+   identity determines the set of privileges available to a connected
+   client, it is important to carefully configure privileges when setting up
+   a multiuser environment.
+  </para>
+-->
+<para>
+一个客户端连接可以使用的角色集合是由客户认证设置决定的，
+在<xref linkend="client-authentication">里面有解释。因此，
+一个客户端并不局限于以它的操作系统用户匹配的角色进行连接，
+就像你登录系统的名称不一定要是你的真实姓名一样。因为角色的身份决定了一个连接的权限，
+所以在多用户环境里仔细配置这些内容是非常重要的。
+</para>
+ </sect1>
+
+ <sect1 id="role-attributes">
+  <!-- 
+  <title>Role Attributes</title> 
+  -->
+  <title>角色属性</title>
+
+   
+<para>
+<!--
+    A database role can have a number of attributes that define its
+    privileges and interact with the client authentication system.
+-->
+一个数据库角色可以有一系列属性，这些属性定义他的权限，以及与客户认证系统的交互。
+    <variablelist>
+     <varlistentry>
+      <!-- 
+  <term>login privilege<indexterm><primary>login privilege</></></term> 
+  -->
+  <term>登陆权限<indexterm><primary>登陆权限</></></term>
+      <listitem>
+       <para>
+<!-- 
+        Only roles that have the <literal>LOGIN</> attribute can be used
+        as the initial role name for a database connection.  A role with
+        the <literal>LOGIN</> attribute can be considered the same
+        as a <quote>database user</>.  To create a role with login privilege,
+        use either: 
+-->
+只有具有<literal>LOGIN</>属性的角色才可以用作数据库连接的初始角色名。
+一个带有<literal>LOGIN</>属性的角色可以认为是和<quote>数据库用户</>相同的事物。
+要创建一个具有登录权限的角色，用下列之一：
+<programlisting>
+CREATE ROLE <replaceable>name</replaceable> LOGIN;
+CREATE USER <replaceable>name</replaceable>;
+</programlisting>
+<!-- 
+        (<command>CREATE USER</> is equivalent to <command>CREATE ROLE</>
+        except that <command>CREATE USER</> assumes <literal>LOGIN</> by
+        default, while <command>CREATE ROLE</> does not.) 
+-->
+除了<command>CREATE USER</>默认赋予<literal>LOGIN</>之外，<command>CREATE USER</>
+等价于<command>CREATE ROLE</>(默认不赋予<command>CREATE ROLE</>)。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!-- 
+  <term>superuser status<indexterm><primary>superuser</></></term> 
+  -->
+  <term>超级用户状态<indexterm><primary>超级用户</></></term>
+      <listitem>
+       <!--
+<para>
+        A database superuser bypasses all permission checks, except the right
+        to log in.  This is a dangerous privilege and should not be used
+        carelessly; it is best to do most of your work as a role that is not a
+        superuser.  To create a new database superuser, use <literal>CREATE
+        ROLE <replaceable>name</replaceable> SUPERUSER</literal>.  You must do
+        this as a role that is already a superuser.
+       </para>
+-->
+<para>
+数据库超级用户超越所有权限检查。这是一个危险的权限，应该小心使用；
+最好使用非超级用户完成你的大多数工作。要创建数据库超级用户，
+用<literal>CREATE ROLE <replaceable>name</replaceable> SUPERUSER</literal>命令。
+你必须用已经是超级用户的角色执行这条命令。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!--
+  <term>database creation<indexterm><primary>database</><secondary>privilege to create</></></term>
+  -->
+  <term>创建数据库<indexterm><primary>数据库</><secondary>创建权限</></></term>
+      <listitem>
+       <!--
+<para>
+        A role must be explicitly given permission to create databases
+        (except for superusers, since those bypass all permission
+        checks). To create such a role, use <literal>CREATE ROLE
+        <replaceable>name</replaceable> CREATEDB</literal>.
+       </para>
+-->
+<para>
+角色要想创建数据库，必须明确给出权限(对于超级用户是例外，因为他们超越所有权限检查)。
+要创建这样的角色，用<literal>CREATE ROLE <replaceable>name</replaceable> CREATEDB</literal>命令。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!-- 
+  <term>role creation<indexterm><primary>role</><secondary>privilege to create</></></term> 
+  -->
+  <term>创建角色<indexterm><primary>角色</><secondary>创建权限</></></term>
+      <listitem>
+       <!--
+<para>
+        A role must be explicitly given permission to create more roles
+        (except for superusers, since those bypass all permission
+        checks). To create such a role, use <literal>CREATE ROLE
+        <replaceable>name</replaceable> CREATEROLE</literal>.
+        A role with <literal>CREATEROLE</> privilege can alter and drop
+        other roles, too, as well as grant or revoke membership in them.
+        However, to create, alter, drop, or change membership of a
+        superuser role, superuser status is required;
+        <literal>CREATEROLE</> is insufficient for that.
+       </para>
+-->
+<para>
+角色要想创建角色，必须明确给出权限(对于超级用户是例外，因为他们超越所有权限检查)。
+要创建这样的角色，用<literal>CREATE ROLE <replaceable>name</replaceable> CREATEROLE</literal>
+命令。一个带有<literal>CREATEROLE</>权限的角色也可以更改和删除其它角色，
+以及给其它角色赋予或者撤销成员关系。不过，要创建、更改、删除一个超级用户角色的成员关系，
+需要具有超级用户属性；只有<literal>CREATEROLE</>还不够。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!-- 
+  <term>initiating replication<indexterm><primary>role</><secondary>privilege to initiate replication</></></term>
+  -->
+  <term>启动复制<indexterm><primary>角色</><secondary>启动复制权限</></></term>
+      <listitem>
+       <!--
+<para>
+        A role must explicitly be given permission to initiate streaming
+        replication (except for superusers, since those bypass all permission
+        checks). A role used for streaming replication must always
+        have <literal>LOGIN</> permission as well. To create such a role, use
+        <literal>CREATE ROLE <replaceable>name</replaceable> REPLICATION
+        LOGIN</literal>.
+       </para>
+-->
+<para>
+角色要想启动流复制，必须明确给出权限(对于超级用户是例外，因为他们超越所有权限检查)。
+用于流复制的角色必须总是拥有<literal>LOGIN</>权限。要创建这样的角色，
+使用<literal>CREATE ROLE <replaceable>name</replaceable> REPLICATION LOGIN</literal>命令。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!-- 
+  <term>password<indexterm><primary>password</></></term> 
+  -->
+  <term>口令<indexterm><primary>口令</></></term>
+      <listitem>
+       <!--
+<para>
+        A password is only significant if the client authentication
+        method requires the user to supply a password when connecting
+        to the database. The <option>password</> and
+        <option>md5</> authentication methods
+        make use of passwords. Database passwords are separate from
+        operating system passwords. Specify a password upon role
+        creation with <literal>CREATE ROLE
+        <replaceable>name</replaceable> PASSWORD '<replaceable>string</>'</literal>.
+       </para>
+-->
+<para>
+只有在客户认证方法要求与数据库建立连接必须使用口令的时候，口令才比较重要。
+<option>password</>和<option>md5</>认证方法使用口令。数据库口令与操作系统口令是无关的。
+在创建角色的时候可以这样声明一个口令：<literal>CREATE ROLE 
+<replaceable>name</replaceable> PASSWORD '<replaceable>string</>'</literal>。
+</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+<!-- 
+    A role's attributes can be modified after creation with
+    <command>ALTER ROLE</command>.<indexterm><primary>ALTER ROLE</></>
+    See the reference pages for the <xref linkend="sql-createrole">
+    and <xref linkend="sql-alterrole"> commands for details.
+-->
+一个角色的属性可以在创建后用<command>ALTER ROLE</command>
+<indexterm><primary>ALTER ROLE</></>修改。参考<xref linkend="sql-createrole">
+和<xref linkend="sql-alterrole">的手册获取细节。
+   </para>
+
+  <tip>
+   <!--
+<para>
+    It is good practice to create a role that has the <literal>CREATEDB</>
+    and <literal>CREATEROLE</> privileges, but is not a superuser, and then
+    use this role for all routine management of databases and roles.  This
+    approach avoids the dangers of operating as a superuser for tasks that
+    do not really require it.
+   </para>
+-->
+<para>
+创建一个具有<literal>CREATEDB</>和<literal>CREATEROLE</>权限，
+但是并非超级用户的角色是一个很好的习惯，你可以使用这个角色进行所有日常的数据库和角色管理。
+这个方法避免了以超级用户操作时，发生误操作导致的严重后果。
+</para>
+  </tip>
+
+  
+<para>
+<!--
+   A role can also have role-specific defaults for many of the run-time
+   configuration settings described in <xref
+   linkend="runtime-config">.  For example, if for some reason you
+   want to disable index scans (hint: not a good idea) anytime you
+   connect, you can use:
+-->
+一个角色也可以为许多运行时配置设置针对其个人的缺省，那些配置在<xref linkend="runtime-config">里描述。
+比如，如果出于某种原因你想在所有你做的连接中关闭索引扫描(不是个好主意)，你可以用：
+<programlisting>
+ALTER ROLE myname SET enable_indexscan TO off;
+</programlisting>
+<!-- 
+   This will save the setting (but not set it immediately).  In
+   subsequent connections by this role it will appear as though
+   <literal>SET enable_indexscan TO off</literal> had been executed
+   just before the session started.
+   You can still alter this setting during the session; it will only
+   be the default. To remove a role-specific default setting, use
+   <literal>ALTER ROLE <replaceable>rolename</> RESET <replaceable>varname</></literal>.
+   Note that role-specific defaults attached to roles without
+   <literal>LOGIN</> privilege are fairly useless, since they will never
+   be invoked. 
+-->
+这样就会保存该设置(但是不是立即设置)。然后，在这个角色随后的连接中就好像在会话开始之后都立即
+<literal>SET enable_indexscan TO off</literal>了一样。你也可以在会话中修改这个设置；
+它只是缺省。要撤销任何这样的设置，使用<literal>ALTER ROLE <replaceable>rolename</> RESET <replaceable>varname</></literal>。
+请注意，对那些没有<literal>LOGIN</>属性的角色，这些角色相关的缺省值几乎没什么用，
+因为它们从来不会被调用。
+  </para>
+
+ </sect1>
+
+ <sect1 id="role-membership">
+  <!-- 
+  <title>Role Membership</title> 
+  -->
+  <title>角色成员</title>
+
+  <indexterm zone="role-membership">
+   <!-- 
+   <primary>role</><secondary>membership in</> 
+   -->
+   <primary>角色</><secondary>成员</>
+  </indexterm>
+
+  <!--
+<para>
+   It is frequently convenient to group users together to ease
+   management of privileges: that way, privileges can be granted to, or
+   revoked from, a group as a whole.  In <productname>PostgreSQL</productname>
+   this is done by creating a role that represents the group, and then
+   granting <firstterm>membership</> in the group role to individual user
+   roles.
+  </para>
+-->
+<para>
+把用户组合起来简化权限管理是个常用的便利方法：用这样的方法，权限可以赋予整个组，
+也可以对整个组撤消。在<productname>PostgreSQL</productname>里，
+这些事情是通过创建代表一个组的角色，然后赋予组角色的<firstterm>成员</>
+权限给独立的用户角色的方法实现的。
+</para>
+  
+<para>
+<!--
+   To set up a group role, first create the role:
+-->
+要设置一个组角色，首先创建角色：
+<synopsis>
+CREATE ROLE <replaceable>name</replaceable>;
+</synopsis>
+<!-- 
+   Typically a role being used as a group would not have the <literal>LOGIN</>
+   attribute, though you can set it if you wish. 
+-->
+一般作为组使用的角色不应当具有<literal>LOGIN</>属性，虽然你可以设置它。
+  </para>
+
+  
+<para>
+<!--
+   Once the group role exists, you can add and remove members using the
+   <xref linkend="sql-grant"> and
+   <xref linkend="sql-revoke"> commands:
+-->
+一旦组角色已经存在了，那么你就可以用<xref linkend="sql-grant">
+和<xref linkend="sql-revoke">命令添加和撤消权限：
+<synopsis>
+GRANT <replaceable>group_role</replaceable> TO <replaceable>role1</replaceable>, ... ;
+REVOKE <replaceable>group_role</replaceable> FROM <replaceable>role1</replaceable>, ... ;
+</synopsis>
+<!-- 
+   You can grant membership to other group roles, too (since there isn't
+   really any distinction between group roles and non-group roles).  The
+   database will not let you set up circular membership loops.  Also,
+   it is not permitted to grant membership in a role to 
+   <literal>PUBLIC</literal>.
+-->
+你还可以赋予成员权限给其它组角色(因为在组角色和非组角色之间没有实质的区别)。
+唯一的制约是你不能建立循环的成员关系。另外，不允许给<literal>PUBLIC</literal>角色赋予成员权限。
+  </para>
+
+  
+<para>
+<!--
+   The members of a group role can use the privileges of the role in two
+   ways.  First, every member of a group can explicitly do
+   <xref linkend="sql-set-role"> to
+   temporarily <quote>become</> the group role.  In this state, the
+   database session has access to the privileges of the group role rather
+   than the original login role, and any database objects created are
+   considered owned by the group role not the login role.  Second, member
+   roles that have the <literal>INHERIT</> attribute automatically have use
+   of the privileges of roles of which they are members, including any
+   privileges inherited by those roles.
+   As an example, suppose we have done:
+-->
+一个组角色的成员可以用两种方法使用角色的权限。首先，
+一个组的每个成员都可以明确用<xref linkend="sql-set-role">临时<quote>变成</>该组的成员。
+在这个状态下，数据库会话具有该组角色的权限，而不是原始的登录角色权限，
+这个时候创建的数据库对象被认为是由组角色拥有，而不是登录角色。第二，
+拥有<literal>INHERIT</>属性的角色成员自动具有它们所属组角色的权限，
+包括任何通过那些角色继承的权限。例如，假如我们做了下面的事情：
+<programlisting>
+CREATE ROLE joe LOGIN INHERIT;
+CREATE ROLE admin NOINHERIT;
+CREATE ROLE wheel NOINHERIT;
+GRANT admin TO joe;
+GRANT wheel TO admin;
+</programlisting>
+<!-- 
+   Immediately after connecting as role <literal>joe</>, a database
+   session will have use of privileges granted directly to <literal>joe</>
+   plus any privileges granted to <literal>admin</>, because <literal>joe</>
+   <quote>inherits</> <literal>admin</>'s privileges.  However, privileges
+   granted to <literal>wheel</> are not available, because even though
+   <literal>joe</> is indirectly a member of <literal>wheel</>, the
+   membership is via <literal>admin</> which has the <literal>NOINHERIT</>
+   attribute.  After: 
+-->
+那么在以角色<literal>joe</>连接之后，该数据库会话将立即拥有直接赋予<literal>joe</>
+的权限加上任何赋予<literal>admin</>的权限，因为<literal>joe</><quote>继承</>
+了<literal>admin</>的权限。不过，赋予<literal>wheel</>的权限不可用，
+因为即使<literal>joe</>是<literal>wheel</>的一个间接成员，
+但该成员关系是通过<literal>admin</>过来的，而该组有<literal>NOINHERIT</>属性。在：
+<programlisting>
+SET ROLE admin;
+</programlisting>
+<!-- 
+   the session would have use of only those privileges granted to
+   <literal>admin</>, and not those granted to <literal>joe</>.  After: 
+-->
+之后，该会话将只拥有那些已赋予<literal>admin</>的权限，
+而不包括那些已赋予<literal>joe</>的权限。在
+<programlisting>
+SET ROLE wheel;
+</programlisting>
+<!-- 
+   the session would have use of only those privileges granted to
+   <literal>wheel</>, and not those granted to either <literal>joe</>
+   or <literal>admin</>.  The original privilege state can be restored
+   with any of: 
+-->
+之后，该会话将只能使用已赋予<literal>wheel</>的权限，而不包括已赋予<literal>joe</>
+或<literal>admin</>的权限。原来的权限可以用下列之一恢复：
+<programlisting>
+SET ROLE joe;
+SET ROLE NONE;
+RESET ROLE;
+</programlisting>
+  </para>
+
+  <note>
+   <!--
+<para>
+    The <command>SET ROLE</> command always allows selecting any role
+    that the original login role is directly or indirectly a member of.
+    Thus, in the above example, it is not necessary to become
+    <literal>admin</> before becoming <literal>wheel</>.
+   </para>
+-->
+<para>
+<command>SET ROLE</>命令总是允许选取任意登录角色直接或者间接所在的组角色。
+因此，在上面的例子里，我们没必要在变成<literal>wheel</>之前先变成<literal>admin</>。
+</para>
+  </note>
+
+  <note>
+   <!--
+<para>
+    In the SQL standard, there is a clear distinction between users and roles,
+    and users do not automatically inherit privileges while roles do.  This
+    behavior can be obtained in <productname>PostgreSQL</productname> by giving
+    roles being used as SQL roles the <literal>INHERIT</> attribute, while
+    giving roles being used as SQL users the <literal>NOINHERIT</> attribute.
+    However, <productname>PostgreSQL</productname> defaults to giving all roles
+    the <literal>INHERIT</> attribute, for backward compatibility with pre-8.1
+    releases in which users always had use of permissions granted to groups
+    they were members of.
+   </para>
+-->
+<para>
+在 SQL 标准里，在用户和角色之间有明确的区别，并且用户并不会自动继承权限，而角色可以。
+这个行为在<productname>PostgreSQL</productname>里面可以通过给予那些当作 SQL 角色使用的角色以
+<literal>INHERIT</>属性，而给予当作 SQL 用户使用的角色以<literal>NOINHERIT</>属性来实现。
+不过，<productname>PostgreSQL</productname>缺省是给予所有角色<literal>INHERIT</>属性，
+目的是和 8.1 之前的版本向下兼容，那些版本里，用户总是能使用他们所在组被赋予的权限。
+</para>
+  </note>
+
+  <!--
+<para>
+   The role attributes <literal>LOGIN</>, <literal>SUPERUSER</>,
+   <literal>CREATEDB</>, and <literal>CREATEROLE</> can be thought of as
+   special privileges, but they are never inherited as ordinary privileges
+   on database objects are.  You must actually <command>SET ROLE</> to a
+   specific role having one of these attributes in order to make use of
+   the attribute.  Continuing the above example, we might choose to
+   grant <literal>CREATEDB</> and <literal>CREATEROLE</> to the
+   <literal>admin</> role.  Then a session connecting as role <literal>joe</>
+   would not have these privileges immediately, only after doing
+   <command>SET ROLE admin</>.
+  </para>
+-->
+<para>
+角色属性<literal>LOGIN</>, <literal>SUPERUSER</>, <literal>CREATEDB</>, <literal>CREATEROLE</>
+可以被认为是特殊的权限，但是它们从来不会像数据库对象上的普通权限那样继承。
+你必须明确地<command>SET ROLE</>到一个特殊的角色，这个角色应该是拥有这些属性的角色，
+然后才能利用这些属性。继续上面的例子，我们也可以选择给<literal>admin</>角色赋予
+<literal>CREATEDB</>和<literal>CREATEROLE</>权限。然后，以<literal>joe</>
+连接的会话不会立即有这些权限，只有在<command>SET ROLE admin</>之后才有。
+</para>
+
+<para>
+  </para>
+
+  
+<para>
+<!--
+   To destroy a group role, use <xref
+   linkend="sql-droprole">:
+-->
+要删除一个组角色，用<xref linkend="sql-droprole">命令：
+<synopsis>
+DROP ROLE <replaceable>name</replaceable>;
+</synopsis>
+<!-- 
+   Any memberships in the group role are automatically revoked (but the
+   member roles are not otherwise affected).  Note however that any objects
+   owned by the group role must first be dropped or reassigned to other
+   owners; and any permissions granted to the group role must be revoked. 
+-->
+任何在组角色里面的成员关系都会自动撤消(但是成员角色自己则不受影响)。
+不过，请注意任何组角色拥有的对象都必须首先删除或者赋予其它所有者；
+并且任何给该组角色赋予的权限都必须撤消。
+  </para>
+ </sect1>
+
+ <sect1 id="perm-functions">
+  <!-- 
+  <title>Function and Trigger Security</title> 
+  -->
+  <title>函数和触发器安全</title>
+
+  <!--
+<para>
+   Functions and triggers allow users to insert code into the backend
+   server that other users might execute unintentionally. Hence, both
+   mechanisms permit users to <quote>Trojan horse</quote>
+   others with relative ease. The only real protection is tight
+   control over who can define functions.
+  </para>
+-->
+<para>
+函数和触发器允许用户向后端服务器插入代码，这样其它用户可以在无意识的情况下执行这些代码。
+因此，两种机制都可以让用户相当隐蔽地给别人设置<quote>木马</quote>，
+唯一的有效防护就是严格控制谁可以定义函数。
+</para>
+
+  <!--
+<para>
+   Functions run inside the backend
+   server process with the operating system permissions of the
+   database server daemon.  If the programming language
+   used for the function allows unchecked memory accesses, it is
+   possible to change the server's internal data structures.
+   Hence, among many other things, such functions can circumvent any
+   system access controls.  Function languages that allow such access
+   are considered <quote>untrusted</>, and
+   <productname>PostgreSQL</productname> allows only superusers to
+   create functions written in those languages.
+  </para>
+-->
+<para>
+后端服务器里面运行的函数都是以数据库服务器守护进程的操作系统权限运行的。
+如果所使用的编程语言允许无检查的内存访问，那么修改服务器的内部数据结构也是可能的。
+因此，除了其它问题外，这样的函数可以绕过任何系统访问控制。
+允许这样访问的函数语言都被认为是<quote>不可信的</>，<productname>PostgreSQL</productname>
+只允许超级用户使用这样的语言书写函数。
+</para>
+ </sect1>
+
+</chapter>

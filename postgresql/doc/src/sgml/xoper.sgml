@@ -1,0 +1,778 @@
+<!-- doc/src/sgml/xoper.sgml -->
+
+ <sect1 id="xoper">
+  <!--
+  <title>User-defined Operators</title>
+  -->
+  <title>用户定义操作符</title>  
+
+  <indexterm zone="xoper">
+   <!-- 
+   <primary>operator</primary>
+   <secondary>user-defined</secondary>
+   -->
+   <primary>操作符</primary>
+   <secondary>用户定义</secondary>
+  </indexterm>
+
+  <!--
+<para>
+   Every operator is <quote>syntactic sugar</quote> for a call to an
+   underlying function that does the real work; so you must
+   first create the underlying function before you can create
+   the operator.  However, an operator is <emphasis>not merely</emphasis>
+   syntactic sugar, because it carries additional information
+   that helps the query planner optimize queries that use the
+   operator.  The next section will be devoted to explaining
+   that additional information.
+  </para>
+-->
+<para>
+每个操作符都是对真正干活的对应函数的<quote>语义修饰</quote>；
+所以你在创建操作符之前必须先创建对应的函数。不过，一个操作符也并<emphasis>不仅仅</emphasis>
+是语义修饰，因为它还带着可以帮助查询规划器优化查询使用该操作符的附加信息。
+下一节将用于解释这些附加信息。
+</para>
+
+  <!--
+<para>
+   <productname>PostgreSQL</productname> supports left unary, right
+   unary, and binary operators.  Operators can be
+   overloaded;<indexterm><primary>overloading</primary><secondary>operators</secondary></indexterm>
+   that is, the same operator name can be used for different operators
+   that have different numbers and types of operands.  When a query is
+   executed, the system determines the operator to call from the
+   number and types of the provided operands.
+  </para>
+-->
+<para>
+<productname>PostgreSQL</productname>支持左目、右目、双目操作符。操作符可以重载；<indexterm><primary>overloading</primary><secondary>operators</secondary></indexterm>
+也就是说，同一个操作符名可以用于不同数目和类型的操作数的操作符。在执行一个查询的时候，
+系统从提供的操作数的数量和类型上判断需要调用哪个操作符。
+</para>
+ 
+<para>
+ <!--
+   Here is an example of creating an operator for adding two complex
+   numbers.  We assume we've already created the definition of type
+   <type>complex</type> (see <xref linkend="xtypes">).  First we need a
+   function that does the work, then we can define the operator:
+-->
+下面是一个创建用于两个复数相加的操作符的例子。假设已经创建了<type>complex</type>
+(见节<xref linkend="xtypes">)类型的定义。首先需要做相加工作的函数；然后就可以定义操作符：
+<programlisting>
+CREATE FUNCTION complex_add(complex, complex)
+    RETURNS complex
+    AS '<replaceable>filename</replaceable>', 'complex_add'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE OPERATOR + (
+    leftarg = complex,
+    rightarg = complex,
+    procedure = complex_add,
+    commutator = +
+);
+</programlisting>
+  </para>
+  
+<para>
+<!--
+   Now we could execute a query like this:
+-->
+现在可以执行像下面这样的查询：
+<screen>
+SELECT (a + b) AS c FROM test_complex;
+
+        c
+-----------------
+ (5.2,6.05)
+ (133.42,144.95)
+</screen>
+  </para>
+
+  <!--
+<para>
+   We've shown how to create a binary operator here.  To create unary
+   operators, just omit one of <literal>leftarg</> (for left unary) or
+   <literal>rightarg</> (for right unary).  The <literal>procedure</>
+   clause and the argument clauses are the only required items in
+   <command>CREATE OPERATOR</command>.  The <literal>commutator</>
+   clause shown in the example is an optional hint to the query
+   optimizer.  Further details about <literal>commutator</> and other
+   optimizer hints appear in the next section.
+  </para>
+-->
+<para>
+在这里已经演示了如何创建双目操作符。要创建单目操作符，只需要省略<literal>leftarg</>
+或者<literal>rightarg</>即可。只有<literal>procedure</>子句和参数(argument)子句是
+<command>CREATE OPERATOR</command>里需要的条目。例子里演示的<literal>commutator</>
+子句是一个给查询优化器的可选暗示。关于<literal>commutator</>
+和其它优化器提示的详细信息在下节给出。
+</para>
+ </sect1>
+
+  <sect1 id="xoper-optimization">
+   <!-- 
+   <title>Operator Optimization Information</title>
+   -->
+   <title>操作符优化信息</title>
+
+   <!--
+<para>
+    A <productname>PostgreSQL</productname> operator definition can include
+    several optional clauses that tell the system useful things about how
+    the operator behaves.  These clauses should be provided whenever
+    appropriate, because they can make for considerable speedups in execution
+    of queries that use the operator.  But if you provide them, you must be
+    sure that they are right!  Incorrect use of an optimization clause can
+    result in slow queries, subtly wrong output, or other Bad Things.
+    You can always leave out an optimization clause if you are not sure
+    about it; the only consequence is that queries might run slower than
+    they need to.
+   </para>
+-->
+<para>
+<productname>PostgreSQL</productname>的操作符定义可以包括几个可选的子句，
+这些子句告诉系统一些关于该操作符特性的有用信息。在可能的情况下，都应该提供这些子句，
+因为它们可能为使用这个操作符的查询带来可观的速度提升。不过要注意如果你声明了这些子句，
+就必须确保它们是正确的！对优化子句的错误使用将导致减慢查询速度、微小的输出错误、
+或者其它糟糕事情。如果你对这些事情不确定的话，可以总是忽略优化子句；
+唯一的后果就是查询可能运行的慢一些。
+</para>
+
+   <!--
+<para>
+    Additional optimization clauses might be added in future versions of
+    <productname>PostgreSQL</productname>.  The ones described here are all
+    the ones that release &version; understands.
+   </para>
+-->
+<para>
+附加的优化子句可能在今后的<productname>PostgreSQL</productname>版本里增加。
+这里描述的都是&version;版本可以理解的。
+</para>
+
+   <sect2>
+    <title><literal>COMMUTATOR</></title>
+
+    <!--
+<para>
+     The <literal>COMMUTATOR</> clause, if provided, names an operator that is the
+     commutator of the operator being defined.  We say that operator A is the
+     commutator of operator B if (x A y) equals (y B x) for all possible input
+     values x, y.  Notice that B is also the commutator of A.  For example,
+     operators <literal>&lt;</> and <literal>&gt;</> for a particular data type are usually each others'
+     commutators, and operator <literal>+</> is usually commutative with itself.
+     But operator <literal>-</> is usually not commutative with anything.
+    </para>
+-->
+<para>
+如果提供了<literal>COMMUTATOR</>子句，则命名一个操作符是被定义的操作符的交换符。
+如果有两个操作符 A, B ，对于任何可能的输入数值 x, y 都有(x A y)等于(y B x)，
+那么就说 A 是 B 的交换符，同样 B 也是 A 的交换符。例如，操作符<literal>&lt;</>和<literal>&gt;</>
+对于所使用的一定的数据类型通常都是对方的交换符，而操作符<literal>+</>通常是它自身的交换符。
+但是操作符<literal>-</>通常没有交换符。
+</para>
+
+    <!--
+<para>
+     The left operand type of a commutable operator is the same as the
+     right operand type of its commutator, and vice versa.  So the name of
+     the commutator operator is all that <productname>PostgreSQL</productname>
+     needs to be given to look up the commutator, and that's all that needs to
+     be provided in the <literal>COMMUTATOR</> clause.
+    </para>
+-->
+<para>
+交换操作符的左操作数与右操作数类型必须相同。所以<productname>PostgreSQL</productname>
+所需要的只是一个交换符操作符的名称用以查找该交换符，那也是<literal>COMMUTATOR</>
+子句里所需要的唯一的东西。
+</para>
+
+    <!--
+<para>
+     It's critical to provide commutator information for operators that
+     will be used in indexes and join clauses, because this allows the
+     query optimizer to <quote>flip around</> such a clause to the forms
+     needed for different plan types.  For example, consider a query with
+     a WHERE clause like <literal>tab1.x = tab2.y</>, where <literal>tab1.x</>
+     and <literal>tab2.y</> are of a user-defined type, and suppose that
+     <literal>tab2.y</> is indexed.  The optimizer cannot generate an
+     index scan unless it can determine how to flip the clause around to
+     <literal>tab2.y = tab1.x</>, because the index-scan machinery expects
+     to see the indexed column on the left of the operator it is given.
+     <productname>PostgreSQL</productname> will <emphasis>not</> simply
+     assume that this is a valid transformation &mdash; the creator of the
+     <literal>=</> operator must specify that it is valid, by marking the
+     operator with commutator information.
+    </para>
+-->
+<para>
+给那些会在索引和连接子句里面使用的操作符提供交换符是非常关键的，
+因为这样就允许查询优化器<quote>移动</>这样的子句，形成所需要的不同的规划类型的形式。
+比如，考虑一个有类似<literal>tab1.x = tab2.y</>的 WHERE 子句的查询，
+这里<literal>tab1.x</>和<literal>tab2.y</>是用户定义类型，并且假设<literal>tab2.y</>上面有索引。
+除非优化器知道如何在<literal>tab2.y = tab1.x</>周围四处移动该子句，否则它不能生成索引扫描，
+因为索引扫描机制期望看到索引字段在给出的操作符左边。<productname>PostgreSQL</productname>
+<emphasis>不会</>简单地假设这是一个合法的转换，<literal>=</>的创建者必须声明这是有效的，
+方法是给这个操作符标记交换器信息。
+</para>
+    
+<para>
+<!--
+     When you are defining a self-commutative operator, you just do it.
+     When you are defining a pair of commutative operators, things are
+     a little trickier: how can the first one to be defined refer to the
+     other one, which you haven't defined yet?  There are two solutions
+     to this problem:
+-->
+当你定义一个自交换的操作符时，你简单的定义它就可以了。当你定义一对交换符操作符时，
+事情就有一点棘手：怎样定义一个操作符的交换符指向另一个你还没有定义的操作符呢? 
+对这个问题有两个解决方法：
+     <itemizedlist>
+      <listitem>
+<!-- 
+       <para>
+        One way is to omit the <literal>COMMUTATOR</> clause in the first operator that
+        you define, and then provide one in the second operator's definition.
+        Since <productname>PostgreSQL</productname> knows that commutative
+        operators come in pairs, when it sees the second definition it will
+        automatically go back and fill in the missing <literal>COMMUTATOR</> clause in
+        the first definition.
+       </para>
+ -->
+<para>
+一个方法是省略你定义的第一个操作符的<literal>COMMUTATOR</>子句，然后在第二个操作符的定义里提供一个。
+因为<productname>PostgreSQL</productname>知道交换操作符是成对出现的，
+所以当它看到第二个定义时它会自动折回并填充第一个定义里空缺的<literal>COMMUTATOR</>子句。
+</para>
+      </listitem>
+
+      <listitem>
+       <!--
+<para>
+        The other, more straightforward way is just to include <literal>COMMUTATOR</> clauses
+        in both definitions.  When <productname>PostgreSQL</productname> processes
+        the first definition and realizes that <literal>COMMUTATOR</> refers to a nonexistent
+        operator, the system will make a dummy entry for that operator in the
+        system catalog.  This dummy entry will have valid data only
+        for the operator name, left and right operand types, and result type,
+        since that's all that <productname>PostgreSQL</productname> can deduce
+        at this point.  The first operator's catalog entry will link to this
+        dummy entry.  Later, when you define the second operator, the system
+        updates the dummy entry with the additional information from the second
+        definition.  If you try to use the dummy operator before it's been filled
+        in, you'll just get an error message.
+       </para>
+-->
+<para>
+另一个更直接的方法是在两个定义里面都包含<literal>COMMUTATOR</>子句。当<productname>PostgreSQL</productname>
+处理第一个定义并意识到<literal>COMMUTATOR</>指向一个不存在的操作符时会在系统表里为该操作符记录一个虚拟记录。
+这个虚拟的记录只有操作符名，左和右操作数类型以及结果类型是有效的，因为这些是到目前为止
+<productname>PostgreSQL</productname>可以推导出来的东西。第一个操作符类记录将和这个虚拟记录连接。
+稍后，当你定义第二个操作符时，系统将用来自第二个操作符的信息更新该虚拟记录。
+如果你试图在虚拟操作符被填充之前使用它，你将只能收到一条错误信息。
+</para>
+      </listitem>
+     </itemizedlist>
+    </para>
+   </sect2>
+
+   <sect2>
+    <title><literal>NEGATOR</></title>
+
+    <!--
+<para>
+     The <literal>NEGATOR</> clause, if provided, names an operator that is the
+     negator of the operator being defined.  We say that operator A
+     is the negator of operator B if both return Boolean results and
+     (x A y) equals NOT (x B y) for all possible inputs x, y.
+     Notice that B is also the negator of A.
+     For example, <literal>&lt;</> and <literal>&gt;=</> are a negator pair for most data types.
+     An operator can never validly be its own negator.
+    </para>
+-->
+<para>
+如果提供了<literal>NEGATOR</>子句，则命名一个操作符是被定义的操作符的否定符。
+如果有两个都返回布尔变量的操作符 A 和 B ，对任何可能的输入 x 和 y ，都有 (x A y) 
+等于 NOT(x B y)，那么说 A 是 B 的否定符。当然 B 也是 A 的否定符。例如，<literal>&lt;</>和<literal>&gt;=</>
+对大多数数据类型是一对否定符。一个操作符不可能是它自身的否定符。
+</para>
+
+   <!--
+<para>
+    Unlike commutators, a pair of unary operators could validly be marked
+    as each others' negators; that would mean (A x) equals NOT (B x)
+    for all x, or the equivalent for right unary operators.
+   </para>
+-->
+<para>
+不像交换符，一对单目操作符可以互为否定符；那就意味着对于所有的 x 都有 (A x) 等于 NOT(B x) ，
+或者类似的右目操作符的这种情况。
+</para>
+
+   <!--
+<para>
+    An operator's negator must have the same left and/or right operand types
+    as the operator to be defined, so just as with <literal>COMMUTATOR</>, only the operator
+    name need be given in the <literal>NEGATOR</> clause.
+   </para>
+-->
+<para>
+一个操作符的否定符必须有与正定义的操作符本身一样的左和/或右操作数类型，
+所以就像<literal>COMMUTATOR</>一样，只有操作符名需要在<literal>NEGATOR</>子句里面给出。
+</para>
+
+   <!--
+<para>
+    Providing a negator is very helpful to the query optimizer since
+    it allows expressions like <literal>NOT (x = y)</> to be simplified into
+    <literal>x &lt;&gt; y</>.  This comes up more often than you might think, because
+    <literal>NOT</> operations can be inserted as a consequence of other rearrangements.
+   </para>
+-->
+<para>
+提供否定符对查询优化器是非常有帮助的，因为这样就允许像<literal>NOT (x = y)</>
+这样的表达式简化成<literal>x &lt;&gt; y</>。这样的情况比你想像的要频繁的多，
+因为<literal>NOT</>操作可能因为其它的重排列而被引入。
+</para>
+
+   <!--
+<para>
+    Pairs of negator operators can be defined using the same methods
+    explained above for commutator pairs.
+   </para>
+-->
+<para>
+否定符对可以用上面交换符对中解释的相同的方法来定义。
+</para>
+
+  </sect2>
+
+  <sect2>
+   <title><literal>RESTRICT</></title>
+   
+<para>
+<!--
+    The <literal>RESTRICT</> clause, if provided, names a restriction selectivity
+    estimation function for the operator.  (Note that this is a function
+    name, not an operator name.)  <literal>RESTRICT</> clauses only make sense for
+    binary operators that return <type>boolean</>.  The idea behind a restriction
+    selectivity estimator is to guess what fraction of the rows in a
+    table will satisfy a <literal>WHERE</literal>-clause condition of the form:
+-->
+如果提供了<literal>RESTRICT</>子句，则为操作符命名一个选择性限制计算函数(注意这里是一个函数名，
+而不是一个操作符名)。<literal>RESTRICT</>子句只是对返回<type>boolean</>变量的双目操作符有意义。
+选择性限制计算符的概念是猜测一个表中所有行的哪一部分对于目前的操作符和特定的常量将满足一个像下面这样形式的
+<literal>WHERE</literal>条件子句。
+<programlisting>
+column OP constant
+</programlisting>
+<!-- 
+    for the current operator and a particular constant value.
+    This assists the optimizer by
+    giving it some idea of how many rows will be eliminated by <literal>WHERE</>
+    clauses that have this form.  (What happens if the constant is on
+    the left, you might be wondering?  Well, that's one of the things that
+    <literal>COMMUTATOR</> is for...) 
+-->
+它可以给出这种类型的<literal>WHERE</>子句可以删除多少行的一个概念，这将帮助优化器进行优化。
+你可能会说，如果该常量(constant)在左边怎么办?哦，那是<literal>COMMUTATOR</>干的事...
+   </para>
+<!--   
+<para>
+    Writing new restriction selectivity estimation functions is far beyond
+    the scope of this chapter, but fortunately you can usually just use
+    one of the system's standard estimators for many of your own operators.
+    These are the standard restriction estimators:
+    <simplelist>
+     <member><function>eqsel</> for <literal>=</></member>
+     <member><function>neqsel</> for <literal>&lt;&gt;</></member>
+     <member><function>scalarltsel</> for <literal>&lt;</> or <literal>&lt;=</></member>
+     <member><function>scalargtsel</> for <literal>&gt;</> or <literal>&gt;=</></member>
+   </simplelist>
+    It might seem a little odd that these are the categories, but they
+    make sense if you think about it.  <literal>=</> will typically accept only
+    a small fraction of the rows in a table; <literal>&lt;&gt;</> will typically reject
+    only a small fraction.  <literal>&lt;</> will accept a fraction that depends on
+    where the given constant falls in the range of values for that table
+    column (which, it just so happens, is information collected by
+    <command>ANALYZE</command> and made available to the selectivity estimator).
+    <literal>&lt;=</> will accept a slightly larger fraction than <literal>&lt;</> for the same
+    comparison constant, but they're close enough to not be worth
+    distinguishing, especially since we're not likely to do better than a
+    rough guess anyhow.  Similar remarks apply to <literal>&gt;</> and <literal>&gt;=</>.
+   </para>
+-->
+<para>
+书写新的选择性限制计算函数远远超出了本章的范围，不过很幸运的是，
+通常你对自己的操作符只需要使用系统标准的计算器之一就行了。下面是一些标准限制计算器：
+<simplelist>
+     <member><function>eqsel</> 用于 <literal>=</></member>
+     <member><function>neqsel</> 用于 <literal>&lt;&gt;</></member>
+     <member><function>scalarltsel</> 用于 <literal>&lt;</> 或 <literal>&lt;=</></member>
+     <member><function>scalargtsel</> 用于 <literal>&gt;</> 或 <literal>&gt;=</></member>
+   </simplelist> 
+这些都是分类，看起来有点奇怪，不过如果你仔细想想，就会觉得有道理。<literal>=</>大多将只接受表中的一小部分行；
+<literal>&lt;&gt;</>大多将拒绝一小部分行。<literal>&lt;</>接受的行取决于给出的常量落在表的该列数据值的哪一个范围里
+(该值碰巧是<command>ANALYZE</command>收集并且提供给选择性计算器的信息)。<literal>&lt;=</>在同样的常量时会接受比
+<literal>&lt;</>略微大一些的行，不过它们也非常接近，几乎不值得区别开来，尤其是无论如何也比做盲猜好得多。
+类似的情况也适用于<literal>&gt;</>和<literal>&gt;=</>。
+</para>
+
+   <!--
+<para>
+    You can frequently get away with using either <function>eqsel</function> or <function>neqsel</function> for
+    operators that have very high or very low selectivity, even if they
+    aren't really equality or inequality.  For example, the
+    approximate-equality geometric operators use <function>eqsel</function> on the assumption that
+    they'll usually only match a small fraction of the entries in a table.
+   </para>
+-->
+<para>
+你可能常习惯于把<function>eqsel</function>或<function>neqsel</function>用于那些非常高或者非常低选择性的操作符，
+即使它们并非真正相等或者不相等。例如，基于只会匹配整个表中一小部分记录的假设，几何操作符约等于就使用<function>eqsel</function>。
+</para>
+
+   <!--
+<para>
+    You can use <function>scalarltsel</> and <function>scalargtsel</> for comparisons on data types that
+    have some sensible means of being converted into numeric scalars for
+    range comparisons.  If possible, add the data type to those understood
+    by the function <function>convert_to_scalar()</function> in <filename>src/backend/utils/adt/selfuncs.c</filename>.
+    (Eventually, this function should be replaced by per-data-type functions
+    identified through a column of the <classname>pg_type</> system catalog; but that hasn't happened
+    yet.)  If you do not do this, things will still work, but the optimizer's
+    estimates won't be as good as they could be.
+   </para>
+-->
+<para>
+你可以把<function>scalarltsel</>和<function>scalargtsel</>
+用于比较那些为进行范围比较被转化为数字尺度后有明显意义的数据类型。如果可能，
+把该数据类型增加到可以被<filename>src/backend/utils/adt/selfuncs.c</filename>文件里的
+<function>convert_to_scalar()</function>函数理解的部分。最终，这个过程将被放到由<classname>pg_type</>
+表里的一个列标识的每种类型一个的函数代替，不过目前还没有这么做。如果你没有做这些，系统仍然能工作，
+不过优化器的估计不会像想像的那么好。
+</para>
+
+   <!--
+<para>
+    There are additional selectivity estimation functions designed for geometric
+    operators in <filename>src/backend/utils/adt/geo_selfuncs.c</filename>: <function>areasel</function>, <function>positionsel</function>,
+    and <function>contsel</function>.  At this writing these are just stubs, but you might want
+    to use them (or even better, improve them) anyway.
+   </para>
+-->
+<para>
+在<filename>src/backend/utils/adt/geo_selfuncs.c</filename>里还有为几何操作符设计的额外选择性评估函数：
+<function>areasel</function>, <function>positionsel</function>, <function>contsel</function>。目前，
+它们都只是存根，但是你还是可以使用(最后是改良)它们。
+</para>
+   </sect2>
+
+   <sect2>
+    <title><literal>JOIN</></title>
+
+    <!--
+<para>
+     The <literal>JOIN</> clause, if provided, names a join selectivity
+     estimation function for the operator.  (Note that this is a function
+     name, not an operator name.)  <literal>JOIN</> clauses only make sense for
+     binary operators that return <type>boolean</type>.  The idea behind a join
+     selectivity estimator is to guess what fraction of the rows in a
+     pair of tables will satisfy a <literal>WHERE</>-clause condition of the form:
+<programlisting>
+table1.column1 OP table2.column2
+</programlisting>
+     for the current operator.  As with the <literal>RESTRICT</literal> clause, this helps
+     the optimizer very substantially by letting it figure out which
+     of several possible join sequences is likely to take the least work.
+    </para>
+-->
+<para>
+如果提供了<literal>JOIN</>子句，则为操作符命名一个连接选择性计算器函数(是函数名，
+不是操作符名)。<literal>JOIN</>子句只是对返回<type>boolean</type>的双目操作符有意义。
+一个连接选择性计算器后面的概念是猜测一对表上的哪部分行对目前的操作符将满足下面形式的
+<literal>WHERE</>子句的条件：
+<programlisting>
+table1.column1 OP table2.column2
+</programlisting>
+和<literal>RESTRICT</literal>子句一样，
+这些很有可能帮助优化器用最少的处理勾画出要采取可能的连接顺序中的哪一个。
+</para>
+
+    <!--
+<para>
+     As before, this chapter will make no attempt to explain how to write
+     a join selectivity estimator function, but will just suggest that
+     you use one of the standard estimators if one is applicable:
+     <simplelist>
+      <member><function>eqjoinsel</> for <literal>=</></member>
+      <member><function>neqjoinsel</> for <literal>&lt;&gt;</></member>
+      <member><function>scalarltjoinsel</> for <literal>&lt;</> or <literal>&lt;=</></member>
+      <member><function>scalargtjoinsel</> for <literal>&gt;</> or <literal>&gt;=</></member>
+      <member><function>areajoinsel</> for 2D area-based comparisons</member>
+      <member><function>positionjoinsel</> for 2D position-based comparisons</member>
+      <member><function>contjoinsel</> for 2D containment-based comparisons</member>
+     </simplelist>
+    </para>
+-->
+<para>
+和前面一样，本节不会试图解释如何书写一个连接选择性计算器函数，
+但是会建议你尽可能使用一个标准的计算器：
+     <simplelist>
+      <member><function>eqjoinsel</> 用于 <literal>=</></member>
+      <member><function>neqjoinsel</> 用于 <literal>&lt;&gt;</></member>
+      <member><function>scalarltjoinsel</> 用于 <literal>&lt;</> 或 <literal>&lt;=</></member>
+      <member><function>scalargtjoinsel</> 用于 <literal>&gt;</> 或 <literal>&gt;=</></member>
+      <member><function>areajoinsel</> 用于基于面积的二维比较</member>
+      <member><function>positionjoinsel</> 用于基于位置的二维比较</member>
+      <member><function>contjoinsel</> 用于基于包含的二维比较</member>
+     </simplelist>
+</para>
+   </sect2>
+
+   <sect2>
+    <title><literal>HASHES</></title>
+
+    <!--
+<para>
+     The <literal>HASHES</literal> clause, if present, tells the system that
+     it is permissible to use the hash join method for a join based on this
+     operator.  <literal>HASHES</> only makes sense for a binary operator that
+     returns <literal>boolean</>, and in practice the operator must represent
+     equality for some data type or pair of data types.
+    </para>
+-->
+<para>
+如果出现了<literal>HASHES</literal>子句，则告诉系统对于一个基于此操作符的连接可以使用 Hash 连接。
+<literal>HASHES</>只对返回<literal>boolean</>的双目操作符有意义，
+并且实际上该操作符最好是对某种数据类型的相等操作符。
+</para>
+
+    <!--
+<para>
+     The assumption underlying hash join is that the join operator can
+     only return true for pairs of left and right values that hash to the
+     same hash code.  If two values get put in different hash buckets, the
+     join will never compare them at all, implicitly assuming that the
+     result of the join operator must be false.  So it never makes sense
+     to specify <literal>HASHES</literal> for operators that do not represent
+     some form of equality.  In most cases it is only practical to support
+     hashing for operators that take the same data type on both sides.
+     However, sometimes it is possible to design compatible hash functions
+     for two or more data types; that is, functions that will generate the
+     same hash codes for <quote>equal</> values, even though the values
+     have different representations.  For example, it's fairly simple
+     to arrange this property when hashing integers of different widths.
+    </para>
+-->
+<para>
+Hash 连接的假设是：对于一对散列到同样的 Hash 代码的左和右操作数值，该连接操作符只能返回真。
+如果两个值被放到不同的 Hash 桶里，连接将根本不比较它们，隐含地意味着连接操作符的结果一定是假。
+所以对于不代表相等的操作符，声明<literal>HASHES</literal>是没有意义的。
+在大多数情况下，支持两端接受同样数据类型的操作符是唯一可行的。然而，
+有时为两个或更多的数据类型设计兼容的hash函数也是可能的；也就是，函数将为<quote>相等的</>
+值产生相同的hash代码，即使值有不同的代表。例如，当哈希整数有不容的宽度时，排列这个属性是非常简单。
+</para>
+
+    <!--
+<para>
+     To be marked <literal>HASHES</literal>, the join operator must appear
+     in a hash index operator family.  This is not enforced when you create
+     the operator, since of course the referencing operator family couldn't
+     exist yet.  But attempts to use the operator in hash joins will fail
+     at run time if no such operator family exists.  The system needs the
+     operator family to find the data-type-specific hash function(s) for the
+     operator's input data type(s).  Of course, you must also create suitable
+     hash functions before you can create the operator family.
+    </para>
+-->
+<para>
+要标记为<literal>HASHES</literal>，连接操作符必须出现在一个 Hash 索引操作符类中。
+在创建操作符时并不强制这样，因为引用操作符类不可能还存在。
+但是企图在 Hash 连接中使用尚不存在的操作符类将在运行时导致失败。
+系统需要操作符类根据操作符的输入数据类型确定特定于该数据类型的 Hash 函数。当然，
+你必须在创建操作符类之前首先提供合适的 Hash 函数。
+</para>
+
+    <!--
+<para>
+     Care should be exercised when preparing a hash function, because there
+     are machine-dependent ways in which it might fail to do the right thing.
+     For example, if your data type is a structure in which there might be
+     uninteresting pad bits, you cannot simply pass the whole structure to
+     <function>hash_any</>.  (Unless you write your other operators and
+     functions to ensure that the unused bits are always zero, which is the
+     recommended strategy.)
+     Another example is that on machines that meet the <acronym>IEEE</>
+     floating-point standard, negative zero and positive zero are different
+     values (different bit patterns) but they are defined to compare equal.
+     If a float value might contain negative zero then extra steps are needed
+     to ensure it generates the same hash value as positive zero.
+    </para>
+-->
+<para>
+在编写 Hash 函数时必须小心，因为有一些硬件相关的因素会导致错误。比如，
+如果你的数据类型是一个存在间隙的结构体，你就不能简单的将其传递给某个<function>hash_any</>
+函数。除非你的其它操作符能够确保这些间隙总是零(这是建议的策略)。
+另一个例子是在符合<acronym>IEEE</>浮点标准的机器上，负零和正零是不同的值(不同的位模式)，
+但是它们被定义为比较相等。如果一个浮点值可能包含负零，
+那么必须使用额外的步骤来确保产生和正零相同的 Hash 值。
+</para>
+
+    <!--
+<para>
+     A hash-joinable operator must have a commutator (itself if the two
+     operand data types are the same, or a related equality operator
+     if they are different) that appears in the same operator family.
+     If this is not the case, planner errors might occur when the operator
+     is used.  Also, it is a good idea (but not strictly required) for
+     a hash operator family that supports multiple data types to provide
+     equality operators for every combination of the data types; this
+     allows better optimization.
+    </para>
+-->
+<para>
+一个可 Hash 连接的操作符必须有一个在相同操作符类中的交换符（如果两个操作符数据类型相同则是它本身，
+如果不同则是一个相关的相等操作符）。如果不是这样，当使用操作符时会发生规划器错误。同样，
+一个hash操作符类支持多种数据类型以为数据类型的每种结合提供相等操作符是一个好主意（但不是严格要求）；
+这允许更好的优化。
+</para>
+
+    <note>
+    <!--
+<para>
+     The function underlying a hash-joinable operator must be marked
+     immutable or stable.  If it is volatile, the system will never
+     attempt to use the operator for a hash join.
+    </para>
+-->
+<para>
+在一个可 Hash 连接的操作符下层的函数必须标明 immutable 或 stable 。如果它是 volatile ，
+那么系统将从不在 Hash 连接中使用这些操作符。
+</para>
+    </note>
+
+    <note>
+    <!--
+<para>
+     If a hash-joinable operator has an underlying function that is marked
+     strict, the
+     function must also be complete: that is, it should return true or
+     false, never null, for any two nonnull inputs.  If this rule is
+     not followed, hash-optimization of <literal>IN</> operations might
+     generate wrong results.  (Specifically, <literal>IN</> might return
+     false where the correct answer according to the standard would be null;
+     or it might yield an error complaining that it wasn't prepared for a
+     null result.)
+    </para>
+-->
+<para>
+如果一个可 Hash 连接的操作符有一个下层函数标记为严格的(strict)，那么该函数必须完整：
+也就是说，对于任何非 NULL 输入，它应该返回 TRUE 或 FALSE ，但绝不能是 NULL 。
+如果不遵循这个规则，<literal>IN</>操作的 Hash 优化可能会生成错误的结果。
+特别是根据规范正确答案是 NULL 的时候，<literal>IN</>可能会返回 FALSE ；
+或者它可能生成一个错误，抱怨说它对 NULL 结果没有思想准备。
+</para>
+    </note>
+
+   </sect2>
+
+   <sect2>
+    <title><literal>MERGES</></title>
+
+    <!--
+<para>
+     The <literal>MERGES</literal> clause, if present, tells the system that
+     it is permissible to use the merge-join method for a join based on this
+     operator.  <literal>MERGES</> only makes sense for a binary operator that
+     returns <literal>boolean</>, and in practice the operator must represent
+     equality for some data type or pair of data types.
+    </para>
+-->
+<para>
+如果出现了<literal>MERGES</literal>子句，则告诉系统对基于目前操作符的连接可以使用融合连接方法。
+<literal>MERGES</literal>只是对返回<literal>boolean</>的双目操作符有意义，
+实际上这个操作符对于某些数据类型或者某对数据类型必须表示相等。
+</para>
+
+    <!--
+<para>
+     Merge join is based on the idea of sorting the left- and right-hand tables
+     into order and then scanning them in parallel.  So, both data types must
+     be capable of being fully ordered, and the join operator must be one
+     that can only succeed for pairs of values that fall at the
+     <quote>same place</>
+     in the sort order.  In practice this means that the join operator must
+     behave like equality.  But it is possible to merge-join two
+     distinct data types so long as they are logically compatible.  For
+     example, the <type>smallint</type>-versus-<type>integer</type>
+     equality operator is merge-joinable.
+     We only need sorting operators that will bring both data types into a
+     logically compatible sequence.
+    </para>
+-->
+<para>
+融合连接是以这样的概念为基础的：对左边和右边的表进行排序，然后并发地扫描它们。所以，
+两种数据类型都必须是能够完全排序的，并且连接操作符必须只对那些落在排序顺序中的
+<quote>某个位置</>的数值对成功。实际上这意味着连接操作符必须表现得像等于。
+但是可以对两种不同数据类型进行融合连接(只要他们逻辑相等即可)。例如，<type>smallint</type>
+对<type>integer</type>的相等操作符是可以用融合连接的。
+只需要可以把两种数据类型排列成逻辑可比序列的排序操作符即可。
+</para>
+
+    <!--
+<para>
+     To be marked <literal>MERGES</literal>, the join operator must appear
+     as an equality member of a <literal>btree</> index operator family.
+     This is not enforced when you create
+     the operator, since of course the referencing operator family couldn't
+     exist yet.  But the operator will not actually be used for merge joins
+     unless a matching operator family can be found.  The
+     <literal>MERGES</literal> flag thus acts as a hint to the planner that
+     it's worth looking for a matching operator family.
+    </para>
+-->
+<para>
+要标记为<literal>MERGES</literal>，连接操作符必须作为<literal>btree</>索引操作符类的一个相等的成员出现。
+在创建操作符时并不强制这么做，因为引用操作符类不可能还存在。
+但是操作符不会被实际用于融合连接，除非可以找到一个匹配操作符类。
+<literal>MERGES</literal>标志因此作为一个对规划器的提示，查找一个匹配的操作符类是值得的。
+</para>
+
+    <!--
+<para>
+     A merge-joinable operator must have a commutator (itself if the two
+     operand data types are the same, or a related equality operator
+     if they are different) that appears in the same operator family.
+     If this is not the case, planner errors might occur when the operator
+     is used.  Also, it is a good idea (but not strictly required) for
+     a <literal>btree</> operator family that supports multiple data types to provide
+     equality operators for every combination of the data types; this
+     allows better optimization.
+    </para>
+-->
+<para>
+可融合连接的相等操作符必须有一个在同一个操作符类中的交换符
+（如果两个操作数数据类型相同则是它自身，如果不同则是一个相关的相等操作符）。
+如果不是这样，当使用操作符时会发生规划器错误。同样，
+一个<literal>btree</>操作符类支持多种数据类型以为数据类型的每种结合提供相等操作符是一个好主意
+（但不是严格要求）；这允许更好的优化。
+</para>
+
+    <note>
+    <!--
+<para>
+     The function underlying a merge-joinable operator must be marked
+     immutable or stable.  If it is volatile, the system will never
+     attempt to use the operator for a merge join.
+    </para>
+-->
+<para>
+在一个可融合连接操作符下层的函数必须标记为永久(immutable)或者稳定(stable)。
+如果它是易失的(volatile)，那么系统将从不在融合连接中使用这些操作符。
+</para>
+    </note>
+   </sect2>
+  </sect1>

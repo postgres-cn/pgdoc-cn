@@ -1,0 +1,5630 @@
+<!-- doc/src/sgml/textsearch.sgml -->
+
+<chapter id="textsearch">
+ <!--
+ <title>Full Text Search</title>
+ -->
+ <title>全文检索</title>
+
+  <indexterm zone="textsearch">
+   <primary>full text search</primary>
+  </indexterm>
+
+  <indexterm zone="textsearch">
+   <primary>text search</primary> 
+  </indexterm>
+
+ <sect1 id="textsearch-intro">
+ <!--
+  <title>Introduction</title>
+-->
+  <title>介绍</title>
+  <!--
+<para>
+   Full Text Searching (or just <firstterm>text search</firstterm>) provides
+   the capability to identify natural-language <firstterm>documents</> that
+   satisfy a <firstterm>query</firstterm>, and optionally to sort them by
+   relevance to the query.  The most common type of search
+   is to find all documents containing given <firstterm>query terms</firstterm>
+   and return them in order of their <firstterm>similarity</firstterm> to the
+   query.  Notions of <varname>query</varname> and
+   <varname>similarity</varname> are very flexible and depend on the specific
+   application. The simplest search considers <varname>query</varname> as a
+   set of words and <varname>similarity</varname> as the frequency of query
+   words in the document.
+  </para>
+-->
+<para>
+全文搜索（或只是<firstterm>文本搜索</firstterm>）提供满足<firstterm>查询</firstterm>的识别自然语言<firstterm>文档</>的能力，
+并且任意地通过相关性查询进行排序。搜索最常见的类型是找到所有包含给定的<firstterm>查询术语</firstterm>的记录，并且以<firstterm>相似性</firstterm>的查
+询顺序返回它们。 <varname>query</varname>和<varname>similarity</varname>的概念是非常灵活的，取决于特定的应用。最简单的
+搜索认为<varname>query</varname>是一组词，并且<varname>similarity</varname>为文档中的查询词出现的频率。
+</para>
+
+  <!--
+<para>
+   Textual search operators have existed in databases for years.
+   <productname>PostgreSQL</productname> has
+   <literal>~</literal>, <literal>~*</literal>, <literal>LIKE</literal>, and
+   <literal>ILIKE</literal> operators for textual data types, but they lack
+   many essential properties required by modern information systems:
+  </para>
+-->
+<para>
+文本搜索操作符已经在数据库中存在多年。<productname>PostgreSQL</productname>为文本数据类型提供<literal>~</literal>, <literal>~*</literal>, 
+<literal>LIKE</literal>和<literal>ILIKE</literal>操作符，但它们缺乏许多通过现代信息系统要求的必要属性：
+</para>
+
+  <itemizedlist  spacing="compact" mark="bullet">
+   <listitem>
+    <!--
+<para>
+     There is no linguistic support, even for English.  Regular expressions
+     are not sufficient because they cannot easily handle derived words, e.g.,
+     <literal>satisfies</literal> and <literal>satisfy</literal>. You might
+     miss documents that contain <literal>satisfies</literal>, although you
+     probably would like to find them when searching for
+     <literal>satisfy</literal>. It is possible to use <literal>OR</literal>
+     to search for multiple derived forms, but this is tedious and error-prone
+     (some words can have several thousand derivatives).
+    </para>
+-->
+<para>
+没有语言的支持，即使是英语。正则表达式是不充分的，因为他们不能很容易地处理派生词，
+比如， <literal>satisfies</literal> 和<literal>satisfy</literal>。你可能会丢失包含<literal>satisfies</literal>的文档，
+虽然你可能会发现他们在寻找<literal>satisfy</literal>。使用<literal>OR</literal>搜索多个派生形式是可能的，但这很繁琐，
+而且容易出错（有些词可能会有上千的派生词）。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     They provide no ordering (ranking) of search results, which makes them
+     ineffective when thousands of matching documents are found.
+    </para>
+-->
+<para>
+他们没有提供搜索结果的分类（排序），当成千的匹配文档被发现时，这使得它们无效。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     They tend to be slow because there is no index support, so they must
+     process all documents for every search.
+    </para>
+-->
+<para>
+他们往往比较缓慢，因为没有索引的支持，因此他们必须为每一个搜索处理所有文档。
+</para>
+   </listitem>
+  </itemizedlist>
+
+  <!--
+<para>
+   Full text indexing allows documents to be <emphasis>preprocessed</emphasis>
+   and an index saved for later rapid searching. Preprocessing includes:
+  </para>
+-->
+<para>
+全文索引允许文档被<emphasis>预处理</emphasis>，并且为后边的快速搜索保存一个索引。预处理包括：
+</para>
+
+  <itemizedlist  mark="none">
+   <listitem>
+    <!--
+<para>
+     <emphasis>Parsing documents into <firstterm>tokens</></emphasis>. It is
+     useful to identify various classes of tokens, e.g., numbers, words,
+     complex words, email addresses, so that they can be processed
+     differently.  In principle token classes depend on the specific
+     application, but for most purposes it is adequate to use a predefined
+     set of classes.
+     <productname>PostgreSQL</productname> uses a <firstterm>parser</> to
+     perform this step.  A standard parser is provided, and custom parsers
+     can be created for specific needs.
+    </para>
+-->
+<para>
+<emphasis>解析文档<firstterm>标记</></emphasis>。标识不同类别的记号是非常有用的，
+例如，数字，词，复合词，电子邮件地址，这样他们可以用不同的方法来处理。原则上令牌类依赖于具体的应用，
+但出于大多数的目的，可以使用一组预定义的类。<productname>PostgreSQL</productname>使用<firstterm>解析器</>来
+执行这一步。提供了一种标准的解析器，以及为特定的需求创造的自定义分析器。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     <emphasis>Converting tokens into <firstterm>lexemes</></emphasis>.
+     A lexeme is a string, just like a token, but it has been
+     <firstterm>normalized</> so that different forms of the same word
+     are made alike.  For example, normalization almost always includes
+     folding upper-case letters to lower-case, and often involves removal
+     of suffixes (such as <literal>s</> or <literal>es</> in English).
+     This allows searches to find variant forms of the
+     same word, without tediously entering all the possible variants.
+     Also, this step typically eliminates <firstterm>stop words</>, which
+     are words that are so common that they are useless for searching.
+     (In short, then, tokens are raw fragments of the document text, while
+     lexemes are words that are believed useful for indexing and searching.)
+     <productname>PostgreSQL</productname> uses <firstterm>dictionaries</> to
+     perform this step.  Various standard dictionaries are provided, and
+     custom ones can be created for specific needs.
+    </para>
+-->
+<para>
+<emphasis>转换标记为<firstterm>词</></emphasis>。词是一个字符串，就像一个标记，但它已经<firstterm>标准化</>，
+这样同一个词的不同形式是一样的。例如，标准化几乎总是包括可折叠的大写字母到小写字母，往往涉及删除后缀（如英语中
+的<literal>s</> 或者<literal>es</> ）。这允许搜索找到同一个词的不同形式，没有繁琐的输入所有可能的变种。同时，这一步
+通常删除<firstterm>屏蔽词</>，这是很常见的，他们对于搜索无用。（总之，标记是文档文本的原片段，而词汇被认
+为是有用的索引和搜索的词。）<productname>PostgreSQL</productname>使用<firstterm>词典</>执行这一步。提供各种标准词典，
+以及为特定的需求创造的自定义词典。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     <emphasis>Storing preprocessed documents optimized for
+     searching</emphasis>.  For example, each document can be represented
+     as a sorted array of normalized lexemes. Along with the lexemes it is
+     often desirable to store positional information to use for
+     <firstterm>proximity ranking</firstterm>, so that a document that
+     contains a more <quote>dense</> region of query words is
+     assigned a higher rank than one with scattered query words.
+    </para>
+-->
+<para>
+ <emphasis>为优化搜索存储预处理文档</emphasis>。比如，每个文档可以表示为标准化词汇排序数组。
+ 伴随着词汇往往为<firstterm>邻近排序</firstterm>存储位置信息，这是理想的。因此包含查询词的<quote>密集</>区域的
+ 文档比分散查询词分配到一个更高的顺序。
+</para>
+   </listitem>
+  </itemizedlist>
+
+  <!--
+<para>
+   Dictionaries allow fine-grained control over how tokens are normalized.
+   With appropriate dictionaries, you can:
+  </para>
+-->
+<para>
+字典允许细粒度控制如何使用合适的字典规范化标记。你可以：
+</para>
+
+  <itemizedlist  spacing="compact" mark="bullet">
+   <listitem>
+    <!--
+<para>
+     Define stop words that should not be indexed.
+    </para>
+-->
+<para>
+定义不被索引的屏蔽词。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     Map synonyms to a single word using <application>Ispell</>.
+    </para>
+-->
+<para>
+使用<application>Ispell</>映射同义词到一个词。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     Map phrases to a single word using a thesaurus.
+    </para>
+-->
+<para>
+使用同义词词典将短语映射到一个词。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     Map different variations of a word to a canonical form using
+     an <application>Ispell</> dictionary.
+    </para>
+-->
+<para>
+使用<application>Ispell</>词典将词的不同形式映射到一种范式。 
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     Map different variations of a word to a canonical form using
+     <application>Snowball</> stemmer rules.
+    </para>
+-->
+<para>
+使用<application>Snowball</>词根规则将一个词的不同形式映射到一种范式。
+</para>
+   </listitem>
+  </itemizedlist>
+
+  <!--
+<para>
+   A data type <type>tsvector</type> is provided for storing preprocessed
+   documents, along with a type <type>tsquery</type> for representing processed
+   queries (<xref linkend="datatype-textsearch">).  There are many
+   functions and operators available for these data types
+   (<xref linkend="functions-textsearch">), the most important of which is
+   the match operator <literal>@@</literal>, which we introduce in
+   <xref linkend="textsearch-matching">.  Full text searches can be accelerated
+   using indexes (<xref linkend="textsearch-indexes">).
+  </para>
+-->
+<para>
+一种数据类型<type>tsvector</type>用于存储预处理文档，以及类型<type>tsquery</type> 表示处理的查询（<xref linkend="datatype-textsearch">）。
+为这些数据类型提供很多的函数和操作符（<xref linkend="functions-textsearch">），其中最重要的是匹配运算符<literal>@@</literal>，将在<xref linkend="textsearch-matching">中介绍。
+全文搜索可以使用索引进行加速（<xref linkend="textsearch-indexes">）。
+</para>
+
+
+  <sect2 id="textsearch-document">
+     <!--
+   <title>What Is a Document?</title>
+   -->
+    <title>文档是什么？</title>
+   
+   <indexterm zone="textsearch-document">
+    <primary>document</primary>
+    <secondary>text search</secondary>
+   </indexterm>
+
+   <!--
+<para>
+    A <firstterm>document</> is the unit of searching in a full text search
+    system; for example, a magazine article or email message.  The text search
+    engine must be able to parse documents and store associations of lexemes
+    (key words) with their parent document. Later, these associations are
+    used to search for documents that contain query words.
+   </para>
+-->
+<para>
+一个<firstterm>文档</>是全文搜索系统的搜索单元；例如，杂志上的一篇文章或电子邮件消息。
+文本搜索引擎必须能够解析文档，而且可以存储它们父文档词（关键词）的联系性。之后，
+这些联系用来搜索包含查询词的文档。
+</para>
+
+   
+<para>
+    <!--
+    For searches within <productname>PostgreSQL</productname>,
+    a document is normally a textual field within a row of a database table,
+    or possibly a combination (concatenation) of such fields, perhaps stored
+    in several tables or obtained dynamically. In other words, a document can
+    be constructed from different parts for indexing and it might not be
+    stored anywhere as a whole. For example:
+-->
+在<productname>PostgreSQL</productname>中搜索，文档通常是一个数据库表中一行的文本字段，或者这些字段的可能组合（级联），
+可能存储在多个表中或者动态地获得。换句话说，一个文档可以由索引的不同部分构成，它不可能随时随地作
+为一个整体存储。比如：
+
+<programlisting>
+SELECT title || ' ' ||  author || ' ' ||  abstract || ' ' || body AS document
+FROM messages
+WHERE mid = 12;
+
+SELECT m.title || ' ' || m.author || ' ' || m.abstract || ' ' || d.body AS document
+FROM messages m, docs d
+WHERE mid = did AND mid = 12;
+</programlisting>
+   </para>
+   <note>
+    <!--
+<para>
+     Actually, in these example queries, <function>coalesce</function>
+     should be used to prevent a single <literal>NULL</literal> attribute from
+     causing a <literal>NULL</literal> result for the whole document.
+    </para>
+-->
+<para>
+注意:实际上，在这些示例查询中，<function>coalesce</function>使用时应防止一个独立的<literal>NULL</literal>属性导致整个文档的<literal>NULL</literal>结果。
+</para>
+   </note>
+
+   <!--
+<para>
+    Another possibility is to store the documents as simple text files in the
+    file system. In this case, the database can be used to store the full text
+    index and to execute searches, and some unique identifier can be used to
+    retrieve the document from the file system.  However, retrieving files
+    from outside the database requires superuser permissions or special
+    function support, so this is usually less convenient than keeping all
+    the data inside <productname>PostgreSQL</productname>.  Also, keeping
+    everything inside the database allows easy access
+    to document metadata to assist in indexing and display.
+   </para>
+-->
+<para>
+另外一个可能性是在文档系统中作为简单的文本文档存储。在这种情况下，数据库可以用于存储全
+文索引并且执行搜索，同时使用一些唯一标识从文件系统中检索文档。然而，从外部检索文件，数据库
+需要拥有超级用户权限或者特殊函数支持，因此比把所有数据保存在<productname>PostgreSQL</productname>中相比较，
+这往往不太方便。同时，保持所有的数据在数据库里面允许轻松访问文档的元数据以帮助索引和显示。
+</para>
+
+   <!--
+<para>
+    For text search purposes, each document must be reduced to the
+    preprocessed <type>tsvector</> format.  Searching and ranking
+    are performed entirely on the <type>tsvector</> representation
+    of a document &mdash; the original text need only be retrieved
+    when the document has been selected for display to a user.
+    We therefore often speak of the <type>tsvector</> as being the
+    document, but of course it is only a compact representation of
+    the full document.
+   </para>
+-->
+<para>
+为了文本搜索目的，每个文档必须减少到预处理<type>tsvector</>格式。在文档的<type>tsvector</>表示形式上完整的执行搜索
+和排序&mdash当为了显示给用户来选择文档时，只需要检索原文本。因此我们常说的<type>tsvector</>作为文档，当然它仅仅是
+完整文档的一种紧凑表示。
+</para>
+  </sect2>
+
+  <sect2 id="textsearch-matching">
+  <!--
+  <title>Basic Text Matching</title>
+  -->
+   <title>基本文本匹配</title>
+   
+<para>
+    <!--
+    Full text searching in <productname>PostgreSQL</productname> is based on
+    the match operator <literal>@@</literal>, which returns
+    <literal>true</literal> if a <type>tsvector</type>
+    (document) matches a <type>tsquery</type> (query).
+    It doesn't matter which data type is written first:
+-->
+
+<productname>PostgreSQL</productname>中的全文搜索基于匹配算子<literal>@@</literal>，如果一个<type>tsvector</type>(document)匹配一个<type>tsquery</type>(query)，
+则返回<literal>true</literal>。不管哪个数据类型先被重写：
+
+<programlisting>
+SELECT 'a fat cat sat on a mat and ate a fat rat'::tsvector @@ 'cat &amp; rat'::tsquery;
+ ?column?
+----------
+ t
+
+SELECT 'fat &amp; cow'::tsquery @@ 'a fat cat sat on a mat and ate a fat rat'::tsvector;
+ ?column?
+----------
+ f
+</programlisting>
+   </para>
+
+   
+<para>
+    <!--
+    As the above example suggests, a <type>tsquery</type> is not just raw
+    text, any more than a <type>tsvector</type> is.  A <type>tsquery</type>
+    contains search terms, which must be already-normalized lexemes, and
+    may combine multiple terms using AND, OR, and NOT operators.
+    (For details see <xref linkend="datatype-textsearch">.)  There are
+    functions <function>to_tsquery</> and <function>plainto_tsquery</>
+    that are helpful in converting user-written text into a proper
+    <type>tsquery</type>, for example by normalizing words appearing in
+    the text.  Similarly, <function>to_tsvector</> is used to parse and
+    normalize a document string.  So in practice a text search match would
+    look more like this:
+-->
+
+正如上面例子表明，一个<type>tsquery</type>不仅仅是原文本，更多的是一个<type>tsvector</type>。一个包含搜索条件的<type>tsquery</type>，
+必须是已经标准化的词，并且可能使用AND, OR, 和 NOT操作符连接多个术语（详情请见<xref linkend="datatype-textsearch">）。 
+函数<function>to_tsquery</>和<function>plainto_tsquery</>在将用户书写文本转换成一个合适的<type>tsquery</type>是非常有帮助的。
+比如通过标准化文本中的词。类似的，<function>to_tsvector</>用于解析和标准化文档字符串。因此在实践中文本搜索匹配
+可能看起来更像这样：
+
+<programlisting>
+SELECT to_tsvector('fat cats ate fat rats') @@ to_tsquery('fat &amp; rat');
+ ?column? 
+----------
+ t
+</programlisting>
+    <!--
+
+    Observe that this match would not succeed if written as
+-->
+ 观察这个匹配可能不会成功，如果写成这样：
+
+<programlisting>
+SELECT 'fat cats ate fat rats'::tsvector @@ to_tsquery('fat &amp; rat');
+ ?column? 
+----------
+ f
+</programlisting>
+    <!--
+    since here no normalization of the word <literal>rats</> will occur.
+    The elements of a <type>tsvector</> are lexemes, which are assumed
+    already normalized, so <literal>rats</> does not match <literal>rat</>.
+-->
+由于这儿没有发生词<literal>rats</>的标准化。一个<type>tsvector</>的元素是词，假设已经被标准化，所以<literal>rats</>不匹配<literal>rat</>。
+   </para>
+
+
+   
+<para>
+    <!--
+    The <literal>@@</literal> operator also
+    supports <type>text</type> input, allowing explicit conversion of a text
+    string to <type>tsvector</type> or <type>tsquery</> to be skipped
+    in simple cases.  The variants available are:
+-->
+<literal>@@</literal>操作符也支持<type>text</type>输入，允许一个文本字符串的显示转换为<type>tsvector</type>或者在简单情况下忽略<type>tsquery</>。
+可用形式是：
+
+<programlisting>
+tsvector @@ tsquery
+tsquery  @@ tsvector
+text @@ tsquery
+text @@ text
+</programlisting>
+   </para>
+
+   <!--
+<para>
+    The first two of these we saw already.
+    The form <type>text</type> <literal>@@</literal> <type>tsquery</type>
+    is equivalent to <literal>to_tsvector(x) @@ y</literal>.
+    The form <type>text</type> <literal>@@</literal> <type>text</type>
+    is equivalent to <literal>to_tsvector(x) @@ plainto_tsquery(y)</literal>.
+   </para>
+-->
+<para>
+我们已经看到了前面两种，形式 <type>text</type> <literal>@@</literal> <type>tsquery</type>等价于<literal>to_tsvector(x) @@ y</literal>。<type>text</type> <literal>@@</literal> <type>text</type>等价于
+<literal>to_tsvector(x) @@ plainto_tsquery(y)</literal>。
+</para>
+  </sect2>
+
+  <sect2 id="textsearch-intro-configurations">
+    <!--
+   <title>Configurations</title>
+   -->
+    <title>配置</title>
+
+   <!--
+<para>
+    The above are all simple text search examples.  As mentioned before, full
+    text search functionality includes the ability to do many more things:
+    skip indexing certain words (stop words), process synonyms, and use
+    sophisticated parsing, e.g., parse based on more than just white space.
+    This functionality is controlled by <firstterm>text search
+    configurations</>.  <productname>PostgreSQL</> comes with predefined
+    configurations for many languages, and you can easily create your own
+    configurations.  (<application>psql</>'s <command>\dF</> command
+    shows all available configurations.)
+   </para>
+-->
+<para>
+上面是所有简单文本搜索例子。如前所述，全文搜索功能还有能力做更多事情：忽略索引某个词（屏蔽词），
+过程同义词和使用复杂解析，比如：不仅仅基于空白格的解析。这些功能通过<firstterm>文本搜索配置</>控制。
+<productname>PostgreSQL</>来自多语言的预先定义的配置，并且你也可以很容易的创建你自己的配置（<application>psql</>的<command>\dF</> 命令显示了
+所有可用配置）。
+</para>
+
+   <!--
+<para>
+    During installation an appropriate configuration is selected and
+    <xref linkend="guc-default-text-search-config"> is set accordingly
+    in <filename>postgresql.conf</>.  If you are using the same text search
+    configuration for the entire cluster you can use the value in
+    <filename>postgresql.conf</>.  To use different configurations
+    throughout the cluster but the same configuration within any one database,
+    use <command>ALTER DATABASE ... SET</>.  Otherwise, you can set
+    <varname>default_text_search_config</varname> in each session.
+   </para>
+-->
+<para>
+在安装期间选择一个合适的配置，并且在<filename>postgresql.conf</>中相应的设置<xref linkend="guc-default-text-search-config">。
+如果为了整个集群使用同一个文本搜索配置你可以使用<filename>postgresql.conf</>中的值。为了在集群中使用不同配置，但是在任何其他一个数据库的同一
+配置中使用<command>ALTER DATABASE ... SET</>。否则，你可以在每个会话中设置<varname>default_text_search_config</varname>。
+</para>
+
+   <!--
+<para>
+    Each text search function that depends on a configuration has an optional
+    <type>regconfig</> argument, so that the configuration to use can be
+    specified explicitly.  <varname>default_text_search_config</varname>
+    is used only when this argument is omitted.
+   </para>
+-->
+<para>
+每个依赖于配置的文本搜索函数有一个可选的<type>regconfig</>参数，因此可以明确声明使用的配置。
+仅当忽略这些参数的时候，才使用<varname>default_text_search_config</varname>。
+</para>
+
+   <!--
+<para>
+    To make it easier to build custom text search configurations, a
+    configuration is built up from simpler database objects.
+    <productname>PostgreSQL</>'s text search facility provides
+    four types of configuration-related database objects:
+   </para>
+-->
+<para>
+为了更方便的建立自定义文本搜索配置，从简单的数据库对象中建立了配置。
+<productname>PostgreSQL</>文本搜索功能提供了四种类型的配置相关的数据库对象：
+</para>
+
+  <itemizedlist  spacing="compact" mark="bullet">
+   <listitem>
+    <!--
+<para>
+     <firstterm>Text search parsers</> break documents into tokens
+     and classify each token (for example, as words or numbers).
+    </para>
+-->
+<para>
+<firstterm>文本搜索解析器</>打破文档标记，并且分类每个标记（比如，词和数字）。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     <firstterm>Text search dictionaries</> convert tokens to normalized
+     form and reject stop words.
+    </para>
+-->
+<para>
+<firstterm>文本搜索词典</>把标记转换成规范格式并且拒绝屏蔽词。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     <firstterm>Text search templates</> provide the functions underlying
+     dictionaries.  (A dictionary simply specifies a template and a set
+     of parameters for the template.)
+    </para>
+-->
+<para>
+<firstterm>文本搜索模板</>提供潜在的词典功能（一个词典简单的指定一个模板，并且为模板设置参数）。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     <firstterm>Text search configurations</> select a parser and a set
+     of dictionaries to use to normalize the tokens produced by the parser.
+    </para>
+-->
+<para>
+<firstterm>文本搜索配置</>选择一个解析器，并且使用一系列词典规范化语法分析器产生的标记。
+</para>
+   </listitem>
+  </itemizedlist>
+
+   <!--
+<para>
+    Text search parsers and templates are built from low-level C functions;
+    therefore it requires C programming ability to develop new ones, and
+    superuser privileges to install one into a database.  (There are examples
+    of add-on parsers and templates in the <filename>contrib/</> area of the
+    <productname>PostgreSQL</> distribution.)  Since dictionaries and
+    configurations just parameterize and connect together some underlying
+    parsers and templates, no special privilege is needed to create a new
+    dictionary or configuration.  Examples of creating custom dictionaries and
+    configurations appear later in this chapter.
+   </para>
+-->
+<para>
+文本搜索解析器和模板是从低层次的C函数建立的；因此它需要C程序能力开发新产品，
+并且需要超级用户权限安装到数据库中（在<productname>PostgreSQL</>发布的<filename>contrib/</>范围内有附加解析器和模板的实例）。
+因为词典和配置仅仅参数化并且连接到一些潜在的解析器和模板上，创建一个新的词典或者配置不需要特定的权限。
+创建自定义词典和配置实例出现在本章节的后面。
+</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-tables">
+  <!--
+  <title>Tables and Indexes</title>
+  -->
+  <title>表和索引</title>
+  
+  <!--
+<para>
+   The examples in the previous section illustrated full text matching using
+   simple constant strings.  This section shows how to search table data,
+   optionally using indexes.
+  </para>
+-->
+<para>
+上一节中的例子说明使用简单常量字符串的全文匹配。本节显示如何搜索表中的数据，选择使用索引。
+</para>
+
+  <sect2 id="textsearch-tables-search">
+   <!--
+   <title>Searching a Table</title>
+   -->
+   <title>搜索表</title>
+
+   
+<para>
+    <!--
+    It is possible to do a full text search without an index.  A simple query
+    to print the <structname>title</> of each row that contains the word
+    <literal>friend</> in its <structfield>body</> field is:
+-->
+在不使用索引的情况下也是可以进行全文检索的,一个简单查询,显示出<structname>title</>从所有<structfield>body</>字段中包含<literal>friend</>的每一行：
+
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE to_tsvector('english', body) @@ to_tsquery('english', 'friend');
+</programlisting>
+    <!--
+    This will also find related words such as <literal>friends</>
+    and <literal>friendly</>, since all these are reduced to the same
+    normalized lexeme.
+-->
+这也将找到相关的词，比如<literal>friends</>和<literal>friendly</>，因为所有的这些都降低到相同规范化的词。
+   </para>
+   <!--
+<para>
+    The query above specifies that the <literal>english</> configuration
+    is to be used to parse and normalize the strings.  Alternatively we
+    could omit the configuration parameters:
+
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE to_tsvector(body) @@ to_tsquery('friend');
+</programlisting>
+
+    This query will use the configuration set by <xref
+    linkend="guc-default-text-search-config">.
+   </para>
+-->
+<para>
+以上查询指定<literal>english</>配置是用来解析和规范化字符串。或者我们可以省略配置参数：
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE to_tsvector(body) @@ to_tsquery('friend');
+</programlisting>
+这个查询将通过<xref linkend="guc-default-text-search-config">使用配置设置。
+</para>
+
+   <!--
+<para>
+    A more complex example is to
+    select the ten most recent documents that contain <literal>create</> and
+    <literal>table</> in the <structname>title</> or <structname>body</>:
+
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE to_tsvector(title || ' ' || body) @@ to_tsquery('create &amp; table')
+ORDER BY last_mod_date DESC
+LIMIT 10;
+</programlisting>
+
+    For clarity we omitted the <function>coalesce</function> function calls
+    which would be needed to find rows that contain <literal>NULL</literal>
+    in one of the two fields.
+   </para>
+-->
+<para>
+复杂一点的例子:检索出最近的10个文档,在<structname>title</> 或者<structname>body</>字段中包含<literal>create</> 和
+<literal>table</>的：
+
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE to_tsvector(title || ' ' || body) @@ to_tsquery('create &amp; table')
+ORDER BY last_mod_date DESC
+LIMIT 10;
+</programlisting>
+
+为了清楚,我们忽略<function>coalesce</function>函数调用,这需要找到在两个字段之一中包含<literal>NULL</literal>的行。
+
+</para>
+
+   <!--
+<para>
+    Although these queries will work without an index, most applications
+    will find this approach too slow, except perhaps for occasional ad-hoc
+    searches.  Practical use of text searching usually requires creating
+    an index.
+   </para>
+-->
+<para>
+虽然这些查询在没有索引的情况下工作，大多数应用程序会发现这个方法太慢了，除了偶尔的特定搜索。
+文本搜索的实际使用通常需要创建索引。
+</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-tables-index">
+   <!--
+   <title>Creating Indexes</title>
+   -->
+   <title>创建索引</title>
+
+   <!--
+<para>
+    We can create a <acronym>GIN</acronym> index (<xref
+    linkend="textsearch-indexes">) to speed up text searches:
+
+<programlisting>
+CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector('english', body));
+</programlisting>
+
+    Notice that the 2-argument version of <function>to_tsvector</function> is
+    used.  Only text search functions that specify a configuration name can
+    be used in expression indexes (<xref linkend="indexes-expressional">).
+    This is because the index contents must be unaffected by <xref
+    linkend="guc-default-text-search-config">.  If they were affected, the
+    index contents might be inconsistent because different entries could
+    contain <type>tsvector</>s that were created with different text search
+    configurations, and there would be no way to guess which was which.  It
+    would be impossible to dump and restore such an index correctly.
+   </para>
+-->
+<para>
+   为了加速文本搜索，我们可以创建<acronym>GIN</acronym>索引(<xref linkend="textsearch-indexes">)：  
+
+<programlisting>
+CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector('english', body));
+</programlisting>
+   
+   注意，使用<function>to_tsvector</function>的2-参数版本。唯一的文本搜索功能指定可用于表达式索引的配置名称（节<xref linkend="indexes-expressional">）。
+   这是因为索引的内容必须不受<xref linkend="guc-default-text-search-config">的影响。如果他们受到影响，索引内容可能不一致，
+   因为不同的条目可能包含不同的文本搜索配置创建的<type>tsvector</>，并且没有办法猜出是哪个。正确的转储和恢复
+   这样的一个索引是不可能的。   
+
+</para>
+
+   <!--
+<para>
+    Because the two-argument version of <function>to_tsvector</function> was
+    used in the index above, only a query reference that uses the 2-argument
+    version of <function>to_tsvector</function> with the same configuration
+    name will use that index.  That is, <literal>WHERE
+    to_tsvector('english', body) @@ 'a &amp; b'</> can use the index,
+    but <literal>WHERE to_tsvector(body) @@ 'a &amp; b'</> cannot.
+    This ensures that an index will be used only with the same configuration
+    used to create the index entries.
+   </para>
+-->
+<para>
+因为在上述索引中使用<function>to_tsvector</function>的2-参数版本，只有一个使用带有相同配置名称的<function>to_tsvector</function>的2-参数版本的查询参考，
+它将使用该索引。也就是说，<literal>WHERE to_tsvector('english', body) @@ 'a &amp; b'</> 可以使用索引，但<literal>WHERE to_tsvector(body) @@ 'a &amp; b'</>不能。
+这确保将使用一个索引仅仅伴随着用于创建索引的相同配置。
+</para>
+
+  <!--
+<para>
+    It is possible to set up more complex expression indexes where in the
+    configuration name is specified by another column, e.g.:
+
+<programlisting>
+CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector(config_name, body));
+</programlisting>
+
+    where <literal>config_name</> is a column in the <literal>pgweb</>
+    table.  This allows mixed configurations in the same index while
+    recording which configuration was used for each index entry.  This
+    would be useful, for example, if the document collection contained
+    documents in different languages.  Again,
+    queries that are meant to use the index must be phrased to match, e.g.,
+    <literal>WHERE to_tsvector(config_name, body) @@ 'a &amp; b'</>.
+   </para>
+-->
+<para>
+    建立更复杂的表达式索引是可能的，配置名称由另一列指定，例如：
+
+<programlisting>
+CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector(config_name, body));
+</programlisting>
+  
+    在<literal>pgweb</>表中<literal>config_name</>是一列。这允许在同一索引中混合配置，当记录的配置被用于每个索引条目。
+这将是有用的，例如，如果文档集合中包含不同的语言文件。再次，意味着使用索引的查询必须措辞匹配，
+例如，<literal>WHERE to_tsvector(config_name, body) @@ 'a &amp; b'</>。 
+
+</para>
+
+   <!--
+<para>
+    Indexes can even concatenate columns:
+
+<programlisting>
+CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector('english', title || ' ' || body));
+</programlisting>
+   </para>
+-->
+<para>
+   索引甚至可以连接列：
+
+<programlisting>
+CREATE INDEX pgweb_idx ON pgweb USING gin(to_tsvector('english', title || ' ' || body));
+</programlisting>
+
+</para>
+
+   <!--
+<para>
+    Another approach is to create a separate <type>tsvector</> column
+    to hold the output of <function>to_tsvector</>.  This example is a
+    concatenation of <literal>title</literal> and <literal>body</literal>,
+    using <function>coalesce</> to ensure that one field will still be
+    indexed when the other is <literal>NULL</>:
+
+<programlisting>
+ALTER TABLE pgweb ADD COLUMN textsearchable_index_col tsvector;
+UPDATE pgweb SET textsearchable_index_col =
+     to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''));
+</programlisting>
+
+    Then we create a <acronym>GIN</acronym> index to speed up the search:
+
+<programlisting>
+CREATE INDEX textsearch_idx ON pgweb USING gin(textsearchable_index_col);
+</programlisting>
+
+    Now we are ready to perform a fast full text search:
+
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE textsearchable_index_col @@ to_tsquery('create &amp; table')
+ORDER BY last_mod_date DESC
+LIMIT 10;
+</programlisting>
+   </para>
+-->
+<para>
+     另一个方法是创建一个单独的<type>tsvector</>列控制<function>to_tsvector</>的输出。这个例子是<literal>title</literal>和<literal>body</literal>的一个级联，
+ 当其他是<literal>NULL</>的时候，使用<function>coalesce</>确保一个字段仍然会被索引：
+
+<programlisting>
+ALTER TABLE pgweb ADD COLUMN textsearchable_index_col tsvector;
+UPDATE pgweb SET textsearchable_index_col =
+     to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''));
+</programlisting>
+    
+然后我们为加速搜索创建一个<acronym>GIN</acronym>索引：
+
+<programlisting>
+CREATE INDEX textsearch_idx ON pgweb USING gin(textsearchable_index_col);
+</programlisting>
+
+    现在我们准备执行一个快速全文搜索：
+    
+<programlisting>
+SELECT title
+FROM pgweb
+WHERE textsearchable_index_col @@ to_tsquery('create &amp; table')
+ORDER BY last_mod_date DESC
+LIMIT 10;
+</programlisting>
+
+</para>
+
+   <!--
+<para>
+    When using a separate column to store the <type>tsvector</>
+    representation,
+    it is necessary to create a trigger to keep the <type>tsvector</>
+    column current anytime <literal>title</> or <literal>body</> changes.
+    <xref linkend="textsearch-update-triggers"> explains how to do that.
+   </para>
+-->
+<para>
+    当使用一个单独的列存储<type>tsvector</>形式时，有必要创建一个触发器以保持<type>tsvector</>列当前任何时候<literal>title</>或者<literal>body</>的变化。
+节<xref linkend="textsearch-update-triggers">解释了如何做。
+</para>
+
+   <!--
+<para>
+    One advantage of the separate-column approach over an expression index
+    is that it is not necessary to explicitly specify the text search
+    configuration in queries in order to make use of the index.  As shown
+    in the example above, the query can depend on
+    <varname>default_text_search_config</>.  Another advantage is that
+    searches will be faster, since it will not be necessary to redo the
+    <function>to_tsvector</> calls to verify index matches.  (This is more
+    important when using a GiST index than a GIN index; see <xref
+    linkend="textsearch-indexes">.)  The expression-index approach is
+    simpler to set up, however, and it requires less disk space since the
+    <type>tsvector</> representation is not stored explicitly.
+   </para>
+-->
+<para>
+    单独列方法比一个表达式索引的优势是它没有必要明确地声明为充分利用索引查询中的文本搜索配置，
+正如上面例子所示，查询依赖于<varname>default_text_search_config</>。另一个优势是搜索比较快速，
+因为它没有必要重新进行<function>to_tsvector</>调用来验证索引匹配（当使用GIST索引而不是GIN索引的时候，
+这是非常重要的，参见节<xref linkend="textsearch-indexes">）。表达式索引方法更容易建立，然而，它需要较少的磁盘空间，
+因为<type>tsvector</>形式没有明确存储。
+</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-controls">
+  <!--
+  <title>Controlling Text Search</title>
+  -->
+  
+  <title>控制文本搜索</title>
+
+  <!--
+<para>
+   To implement full text searching there must be a function to create a
+   <type>tsvector</type> from a document and a <type>tsquery</type> from a
+   user query. Also, we need to return results in a useful order, so we need
+   a function that compares documents with respect to their relevance to
+   the query. It's also important to be able to display the results nicely.
+   <productname>PostgreSQL</productname> provides support for all of these
+   functions.
+  </para>
+-->
+<para>
+   为了执行全文搜索，这必须有个函数创建来自文档的<type>tsvector</type>和来自用户查询的<type>tsquery</type>。
+   同时，我们需要以有效的顺序返回结果，因此我们需要一个函数比较关于查询相关性的文档。
+   可以很好的显示结果也是很重要的。<productname>PostgreSQL</productname>为所有这些函数提供支持。
+</para>
+
+  <sect2 id="textsearch-parsing-documents">
+  <!--
+   <title>Parsing Documents</title>
+   -->
+   
+    <title>解析文档</title>
+
+   <!--
+<para>
+    <productname>PostgreSQL</productname> provides the
+    function <function>to_tsvector</function> for converting a document to
+    the <type>tsvector</type> data type.
+   </para>
+-->
+<para>
+     <productname>PostgreSQL</productname>中提供了<function>to_tsvector</function>函数把文档处理成<type>tsvector</type>数据类型。
+</para>
+
+   <indexterm>
+    <primary>to_tsvector</primary>
+   </indexterm>
+
+<synopsis>
+to_tsvector(<optional> <replaceable class="PARAMETER">config</replaceable> <type>regconfig</>, </optional> <replaceable class="PARAMETER">document</replaceable> <type>text</>) returns <type>tsvector</>
+</synopsis>
+
+   <!--
+<para>
+    <function>to_tsvector</function> parses a textual document into tokens,
+    reduces the tokens to lexemes, and returns a <type>tsvector</type> which
+    lists the lexemes together with their positions in the document.
+    The document is processed according to the specified or default
+    text search configuration.
+    Here is a simple example:
+
+<screen>
+SELECT to_tsvector('english', 'a fat  cat sat on a mat - it ate a fat rats');
+                  to_tsvector
+-----------------------------------------------------
+ 'ate':9 'cat':3 'fat':2,11 'mat':7 'rat':12 'sat':4
+</screen>
+   </para>
+-->
+<para> 
+    <function>to_tsvector</function>解析文本文档为记号，减少标记到词条，并返回一个<type>tsvector</type>，
+其罗列出词条并连同它们文档中的位置。该文档是根据指定的或默认的文本搜索配置处理的。
+这里有一个简单的例子：
+
+<screen>
+SELECT to_tsvector('english', 'a fat  cat sat on a mat - it ate a fat rats');
+                  to_tsvector
+-----------------------------------------------------
+ 'ate':9 'cat':3 'fat':2,11 'mat':7 'rat':12 'sat':4
+</screen>
+
+</para>
+
+   <!--
+<para>
+    In the example above we see that the resulting <type>tsvector</type> does not
+    contain the words <literal>a</literal>, <literal>on</literal>, or
+    <literal>it</literal>, the word <literal>rats</literal> became
+    <literal>rat</literal>, and the punctuation sign <literal>-</literal> was
+    ignored.
+   </para>
+-->
+<para>
+    在上面的例子中我们看到结果<type>tsvector</type>不包含词 <literal>a</literal>, <literal>on</literal>或者
+    <literal>it</literal>。 <literal>rats</literal>变成<literal>rat</literal>,并且忽略标点符号-。
+</para>
+
+   <!--
+<para>
+    The <function>to_tsvector</function> function internally calls a parser
+    which breaks the document text into tokens and assigns a type to
+    each token.  For each token, a list of
+    dictionaries (<xref linkend="textsearch-dictionaries">) is consulted,
+    where the list can vary depending on the token type.  The first dictionary
+    that <firstterm>recognizes</> the token emits one or more normalized
+    <firstterm>lexemes</firstterm> to represent the token.  For example,
+    <literal>rats</literal> became <literal>rat</literal> because one of the
+    dictionaries recognized that the word <literal>rats</literal> is a plural
+    form of <literal>rat</literal>.  Some words are recognized as
+    <firstterm>stop words</> (<xref linkend="textsearch-stopwords">), which
+    causes them to be ignored since they occur too frequently to be useful in
+    searching.  In our example these are
+    <literal>a</literal>, <literal>on</literal>, and <literal>it</literal>.
+    If no dictionary in the list recognizes the token then it is also ignored.
+    In this example that happened to the punctuation sign <literal>-</literal>
+    because there are in fact no dictionaries assigned for its token type
+    (<literal>Space symbols</literal>), meaning space tokens will never be
+    indexed. The choices of parser, dictionaries and which types of tokens to
+    index are determined by the selected text search configuration (<xref
+    linkend="textsearch-configuration">).  It is possible to have
+    many different configurations in the same database, and predefined
+    configurations are available for various languages. In our example
+    we used the default configuration <literal>english</literal> for the
+    English language.
+   </para>
+-->
+<para>
+    该<function>to_tsvector</function>函数内部调用一个分析器，将文档文本分解成记号并指定每个标记的类型。
+为每个标记，参阅词典列表（节<xref linkend="textsearch-dictionaries">），列表因不同的标记类型而不同。
+第一本词典<firstterm>识别</>标记发出一个或多个标准<firstterm>词汇</firstterm> 表示标记。例如，<literal>rats</literal>变成<literal>rat</literal>
+因为字典认为词<literal>rats</literal>是<literal>rat</literal>的复数形式。有些词被作为<firstterm>屏蔽词</>（节<xref linkend="textsearch-stopwords">），
+这样它们就会被忽略，因为它们出现得太过频繁以致于搜索中没有用处。在我们的例子中，它们是<literal>a</literal>, <literal>on</literal>和<literal>it</literal>。
+如果列表中没有词典识别标记，那么它也被忽略。在这个例子中，发生在标点符号处<literal>-</literal>因为事实上没有词典分配给它的标记类型（<literal>空间符号</literal>），
+意味着空间记号永远不会被索引。语法分析器的选择，词典和索引类型的标记是由选定的文本搜索配置决定（节<xref linkend="textsearch-configuration">）。
+可以在同一个数据库中有多种不同的配置，与提供各种语言的预定义的配置。在我们的例子中，我们使用缺省配置<literal>english</literal>为英语。
+</para>
+
+   <!--
+<para>
+    The function <function>setweight</function> can be used to label the
+    entries of a <type>tsvector</type> with a given <firstterm>weight</>,
+    where a weight is one of the letters <literal>A</>, <literal>B</>,
+    <literal>C</>, or <literal>D</>.
+    This is typically used to mark entries coming from
+    different parts of a document, such as title versus body.  Later, this
+    information can be used for ranking of search results.
+   </para>
+-->
+<para>
+    函数<function>setweight</function>可以用于标识一个给定<firstterm>权重</>的<type>tsvector</type>的词条，权重是字母<literal>A</>, <literal>B</>,
+    <literal>C</>或者<literal>D</>之一。通常标记来自文档不同部分的词条，比如标题正文。之后，这些信息可以用于搜索结果的排序。
+</para>
+
+   <!--
+<para>
+    Because <function>to_tsvector</function>(<literal>NULL</literal>) will
+    return <literal>NULL</literal>, it is recommended to use
+    <function>coalesce</function> whenever a field might be null.
+    Here is the recommended method for creating
+    a <type>tsvector</type> from a structured document:
+
+<programlisting>
+UPDATE tt SET ti =
+    setweight(to_tsvector(coalesce(title,'')), 'A')    ||
+    setweight(to_tsvector(coalesce(keyword,'')), 'B')  ||
+    setweight(to_tsvector(coalesce(abstract,'')), 'C') ||
+    setweight(to_tsvector(coalesce(body,'')), 'D');
+</programlisting>
+
+    Here we have used <function>setweight</function> to label the source
+    of each lexeme in the finished <type>tsvector</type>, and then merged
+    the labeled <type>tsvector</type> values using the <type>tsvector</>
+    concatenation operator <literal>||</>.  (<xref
+    linkend="textsearch-manipulate-tsvector"> gives details about these
+    operations.)
+   </para>
+-->
+<para>
+    因为<function>to_tsvector</function>(<literal>NULL</literal>)将要返回<literal>空</literal>，当字段可能是空的时候，建议使用<function>coalesce</function>。
+这是体系文档中创建<type>tsvector</type>推荐的方法：
+
+<programlisting>
+UPDATE tt SET ti =
+    setweight(to_tsvector(coalesce(title,'')), 'A')    ||
+    setweight(to_tsvector(coalesce(keyword,'')), 'B')  ||
+    setweight(to_tsvector(coalesce(abstract,'')), 'C') ||
+    setweight(to_tsvector(coalesce(body,'')), 'D');
+</programlisting>
+
+   我们使用<function>setweight</function>标记已完成的<type>tsvector</type>中的每个词的来源，并且使用<type>tsvector</type>连接操作符<literal>||</>合并标签化<type>tsvector</type>的值。
+  （节<xref linkend="textsearch-manipulate-tsvector">详细介绍了这些操作）。 
+</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-parsing-queries">
+   <!--
+   <title>Parsing Queries</title>
+    -->
+
+ <title>解析查询</title>
+
+   <!--
+<para>
+    <productname>PostgreSQL</productname> provides the
+    functions <function>to_tsquery</function> and
+    <function>plainto_tsquery</function> for converting a query to
+    the <type>tsquery</type> data type.  <function>to_tsquery</function>
+    offers access to more features than <function>plainto_tsquery</function>,
+    but is less forgiving about its input.
+   </para>
+-->
+<para>
+    <productname>PostgreSQL</productname>提供了函数<function>to_tsquery</function>和
+    <function>plainto_tsquery</function>将查询转换为<type>tsquery</type>数据类型。
+<function>to_tsquery</function>提供比<function>plainto_tsquery</function>更多的功能，但对其输入不宽容。
+</para>
+
+   <indexterm>
+    <primary>to_tsquery</primary>
+   </indexterm>
+
+<synopsis>
+to_tsquery(<optional> <replaceable class="PARAMETER">config</replaceable> <type>regconfig</>, </optional> <replaceable class="PARAMETER">querytext</replaceable> <type>text</>) returns <type>tsquery</>
+</synopsis>
+
+   
+<para>
+    <!--
+    <function>to_tsquery</function> creates a <type>tsquery</> value from
+    <replaceable>querytext</replaceable>, which must consist of single tokens
+    separated by the Boolean operators <literal>&amp;</literal> (AND),
+    <literal>|</literal> (OR) and <literal>!</literal> (NOT).  These operators
+    can be grouped using parentheses.  In other words, the input to
+    <function>to_tsquery</function> must already follow the general rules for
+    <type>tsquery</> input, as described in <xref
+    linkend="datatype-textsearch">.  The difference is that while basic
+    <type>tsquery</> input takes the tokens at face value,
+    <function>to_tsquery</function> normalizes each token to a lexeme using
+    the specified or default configuration, and discards any tokens that are
+    stop words according to the configuration.  For example:
+-->
+
+ <function>to_tsquery</function>从<replaceable>querytext</replaceable>中创建一个<type>tsquery</>，它必须由布尔运算符<literal>&amp;</literal> (AND),
+    <literal>|</literal> (OR)和<literal>!</literal> (NOT)分离的单个标记组成。这些运算符可以用圆括弧分组。换句话说，<function>to_tsquery</function>输入必须遵循<type>tsquery</>输入的一般规律，如节<xref
+    linkend="datatype-textsearch">所描述的。不同的是当基本<type>tsquery</>输入以标记表面值的时候，<function>to_tsquery</function>使用指定或默认配置规范每个标记到一个词，
+并丢弃所有标记依据配置的屏蔽词。比如：
+
+<screen>
+SELECT to_tsquery('english', 'The &amp; Fat &amp; Rats');
+  to_tsquery   
+---------------
+ 'fat' &amp; 'rat'
+</screen>
+    <!--
+    As in basic <type>tsquery</> input, weight(s) can be attached to each
+    lexeme to restrict it to match only <type>tsvector</> lexemes of those
+    weight(s).  For example:
+-->
+
+ 作为基本<type>tsquery</>输入，权重（s）可以附属于每个词来限制它只匹配那些权重(s)的<type>tsvector</>词。比如：
+
+<screen>
+SELECT to_tsquery('english', 'Fat | Rats:AB');
+    to_tsquery    
+------------------
+ 'fat' | 'rat':AB
+</screen>
+
+    <!--
+    Also, <literal>*</> can be attached to a lexeme to specify prefix matching:
+-->
+ <literal>*</>也可以附属于一个词来指定前缀匹配：
+
+<screen>
+SELECT to_tsquery('supern:*A &amp; star:A*B');
+        to_tsquery        
+--------------------------
+ 'supern':*A &amp; 'star':*AB
+</screen>
+    <!--
+    Such a lexeme will match any word in a <type>tsvector</> that begins
+    with the given string.
+-->
+
+ 这样的词将匹配以给定字符串开头的<type>tsvector</>中的任何词。 
+   </para>
+   
+<para>
+    <!--
+    <function>to_tsquery</function> can also accept single-quoted
+    phrases.  This is primarily useful when the configuration includes a
+    thesaurus dictionary that may trigger on such phrases.
+    In the example below, a thesaurus contains the rule <literal>supernovae
+    stars : sn</literal>:
+-->
+ <function>to_tsquery</function>也可以接受单引用的短语。当配置包括一个可能触发这类短语的同义词词典库的时候是很有用的。
+在下面的例子中，一个词库包含规则<literal>supernovae stars : sn</literal>：
+
+<screen>
+SELECT to_tsquery('''supernovae stars'' &amp; !crab');
+  to_tsquery
+---------------
+ 'sn' &amp; !'crab'
+</screen>
+    <!--
+    Without quotes, <function>to_tsquery</function> will generate a syntax
+    error for tokens that are not separated by an AND or OR operator.
+-->
+ 没有引号，<function>to_tsquery</function>会生成标记语法错误，这个标记不是通过AND 或者OR操作符分离的。
+
+   </para>
+   
+   <indexterm>
+    <primary>plainto_tsquery</primary>
+   </indexterm>
+
+<synopsis>
+plainto_tsquery(<optional> <replaceable class="PARAMETER">config</replaceable> <type>regconfig</>, </optional> <replaceable class="PARAMETER">querytext</replaceable> <type>text</>) returns <type>tsquery</>
+</synopsis>
+
+   <!--
+<para>
+    <function>plainto_tsquery</> transforms unformatted text
+    <replaceable>querytext</replaceable> to <type>tsquery</type>.
+    The text is parsed and normalized much as for <function>to_tsvector</>,
+    then the <literal>&amp;</literal> (AND) Boolean operator is inserted
+    between surviving words.
+   </para>
+-->
+<para>
+    <function>plainto_tsquery</>变换未格式化的文本<replaceable>querytext</replaceable>到<type>tsquery</type>。
+分析文本并且归一化为<function>to_tsvector</>，然后在存在的词之间插入<literal>&amp;</literal>(AND)布尔算子。
+</para>
+
+   <!--
+<para>
+    Example:
+
+<screen>
+SELECT plainto_tsquery('english', 'The Fat Rats');
+ plainto_tsquery 
+-----------------
+ 'fat' &amp; 'rat'
+</screen>
+
+    Note that <function>plainto_tsquery</> cannot
+    recognize Boolean operators, weight labels, or prefix-match labels
+    in its input:
+
+<screen>
+SELECT plainto_tsquery('english', 'The Fat &amp; Rats:C');
+   plainto_tsquery   
+---------------------
+ 'fat' &amp; 'rat' &amp; 'c'
+</screen>
+
+    Here, all the input punctuation was discarded as being space symbols.
+   </para>
+-->
+<para>
+    比如：
+
+<screen>
+SELECT plainto_tsquery('english', 'The Fat Rats');
+ plainto_tsquery 
+-----------------
+ 'fat' &amp; 'rat'
+</screen>
+
+    请注意，<function>plainto_tsquery</>无法识别布尔运算符，权重标签，或在其输入中的前缀匹配标签： 
+
+<screen>
+SELECT plainto_tsquery('english', 'The Fat &amp; Rats:C');
+   plainto_tsquery   
+---------------------
+ 'fat' &amp; 'rat' &amp; 'c'
+</screen>
+
+    在这里，所有的输入标点符号作为空格符号丢弃。
+</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-ranking">
+  
+  <!--
+   <title>Ranking Search Results</title>
+   -->
+   
+   <title>查询结果关注度</title>
+
+   <!--
+<para>
+    Ranking attempts to measure how relevant documents are to a particular
+    query, so that when there are many matches the most relevant ones can be
+    shown first.  <productname>PostgreSQL</productname> provides two
+    predefined ranking functions, which take into account lexical, proximity,
+    and structural information; that is, they consider how often the query
+    terms appear in the document, how close together the terms are in the
+    document, and how important is the part of the document where they occur.
+    However, the concept of relevancy is vague and very application-specific.
+    Different applications might require additional information for ranking,
+    e.g., document modification time.  The built-in ranking functions are only
+    examples.  You can write your own ranking functions and/or combine their
+    results with additional factors to fit your specific needs.
+   </para>
+-->
+<para>
+    相关度试图衡量哪一个文档是检索中最关注的，所以当有很多匹配时，最相关的一个则最先显示。
+<productname>PostgreSQL</productname>提供了两个预定义的相关函数，其中考虑了词法，距离，和结构信息；也就是，
+他们考虑查询词在文档中出现的频率，术语在文档中的紧密程度，以及它们在文档中的部分的重要性。
+然而，相关性的概念是模糊的，并且是特定应用程序。不同的应用程序可能需要额外的相关信息，
+例如，文档的修改时间。内置的相关函数是唯一的例子。为了以满足您的特定需求，你可以写你自己的相关函数和/或与其他因素相结合的结果。
+</para>
+
+   
+<para>
+    <!--
+    The two ranking functions currently available are:
+-->
+当前可用的两个相关函数：
+
+    <variablelist>
+
+     <varlistentry>
+
+      <indexterm>
+       <primary>ts_rank</primary>
+      </indexterm>
+
+      <term>
+       <literal>ts_rank(<optional> <replaceable class="PARAMETER">weights</replaceable> <type>float4[]</>, </optional> <replaceable class="PARAMETER">vector</replaceable> <type>tsvector</>, <replaceable class="PARAMETER">query</replaceable> <type>tsquery</> <optional>, <replaceable class="PARAMETER">normalization</replaceable> <type>integer</> </optional>) returns <type>float4</></literal>
+      </term>
+
+      <listitem>
+       <para>
+    <!--
+        Ranks vectors based on the frequency of their matching lexemes.
+-->
+基于匹配词汇频率的列向量。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+
+      <indexterm>
+       <primary>ts_rank_cd</primary>
+      </indexterm>
+
+      <term>
+       <literal>ts_rank_cd(<optional> <replaceable class="PARAMETER">weights</replaceable> <type>float4[]</>, </optional> <replaceable class="PARAMETER">vector</replaceable> <type>tsvector</>, <replaceable class="PARAMETER">query</replaceable> <type>tsquery</> <optional>, <replaceable class="PARAMETER">normalization</replaceable> <type>integer</> </optional>) returns <type>float4</></literal>
+      </term>
+
+      <listitem>
+       <!--
+       <para>
+        This function computes the <firstterm>cover density</firstterm>
+        ranking for the given document vector and query, as described in
+        Clarke, Cormack, and Tudhope's "Relevance Ranking for One to Three
+        Term Queries" in the journal "Information Processing and Management",
+        1999.
+       </para>
+-->
+<para>
+    这个函数计算给定文档向量和查询的<firstterm>覆盖密度</firstterm>相关性，正如1999年在
+杂志“信息处理与管理”中Clarke，Cormack和Tudhope的“一至三项查询相关性排序”描述的一样。
+</para>
+
+       <!--
+<para>
+        This function requires positional information in its input.
+        Therefore it will not work on <quote>stripped</> <type>tsvector</>
+        values &mdash; it will always return zero.
+       </para>
+-->
+<para>
+      这些函数需要位置信息的输入。因此它不能在<quote>剥离</><type>tsvector</>值的情况下运行&mdash它将总是返回零。
+</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+   </para>
+
+   
+<para>
+    <!--
+    For both these functions,
+    the optional <replaceable class="PARAMETER">weights</replaceable>
+    argument offers the ability to weigh word instances more or less
+    heavily depending on how they are labeled.  The weight arrays specify
+    how heavily to weigh each category of word, in the order:
+-->
+
+对于这些函数，可选的<replaceable class="PARAMETER">weights</replaceable>参数提供权衡词的情况能力或多或少地取决于它们是如何被标记的。
+ 权重阵列指定顺序权重每类词的频率。
+
+<synopsis>
+{D-weight, C-weight, B-weight, A-weight}
+</synopsis>
+     <!--
+    If no <replaceable class="PARAMETER">weights</replaceable> are provided,
+    then these defaults are used:
+-->
+
+ 如果没有提供<replaceable class="PARAMETER">weights</replaceable>，则利用这些缺省值：
+
+<programlisting>
+{0.1, 0.2, 0.4, 1.0}
+</programlisting>
+    <!--
+    Typically weights are used to mark words from special areas of the
+    document, like the title or an initial abstract, so they can be
+    treated with more or less importance than words in the document body.
+-->
+ 通常的权重是用来标记文档特殊区域的词，如标题或最初的摘要，
+所以他们有着比文档主体中的词或多或少的重要性。
+   </para>
+     
+<para>
+    <!--
+Since a longer document has a greater chance of containing a query term
+    it is reasonable to take into account document size, e.g., a hundred-word
+    document with five instances of a search word is probably more relevant
+    than a thousand-word document with five instances.  Both ranking functions
+    take an integer <replaceable>normalization</replaceable> option that
+    specifies whether and how a document's length should impact its rank.
+    The integer option controls several behaviors, so it is a bit mask:
+    you can specify one or more behaviors using
+    <literal>|</literal> (for example, <literal>2|4</literal>).
+-->
+
+ 由于较长的文档有包含查询词的机会，它合理的考虑文档的大小，例如，
+带有搜索词的五个实例的百字文档可能比千字文档有更多的相关性。
+相关接受一个整数<replaceable>normalization</replaceable>选项，指定文档长度是否以及如何影响它的排序。
+整数选项控制一些行为，所以它是一位掩码：您可以使用<literal>|</literal>（例如，<literal>2|4</literal>）指定一个或多个行为。
+
+    <itemizedlist  spacing="compact" mark="bullet">
+     <listitem>
+      <para>
+  <!--
+       0 (the default) ignores the document length
+   -->
+   0（缺省）表示跟长度大小没有关系
+      </para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       1 divides the rank by 1 + the logarithm of the document length
+      </para>
+-->
+<para>
+       1 表示关注度（rank）除以文档长度的对数+1
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       2 divides the rank by the document length
+      </para>
+-->
+<para>
+       2表示关注度除以文档的长度
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       4 divides the rank by the mean harmonic distance between extents
+       (this is implemented only by <function>ts_rank_cd</>)
+      </para>
+-->
+<para>
+      4表示关注度除以范围内的平均谐波距离，只能使用<function>ts_rank_cd</>实现。
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       8 divides the rank by the number of unique words in document
+      </para>
+-->
+<para>
+       8表示关注度除以文档中唯一分词的数量
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       16 divides the rank by 1 + the logarithm of the number
+       of unique words in document
+      </para>
+-->
+<para>
+       16表示关注度除以唯一分词数量的对数+1
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       32 divides the rank by itself + 1
+      </para>
+-->
+<para>
+       32表示关注度除以本身+1
+</para>
+     </listitem>
+    </itemizedlist>
+
+    <!--
+    If more than one flag bit is specified, the transformations are
+    applied in the order listed.
+-->
+如果指定超过一个的标志位，则在列出顺序中应用转换。 
+   </para>
+
+
+ 
+   <!--
+<para>
+    It is important to note that the ranking functions do not use any global
+    information, so it is impossible to produce a fair normalization to 1% or
+    100% as sometimes desired.  Normalization option 32
+    (<literal>rank/(rank+1)</literal>) can be applied to scale all ranks
+    into the range zero to one, but of course this is just a cosmetic change;
+    it will not affect the ordering of the search results.
+   </para>
+-->
+<para>
+    需要特别注意的是，相关函数不使用任何全局信息，所以不可能产生一个所需要的1%或100%的公平归一化。
+规范化选项32 (<literal>rank/(rank+1)</literal>)可用于所有规模排序到范围零到一之间，当然，这只是一个表面变化；
+它不会影响搜索结果的排序。
+</para>
+
+   
+<para>
+<!--
+    Here is an example that selects only the ten highest-ranked matches:
+-->
+下面是一个例子，仅仅选择排名前十的匹配：
+<screen>
+SELECT title, ts_rank_cd(textsearch, query) AS rank
+FROM apod, to_tsquery('neutrino|(dark &amp; matter)') query
+WHERE query @@ textsearch
+ORDER BY rank DESC
+LIMIT 10;
+                     title                     |   rank
+-----------------------------------------------+----------
+ Neutrinos in the Sun                          |      3.1
+ The Sudbury Neutrino Detector                 |      2.4
+ A MACHO View of Galactic Dark Matter          |  2.01317
+ Hot Gas and Dark Matter                       |  1.91171
+ The Virgo Cluster: Hot Plasma and Dark Matter |  1.90953
+ Rafting for Solar Neutrinos                   |      1.9
+ NGC 4650A: Strange Galaxy and Dark Matter     |  1.85774
+ Hot Gas and Dark Matter                       |   1.6123
+ Ice Fishing for Cosmic Neutrinos              |      1.6
+ Weak Lensing Distorts the Universe            | 0.818218
+</screen>
+<!--
+    This is the same example using normalized ranking:
+-->
+这是使用归一化排序的相同例子：
+<screen>
+SELECT title, ts_rank_cd(textsearch, query, 32 /* rank/(rank+1) */ ) AS rank
+FROM apod, to_tsquery('neutrino|(dark &amp; matter)') query
+WHERE  query @@ textsearch
+ORDER BY rank DESC
+LIMIT 10;
+                     title                     |        rank
+-----------------------------------------------+-------------------
+ Neutrinos in the Sun                          | 0.756097569485493
+ The Sudbury Neutrino Detector                 | 0.705882361190954
+ A MACHO View of Galactic Dark Matter          | 0.668123210574724
+ Hot Gas and Dark Matter                       |  0.65655958650282
+ The Virgo Cluster: Hot Plasma and Dark Matter | 0.656301290640973
+ Rafting for Solar Neutrinos                   | 0.655172410958162
+ NGC 4650A: Strange Galaxy and Dark Matter     | 0.650072921219637
+ Hot Gas and Dark Matter                       | 0.617195790024749
+ Ice Fishing for Cosmic Neutrinos              | 0.615384618911517
+ Weak Lensing Distorts the Universe            | 0.450010798361481
+</screen>
+   </para>
+
+   <!--
+<para>
+    Ranking can be expensive since it requires consulting the
+    <type>tsvector</type> of each matching document, which can be I/O bound and
+    therefore slow. Unfortunately, it is almost impossible to avoid since
+    practical queries often result in large numbers of matches.
+   </para>
+-->
+<para>
+     排序花费比较多，因为它需要查找每个匹配文档的<type>tsvector</type>，这与I/O绑定，因此慢。
+ 不幸的是，它几乎是不可能避免因实际的查询往往导致的大量匹配。
+</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-headline">
+  
+  <!--
+   <title>Highlighting Results</title>
+   -->
+   
+    <title>强调结果</title>
+   <!--
+<para>
+    To present search results it is ideal to show a part of each document and
+    how it is related to the query. Usually, search engines show fragments of
+    the document with marked search terms.  <productname>PostgreSQL</>
+    provides a function <function>ts_headline</function> that
+    implements this functionality.
+   </para>
+-->
+<para>
+    为显示搜索结果，合理显示每个文档的一部分以及查询相关性。通常，搜索引擎显示标记搜索条件的文档片段。
+<productname>PostgreSQL</>提供了一个函数<function>ts_headline</function>实现此功能。
+</para>
+
+   <indexterm>
+    <primary>ts_headline</primary>
+   </indexterm>
+
+<synopsis>
+ts_headline(<optional> <replaceable class="PARAMETER">config</replaceable> <type>regconfig</>, </optional> <replaceable class="PARAMETER">document</replaceable> <type>text</>, <replaceable class="PARAMETER">query</replaceable> <type>tsquery</> <optional>, <replaceable class="PARAMETER">options</replaceable> <type>text</> </optional>) returns <type>text</>
+</synopsis>
+
+   <!--
+<para>
+    <function>ts_headline</function> accepts a document along
+    with a query, and returns an excerpt from
+    the document in which terms from the query are highlighted.  The
+    configuration to be used to parse the document can be specified by
+    <replaceable>config</replaceable>; if <replaceable>config</replaceable>
+    is omitted, the
+    <varname>default_text_search_config</varname> configuration is used.
+   </para>
+-->
+<para>
+    <function>ts_headline</function>接受查询文档，并从突显的查询条件的文档中返回一个摘录。配置用来解析<replaceable>config</replaceable>指定的文档；
+如果省略<replaceable>config</replaceable>，则使用<varname>default_text_search_config</varname>配置。
+</para>
+
+   
+<para>
+    <!--
+    If an <replaceable>options</replaceable> string is specified it must
+    consist of a comma-separated list of one or more
+    <replaceable>option</><literal>=</><replaceable>value</> pairs.
+    The available options are:
+-->
+如果指定一个<replaceable>options</replaceable>字符串，它必须由一个逗号分隔的一个或多个<replaceable>option</><literal>=</><replaceable>value</>对组成。可用选项是：
+
+    <itemizedlist  spacing="compact" mark="bullet">
+     <listitem>
+      <para>
+   <!--
+       <literal>StartSel</>, <literal>StopSel</literal>: the strings with
+       which to delimit query words appearing in the document, to distinguish
+       them from other excerpted words.  You must double-quote these strings
+       if they contain spaces or commas.
+   -->
+   
+   <literal>StartSel</>, <literal>StopSel</literal>:该字符串分隔文档中出现的查询词，以区别于其他摘录词。
+   如果它们含有空格或逗号，你必须用双引号字符串。
+      </para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>MaxWords</>, <literal>MinWords</literal>: these numbers
+       determine the longest and shortest headlines to output.
+      </para>
+-->
+<para>
+      <literal>MaxWords</>, <literal>MinWords</literal>:这些数字决定最长和最短的标题输出。
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>ShortWord</literal>: words of this length or less will be
+       dropped at the start and end of a headline. The default
+       value of three eliminates common English articles.
+      </para>
+-->
+<para>
+      <literal>ShortWord</literal>:这个长度或更短的词在标题的开始和结束被丢弃。三个默认值消除了常见英语文章。
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>HighlightAll</literal>: Boolean flag;  if
+       <literal>true</literal> the whole document will be used as the
+       headline, ignoring the preceding three parameters.
+      </para>
+-->
+<para>
+       <literal>HighlightAll</literal>:布尔标志；如果为<literal>真</literal>，整个文档将作为标题，忽略了前面的三个参数。
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>MaxFragments</literal>: maximum number of text excerpts
+       or fragments to display.  The default value of zero selects a
+       non-fragment-oriented headline generation method.  A value greater than
+       zero selects fragment-based headline generation.  This method
+       finds text fragments with as many query words as possible and
+       stretches those fragments around the query words.  As a result
+       query words are close to the middle of each fragment and have words on
+       each side. Each fragment will be of at most <literal>MaxWords</> and
+       words of length <literal>ShortWord</> or less are dropped at the start
+       and end of each fragment. If not all query words are found in the
+       document, then a single fragment of the first <literal>MinWords</>
+       in the document will be displayed.
+      </para>
+-->
+<para>
+      <literal>MaxFragments</literal>:要显示的文本摘录或片段的最大数量。默认值零选择非片段标题的生成方法。
+  一个大于零的值选择基于片段的标题生成。此方法查找文本片段与尽可能多的查询词并在查询词周围延伸这些片段。
+  作为查询词的结果接近每一片段中间，每边都有词。每个片段至多是<literal>MaxWords</> ，并且长度为<literal>ShortWord</>或更短的词在每一个片段开始和结束被丢弃。
+  如果不是所有的查询词在文档中找到，则文档中开头的<literal>MinWords</>单片段将被显示。
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>FragmentDelimiter</literal>: When more than one fragment is
+       displayed, the fragments will be separated by this string.
+      </para>
+-->
+<para>
+      <literal>FragmentDelimiter</literal>:当一个以上的片段显示时，通过字符串分隔这些片段。
+</para>
+     </listitem>
+    </itemizedlist>
+
+
+
+    <!--
+    Any unspecified options receive these defaults:
+-->
+任何未声明的选项接受这些缺省：
+
+<programlisting>
+StartSel=&lt;b&gt;, StopSel=&lt;/b&gt;,
+MaxWords=35, MinWords=15, ShortWord=3, HighlightAll=FALSE,
+MaxFragments=0, FragmentDelimiter=" ... "
+</programlisting>
+   </para>
+   
+<para>
+    <!--
+    For example:
+-->
+比如:
+
+<screen>
+SELECT ts_headline('english',
+  'The most common type of search
+is to find all documents containing given query terms
+and return them in order of their similarity to the
+query.',
+  to_tsquery('query &amp; similarity'));
+                        ts_headline                         
+------------------------------------------------------------
+ containing given &lt;b&gt;query&lt;/b&gt; terms
+ and return them in order of their &lt;b&gt;similarity&lt;/b&gt; to the
+ &lt;b&gt;query&lt;/b&gt;.
+
+SELECT ts_headline('english',
+  'The most common type of search
+is to find all documents containing given query terms
+and return them in order of their similarity to the
+query.',
+  to_tsquery('query &amp; similarity'),
+  'StartSel = &lt;, StopSel = &gt;');
+                      ts_headline                      
+-------------------------------------------------------
+ containing given &lt;query&gt; terms
+ and return them in order of their &lt;similarity&gt; to the
+ &lt;query&gt;.
+</screen>
+   </para>
+
+   
+<para>
+    
+<!--
+    <function>ts_headline</> uses the original document, not a
+    <type>tsvector</type> summary, so it can be slow and should be used with
+    care.  A typical mistake is to call <function>ts_headline</function> for
+    <emphasis>every</emphasis> matching document when only ten documents are
+    to be shown. <acronym>SQL</acronym> subqueries can help; here is an
+    example:
+-->
+
+<function>ts_headline</>使用原始文档，而不是一个<type>tsvector</type>摘要，因此它很慢，应小心使用。
+一个典型的错误是，当只显示10个文档时，为<emphasis>每个</emphasis>匹配文档调用<function>ts_headline</function>。<acronym>SQL</acronym>子查询可以帮忙，
+这是一个例子：
+
+<programlisting>
+SELECT id, ts_headline(body, q), rank
+FROM (SELECT id, body, q, ts_rank_cd(ti, q) AS rank
+      FROM apod, to_tsquery('stars') q
+      WHERE ti @@ q
+      ORDER BY rank DESC
+      LIMIT 10) AS foo;
+</programlisting>
+   </para>
+
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-features">
+ 
+ <!--
+  <title>Additional Features</title>
+ -->
+ 
+  <title>附加功能</title>
+
+  <!--
+<para>
+   This section describes additional functions and operators that are
+   useful in connection with text search.
+  </para>
+-->
+<para>
+   本节描述了连接文本搜索中有用的附加功能和操作符。
+</para>
+
+  <sect2 id="textsearch-manipulate-tsvector">
+  
+  <!--
+   <title>Manipulating Documents</title>
+   -->
+   <title>操作文档</title>
+   <!--
+<para>
+    <xref linkend="textsearch-parsing-documents"> showed how raw textual
+    documents can be converted into <type>tsvector</> values.
+    <productname>PostgreSQL</productname> also provides functions and
+    operators that can be used to manipulate documents that are already
+    in <type>tsvector</> form.
+   </para>
+-->
+<para>
+      节<xref linkend="textsearch-parsing-documents">显示了原始文本文档如何转换成<type>tsvector</>值。
+  <productname>PostgreSQL</productname>也提供用于操作已经在<type>tsvector</>形式中的文档的函数和操作符。
+</para>
+
+   <variablelist>
+
+    <varlistentry>
+
+     <indexterm>
+      <primary>tsvector concatenation</primary>
+     </indexterm>
+
+     <term>
+      <literal><type>tsvector</> || <type>tsvector</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       The <type>tsvector</> concatenation operator
+       returns a vector which combines the lexemes and positional information
+       of the two vectors given as arguments.  Positions and weight labels
+       are retained during the concatenation.
+       Positions appearing in the right-hand vector are offset by the largest
+       position mentioned in the left-hand vector, so that the result is
+       nearly equivalent to the result of performing <function>to_tsvector</>
+       on the concatenation of the two original document strings.  (The
+       equivalence is not exact, because any stop-words removed from the
+       end of the left-hand argument will not affect the result, whereas
+       they would have affected the positions of the lexemes in the
+       right-hand argument if textual concatenation were used.)
+      </para>
+-->
+<para>
+     <type>tsvector</>连接操作符返回一个连接词的向量，以及作为参数给定的2个向量的位置信息。
+ 在连接期间重新获得位置和权重标签。出现在右边向量位置通过左边向量提到的最大位置相抵消，
+ 因此这个结果几乎等同于2个原始文档字符串连接中执行<function>to_tsvector</>的结果。（这个等价是不准确的，
+ 因为任何从左边参数中删除的屏蔽词不会影响结果，然而，如果使用文本连接，它们影响右边参数词的位置）。
+</para>
+
+      <!--
+<para>
+       One advantage of using concatenation in the vector form, rather than
+       concatenating text before applying <function>to_tsvector</>, is that
+       you can use different configurations to parse different sections
+       of the document.  Also, because the <function>setweight</> function
+       marks all lexemes of the given vector the same way, it is necessary
+       to parse the text and do <function>setweight</> before concatenating
+       if you want to label different parts of the document with different
+       weights.
+      </para>
+-->
+<para>
+       使用级联中的向量形式而不是在应用<function>to_tsvector</>之前连接文本的一个优势是，
+   你可以使用不同的配置解析文档的不同部分。同时，由于<function>setweight</>函数标记所有相同方式给定向量的词汇，
+   解析文本是必要的，并且如果你想用不同的权重标记文档不同部分，连接前做<function>setweight</>。
+</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <indexterm>
+      <primary>setweight</primary>
+     </indexterm>
+
+     <term>
+      <literal>setweight(<replaceable class="PARAMETER">vector</replaceable> <type>tsvector</>, <replaceable class="PARAMETER">weight</replaceable> <type>"char"</>) returns <type>tsvector</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       <function>setweight</> returns a copy of the input vector in which every
+       position has been labeled with the given <replaceable>weight</>, either
+       <literal>A</literal>, <literal>B</literal>, <literal>C</literal>, or
+       <literal>D</literal>.  (<literal>D</literal> is the default for new
+       vectors and as such is not displayed on output.)  These labels are
+       retained when vectors are concatenated, allowing words from different
+       parts of a document to be weighted differently by ranking functions.
+      </para>
+-->
+<para>
+     <function>setweight</> 返回一个输入向量的拷贝，其中每一个位置用给定的<replaceable>weight</>, 
+       <literal>A</literal>, <literal>B</literal>, <literal>C</literal>或者
+       <literal>D</literal>之一进行标记。（<literal>D</literal>是缺省新向量，因此不显示在输出上。）当向量连接时，保留这些标签，
+ 允许一个文档的不同部分的词通过不同相关函数加权。
+</para>
+
+      <!--
+<para>
+       Note that weight labels apply to <emphasis>positions</>, not
+       <emphasis>lexemes</>.  If the input vector has been stripped of
+       positions then <function>setweight</> does nothing.
+      </para>
+-->
+<para>
+       注意权重标签适用于<emphasis>位置</>，不是<emphasis>词汇</>。如果输入向量已经被剥夺了位置，则<function>setweight</>不做任何事情。
+</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <indexterm>
+      <primary>length(tsvector)</primary>
+     </indexterm>
+
+     <term>
+      <literal>length(<replaceable class="PARAMETER">vector</replaceable> <type>tsvector</>) returns <type>integer</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       Returns the number of lexemes stored in the vector.
+      </para>
+-->
+<para>
+       返回存储在向量中的词的数量。
+</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <indexterm>
+      <primary>strip</primary>
+     </indexterm>
+
+     <term>
+      <literal>strip(<replaceable class="PARAMETER">vector</replaceable> <type>tsvector</>) returns <type>tsvector</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       Returns a vector which lists the same lexemes as the given vector, but
+       which lacks any position or weight information.  While the returned
+       vector is much less useful than an unstripped vector for relevance
+       ranking, it will usually be much smaller.
+      </para>
+-->
+<para>
+        返回一个向量，其中列出了给定向量的同一词，但它缺乏任何位置和权重信息。
+虽然为相关性排序返回的向量比一个未拆分向量用处少，它通常会小得多。
+</para>
+     </listitem>
+
+    </varlistentry>
+
+   </variablelist>
+
+  </sect2>
+
+  <sect2 id="textsearch-manipulate-tsquery">
+   
+   <!--
+   <title>Manipulating Queries</title>
+   -->
+   <title>处理查询</title>
+
+   <!--
+<para>
+    <xref linkend="textsearch-parsing-queries"> showed how raw textual
+    queries can be converted into <type>tsquery</> values.
+    <productname>PostgreSQL</productname> also provides functions and
+    operators that can be used to manipulate queries that are already
+    in <type>tsquery</> form.
+   </para>
+-->
+<para>
+    节<xref linkend="textsearch-parsing-queries">显示了原始文本查询如何转换成<type>tsquery</>值。
+<productname>PostgreSQL</productname>也提供了函数和操作符用于处理已存在<type>tsquery</>形式中的查询 
+</para>
+
+   <variablelist>
+
+    <varlistentry>
+
+     <term>
+      <literal><type>tsquery</> &amp;&amp; <type>tsquery</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       Returns the AND-combination of the two given queries.
+      </para>
+-->
+<para>
+      返回两个给定查询的与组合。
+</para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+      <literal><type>tsquery</> || <type>tsquery</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       Returns the OR-combination of the two given queries.
+      </para>
+-->
+<para>
+      返回两个给定查询的或组合。
+</para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+      <literal>!! <type>tsquery</></literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       Returns the negation (NOT) of the given query.
+      </para>
+-->
+<para>
+      返回给定查询的反面（非）。
+</para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <indexterm>
+      <primary>numnode</primary>
+     </indexterm>
+
+     <term>
+      <literal>numnode(<replaceable class="PARAMETER">query</replaceable> <type>tsquery</>) returns <type>integer</></literal>
+     </term>
+
+     <listitem>
+      
+<para>
+       <!--
+       Returns the number of nodes (lexemes plus operators) in a
+       <type>tsquery</>. This function is useful
+       to determine if the <replaceable>query</replaceable> is meaningful
+       (returns &gt; 0), or contains only stop words (returns 0).
+       Examples:
+   -->
+   
+    返回在一个<type>tsquery</>中节点的数目（词加操作符）。决定<replaceable>query</replaceable>是否有意义（返回&gt; 0），
+   或只包含屏蔽词（返回0），这个函数是很有用的。例子：
+
+<screen>
+SELECT numnode(plainto_tsquery('the any'));
+NOTICE:  query contains only stopword(s) or doesn't contain lexeme(s), ignored
+ numnode
+---------
+       0
+
+SELECT numnode('foo &amp; bar'::tsquery);
+ numnode
+---------
+       3
+</screen>
+      </para>
+
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <indexterm>
+      <primary>querytree</primary>
+     </indexterm>
+
+     <term>
+      <literal>querytree(<replaceable class="PARAMETER">query</replaceable> <type>tsquery</>) returns <type>text</></literal>
+     </term>
+
+     <listitem>
+      
+<para>
+       <!--
+       Returns the portion of a <type>tsquery</> that can be used for
+       searching an index.  This function is useful for detecting
+       unindexable queries, for example those containing only stop words
+       or only negated terms.  For example:
+   -->
+        
+返回可用于搜索索引的<type>tsquery</>部分。此函数对检测未索引查询是有帮助的，例如那些只包含屏蔽词或否定术语。比如:
+<screen>
+SELECT querytree(to_tsquery('!defined'));
+ querytree
+-----------
+
+</screen>
+      </para>
+
+
+     </listitem>
+    </varlistentry>
+
+   </variablelist>
+
+   <sect3 id="textsearch-query-rewriting">
+   
+   <!--
+    <title>Query Rewriting</title>
+   -->
+   
+     <title>查询重写</title>
+
+    <indexterm zone="textsearch-query-rewriting">
+     <primary>ts_rewrite</primary>
+    </indexterm>
+
+    <!--
+<para>
+     The <function>ts_rewrite</function> family of functions search a
+     given <type>tsquery</> for occurrences of a target
+     subquery, and replace each occurrence with a
+     substitute subquery.  In essence this operation is a
+     <type>tsquery</>-specific version of substring replacement.
+     A target and substitute combination can be
+     thought of as a <firstterm>query rewrite rule</>.  A collection
+     of such rewrite rules can be a powerful search aid.
+     For example, you can expand the search using synonyms
+     (e.g., <literal>new york</>, <literal>big apple</>, <literal>nyc</>,
+     <literal>gotham</>) or narrow the search to direct the user to some hot
+     topic.  There is some overlap in functionality between this feature
+     and thesaurus dictionaries (<xref linkend="textsearch-thesaurus">).
+     However, you can modify a set of rewrite rules on-the-fly without
+     reindexing, whereas updating a thesaurus requires reindexing to be
+     effective.
+    </para>
+-->
+<para>
+     函数族<function>ts_rewrite</function>搜索一个特定的目标查询事件<type>tsquery</>，和替换每个替代子查询。
+ 实际上这个操作是一个子字符串替换的<type>tsquery</>-特定版本。目标和替换组合可以被认为是一个<firstterm>查询重写规则</>。
+ 一组这样的重写规则可以是一个强大的搜索帮助。例如，你可以使用同义词扩大搜索（例如，<literal>new york</>, <literal>big apple</>, <literal>nyc</>,
+     <literal>gotham</>）或缩小搜索一些热点问题的直接用户。在这些特性和同义词词典之间功能上有一些重叠（节<xref linkend="textsearch-thesaurus">）。然而，
+ 你可以在不重建索引情况下即时修改重写规则，而更新词库需要重建索引才能有效。
+</para>
+
+    <variablelist>
+
+     <varlistentry>
+
+      <term>
+       <literal>ts_rewrite (<replaceable class="PARAMETER">query</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">target</replaceable> <type>tsquery</>, <replaceable class="PARAMETER">substitute</replaceable> <type>tsquery</>) returns <type>tsquery</></literal>
+      </term>
+
+      <listitem>
+       <!--
+<para>
+        This form of <function>ts_rewrite</> simply applies a single
+        rewrite rule: <replaceable class="PARAMETER">target</replaceable>
+        is replaced by <replaceable class="PARAMETER">substitute</replaceable>
+        wherever it appears in <replaceable
+        class="PARAMETER">query</replaceable>.  For example:
+
+<screen>
+SELECT ts_rewrite('a &amp; b'::tsquery, 'a'::tsquery, 'c'::tsquery);
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen>
+       </para>
+-->
+<para>
+       <function>ts_rewrite</>的这种形式只适用于一个单一的重写规则：无论出现在<replaceable
+       class="PARAMETER">query</replaceable>的什么地方，<replaceable class="PARAMETER">target</replaceable>通过<replaceable class="PARAMETER">substitute</replaceable>替换。比如：
+
+<screen>
+SELECT ts_rewrite('a &amp; b'::tsquery, 'a'::tsquery, 'c'::tsquery);
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen>
+
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+
+      <term>
+       <literal>ts_rewrite (<replaceable class="PARAMETER">query</> <type>tsquery</>, <replaceable class="PARAMETER">select</> <type>text</>) returns <type>tsquery</></literal>
+      </term>
+
+      <listitem>
+       <!--
+<para>
+        This form of <function>ts_rewrite</> accepts a starting
+        <replaceable>query</> and a SQL <replaceable>select</> command, which
+        is given as a text string.  The <replaceable>select</> must yield two
+        columns of <type>tsquery</> type.  For each row of the
+        <replaceable>select</> result, occurrences of the first column value
+        (the target) are replaced by the second column value (the substitute)
+        within the current <replaceable>query</> value.  For example:
+
+<screen>
+CREATE TABLE aliases (t tsquery PRIMARY KEY, s tsquery);
+INSERT INTO aliases VALUES('a', 'c');
+
+SELECT ts_rewrite('a &amp; b'::tsquery, 'SELECT t,s FROM aliases');
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen>
+       </para>
+-->
+<para>
+     <function>ts_rewrite</>的这种形式接受起始<replaceable>查询</>和SQL <replaceable>select</>命令，这是作为一个文本字符串。
+ <replaceable>select</>必须产生两列<type>tsquery</>类型。<replaceable>select</>结果的每一行，出现的第一个字段的值（目标）
+ 都被当前的<replaceable>query</>值中的第二个字段值（替代）。比如：
+</para>
+
+       <!--
+<para>
+        Note that when multiple rewrite rules are applied in this way,
+        the order of application can be important; so in practice you will
+        want the source query to <literal>ORDER BY</> some ordering key.
+       </para>
+-->
+<para>
+       注意，当多个重写规则适用于这种方式时，应用的顺序非常重要；
+   因此在实践中你将需要源查询为<literal>ORDER BY</>一些排序关键字。
+</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+    <!--
+<para>
+     Let's consider a real-life astronomical example. We'll expand query
+     <literal>supernovae</literal> using table-driven rewriting rules:
+
+<screen>
+CREATE TABLE aliases (t tsquery primary key, s tsquery);
+INSERT INTO aliases VALUES(to_tsquery('supernovae'), to_tsquery('supernovae|sn'));
+
+SELECT ts_rewrite(to_tsquery('supernovae &amp; crab'), 'SELECT * FROM aliases');
+           ts_rewrite            
+---------------------------------
+ 'crab' &amp; ( 'supernova' | 'sn' )
+</screen>
+
+     We can change the rewriting rules just by updating the table:
+
+<screen>
+UPDATE aliases
+SET s = to_tsquery('supernovae|sn &amp; !nebulae')
+WHERE t = to_tsquery('supernovae');
+
+SELECT ts_rewrite(to_tsquery('supernovae &amp; crab'), 'SELECT * FROM aliases');
+                 ts_rewrite                  
+---------------------------------------------
+ 'crab' &amp; ( 'supernova' | 'sn' &amp; !'nebula' )
+</screen>
+    </para>
+-->
+<para>
+     让我们考虑下现实生活中天文的例子。我们将使用表驱动的重写规则扩大查询<literal>supernovae</literal>：
+
+<screen>
+CREATE TABLE aliases (t tsquery primary key, s tsquery);
+INSERT INTO aliases VALUES(to_tsquery('supernovae'), to_tsquery('supernovae|sn'));
+
+SELECT ts_rewrite(to_tsquery('supernovae &amp; crab'), 'SELECT * FROM aliases');
+           ts_rewrite            
+---------------------------------
+ 'crab' &amp; ( 'supernova' | 'sn' )
+</screen>
+
+      我们可以通过更新表改变重写规则：
+
+<screen>
+UPDATE aliases
+SET s = to_tsquery('supernovae|sn &amp; !nebulae')
+WHERE t = to_tsquery('supernovae');
+
+SELECT ts_rewrite(to_tsquery('supernovae &amp; crab'), 'SELECT * FROM aliases');
+                 ts_rewrite                  
+---------------------------------------------
+ 'crab' &amp; ( 'supernova' | 'sn' &amp; !'nebula' )
+</screen>
+
+
+</para>
+
+    
+<para>
+<!--
+     Rewriting can be slow when there are many rewriting rules, since it
+     checks every rule for a possible match. To filter out obvious non-candidate
+     rules we can use the containment operators for the <type>tsquery</type>
+     type. In the example below, we select only those rules which might match
+     the original query:
+-->
+    当有许多的重写规则的时候，重写比较缓慢，因为它检查可能匹配的每一个规则。
+ 为过滤掉明显非候选规则，我们可以使用<type>tsquery</type>类型的包含操作符。在下面的例子中，
+ 我们只选择那些可能与原始查询匹配的规则：
+<screen>
+SELECT ts_rewrite('a &amp; b'::tsquery,
+                  'SELECT t,s FROM aliases WHERE ''a &amp; b''::tsquery @&gt; t');
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen>
+    </para>
+
+
+   </sect3>
+
+  </sect2>
+
+  <sect2 id="textsearch-update-triggers">
+  
+  <!--
+   <title>Triggers for Automatic Updates</title>
+  -->
+  
+  <title>自动更新的触发器</title>
+
+   <indexterm>
+    <primary>trigger</primary>
+    <secondary>for updating a derived tsvector column</secondary>
+   </indexterm>
+
+   <!--
+<para>
+    When using a separate column to store the <type>tsvector</> representation
+    of your documents, it is necessary to create a trigger to update the
+    <type>tsvector</> column when the document content columns change.
+    Two built-in trigger functions are available for this, or you can write
+    your own.
+   </para>
+-->
+<para>
+     当使用单独的列存储文档的<type>tsvector</>形式，当文档内容列变化时，
+ 有必要建立一个触发器更新<type>tsvector</>列。两个内置的触发器功能可用于此，
+ 或者你可以自定义触发器。
+</para>
+
+<synopsis>
+tsvector_update_trigger(<replaceable class="PARAMETER">tsvector_column_name</replaceable>, <replaceable class="PARAMETER">config_name</replaceable>, <replaceable class="PARAMETER">text_column_name</replaceable> <optional>, ... </optional>)
+tsvector_update_trigger_column(<replaceable class="PARAMETER">tsvector_column_name</replaceable>, <replaceable class="PARAMETER">config_column_name</replaceable>, <replaceable class="PARAMETER">text_column_name</replaceable> <optional>, ... </optional>)
+</synopsis>
+
+   
+<para>
+
+    <!--
+    These trigger functions automatically compute a <type>tsvector</>
+    column from one or more textual columns, under the control of
+    parameters specified in the <command>CREATE TRIGGER</> command.
+    An example of their use is:
+-->
+这些触发器函数自动计算来自一个或多个文本字段的<type>tsvector</>列，在<command>CREATE TRIGGER</>命令指定的参数控制下。
+使用的例子是：
+
+<screen>
+CREATE TABLE messages (
+    title       text,
+    body        text,
+    tsv         tsvector
+);
+
+CREATE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+ON messages FOR EACH ROW EXECUTE PROCEDURE
+tsvector_update_trigger(tsv, 'pg_catalog.english', title, body);
+
+INSERT INTO messages VALUES('title here', 'the body text is here');
+
+SELECT * FROM messages;
+   title    |         body          |            tsv             
+------------+-----------------------+----------------------------
+ title here | the body text is here | 'bodi':4 'text':5 'titl':1
+
+SELECT title, body FROM messages WHERE tsv @@ to_tsquery('title &amp; body');
+   title    |         body          
+------------+-----------------------
+ title here | the body text is here
+</screen>
+    <!--
+    Having created this trigger, any change in <structfield>title</> or
+    <structfield>body</> will automatically be reflected into
+    <structfield>tsv</>, without the application having to worry about it.
+-->
+
+ 创建触发器，在<structfield>title</>或者<structfield>body</>中的任何改变都会自动反映到<structfield>tsv</>中，而不必担心它的应用。
+   </para>
+   <!--
+<para>
+    The first trigger argument must be the name of the <type>tsvector</>
+    column to be updated.  The second argument specifies the text search
+    configuration to be used to perform the conversion.  For
+    <function>tsvector_update_trigger</>, the configuration name is simply
+    given as the second trigger argument.  It must be schema-qualified as
+    shown above, so that the trigger behavior will not change with changes
+    in <varname>search_path</>.  For
+    <function>tsvector_update_trigger_column</>, the second trigger argument
+    is the name of another table column, which must be of type
+    <type>regconfig</>.  This allows a per-row selection of configuration
+    to be made.  The remaining argument(s) are the names of textual columns
+    (of type <type>text</>, <type>varchar</>, or <type>char</>).  These
+    will be included in the document in the order given.  NULL values will
+    be skipped (but the other columns will still be indexed).
+   </para>
+-->
+<para>
+    第一个触发器参数必须是被更新的<type>tsvector</>字段名。第二个参数指定要进行转换的文本搜索配置。
+为<function>tsvector_update_trigger</>，配置的名称仅仅是作为第二个触发器参数。它必须是如上所示的模式匹配，
+因此触发器的行为在<varname>search_path</>中不会改变。为<function>tsvector_update_trigger_column</>，
+第二个触发器参数是另一个表列的名称，它的类型必须是<type>regconfig</>。这允许每行选择进行配置。
+剩余的参数（s）是文本列的名称（键入<type>text</>, <type>varchar</>或者<type>char</>）。这些将在给定的顺序中提供文档。
+空值将被忽略（但其他列仍将被索引）。
+</para>
+
+   <!--
+<para>
+    A limitation of these built-in triggers is that they treat all the
+    input columns alike.  To process columns differently &mdash; for
+    example, to weight title differently from body &mdash; it is necessary
+    to write a custom trigger.  Here is an example using
+    <application>PL/pgSQL</application> as the trigger language:
+
+<programlisting>
+CREATE FUNCTION messages_trigger() RETURNS trigger AS $$
+begin
+  new.tsv :=
+     setweight(to_tsvector('pg_catalog.english', coalesce(new.title,'')), 'A') ||
+     setweight(to_tsvector('pg_catalog.english', coalesce(new.body,'')), 'D');
+  return new;
+end
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+    ON messages FOR EACH ROW EXECUTE PROCEDURE messages_trigger();
+</programlisting>
+   </para>
+-->
+<para>
+    这些内置触发器的限制是它们一致对待所有输入列。为了处理不同列&mdash比如，
+为权重不同主体的标题&mdash它有必要编写一个自定义触发器。
+这是使用<application>PL/pgSQL</application> 作为触发器语言的一个例子：
+
+<programlisting>
+CREATE FUNCTION messages_trigger() RETURNS trigger AS $$
+begin
+  new.tsv :=
+     setweight(to_tsvector('pg_catalog.english', coalesce(new.title,'')), 'A') ||
+     setweight(to_tsvector('pg_catalog.english', coalesce(new.body,'')), 'D');
+  return new;
+end
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+    ON messages FOR EACH ROW EXECUTE PROCEDURE messages_trigger();
+</programlisting>
+
+</para>
+
+   <!--
+<para>
+    Keep in mind that it is important to specify the configuration name
+    explicitly when creating <type>tsvector</> values inside triggers,
+    so that the column's contents will not be affected by changes to
+    <varname>default_text_search_config</>.  Failure to do this is likely to
+    lead to problems such as search results changing after a dump and reload.
+   </para>
+-->
+<para>
+     记住当在触发器内部创造<type>tsvector</>值时，明确指定配置的名称是很重要的，
+ 所以，该列的内容将通过改变<varname>default_text_search_config</>而不会受到影响。
+ 如果不这样做可能会导致诸如重载转储之后搜索结果改变的问题。
+</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-statistics">
+  
+   <!--
+   <title>Gathering Document Statistics</title>
+   -->
+    <title>收集文献统计</title>
+
+   <indexterm>
+    <primary>ts_stat</primary>
+   </indexterm>
+
+   <!--
+<para>
+    The function <function>ts_stat</> is useful for checking your
+    configuration and for finding stop-word candidates.
+   </para>
+-->
+<para>
+    函数<function>ts_stat</>可用于检查你的配置和查找屏蔽候选词。
+</para>
+
+<synopsis>
+ts_stat(<replaceable class="PARAMETER">sqlquery</replaceable> <type>text</>, <optional> <replaceable class="PARAMETER">weights</replaceable> <type>text</>, </optional>
+        OUT <replaceable class="PARAMETER">word</replaceable> <type>text</>, OUT <replaceable class="PARAMETER">ndoc</replaceable> <type>integer</>,
+        OUT <replaceable class="PARAMETER">nentry</replaceable> <type>integer</>) returns <type>setof record</>
+</synopsis>
+
+   
+<para>
+    <!--
+    <replaceable>sqlquery</replaceable> is a text value containing an SQL
+    query which must return a single <type>tsvector</type> column.
+    <function>ts_stat</> executes the query and returns statistics about
+    each distinct lexeme (word) contained in the <type>tsvector</type>
+    data.  The columns returned are
+-->
+
+<replaceable>sqlquery</replaceable>是一个包含返回单独<type>tsvector</type>列的SQL查询的文本值。
+<function>ts_stat</>执行查询并返回包含<type>tsvector</type>数据的各个不同的语义（词）的统计。返回的列：
+
+    <itemizedlist  spacing="compact" mark="bullet">
+     <listitem>
+      <para>
+  <!--
+       <replaceable>word</> <type>text</> &mdash; the value of a lexeme
+   -->
+    <replaceable>word</> <type>text</> &mdash; 一个词的值
+      </para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>ndoc</> <type>integer</> &mdash; number of documents
+       (<type>tsvector</>s) the word occurred in
+      </para>
+-->
+<para>
+      <replaceable>ndoc</> <type>integer</> &mdash;这个词出现的文档编号（<type>tsvector</>s）
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>nentry</> <type>integer</> &mdash; total number of
+       occurrences of the word
+      </para>
+-->
+<para>
+      <replaceable>nentry</> <type>integer</> &mdash;这个词出现的总数
+</para>
+     </listitem>
+    </itemizedlist>
+
+    <!--
+  
+    If <replaceable>weights</replaceable> is supplied, only occurrences
+    having one of those weights are counted.
+-->
+如果提供<replaceable>weights</replaceable> ，仅仅计算这些权重之一。
+   </para>
+
+   
+   <!--
+<para>
+    For example, to find the ten most frequent words in a document collection:
+
+<programlisting>
+SELECT * FROM ts_stat('SELECT vector FROM apod')
+ORDER BY nentry DESC, ndoc DESC, word
+LIMIT 10;
+</programlisting>
+
+    The same, but counting only word occurrences with weight <literal>A</>
+    or <literal>B</>:
+
+<programlisting>
+SELECT * FROM ts_stat('SELECT vector FROM apod', 'ab')
+ORDER BY nentry DESC, ndoc DESC, word
+LIMIT 10;
+</programlisting>
+   </para>
+-->
+<para>
+    例如，在一个文档集合中查找十个最常用的单词： 
+
+<programlisting>
+SELECT * FROM ts_stat('SELECT vector FROM apod')
+ORDER BY nentry DESC, ndoc DESC, word
+LIMIT 10;
+</programlisting>
+
+    同样的，但是只计算权重weight <literal>A</>或者<literal>B</>的单词：
+
+<programlisting>
+SELECT * FROM ts_stat('SELECT vector FROM apod', 'ab')
+ORDER BY nentry DESC, ndoc DESC, word
+LIMIT 10;
+</programlisting>
+
+</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-parsers">
+ <!--
+  <title>Parsers</title>
+  -->
+  <title>解析器</title>
+  <!--
+<para>
+   Text search parsers are responsible for splitting raw document text
+   into <firstterm>tokens</> and identifying each token's type, where
+   the set of possible types is defined by the parser itself.
+   Note that a parser does not modify the text at all &mdash; it simply
+   identifies plausible word boundaries.  Because of this limited scope,
+   there is less need for application-specific custom parsers than there is
+   for custom dictionaries.  At present <productname>PostgreSQL</productname>
+   provides just one built-in parser, which has been found to be useful for a
+   wide range of applications.
+  </para>
+-->
+<para>
+    文本搜索分析器负责分离原文档文本为<firstterm>标记</>并且标识每个记号的类型，这里可能的类型集由解析器本身定义。
+注意一个解析器并不修改文本&mdash它只是确定合理的单词边界。因为这个限制范围，
+为特定应用定制的分析器比自定义字典需要的更少。目前<productname>PostgreSQL</productname>提供了只有一个内置的解析器，
+这已被用于一个广泛的应用中。
+</para>
+
+  <!--
+<para>
+   The built-in parser is named <literal>pg_catalog.default</>.
+   It recognizes 23 token types, shown in <xref linkend="textsearch-default-parser">.
+  </para>
+-->
+<para>
+     内置分析器命名<literal>pg_catalog.default</>。它识别23种标记类型，显示在<xref linkend="textsearch-default-parser">中。
+</para>
+
+  <table id="textsearch-default-parser">
+   <!--
+   <title>Default Parser's Token Types</title>
+   -->
+    <title>缺省分析器的标记类型</title>
+   
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Alias</entry>
+      <entry>Description</entry>
+      <entry>Example</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>asciiword</></entry>
+      <entry>Word, all ASCII letters</entry>
+      <entry><literal>elephant</literal></entry>
+     </row>
+     <row>
+      <entry><literal>word</></entry>
+      <entry>Word, all letters</entry>
+      <entry><literal>ma&ntilde;ana</literal></entry>
+     </row>
+     <row>
+      <entry><literal>numword</></entry>
+      <entry>Word, letters and digits</entry>
+      <entry><literal>beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>asciihword</></entry>
+      <entry>Hyphenated word, all ASCII</entry>
+      <entry><literal>up-to-date</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword</></entry>
+      <entry>Hyphenated word, all letters</entry>
+      <entry><literal>l&oacute;gico-matem&aacute;tica</literal></entry>
+     </row>
+     <row>
+      <entry><literal>numhword</></entry>
+      <entry>Hyphenated word, letters and digits</entry>
+      <entry><literal>postgresql-beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword_asciipart</></entry>
+      <entry>Hyphenated word part, all ASCII</entry>
+      <entry><literal>postgresql</literal> in the context <literal>postgresql-beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword_part</></entry>
+      <entry>Hyphenated word part, all letters</entry>
+      <entry><literal>l&oacute;gico</literal> or <literal>matem&aacute;tica</literal>
+       in the context <literal>l&oacute;gico-matem&aacute;tica</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword_numpart</></entry>
+      <entry>Hyphenated word part, letters and digits</entry>
+      <entry><literal>beta1</literal> in the context
+       <literal>postgresql-beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>email</></entry>
+      <entry>Email address</entry>
+      <entry><literal>foo@example.com</literal></entry>
+     </row>
+     <row>
+      <entry><literal>protocol</></entry>
+      <entry>Protocol head</entry>
+      <entry><literal>http://</literal></entry>
+     </row>
+     <row>
+      <entry><literal>url</></entry>
+      <entry>URL</entry>
+      <entry><literal>example.com/stuff/index.html</literal></entry>
+     </row>
+     <row>
+      <entry><literal>host</></entry>
+      <entry>Host</entry>
+      <entry><literal>example.com</literal></entry>
+     </row>
+     <row>
+      <entry><literal>url_path</></entry>
+      <entry>URL path</entry>
+      <entry><literal>/stuff/index.html</literal>, in the context of a URL</entry>
+     </row>
+     <row>
+      <entry><literal>file</></entry>
+      <entry>File or path name</entry>
+      <entry><literal>/usr/local/foo.txt</literal>, if not within a URL</entry>
+     </row>
+     <row>
+      <entry><literal>sfloat</></entry>
+      <entry>Scientific notation</entry>
+      <entry><literal>-1.234e56</literal></entry>
+     </row>
+     <row>
+      <entry><literal>float</></entry>
+      <entry>Decimal notation</entry>
+      <entry><literal>-1.234</literal></entry>
+     </row>
+     <row>
+      <entry><literal>int</></entry>
+      <entry>Signed integer</entry>
+      <entry><literal>-1234</literal></entry>
+     </row>
+     <row>
+      <entry><literal>uint</></entry>
+      <entry>Unsigned integer</entry>
+      <entry><literal>1234</literal></entry>
+     </row>
+     <row>
+      <entry><literal>version</></entry>
+      <entry>Version number</entry>
+      <entry><literal>8.3.0</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tag</></entry>
+      <entry>XML tag</entry>
+      <entry><literal>&lt;a href="dictionaries.html"&gt;</literal></entry>
+     </row>
+     <row>
+      <entry><literal>entity</></entry>
+      <entry>XML entity</entry>
+      <entry><literal>&amp;amp;</literal></entry>
+     </row>
+     <row>
+      <entry><literal>blank</></entry>
+      <entry>Space symbols</entry>
+      <entry>(any whitespace or punctuation not otherwise recognized)</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <note>
+   <!--
+<para>
+    The parser's notion of a <quote>letter</> is determined by the database's
+    locale setting, specifically <varname>lc_ctype</>.  Words containing
+    only the basic ASCII letters are reported as a separate token type,
+    since it is sometimes useful to distinguish them.  In most European
+    languages, token types <literal>word</> and <literal>asciiword</>
+    should be treated alike.
+   </para>
+-->
+<para>
+    注意：一个<quote>字母</>的语法分析器的概念是由数据库的区域设置决定的，特别是<varname>lc_ctype</>。
+只包含基本ASCII字母的词作为一个单独的标记类型被报告，因为区分他们有时候是有用的。
+大多数欧洲语言，标记类型<literal>word</>和<literal>asciiword</>应该一视同仁。
+</para>
+
+   <!--
+<para>
+    <literal>email</> does not support all valid email characters as
+    defined by RFC 5322.  Specifically, the only non-alphanumeric
+    characters supported for email user names are period, dash, and
+    underscore.
+   </para>
+-->
+<para>
+    <literal>email</>不支持由RFC 5322定义的所有有效的电子邮件字符。具体来说，
+唯一的非字母数字字符支持电子邮件用户名有句号，破折号和下划线。 
+</para>
+  </note>
+
+  
+<para>
+   <!--
+   It is possible for the parser to produce overlapping tokens from the same
+   piece of text.  As an example, a hyphenated word will be reported both
+   as the entire word and as each component:
+   -->
+   
+   对于分析器从文本的同一块产生重叠的标记是可能的。作为一个例子，
+一个连字符的单词将作为整个单词和每个组件被报道：
+
+<screen>
+SELECT alias, description, token FROM ts_debug('foo-bar-beta1');
+      alias      |               description                |     token     
+-----------------+------------------------------------------+---------------
+ numhword        | Hyphenated word, letters and digits      | foo-bar-beta1
+ hword_asciipart | Hyphenated word part, all ASCII          | foo
+ blank           | Space symbols                            | -
+ hword_asciipart | Hyphenated word part, all ASCII          | bar
+ blank           | Space symbols                            | -
+ hword_numpart   | Hyphenated word part, letters and digits | beta1
+</screen>
+   <!--
+   This behavior is desirable since it allows searches to work for both
+   the whole compound word and for components.  Here is another
+   instructive example:
+   -->
+    这种行为是可取的，因为它允许为整个复合词和组件进行搜索。这里是另一个很好的例子:
+
+<screen>
+SELECT alias, description, token FROM ts_debug('http://example.com/stuff/index.html');
+  alias   |  description  |            token             
+----------+---------------+------------------------------
+ protocol | Protocol head | http://
+ url      | URL           | example.com/stuff/index.html
+ host     | Host          | example.com
+ url_path | URL path      | /stuff/index.html
+</screen>
+  </para>
+
+
+
+ </sect1>
+
+ <sect1 id="textsearch-dictionaries">
+ 
+ <!--
+  <title>Dictionaries</title>
+  -->
+   <title>词典</title>
+  
+  <!--
+<para>
+   Dictionaries are used to eliminate words that should not be considered in a
+   search (<firstterm>stop words</>), and to <firstterm>normalize</> words so
+   that different derived forms of the same word will match.  A successfully
+   normalized word is called a <firstterm>lexeme</>.  Aside from
+   improving search quality, normalization and removal of stop words reduce the
+   size of the <type>tsvector</type> representation of a document, thereby
+   improving performance.  Normalization does not always have linguistic meaning
+   and usually depends on application semantics.
+  </para>
+-->
+<para>
+   词典用于删除那些不在搜索范围内的词（<firstterm>屏蔽词</>），并且为了<firstterm>规范化</>，将匹配同一个词的不同形式。
+   一个成功的规范化的词叫<firstterm>词位</>。除了提高检索质量外，屏蔽词的规范化和删除可以减少文档<type>tsvector</type>形式的大小，
+   从而提高性能。规范化并不总是有语言学意义，通常取决于应用程序的环境。
+</para>
+
+  
+<para>
+   <!--
+   Some examples of normalization:
+   -->
+   一些规范化的例子：
+
+   <itemizedlist  spacing="compact" mark="bullet">
+
+    <listitem>
+     <para>
+ <!--
+      Linguistic - Ispell dictionaries try to reduce input words to a
+      normalized form; stemmer dictionaries remove word endings
+  -->
+   语言的-Ispell词典尽量减少输入字的正规形式；词干词典去掉词尾
+     </para>
+    </listitem>
+    <listitem>
+     
+<para>
+       <!--
+      <acronym>URL</acronym> locations can be canonicalized to make
+      equivalent URLs match:
+  -->
+   <acronym>URL</acronym>位置可以使等效URL匹配被规范化：
+
+      <itemizedlist  spacing="compact" mark="bullet">
+       <listitem>
+        <para>
+         http://www.pgsql.ru/db/mw/index.html
+        </para>
+
+       </listitem>
+       <listitem>
+        <!--
+<para>
+         http://www.pgsql.ru/db/mw/
+        </para>
+-->
+<para>
+        http://www.pgsql.ru/db/mw/
+</para>
+       </listitem>
+       <listitem>
+        <!--
+<para>
+         http://www.pgsql.ru/db/../db/mw/index.html
+        </para>
+-->
+<para>
+         http://www.pgsql.ru/db/../db/mw/index.html
+</para>
+       </listitem>
+      </itemizedlist>
+     </para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      Color names can be replaced by their hexadecimal values, e.g.,
+      <literal>red, green, blue, magenta -> FF0000, 00FF00, 0000FF, FF00FF</literal>
+     </para>
+-->
+<para>
+      颜色名称可以由他们的十六进制值替换，比如：<literal>red, green, blue, magenta -> FF0000, 00FF00, 0000FF, FF00FF</literal>
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      If indexing numbers, we can
+      remove some fractional digits to reduce the range of possible
+      numbers, so for example <emphasis>3.14</emphasis>159265359,
+      <emphasis>3.14</emphasis>15926, <emphasis>3.14</emphasis> will be the same
+      after normalization if only two digits are kept after the decimal point.
+     </para>
+-->
+<para>
+      如果索引数字，我们可以删除一些小数位数，减少可能数字的范围，例如如果保留小数点后两位小数，
+则<emphasis>3.14</emphasis>159265359,<emphasis>3.14</emphasis>15926将归一化为一样的<emphasis>3.14</emphasis> 
+</para>
+    </listitem>
+   </itemizedlist>
+
+  </para>
+
+  
+<para>
+   <!--
+   A dictionary is a program that accepts a token as
+   input and returns:
+   -->
+   
+   字典是一个程序，它接受标记作为输入和返回：
+   <itemizedlist  spacing="compact" mark="bullet">
+    <listitem>
+     <para>
+  <!--
+      an array of lexemes if the input token is known to the dictionary
+      (notice that one token can produce more than one lexeme)
+  -->
+   词条数组如果输入标记是已知的词典（注意，一个标记可以产生一个以上的词）
+     </para>
+
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      a single lexeme with the <literal>TSL_FILTER</> flag set, to replace
+      the original token with a new token to be passed to subsequent
+      dictionaries (a dictionary that does this is called a
+      <firstterm>filtering dictionary</>)
+     </para>
+-->
+<para>
+     用<literal>TSL_FILTER</>标志设置的单词，与被传递到随后的词典的新的标记代替原来的（称这是<firstterm>过滤词典</>）
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      an empty array if the dictionary knows the token, but it is a stop word
+     </para>
+-->
+<para>
+     如果词典认为标记是空数组，但它是一个屏蔽词。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      <literal>NULL</literal> if the dictionary does not recognize the input token
+     </para>
+-->
+<para>
+      如果词典不能识别输入标记，则为<literal>空</literal>
+</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <!--
+<para>
+   <productname>PostgreSQL</productname> provides predefined dictionaries for
+   many languages.  There are also several predefined templates that can be
+   used to create new dictionaries with custom parameters.  Each predefined
+   dictionary template is described below.  If no existing
+   template is suitable, it is possible to create new ones; see the
+   <filename>contrib/</> area of the <productname>PostgreSQL</> distribution
+   for examples.
+  </para>
+-->
+<para>
+     <productname>PostgreSQL</productname>提供了多种语言的预定义字典。也有几个预定义的模板，可用于创建自定义参数的新词典。
+ 每个预定义的字典模板描述如下。如果没有现成的模板是合适的，它可以创建一个新的；
+ 参见<productname>PostgreSQL</>发布的<filename>contrib/</>部分例子
+</para>
+
+  <!--
+<para>
+   A text search configuration binds a parser together with a set of
+   dictionaries to process the parser's output tokens.  For each token
+   type that the parser can return, a separate list of dictionaries is
+   specified by the configuration.  When a token of that type is found
+   by the parser, each dictionary in the list is consulted in turn,
+   until some dictionary recognizes it as a known word.  If it is identified
+   as a stop word, or if no dictionary recognizes the token, it will be
+   discarded and not indexed or searched for.
+   Normally, the first dictionary that returns a non-<literal>NULL</>
+   output determines the result, and any remaining dictionaries are not
+   consulted; but a filtering dictionary can replace the given word
+   with a modified word, which is then passed to subsequent dictionaries.
+  </para>
+-->
+<para>
+     文本搜索配置将解析器和处理解析器输出标记绑定在一起。为了每个标记类型，
+ 返回解析器，单独的词典列表通过配置指定。当标记类型是由解析器发现时，
+ 列表中的每个字典依次查阅，直到一些词典作为一个已知的单词识别它。如果它被确定为一个屏蔽词，
+ 或者如果没有词典识别标记，它将被丢弃，并且没有索引或搜索。通常，返回一个非-<literal>空</>输出的第一个词典将决定结果，
+ 并且不查阅任何剩余的词典；但过滤词典可以替换带有修饰词的给定词，然后被传递给后继词典。
+</para>
+
+  <!--
+<para>
+   The general rule for configuring a list of dictionaries
+   is to place first the most narrow, most specific dictionary, then the more
+   general dictionaries, finishing with a very general dictionary, like
+   a <application>Snowball</> stemmer or <literal>simple</>, which
+   recognizes everything.  For example, for an astronomy-specific search
+   (<literal>astro_en</literal> configuration) one could bind token type
+   <type>asciiword</type> (ASCII word) to a synonym dictionary of astronomical
+   terms, a general English dictionary and a <application>Snowball</> English
+   stemmer:
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION astro_en
+    ADD MAPPING FOR asciiword WITH astrosyn, english_ispell, english_stem;
+</programlisting>
+  </para>
+-->
+<para>
+    配置一个字典列表的一般规则是放在第一个最窄的，最具体的词典中，然后是更一般的词典，
+整理一个非常普遍的词典，像<application>Snowball</>词干或<literal>simple</>可以识别一切。例如，
+一个天文学的特定搜索（<literal>astro_en</literal>配置）可以将标记类型<type>asciiword</type>（ASCII字）绑定到天文术语的同义词词典，
+一般英语词典和<application>Snowball</> 英文词干分析器：
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION astro_en
+    ADD MAPPING FOR asciiword WITH astrosyn, english_ispell, english_stem;
+</programlisting>
+
+</para>
+
+  <!--
+<para>
+   A filtering dictionary can be placed anywhere in the list, except at the
+   end where it'd be useless.  Filtering dictionaries are useful to partially
+   normalize words to simplify the task of later dictionaries.  For example,
+   a filtering dictionary could be used to remove accents from accented
+   letters, as is done by the <xref linkend="unaccent"> module.
+  </para>
+-->
+<para>
+    过滤词典可以放置在列表中的任何地方，除了在结束的地方会是无用的。
+过滤词典部分规范化词以简化后继词典的任务是非常有用的。
+例如，过滤词典可以用来从重音字母中删除重音，按照<xref linkend="unaccent">模块执行。
+</para>
+
+  <sect2 id="textsearch-stopwords">
+  <!--
+   <title>Stop Words</title>
+    -->
+<title>屏蔽词</title>
+
+   <!--
+<para>
+    Stop words are words that are very common, appear in almost every
+    document, and have no discrimination value. Therefore, they can be ignored
+    in the context of full text searching. For example, every English text
+    contains words like <literal>a</literal> and <literal>the</>, so it is
+    useless to store them in an index.  However, stop words do affect the
+    positions in <type>tsvector</type>, which in turn affect ranking:
+
+<screen>
+SELECT to_tsvector('english','in the list of stop words');
+        to_tsvector
+----------------------------
+ 'list':3 'stop':5 'word':6
+</screen>
+
+    The missing positions 1,2,4 are because of stop words.  Ranks
+    calculated for documents with and without stop words are quite different:
+
+<screen>
+SELECT ts_rank_cd (to_tsvector('english','in the list of stop words'), to_tsquery('list &amp; stop'));
+ ts_rank_cd
+------------
+       0.05
+
+SELECT ts_rank_cd (to_tsvector('english','list stop words'), to_tsquery('list &amp; stop'));
+ ts_rank_cd
+------------
+        0.1
+</screen>
+
+   </para>
+-->
+<para>
+    屏蔽词是很常见的词，出现在几乎每一个文档中，并且没有区分值。因此，他们可以在全文搜索的环境中被忽视的。
+例如，每个英文文本包含像<literal>a</literal> 和 <literal>the</>的单词，因此它们在索引中存储无效。然而，屏蔽词影响在<type>tsvector</type>中的位置，
+这反过来也影响相关度：
+
+<screen>
+SELECT to_tsvector('english','in the list of stop words');
+        to_tsvector
+----------------------------
+ 'list':3 'stop':5 'word':6
+</screen>
+
+    丢失位置1,2,4是因为屏蔽词。带有和没有屏蔽词的文档排序计算是完全不同的：
+
+<screen>
+SELECT ts_rank_cd (to_tsvector('english','in the list of stop words'), to_tsquery('list &amp; stop'));
+ ts_rank_cd
+------------
+       0.05
+
+SELECT ts_rank_cd (to_tsvector('english','list stop words'), to_tsquery('list &amp; stop'));
+ ts_rank_cd
+------------
+        0.1
+</screen>
+
+</para>
+
+   <!--
+<para>
+    It is up to the specific dictionary how it treats stop words. For example,
+    <literal>ispell</literal> dictionaries first normalize words and then
+    look at the list of stop words, while <literal>Snowball</literal> stemmers
+    first check the list of stop words. The reason for the different
+    behavior is an attempt to decrease noise.
+   </para>
+-->
+<para>
+    如何处理屏蔽词，它是由特定词典决定的。例如，<literal>ispell</literal>词典首先规范词，然后查看屏蔽词列表，
+而<literal>Snowball</literal>词干首先检查屏蔽词列表。这个不同操作的原因是为了减少噪音。
+</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-simple-dictionary">
+   <!--
+   <title>Simple Dictionary</title>
+   -->
+   <title>Simple 词典</title>
+
+   <!--
+<para>
+    The <literal>simple</> dictionary template operates by converting the
+    input token to lower case and checking it against a file of stop words.
+    If it is found in the file then an empty array is returned, causing
+    the token to be discarded.  If not, the lower-cased form of the word
+    is returned as the normalized lexeme.  Alternatively, the dictionary
+    can be configured to report non-stop-words as unrecognized, allowing
+    them to be passed on to the next dictionary in the list.
+   </para>
+-->
+<para>
+     <literal>simple</>字典模板通过转换输入标记为小写字母进行，并且屏蔽词文件前检查它。
+ 如果在文档中找到并返回空数组，则丢弃这个标记。如果没有，单词的小写字母形式作为归一化的词返回。
+ 另外，词典可以为报告未识别的非屏蔽词进行配置，允许将它们传递到列表中的后继词典中。
+</para>
+
+   
+<para>
+    <!--
+    Here is an example of a dictionary definition using the <literal>simple</>
+    template:
+-->
+这有使用<literal>simple</>模板的词典定义的例子：
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY public.simple_dict (
+    TEMPLATE = pg_catalog.simple,
+    STOPWORDS = english
+);
+</programlisting>
+
+     <!--
+    Here, <literal>english</literal> is the base name of a file of stop words.
+    The file's full name will be <filename>$SHAREDIR/tsearch_data/english.stop</>,
+    where <literal>$SHAREDIR</> means the <productname>PostgreSQL</productname> installation's shared-data directory,
+    often <filename>/usr/local/share/postgresql</> (use <command>pg_config &#045;-sharedir</> to determine it if you're not sure).
+    The file format is simply a list of words, one per line.  Blank lines and trailing spaces are ignored,and upper case is folded to lower case, but no other processing is done
+    on the file contents.
+-->
+在这里，<literal>english</literal>是一种屏蔽词文件的基础名称。文档的全名为<filename>$SHAREDIR/tsearch_data/english.stop</>，
+这里的<literal>$SHAREDIR</>是<productname>PostgreSQL</productname>安装的共享数据目录，经常使用<filename>/usr/local/share/postgresql</>（如果你不确定，
+则使用<command>pg_config &#045;-sharedir</>来决定）。文档格式是一个简单的单词列表，每行一个。忽略空白行和空格，
+并且大写字母转换成小写字母，但对文档内容没有其他的处理方式。
+
+   </para>
+
+
+   
+<para>
+    <!--
+    Now we can test our dictionary:
+-->
+现在我们可以测试我们的词典：
+
+<screen>
+SELECT ts_lexize('public.simple_dict','YeS');
+ ts_lexize
+-----------
+ {yes}
+
+SELECT ts_lexize('public.simple_dict','The');
+ ts_lexize
+-----------
+ {}
+</screen>
+   </para>
+
+
+<para>
+    <!--
+    We can also choose to return <literal>NULL</>, instead of the lower-cased
+    word, if it is not found in the stop words file.  This behavior is
+    selected by setting the dictionary's <literal>Accept</> parameter to
+    <literal>false</>.  Continuing the example:
+-->
+如果没在屏蔽词文件中找到，我们也可以选择返回<literal>NULL</>，而不是小写字母单词。
+   这种行为是通过设置字典的<literal>Accept</>参数为<literal>false</>选择的。继续例子：
+
+<screen>
+ALTER TEXT SEARCH DICTIONARY public.simple_dict ( Accept = false );
+
+SELECT ts_lexize('public.simple_dict','YeS');
+ ts_lexize
+-----------
+
+
+SELECT ts_lexize('public.simple_dict','The');
+ ts_lexize
+-----------
+ {}
+</screen>
+   </para>
+
+   <!--
+<para>
+    With the default setting of <literal>Accept</> = <literal>true</>,
+    it is only useful to place a <literal>simple</> dictionary at the end
+    of a list of dictionaries, since it will never pass on any token to
+    a following dictionary.  Conversely, <literal>Accept</> = <literal>false</>
+    is only useful when there is at least one following dictionary.
+   </para>
+-->
+<para> 
+    随着缺省设置<literal>Accept</> = <literal>true</>，它把<literal>simple</>词典放在词典列表末尾的时候是很有用的，
+因为它不会传递任何标记给后继词典。相反，当至少有一个后继词典时，<literal>Accept</> = <literal>false</>是唯一有用的。
+</para>
+
+   <caution>
+    <!--
+<para>
+     Most types of dictionaries rely on configuration files, such as files of
+     stop words.  These files <emphasis>must</> be stored in UTF-8 encoding.
+     They will be translated to the actual database encoding, if that is
+     different, when they are read into the server.
+    </para>
+-->
+<para>
+      词典大部分类型依赖于配置文档，如屏蔽词文件。这些文件<emphasis>必须</>存储在UTF-8编码中。
+  当他们读到服务器中，如果是不同的，他们将被转化为实际的数据库编码。
+</para>
+   </caution>
+
+   <caution>
+    <!--
+<para>
+     Normally, a database session will read a dictionary configuration file
+     only once, when it is first used within the session.  If you modify a
+     configuration file and want to force existing sessions to pick up the
+     new contents, issue an <command>ALTER TEXT SEARCH DICTIONARY</> command
+     on the dictionary.  This can be a <quote>dummy</> update that doesn't
+     actually change any parameter values.
+    </para>
+-->
+<para>
+      通常情况下，当它在会话中第一次使用时，数据库会话将只读一次词典的配置文档，
+  如果你修改一个配置文档，想强制现有会话获取新的内容，则在词典中使用命令<command>ALTER TEXT SEARCH DICTIONARY</>。
+  这是一个<quote>虚拟</>的更新，实际上并没有改变任何参数值。
+</para>
+   </caution>
+
+  </sect2>
+
+  <sect2 id="textsearch-synonym-dictionary">
+   <!--
+   <title>Synonym Dictionary</title>
+   -->
+   
+   <title>同义词词典</title>
+   
+<para>
+    <!--
+    This dictionary template is used to create dictionaries that replace a
+    word with a synonym. Phrases are not supported (use the thesaurus
+    template (<xref linkend="textsearch-thesaurus">) for that).  A synonym
+    dictionary can be used to overcome linguistic problems, for example, to
+    prevent an English stemmer dictionary from reducing the word <quote>Paris</quote> to
+    <quote>pari</quote>.  It is enough to have a <literal>Paris paris</literal> line in the
+    synonym dictionary and put it before the <literal>english_stem</>
+    dictionary.  For example:
+-->
+
+ 这个字典模板用于创建替代词和同义词的词典。不支持短语（使用同义词库模板（节<xref linkend="textsearch-thesaurus">）。
+一个同义词词典可以用来克服语言上的问题，例如，防止英语词干词典使单词<quote>Paris</quote>变成<quote>pari</quote>。
+这足以在同义词词典中有<literal>Paris paris</literal>行并且放在<literal>english_stem</>词典之前。比如：
+
+<screen>
+SELECT * FROM ts_debug('english', 'Paris');
+   alias   |   description   | token |  dictionaries  |  dictionary  | lexemes 
+-----------+-----------------+-------+----------------+--------------+---------
+ asciiword | Word, all ASCII | Paris | {english_stem} | english_stem | {pari}
+
+CREATE TEXT SEARCH DICTIONARY my_synonym (
+    TEMPLATE = synonym,
+    SYNONYMS = my_synonyms
+);
+
+ALTER TEXT SEARCH CONFIGURATION english
+    ALTER MAPPING FOR asciiword
+    WITH my_synonym, english_stem;
+
+SELECT * FROM ts_debug('english', 'Paris');
+   alias   |   description   | token |       dictionaries        | dictionary | lexemes 
+-----------+-----------------+-------+---------------------------+------------+---------
+ asciiword | Word, all ASCII | Paris | {my_synonym,english_stem} | my_synonym | {paris}
+</screen>
+   </para>
+
+
+   <!--
+<para>
+    The only parameter required by the <literal>synonym</> template is
+    <literal>SYNONYMS</>, which is the base name of its configuration file
+    &mdash; <literal>my_synonyms</> in the above example.
+    The file's full name will be
+    <filename>$SHAREDIR/tsearch_data/my_synonyms.syn</>
+    (where <literal>$SHAREDIR</> means the
+    <productname>PostgreSQL</> installation's shared-data directory).
+    The file format is just one line
+    per word to be substituted, with the word followed by its synonym,
+    separated by white space.  Blank lines and trailing spaces are ignored.
+   </para>
+-->
+<para>
+    <literal>synonym</>模版要求的唯一的参数是<literal>SYNONYMS</>，这是它的配置文件的基础名称&mdash;上面例子中<literal>my_synonyms</>。
+文件的全名为<filename>$SHAREDIR/tsearch_data/my_synonyms.syn</>（<literal>$SHAREDIR</>是<productname>PostgreSQL</>安装的共享数据目录）。
+文件格式是每一行的每个字被取代，带有这个词的同义词，用空格分隔。忽略空白行和空格。
+</para>
+
+   <!--
+<para>
+    The <literal>synonym</> template also has an optional parameter
+    <literal>CaseSensitive</>, which defaults to <literal>false</>.  When
+    <literal>CaseSensitive</> is <literal>false</>, words in the synonym file
+    are folded to lower case, as are input tokens.  When it is
+    <literal>true</>, words and tokens are not folded to lower case,
+    but are compared as-is.
+   </para>
+-->
+<para>
+    <literal>synonym</>模版也有一个可选的参数<literal>CaseSensitive</>，缺省是<literal>false</>。当<literal>CaseSensitive</>是<literal>false</>时，
+同义词文件中的词转换成小写字母，正如输入标记。
+比较而言，当它是<literal>true</>时，词语和标记不转换成小写字母
+</para>
+
+   
+<para>
+    <!--
+    An asterisk (<literal>*</literal>) can be placed at the end of a synonym
+    in the configuration file.  This indicates that the synonym is a prefix.
+    The asterisk is ignored when the entry is used in
+    <function>to_tsvector()</function>, but when it is used in
+    <function>to_tsquery()</function>, the result will be a query item with
+    the prefix match marker (see
+    <xref linkend="textsearch-parsing-queries">).
+    For example, suppose we have these entries in
+    <filename>$SHAREDIR/tsearch_data/synonym_sample.syn</>:
+-->
+
+星号（<literal>*</literal>）可以被放置在配置文件中的同义词结尾。这表明，同义词是一个前缀。
+当在<function>to_tsvector()</function>中使用记录时，忽略星号。但当它被用在<function>to_tsquery()</function>中时，
+结果将是带前缀匹配标记的查询记录（参见节<xref linkend="textsearch-parsing-queries">）。例如，假设我们在<filename>$SHAREDIR/tsearch_data/synonym_sample.syn</>中有这些记录。
+<programlisting>
+postgres        pgsql
+postgresql      pgsql
+postgre pgsql
+gogle   googl
+indices index*
+</programlisting>
+    <!--
+    Then we will get these results:
+-->
+ 然后我们将得到这些结果：
+<screen>
+mydb=# CREATE TEXT SEARCH DICTIONARY syn (template=synonym, synonyms='synonym_sample');
+mydb=# SELECT ts_lexize('syn','indices');
+ ts_lexize
+-----------
+ {index}
+(1 row)
+
+mydb=# CREATE TEXT SEARCH CONFIGURATION tst (copy=simple);
+mydb=# ALTER TEXT SEARCH CONFIGURATION tst ALTER MAPPING FOR asciiword WITH syn;
+mydb=# SELECT to_tsvector('tst','indices');
+ to_tsvector
+-------------
+ 'index':1
+(1 row)
+
+mydb=# SELECT to_tsquery('tst','indices');
+ to_tsquery
+------------
+ 'index':*
+(1 row)
+
+mydb=# SELECT 'indexes are very useful'::tsvector;
+            tsvector             
+---------------------------------
+ 'are' 'indexes' 'useful' 'very'
+(1 row)
+
+mydb=# SELECT 'indexes are very useful'::tsvector @@ to_tsquery('tst','indices');
+ ?column?
+----------
+ t
+(1 row)
+</screen>
+   </para>
+
+
+  </sect2>
+
+  <sect2 id="textsearch-thesaurus">
+  <!--
+   <title>Thesaurus Dictionary</title>
+   -->
+   
+   <title>同义词词典库</title>
+
+   <!--
+<para>
+    A thesaurus dictionary (sometimes abbreviated as <acronym>TZ</acronym>) is
+    a collection of words that includes information about the relationships
+    of words and phrases, i.e., broader terms (<acronym>BT</acronym>), narrower
+    terms (<acronym>NT</acronym>), preferred terms, non-preferred terms, related
+    terms, etc.
+   </para>
+-->
+<para>
+    同义词词库（有时简称<acronym>TZ</acronym>）是一个单词的组合，包括单词和短语的关系信息，
+比如，更广泛术语（<acronym>BT</acronym>），更窄的术语（<acronym>NT</acronym>），首选术语，非优先术语，相关术语等。
+</para>
+
+   <!--
+<para>
+    Basically a thesaurus dictionary replaces all non-preferred terms by one
+    preferred term and, optionally, preserves the original terms for indexing
+    as well.  <productname>PostgreSQL</>'s current implementation of the
+    thesaurus dictionary is an extension of the synonym dictionary with added
+    <firstterm>phrase</firstterm> support.  A thesaurus dictionary requires
+    a configuration file of the following format:
+
+<programlisting>
+# this is a comment
+sample word(s) : indexed word(s)
+more sample word(s) : more indexed word(s)
+...
+</programlisting>
+
+    where  the colon (<symbol>:</symbol>) symbol acts as a delimiter between a
+    a phrase and its replacement.
+   </para>
+-->
+<para>
+    基本上同义词词库通过一个首选的术语替换所有非优先术语，另外，也保留索引的原术语。
+同义词词典<productname>PostgreSQL</>的当前实现是带有附加<firstterm>短语</firstterm>支持的同义词词典的扩展。同义词词典需要下列格式的配置文件：
+
+<programlisting>
+# this is a comment
+sample word(s) : indexed word(s)
+more sample word(s) : more indexed word(s)
+...
+</programlisting>
+
+    冒号（<symbol>:</symbol>）符号作为短语和其替代物之间的分隔符。
+</para>
+
+   <!--
+<para>
+    A thesaurus dictionary uses a <firstterm>subdictionary</firstterm> (which
+    is specified in the dictionary's configuration) to normalize the input
+    text before checking for phrase matches. It is only possible to select one
+    subdictionary.  An error is reported if the subdictionary fails to
+    recognize a word. In that case, you should remove the use of the word or
+    teach the subdictionary about it.  You can place an asterisk
+    (<symbol>*</symbol>) at the beginning of an indexed word to skip applying
+    the subdictionary to it, but all sample words <emphasis>must</> be known
+    to the subdictionary.
+   </para>
+-->
+<para>
+    同义词词典检查短语匹配之前使用一个<firstterm>子词典</firstterm>（这是在字典的配置中指定）规范输入文本。
+它选择一个子词典是可能的。如果子词典无法识别单词，报告一个错误。在这种情况下，
+你应该删除这个词或训练子词典。你可以在一个索引字跳过应用子词典的开头放一个星号（<symbol>*</symbol>），
+但是所有简单的词<emphasis>必须</>是子词典已知的。
+</para>
+
+   <!--
+<para>
+    The thesaurus dictionary chooses the longest match if there are multiple
+    phrases matching the input, and ties are broken by using the last
+    definition.
+   </para>
+-->
+<para>
+    如果有多个短语匹配输入，同义词词典选择最长的匹配。并且使用最后一个定义分离关系。
+</para>
+
+   <!--
+<para>
+    Specific stop words recognized by the subdictionary cannot be
+    specified;  instead use <literal>?</> to mark the location where any
+    stop word can appear.  For example, assuming that <literal>a</> and
+    <literal>the</> are stop words according to the subdictionary:
+
+<programlisting>
+? one ? two : swsw
+</programlisting>
+
+    matches <literal>a one the two</> and <literal>the one a two</>;
+    both would be replaced by <literal>swsw</>.
+   </para>
+-->
+<para>
+    通过子词典识别的具体屏蔽词不能被指定；而使用<literal>?</>标记任何屏蔽词出现的位置。
+例如，假设<literal>a</>和<literal>the</>是依据子词典的屏蔽词：
+
+<programlisting>
+? one ? two : swsw
+</programlisting>
+
+    匹配<literal>a one the two</>和<literal>the one a two</>；两者都会被<literal>swsw</>替代。 
+</para>
+
+   <!--
+<para>
+    Since a thesaurus dictionary has the capability to recognize phrases it
+    must remember its state and interact with the parser. A thesaurus dictionary
+    uses these assignments to check if it should handle the next word or stop
+    accumulation.  The thesaurus dictionary must be configured
+    carefully. For example, if the thesaurus dictionary is assigned to handle
+    only the <literal>asciiword</literal> token, then a thesaurus dictionary
+    definition like <literal>one 7</> will not work since token type
+    <literal>uint</literal> is not assigned to the thesaurus dictionary.
+   </para>
+-->
+<para>
+    由于同义词词典有能力识别短语，它必须记住其状态并且与分析器交互。同义词词典使用这些任务检查它是否应该处理下一个词，
+或停止积累。同义词词典必须小心配置。例如，如果字典词库分配只处理<literal>asciiword</literal>标记，那么像<literal>one 7</>的同义词词典定义将不工作，
+因为标记类型<literal>uint</literal>不分配给同义词词典。
+</para>
+
+   <caution>
+    <!--
+<para>
+     Thesauruses are used during indexing so any change in the thesaurus
+     dictionary's parameters <emphasis>requires</emphasis> reindexing.
+     For most other dictionary types, small changes such as adding or
+     removing stopwords does not force reindexing.
+    </para>
+-->
+<para>
+     索引中使用词典，同义词词典的任何参数变化都<emphasis>需要</emphasis>重新索引。对于大多数其他词典类型，
+ 小的变化，比如添加或去除屏蔽词不强迫重新索引。
+</para>
+   </caution>
+
+  <sect3 id="textsearch-thesaurus-config">
+  <!--
+   <title>Thesaurus Configuration</title>
+   -->
+   <title>同义词词典配置</title>
+   
+   
+<para>
+    <!--
+    To define a new thesaurus dictionary, use the <literal>thesaurus</>
+    template.  For example:
+-->
+
+ 使用<literal>thesaurus</>模板定义一个新的同义词词库。比如:
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY thesaurus_simple (
+    TEMPLATE = thesaurus,
+    DictFile = mythesaurus,
+    Dictionary = pg_catalog.english_stem
+);
+</programlisting>
+    <!--
+    Here:
+-->
+这里：
+    <itemizedlist  spacing="compact" mark="bullet">
+     <listitem>
+      <para>
+   <!--
+       <literal>thesaurus_simple</literal> is the new dictionary's name
+   -->
+    <literal>thesaurus_simple</literal>是新词典的名称。
+      </para>
+
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>mythesaurus</literal> is the base name of the thesaurus
+       configuration file.
+       (Its full name will be <filename>$SHAREDIR/tsearch_data/mythesaurus.ths</>,
+       where <literal>$SHAREDIR</> means the installation shared-data
+       directory.)
+      </para>
+-->
+<para>
+      <literal>mythesaurus</literal>是同义词配置文件的基础名称。
+ （全名为<filename>$SHAREDIR/tsearch_data/mythesaurus.ths</>，这里<literal>$SHAREDIR</>是安装的共享数据目录）
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <literal>pg_catalog.english_stem</literal> is the subdictionary (here,
+       a Snowball English stemmer) to use for thesaurus normalization.
+       Notice that the subdictionary will have its own
+       configuration (for example, stop words), which is not shown here.
+      </para>
+-->
+<para>
+     <literal>pg_catalog.english_stem</literal>是用于词规范化的子词典（这的Snowball英文词干）。
+ 注意，子词典将有自己的配置（例如，屏蔽词），不显示在这里。
+</para>
+     </listitem>
+    </itemizedlist>
+
+    <!--
+    Now it is possible to bind the thesaurus dictionary <literal>thesaurus_simple</literal>
+    to the desired token types in a configuration, for example:
+-->
+
+现在它在配置中可能将同义词词典<literal>thesaurus_simple</literal>绑定到所需的标记类型中，例如：
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION russian
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart
+    WITH thesaurus_simple;
+</programlisting>
+   </para>
+
+  </sect3>
+
+  <sect3 id="textsearch-thesaurus-examples">
+  <!--
+   <title>Thesaurus Example</title>
+   -->
+   <title>同义词词典例子</title>
+   <!--
+<para>
+    Consider a simple astronomical thesaurus <literal>thesaurus_astro</literal>,
+    which contains some astronomical word combinations:
+
+<programlisting>
+supernovae stars : sn
+crab nebulae : crab
+</programlisting>
+
+    Below we create a dictionary and bind some token types to
+    an astronomical thesaurus and English stemmer:
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY thesaurus_astro (
+    TEMPLATE = thesaurus,
+    DictFile = thesaurus_astro,
+    Dictionary = english_stem
+);
+
+ALTER TEXT SEARCH CONFIGURATION russian
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart
+    WITH thesaurus_astro, english_stem;
+</programlisting>
+
+    Now we can see how it works.
+    <function>ts_lexize</function> is not very useful for testing a thesaurus,
+    because it treats its input as a single token.  Instead we can use
+    <function>plainto_tsquery</function> and <function>to_tsvector</function>
+    which will break their input strings into multiple tokens:
+
+<screen>
+SELECT plainto_tsquery('supernova star');
+ plainto_tsquery
+-----------------
+ 'sn'
+
+SELECT to_tsvector('supernova star');
+ to_tsvector
+-------------
+ 'sn':1
+</screen>
+
+    In principle, one can use <function>to_tsquery</function> if you quote
+    the argument:
+
+<screen>
+SELECT to_tsquery('''supernova star''');
+ to_tsquery
+------------
+ 'sn'
+</screen>
+
+    Notice that <literal>supernova star</literal> matches <literal>supernovae
+    stars</literal> in <literal>thesaurus_astro</literal> because we specified
+    the <literal>english_stem</literal> stemmer in the thesaurus definition.
+    The stemmer removed the <literal>e</> and <literal>s</>.
+   </para>
+-->
+<para>
+    考虑一个简单的天文词典<literal>thesaurus_astro</literal>，其中包含了一些天文组合词：
+<programlisting>
+supernovae stars : sn
+crab nebulae : crab
+</programlisting>
+
+    下面我们创建一个词典并且绑定标记类型的一些天文词库和英文词干分析器:
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY thesaurus_astro (
+    TEMPLATE = thesaurus,
+    DictFile = thesaurus_astro,
+    Dictionary = english_stem
+);
+
+ALTER TEXT SEARCH CONFIGURATION russian
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart
+    WITH thesaurus_astro, english_stem;
+</programlisting>
+   
+     现在我们可以看到它是如何工作的。<function>ts_lexize</function>对测试一个词库没有很大帮助，因为它把输入作为一个标记。
+ 相反，我们可以使用<function>plainto_tsquery</function>和<function>to_tsvector</function>，将它们的输入字符串分离成多个标记：
+
+<screen>
+SELECT plainto_tsquery('supernova star');
+ plainto_tsquery
+-----------------
+ 'sn'
+
+SELECT to_tsvector('supernova star');
+ to_tsvector
+-------------
+ 'sn':1
+</screen>
+
+     原则上，如果你引用参数，可以使用<function>to_tsquery</function>:
+ 
+<screen>
+SELECT to_tsquery('''supernova star''');
+ to_tsquery
+------------
+ 'sn'
+</screen>
+
+     注意<literal>supernova star</literal>与<literal>supernovae stars</literal>在<literal>thesaurus_astro</literal>中匹配，因为我们在词典的定义中指定了<literal>english_stem</literal>词干分析器。
+ 词干分析器删除<literal>e</>和<literal>s</>。
+</para>
+
+   <!--
+<para>
+    To index the original phrase as well as the substitute, just include it
+    in the right-hand part of the definition:
+
+<screen>
+supernovae stars : sn supernovae stars
+
+SELECT plainto_tsquery('supernova star');
+       plainto_tsquery
+-----------------------------
+ 'sn' &amp; 'supernova' &amp; 'star'
+</screen>
+   </para>
+-->
+<para>
+    为了索引原句以及替代词，只是将它包括在定义的右边部分：
+
+<screen>
+supernovae stars : sn supernovae stars
+
+SELECT plainto_tsquery('supernova star');
+       plainto_tsquery
+-----------------------------
+ 'sn' &amp; 'supernova' &amp; 'star'
+</screen>
+
+</para>
+
+  </sect3>
+
+  </sect2>
+
+  <sect2 id="textsearch-ispell-dictionary">
+  <!--
+   <title><application>Ispell</> Dictionary</title>
+   -->
+   <title><application>Ispell</>词典</title>
+
+   <!--
+<para>
+    The <application>Ispell</> dictionary template supports
+    <firstterm>morphological dictionaries</>, which can normalize many
+    different linguistic forms of a word into the same lexeme.  For example,
+    an English <application>Ispell</> dictionary can match all declensions and
+    conjugations of the search term <literal>bank</literal>, e.g.,
+    <literal>banking</>, <literal>banked</>, <literal>banks</>,
+    <literal>banks'</>, and <literal>bank's</>.
+   </para>
+-->
+<para>
+    <application>Ispell</>词典模版支持<firstterm>形态学的词典</>，它可以将一个单词的许多不同的语言形式标准化为一个词。
+例如，英语<application>Ispell</>词典可以匹配所有词尾变化和搜索词<literal>bank</literal>的组合，
+例如，<literal>banking</>, <literal>banked</>, <literal>banks</>,
+    <literal>banks'</>和<literal>bank's</>。
+</para>
+
+   <!--
+<para>
+    The standard <productname>PostgreSQL</productname> distribution does
+    not include any <application>Ispell</> configuration files.
+    Dictionaries for a large number of languages are available from <ulink
+    url="http://ficus-www.cs.ucla.edu/geoff/ispell.html">Ispell</ulink>.
+    Also, some more modern dictionary file formats are supported &mdash; <ulink
+    url="http://en.wikipedia.org/wiki/MySpell">MySpell</ulink> (OO &lt; 2.0.1)
+    and <ulink url="http://sourceforge.net/projects/hunspell/">Hunspell</ulink>
+    (OO &gt;= 2.0.2).  A large list of dictionaries is available on the <ulink
+    url="http://wiki.services.openoffice.org/wiki/Dictionaries">OpenOffice
+    Wiki</ulink>.
+   </para>
+-->
+<para>
+    标准的<productname>PostgreSQL</productname>发布不包括任何<application>Ispell</>配置文件。大量的语言字典可以从<ulink
+    url="http://ficus-www.cs.ucla.edu/geoff/ispell.html">Ispell</ulink>获得。
+同时，&mdash; <ulink url="http://en.wikipedia.org/wiki/MySpell">MySpell</ulink> (OO &lt; 2.0.1)
+    和<ulink url="http://sourceforge.net/projects/hunspell/">Hunspell</ulink>(OO &gt;= 2.0.2)支持一些更现代的词典文件格式。
+大的词典列表在<ulink url="http://wiki.services.openoffice.org/wiki/Dictionaries">OpenOffice Wiki</ulink>中可用。
+</para>
+
+   <!--
+<para>
+    To create an <application>Ispell</> dictionary, use the built-in
+    <literal>ispell</literal> template and specify several parameters:
+   </para>
+-->
+<para>
+    使用内置的<literal>ispell</literal>模板创建<application>Ispell</> 词典，并指定几个参数：
+</para>
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY english_ispell (
+    TEMPLATE = ispell,
+    DictFile = english,
+    AffFile = english,
+    StopWords = english
+);
+</programlisting>
+
+   <!--
+<para>
+    Here, <literal>DictFile</>, <literal>AffFile</>, and <literal>StopWords</>
+    specify the base names of the dictionary, affixes, and stop-words files.
+    The stop-words file has the same format explained above for the
+    <literal>simple</> dictionary type.  The format of the other files is
+    not specified here but is available from the above-mentioned web sites.
+   </para>
+-->
+<para>
+    这里，<literal>DictFile</>, <literal>AffFile</>和<literal>StopWords</>指定词典基础的名字，词缀，和屏蔽词文件。
+屏蔽词文件具有和上面解释的<literal>simple</>词典类型相同的格式。其它文件的格式不在这里指定，
+但可以从上面提到的网站获取。
+</para>
+
+   <!--
+<para>
+    Ispell dictionaries usually recognize a limited set of words, so they
+    should be followed by another broader dictionary; for
+    example, a Snowball dictionary, which recognizes everything.
+   </para>
+-->
+<para>
+    Ispell词典通常识别有限的一组词，所以他们应该遵循另一个更广泛的词典；
+例如，一个Snowball词典，它可以识别一切。
+</para>
+
+   <!--
+<para>
+    Ispell dictionaries support splitting compound words;
+    a useful feature.
+    Notice that the affix file should specify a special flag using the
+    <literal>compoundwords controlled</literal> statement that marks dictionary
+    words that can participate in compound formation:
+
+<programlisting>
+compoundwords  controlled z
+</programlisting>
+
+    Here are some examples for the Norwegian language:
+
+<programlisting>
+SELECT ts_lexize('norwegian_ispell', 'overbuljongterningpakkmesterassistent');
+   {over,buljong,terning,pakk,mester,assistent}
+SELECT ts_lexize('norwegian_ispell', 'sjokoladefabrikk');
+   {sjokoladefabrikk,sjokolade,fabrikk}
+</programlisting>
+   </para>
+-->
+<para>
+   Ispell词典支持分裂复合词；一个有用的功能。请注意，
+   词缀文件应使用<literal>compound words controlled</literal>语句指定一个特殊标记，
+   标记可以参与复合信息的词典单词：
+  
+<programlisting>
+compoundwords  controlled z
+</programlisting>
+
+   这有一些Norwegian语言的例子：
+   
+<programlisting>
+SELECT ts_lexize('norwegian_ispell', 'overbuljongterningpakkmesterassistent');
+   {over,buljong,terning,pakk,mester,assistent}
+SELECT ts_lexize('norwegian_ispell', 'sjokoladefabrikk');
+   {sjokoladefabrikk,sjokolade,fabrikk}
+</programlisting>
+
+</para>
+
+   <note>
+    <!--
+<para>
+     <application>MySpell</> does not support compound words.
+     <application>Hunspell</> has sophisticated support for compound words. At
+     present, <productname>PostgreSQL</productname> implements only the basic
+     compound word operations of Hunspell.
+    </para>
+-->
+<para>
+    注意：<application>MySpell</>不支持复合词。<application>Hunspell</>对复合词有复杂支持。
+目前，<productname>PostgreSQL</productname>只实现了Hunspell的基本复合词操作。
+</para>
+   </note>
+
+  </sect2>
+
+  <sect2 id="textsearch-snowball-dictionary">
+  
+   <!--
+   <title><application>Snowball</> Dictionary</title>
+   -->
+   <title><application>Snowball</>词典</title> 
+
+
+   <!--
+<para>
+    The <application>Snowball</> dictionary template is based on a project
+    by Martin Porter, inventor of the popular Porter's stemming algorithm
+    for the English language.  Snowball now provides stemming algorithms for
+    many languages (see the <ulink url="http://snowball.tartarus.org">Snowball
+    site</ulink> for more information).  Each algorithm understands how to
+    reduce common variant forms of words to a base, or stem, spelling within
+    its language.  A Snowball dictionary requires a <literal>language</>
+    parameter to identify which stemmer to use, and optionally can specify a
+    <literal>stopword</> file name that gives a list of words to eliminate.
+    (<productname>PostgreSQL</productname>'s standard stopword lists are also
+    provided by the Snowball project.)
+    For example, there is a built-in definition equivalent to
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY english_stem (
+    TEMPLATE = snowball,
+    Language = english,
+    StopWords = english
+);
+</programlisting>
+
+    The stopword file format is the same as already explained.
+   </para>
+-->
+<para>
+     <application>Snowball</>词典模板是基于Martin Porter的项目，他是英语语言的著名的Porter的词干提取算法的发明者。
+ 现在Snowball提供了许多语言的词干提取算法（更多信息请见<ulink url="http://snowball.tartarus.org">Snowball
+    site</ulink>）。
+ 每个算法都知道如何改变词到基础，或词根，或其语言拼写的常见变异形式。
+ 一个Snowball词典需要<literal>language</>参数标识要使用的词干，并且可以指定一个删除词的列表的<literal>stopword</>文件名。
+ （<productname>PostgreSQL</productname>的标准的屏蔽词列表也由Snowball项目提供）例如，有一个等价的内置定义。
+ 
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY english_stem (
+    TEMPLATE = snowball,
+    Language = english,
+    StopWords = english
+);
+</programlisting>
+
+    屏蔽词的文件格式和已经解释过的一样。
+</para>
+
+   <!--
+<para>
+    A <application>Snowball</> dictionary recognizes everything, whether
+    or not it is able to simplify the word, so it should be placed
+    at the end of the dictionary list. It is useless to have it
+    before any other dictionary because a token will never pass through it to
+    the next dictionary.
+   </para>
+-->
+<para>
+    一个<application>Snowball</>词典可以识别一切，是否能够简化字，所以它应该放在词典列表的末尾。
+它放在任何其他的词典之前都是无用的，因为一个标记将不会经过它到下一个词典。
+</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-configuration">
+ <!--
+  <title>Configuration Example</title>
+   -->
+    <title>配置实例</title>
+   <!--
+<para>
+    A text search configuration specifies all options necessary to transform a
+    document into a <type>tsvector</type>: the parser to use to break text
+    into tokens, and the dictionaries to use to transform each token into a
+    lexeme.  Every call of
+    <function>to_tsvector</function> or <function>to_tsquery</function>
+    needs a text search configuration to perform its processing.
+    The configuration parameter
+    <xref linkend="guc-default-text-search-config">
+    specifies the name of the default configuration, which is the
+    one used by text search functions if an explicit configuration
+    parameter is omitted.
+    It can be set in <filename>postgresql.conf</filename>, or set for an
+    individual session using the <command>SET</> command.
+   </para>
+-->
+<para>
+    文本搜索配置指定所有选项将文档转换成一个<type>tsvector</type>：使用解析器将文本分解为标记，
+并且使用词典将每个标记转换为词。<function>to_tsvector</function>或者<function>to_tsquery</function>的每一次调用需要一个文本搜索配置来执行处理。
+如果一个明确的配置参数被省略，则配置参数<xref linkend="guc-default-text-search-config">指定默认配置的名称，
+它是通过一个文本搜索函数使用的。它可以在<filename>postgresql.conf</filename>中设置，或使用<command>SET</>命令设置一个独立会话。
+</para>
+
+   <!--
+<para>
+    Several predefined text search configurations are available, and
+    you can create custom configurations easily.  To facilitate management
+    of text search objects, a set of <acronym>SQL</acronym> commands
+    is available, and there are several <application>psql</application> commands that display information
+    about text search objects (<xref linkend="textsearch-psql">).
+   </para>
+-->
+<para>
+    有几个预定义的文本搜索配置是可用的，并且您可以很容易的创建自定义的配置。
+为了方便文本搜索对象的管理，一组<acronym>SQL</acronym>命令是可用的，
+有几个<application>psql</application>命令可以显示有关文本搜索对象的信息（节<xref linkend="textsearch-psql">）。
+</para>
+
+   <!--
+<para>
+    As an example we will create a configuration
+    <literal>pg</literal>, starting by duplicating the built-in
+    <literal>english</> configuration:
+
+<programlisting>
+CREATE TEXT SEARCH CONFIGURATION public.pg ( COPY = pg_catalog.english );
+</programlisting>
+   </para>
+-->
+<para>
+   作为一个例子，我们将创建一个配置<literal>pg</literal>，通过复制内置<literal>english</>配置启动：
+   
+<programlisting>
+CREATE TEXT SEARCH CONFIGURATION public.pg ( COPY = pg_catalog.english );
+</programlisting>
+
+</para>
+
+   <!--
+<para>
+    We will use a PostgreSQL-specific synonym list
+    and store it in <filename>$SHAREDIR/tsearch_data/pg_dict.syn</filename>.
+    The file contents look like:
+
+<programlisting>
+postgres    pg
+pgsql       pg
+postgresql  pg
+</programlisting>
+
+    We define the synonym dictionary like this:
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY pg_dict (
+    TEMPLATE = synonym,
+    SYNONYMS = pg_dict
+);
+</programlisting>
+
+    Next we register the <productname>Ispell</> dictionary
+    <literal>english_ispell</literal>, which has its own configuration files:
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY english_ispell (
+    TEMPLATE = ispell,
+    DictFile = english,
+    AffFile = english,
+    StopWords = english
+);
+</programlisting>
+
+    Now we can set up the mappings for words in configuration
+    <literal>pg</>:
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION pg
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                      word, hword, hword_part
+    WITH pg_dict, english_ispell, english_stem;
+</programlisting>
+
+    We choose not to index or search some token types that the built-in
+    configuration does handle:
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION pg
+    DROP MAPPING FOR email, url, url_path, sfloat, float;
+</programlisting>
+   </para>
+-->
+<para> 
+    我们将使用PostgreSQL特定的同义词列表并将其存储在<filename>$SHAREDIR/tsearch_data/pg_dict.syn</filename>中。
+文件内容看起来像：
+
+<programlisting>
+postgres    pg
+pgsql       pg
+postgresql  pg
+</programlisting>
+ 
+     我们定义这样的同义词词典：
+ 
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY pg_dict (
+    TEMPLATE = synonym,
+    SYNONYMS = pg_dict
+);
+</programlisting>
+
+    接下来我们注册<productname>Ispell</>词典<literal>english_ispell</literal>，它有自己的配置文件：
+
+<programlisting>
+CREATE TEXT SEARCH DICTIONARY english_ispell (
+    TEMPLATE = ispell,
+    DictFile = english,
+    AffFile = english,
+    StopWords = english
+);
+</programlisting>
+
+   现在我们可以在配置<literal>pg</>中建立词汇映射：
+   
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION pg
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                      word, hword, hword_part
+    WITH pg_dict, english_ispell, english_stem;
+</programlisting>
+
+    我们没有选择索引或搜索一些内置配置处理的标记类型：
+
+<programlisting>
+ALTER TEXT SEARCH CONFIGURATION pg
+    DROP MAPPING FOR email, url, url_path, sfloat, float;
+</programlisting>
+
+</para>
+
+   <!--
+<para>
+    Now we can test our configuration:
+
+<programlisting>
+SELECT * FROM ts_debug('public.pg', '
+PostgreSQL, the highly scalable, SQL compliant, open source object-relational
+database management system, is now undergoing beta testing of the next
+version of our software.
+');
+</programlisting>
+   </para>
+-->
+<para>
+    现在我们测试我们的配置：
+
+<programlisting>
+SELECT * FROM ts_debug('public.pg', '
+PostgreSQL, the highly scalable, SQL compliant, open source object-relational
+database management system, is now undergoing beta testing of the next
+version of our software.
+');
+</programlisting>
+
+</para>
+
+
+<para>
+    <!--
+    The next step is to set the session to use the new configuration, which was
+    created in the <literal>public</> schema:
+-->
+
+下一步是使用新的配置设置会话，这是在<literal>public</>模式中建立的：
+
+<screen>
+=&gt; \dF
+   List of text search configurations
+ Schema  | Name | Description
+---------+------+-------------
+ public  | pg   |
+
+SET default_text_search_config = 'public.pg';
+SET
+
+SHOW default_text_search_config;
+ default_text_search_config
+----------------------------
+ public.pg
+</screen>
+  </para>
+
+
+
+ </sect1>
+
+ <sect1 id="textsearch-debugging">
+ <!--
+  <title>Testing and Debugging Text Search</title>
+  -->
+  <title>测试和调试文本搜索</title>
+
+  <!--
+<para>
+   The behavior of a custom text search configuration can easily become
+   confusing.  The functions described
+   in this section are useful for testing text search objects.  You can
+   test a complete configuration, or test parsers and dictionaries separately.
+  </para>
+-->
+<para>
+   一个自定义文本搜索配置的行为很容易变得混乱。在本节中描述的函数对测试文本搜索对象是有用的。
+   你可以测试一个完整的配置，或分别测试分析器和词典。
+</para>
+
+  <sect2 id="textsearch-configuration-testing">
+  <!--
+   <title>Configuration Testing</title>
+   -->
+   <title>配置测试</title>
+
+  <!--
+<para>
+   The function <function>ts_debug</function> allows easy testing of a
+   text search configuration.
+  </para>
+-->
+<para>
+    函数<function>ts_debug</function>允许简单测试文本搜索配置。
+</para>
+
+  <indexterm>
+   <primary>ts_debug</primary>
+  </indexterm>
+
+<synopsis>
+ts_debug(<optional> <replaceable class="PARAMETER">config</replaceable> <type>regconfig</>, </optional> <replaceable class="PARAMETER">document</replaceable> <type>text</>,
+         OUT <replaceable class="PARAMETER">alias</> <type>text</>,
+         OUT <replaceable class="PARAMETER">description</> <type>text</>,
+         OUT <replaceable class="PARAMETER">token</> <type>text</>,
+         OUT <replaceable class="PARAMETER">dictionaries</> <type>regdictionary[]</>,
+         OUT <replaceable class="PARAMETER">dictionary</> <type>regdictionary</>,
+         OUT <replaceable class="PARAMETER">lexemes</> <type>text[]</>)
+         returns setof record
+</synopsis>
+
+  <!--
+<para>
+   <function>ts_debug</> displays information about every token of
+   <replaceable class="PARAMETER">document</replaceable> as produced by the
+   parser and processed by the configured dictionaries.  It uses the
+   configuration specified by <replaceable
+   class="PARAMETER">config</replaceable>,
+   or <varname>default_text_search_config</varname> if that argument is
+   omitted.
+  </para>
+-->
+<para>
+    <function>ts_debug</>显示关于通过解析器产生的和通过配置词典处理的<replaceable class="PARAMETER">document</replaceable>的每个标记的信息。
+如果忽略参数，它使用通过<replaceable class="PARAMETER">config</replaceable>或者<varname>default_text_search_config</varname>指定的配置。
+</para>
+
+  
+<para>
+   <!--
+   <function>ts_debug</> returns one row for each token identified in the text
+   by the parser.  The columns returned are
+   -->
+   
+    <function>ts_debug</>返回通过文本解析器标识的每个标记的每一行，返回的列是：
+
+    <itemizedlist  spacing="compact" mark="bullet">
+     <listitem>
+      <para>
+   <!--
+       <replaceable>alias</> <type>text</> &mdash; short name of the token type
+   -->
+   <replaceable>alias</> <type>text</> &mdash;标记类型的别名
+      </para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>description</> <type>text</> &mdash; description of the
+       token type
+      </para>
+-->
+<para>
+     <replaceable>description</> <type>text</> &mdash;标记类型描述
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>token</> <type>text</> &mdash; text of the token
+      </para>
+-->
+<para>
+    <replaceable>token</> <type>text</> &mdash;标记文本
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>dictionaries</> <type>regdictionary[]</> &mdash; the
+       dictionaries selected by the configuration for this token type
+      </para>
+-->
+<para>
+     <replaceable>dictionaries</> <type>regdictionary[]</> &mdash;通过配置为这个标记类型选定的词典
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>dictionary</> <type>regdictionary</> &mdash; the dictionary
+       that recognized the token, or <literal>NULL</> if none did
+      </para>
+-->
+<para>
+    <replaceable>dictionary</> <type>regdictionary</> &mdash;词典公认的标记，如果不这样，则为<literal>空</>。
+</para>
+     </listitem>
+     <listitem>
+      <!--
+<para>
+       <replaceable>lexemes</> <type>text[]</> &mdash; the lexeme(s) produced
+       by the dictionary that recognized the token, or <literal>NULL</> if
+       none did; an empty array (<literal>{}</>) means it was recognized as a
+       stop word
+      </para>
+-->
+<para>
+      <replaceable>lexemes</> <type>text[]</> &mdash; 公认标记的词典产生的词（s），或者如果不做则为<literal>NULL</>；空数组（<literal>{}</>）意味着它是公认的屏蔽词。
+</para>
+     </listitem>
+    </itemizedlist>
+  </para>
+
+  
+<para>
+   <!--
+   Here is a simple example:
+   -->
+     一个简单例子：
+
+<screen>
+SELECT * FROM ts_debug('english','a fat  cat sat on a mat - it ate a fat rats');
+   alias   |   description   | token |  dictionaries  |  dictionary  | lexemes 
+-----------+-----------------+-------+----------------+--------------+---------
+ asciiword | Word, all ASCII | a     | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | fat   | {english_stem} | english_stem | {fat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | cat   | {english_stem} | english_stem | {cat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | sat   | {english_stem} | english_stem | {sat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | on    | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | a     | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | mat   | {english_stem} | english_stem | {mat}
+ blank     | Space symbols   |       | {}             |              | 
+ blank     | Space symbols   | -     | {}             |              | 
+ asciiword | Word, all ASCII | it    | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | ate   | {english_stem} | english_stem | {ate}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | a     | {english_stem} | english_stem | {}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | fat   | {english_stem} | english_stem | {fat}
+ blank     | Space symbols   |       | {}             |              | 
+ asciiword | Word, all ASCII | rats  | {english_stem} | english_stem | {rat}
+</screen>
+  </para>
+
+
+  <!--
+<para>
+   For a more extensive demonstration, we
+   first create a <literal>public.english</literal> configuration and
+   Ispell dictionary for the English language:
+  </para>
+-->
+<para>
+   一个更广泛的例子，我们首先用英语创建一个 <literal>public.english</literal>配置和Ispell词典：
+</para>
+
+<programlisting>
+CREATE TEXT SEARCH CONFIGURATION public.english ( COPY = pg_catalog.english );
+
+CREATE TEXT SEARCH DICTIONARY english_ispell (
+    TEMPLATE = ispell,
+    DictFile = english,
+    AffFile = english,
+    StopWords = english
+);
+
+ALTER TEXT SEARCH CONFIGURATION public.english
+   ALTER MAPPING FOR asciiword WITH english_ispell, english_stem;
+</programlisting>
+
+<screen>
+SELECT * FROM ts_debug('public.english','The Brightest supernovaes');
+   alias   |   description   |    token    |         dictionaries          |   dictionary   |   lexemes   
+-----------+-----------------+-------------+-------------------------------+----------------+-------------
+ asciiword | Word, all ASCII | The         | {english_ispell,english_stem} | english_ispell | {}
+ blank     | Space symbols   |             | {}                            |                | 
+ asciiword | Word, all ASCII | Brightest   | {english_ispell,english_stem} | english_ispell | {bright}
+ blank     | Space symbols   |             | {}                            |                | 
+ asciiword | Word, all ASCII | supernovaes | {english_ispell,english_stem} | english_stem   | {supernova}
+</screen>
+
+  <!--
+<para>
+   In this example, the word <literal>Brightest</> was recognized by the
+   parser as an <literal>ASCII word</literal> (alias <literal>asciiword</literal>).
+   For this token type the dictionary list is
+   <literal>english_ispell</> and
+   <literal>english_stem</literal>. The word was recognized by
+   <literal>english_ispell</literal>, which reduced it to the noun
+   <literal>bright</literal>. The word <literal>supernovaes</literal> is
+   unknown to the <literal>english_ispell</literal> dictionary so it
+   was passed to the next dictionary, and, fortunately, was recognized (in
+   fact, <literal>english_stem</literal> is a Snowball dictionary which
+   recognizes everything; that is why it was placed at the end of the
+   dictionary list).
+  </para>
+-->
+<para>
+    在这个例子中，<literal>Brightest</>是由解析器作为<literal>ASCII词</literal>来标识（别名<literal>asciiword</literal>）。
+为这个标识类型，词典列表是<literal>english_ispell</>和<literal>english_stem</literal>。这个词通过<literal>english_ispell</literal>标识，
+归纳它为名词<literal>bright</literal>。词<literal>supernovaes</literal>于<literal>english_ispell</literal>词典是未知的，所以它传递给下一个词典，
+幸运的是，是公认的（事实上，<literal>english_stem</literal>是一个识别一切的Snowball词典；
+这就是为什么它被放置在词典列表末尾的原因）。
+</para>
+
+  <!--
+<para>
+   The word <literal>The</literal> was recognized by the
+   <literal>english_ispell</literal> dictionary as a stop word (<xref
+   linkend="textsearch-stopwords">) and will not be indexed.
+   The spaces are discarded too, since the configuration provides no
+   dictionaries at all for them.
+  </para>
+-->
+<para>
+    词<literal>The</literal>是由 <literal>english_ispell</literal>词典被公认为屏蔽词（节<xref linkend="textsearch-stopwords">），不会被索引。
+空间也被丢弃，因为该配置根本没有为它们提供词典。
+</para>
+
+  
+<para>
+   <!--
+   You can reduce the width of the output by explicitly specifying which columns
+   you want to see:
+   -->
+    你可以通过明确指定你想要查看的列减少输出的宽度：
+
+<screen>
+SELECT alias, token, dictionary, lexemes
+FROM ts_debug('public.english','The Brightest supernovaes');
+   alias   |    token    |   dictionary   |   lexemes   
+-----------+-------------+----------------+-------------
+ asciiword | The         | english_ispell | {}
+ blank     |             |                | 
+ asciiword | Brightest   | english_ispell | {bright}
+ blank     |             |                | 
+ asciiword | supernovaes | english_stem   | {supernova}
+</screen>
+  </para>
+
+
+
+  </sect2>
+
+  <sect2 id="textsearch-parser-testing">
+  <!--
+   <title>Parser Testing</title>
+   -->
+     <title>解析器测试</title>
+
+  <!--
+<para>
+   The following functions allow direct testing of a text search parser.
+  </para>
+-->
+<para>
+    下列函数允许直接测试文本搜索解析器。
+</para>
+
+  <indexterm>
+   <primary>ts_parse</primary>
+  </indexterm>
+
+<synopsis>
+ts_parse(<replaceable class="PARAMETER">parser_name</replaceable> <type>text</>, <replaceable class="PARAMETER">document</replaceable> <type>text</>,
+         OUT <replaceable class="PARAMETER">tokid</> <type>integer</>, OUT <replaceable class="PARAMETER">token</> <type>text</>) returns <type>setof record</>
+ts_parse(<replaceable class="PARAMETER">parser_oid</replaceable> <type>oid</>, <replaceable class="PARAMETER">document</replaceable> <type>text</>,
+         OUT <replaceable class="PARAMETER">tokid</> <type>integer</>, OUT <replaceable class="PARAMETER">token</> <type>text</>) returns <type>setof record</>
+</synopsis>
+
+  
+<para>
+   <!--
+   <function>ts_parse</> parses the given <replaceable>document</replaceable>
+   and returns a series of records, one for each token produced by
+   parsing. Each record includes a <varname>tokid</varname> showing the
+   assigned token type and a <varname>token</varname> which is the text of the
+   token.  For example:
+   -->
+    
+   <function>ts_parse</>解析给定的<replaceable>document</replaceable>并返回一系列的记录，每一个标记通过解析而产生。
+ 每个记录包括<varname>tokid</varname>显示已分配的标记类型，并且<varname>token</varname>是标记的文本。比如：
+<screen>
+SELECT * FROM ts_parse('default', '123 - a number');
+ tokid | token
+-------+--------
+    22 | 123
+    12 |
+    12 | -
+     1 | a
+    12 |
+     1 | number
+</screen>
+  </para>
+
+
+
+  <indexterm>
+   <primary>ts_token_type</primary>
+  </indexterm>
+
+<synopsis>
+ts_token_type(<replaceable class="PARAMETER">parser_name</> <type>text</>, OUT <replaceable class="PARAMETER">tokid</> <type>integer</>,
+              OUT <replaceable class="PARAMETER">alias</> <type>text</>, OUT <replaceable class="PARAMETER">description</> <type>text</>) returns <type>setof record</>
+ts_token_type(<replaceable class="PARAMETER">parser_oid</> <type>oid</>, OUT <replaceable class="PARAMETER">tokid</> <type>integer</>,
+              OUT <replaceable class="PARAMETER">alias</> <type>text</>, OUT <replaceable class="PARAMETER">description</> <type>text</>) returns <type>setof record</>
+</synopsis>
+
+ 
+<para>
+   <!--
+   <function>ts_token_type</> returns a table which describes each type of
+   token the specified parser can recognize.  For each token type, the table
+   gives the integer <varname>tokid</varname> that the parser uses to label a
+   token of that type, the <varname>alias</varname> that names the token type
+   in configuration commands, and a short <varname>description</varname>.  For
+   example:
+   -->
+    <function>ts_token_type</>返回一个表，这个表描述了每种可以识别的指定分析器标记类型。
+每个标记类型，该表给出了整数<varname>tokid</varname>，解析器用于标记那个类型标记，<varname>alias</varname>命名配置命令的标记类型，
+并且简称<varname>description</varname>。比如：
+
+<screen>
+SELECT * FROM ts_token_type('default');
+ tokid |      alias      |               description                
+-------+-----------------+------------------------------------------
+     1 | asciiword       | Word, all ASCII
+     2 | word            | Word, all letters
+     3 | numword         | Word, letters and digits
+     4 | email           | Email address
+     5 | url             | URL
+     6 | host            | Host
+     7 | sfloat          | Scientific notation
+     8 | version         | Version number
+     9 | hword_numpart   | Hyphenated word part, letters and digits
+    10 | hword_part      | Hyphenated word part, all letters
+    11 | hword_asciipart | Hyphenated word part, all ASCII
+    12 | blank           | Space symbols
+    13 | tag             | XML tag
+    14 | protocol        | Protocol head
+    15 | numhword        | Hyphenated word, letters and digits
+    16 | asciihword      | Hyphenated word, all ASCII
+    17 | hword           | Hyphenated word, all letters
+    18 | url_path        | URL path
+    19 | file            | File or path name
+    20 | float           | Decimal notation
+    21 | int             | Signed integer
+    22 | uint            | Unsigned integer
+    23 | entity          | XML entity
+</screen>
+   </para>
+
+
+
+  </sect2>
+
+  <sect2 id="textsearch-dictionary-testing">
+  <!--
+   <title>Dictionary Testing</title>
+   -->
+   <title>词典测试</title>
+
+   <!--
+<para>
+    The <function>ts_lexize</> function facilitates dictionary testing.
+   </para>
+-->
+<para>
+    <function>ts_lexize</>函数有易于进行词典测试。
+</para>
+
+   <indexterm>
+    <primary>ts_lexize</primary>
+   </indexterm>
+
+<synopsis>
+ts_lexize(<replaceable class="PARAMETER">dict</replaceable> <type>regdictionary</>, <replaceable class="PARAMETER">token</replaceable> <type>text</>) returns <type>text[]</>
+</synopsis>
+
+   <!--
+<para>
+    <function>ts_lexize</> returns an array of lexemes if the input
+    <replaceable>token</replaceable> is known to the dictionary,
+    or an empty array if the token
+    is known to the dictionary but it is a stop word, or
+    <literal>NULL</literal> if it is an unknown word.
+   </para>
+-->
+<para>
+    如果输入<replaceable>token</replaceable>为词典已知的，那么<function>ts_lexize</>返回词的数组，如果这个token对词典是已知的，
+但它是一个屏蔽词，则返回空数组。如果它是一个未知的词则返回<literal>NULL</literal>。
+</para>
+
+   
+<para>
+    <!--
+    Examples:
+-->
+比如：
+
+<screen>
+SELECT ts_lexize('english_stem', 'stars');
+ ts_lexize
+-----------
+ {star}
+
+SELECT ts_lexize('english_stem', 'a');
+ ts_lexize
+-----------
+ {}
+</screen>
+   </para>
+
+   <note>  
+<para>
+     <!--
+     The <function>ts_lexize</function> function expects a single
+     <emphasis>token</emphasis>, not text. Here is a case
+     where this can be confusing:
+ -->
+ <function>ts_lexize</function>函数需要单一<emphasis>标记</emphasis>，没有文本。这是一种引起混淆的情况：
+
+<screen>
+SELECT ts_lexize('thesaurus_astro','supernovae stars') is null;
+ ?column?
+----------
+ t
+</screen>
+     <!--
+     The thesaurus dictionary <literal>thesaurus_astro</literal> does know the
+     phrase <literal>supernovae stars</literal>, but <function>ts_lexize</>
+     fails since it does not parse the input text but treats it as a single
+     token. Use <function>plainto_tsquery</> or <function>to_tsvector</> to
+     test thesaurus dictionaries, for example:
+ -->
+ 
+同义词词典<literal>thesaurus_astro</literal>确实知道短语<literal>supernovae stars</literal>，但<function>ts_lexize</>失败了，
+因为它不解析输入文本，而是把它作为一个单一标记。
+使用<function>plainto_tsquery</>或者<function>to_tsvector</>测试同义词词典，例如：
+
+<screen>
+SELECT plainto_tsquery('supernovae stars');
+ plainto_tsquery
+-----------------
+ 'sn'
+</screen>
+    </para>
+   </note>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-indexes">
+ <!--
+  <title>GiST and GIN Index Types</title>
+  -->
+  <title>GiST和GIN索引类型</title>
+
+  <indexterm zone="textsearch-indexes">
+   <primary>text search</primary>
+   <secondary>indexes</secondary>
+  </indexterm>
+
+  
+<para>
+   <!--
+   There are two kinds of indexes that can be used to speed up full text
+   searches.
+   Note that indexes are not mandatory for full text searching, but in
+   cases where a column is searched on a regular basis, an index is
+   usually desirable.
+   -->
+   有两种类型的索引可以用于加快全文搜索。注意全文检索不一定非要使用索引。
+   但是在规则基础上搜索列的情况下，索引往往是可取的。
+
+   <variablelist>
+
+    <varlistentry>
+
+     <indexterm zone="textsearch-indexes">
+      <primary>index</primary>
+      <secondary>GiST</secondary>
+      <tertiary>text search</tertiary>
+     </indexterm>
+
+     <term>
+      <literal>CREATE INDEX <replaceable>name</replaceable> ON <replaceable>table</replaceable> USING gist(<replaceable>column</replaceable>);</literal>
+     </term>
+
+     <listitem>
+      <para>
+  <!--
+       Creates a GiST (Generalized Search Tree)-based index.
+       The <replaceable>column</replaceable> can be of <type>tsvector</> or
+       <type>tsquery</> type.
+   -->
+   创建以GiST（通用搜索树）为基础的索引，<replaceable>column</replaceable>可以是<type>tsvector</> or
+       <type>tsquery</> 类型。
+      </para>
+
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <indexterm zone="textsearch-indexes">
+      <primary>index</primary>
+      <secondary>GIN</secondary>
+      <tertiary>text search</tertiary>
+     </indexterm>
+
+     <term>
+      <literal>CREATE INDEX <replaceable>name</replaceable> ON <replaceable>table</replaceable> USING gin(<replaceable>column</replaceable>);</literal>
+     </term>
+
+     <listitem>
+      <!--
+<para>
+       Creates a GIN (Generalized Inverted Index)-based index.
+       The <replaceable>column</replaceable> must be of <type>tsvector</> type.
+      </para>
+-->
+<para>
+      创建以GIN（基因倒排索引）为基础的索引，<replaceable>column</replaceable>必须是<type>tsvector</>类型。
+</para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist>
+  </para>
+
+  <!--
+<para>
+   There are substantial performance differences between the two index types,
+   so it is important to understand their characteristics.
+  </para>
+-->
+<para>
+    在两个索引类型之间有着巨大的性能差异，因此了解它们的特性是很重要的。
+</para>
+
+  <!--
+<para>
+   A GiST index is <firstterm>lossy</firstterm>, meaning that the index
+   may produce false matches, and it is necessary
+   to check the actual table row to eliminate such false matches.
+   (<productname>PostgreSQL</productname> does this automatically when needed.)
+   GiST indexes are lossy because each document is represented in the
+   index by a fixed-length signature. The signature is generated by hashing
+   each word into a single bit in an n-bit string, with all these bits OR-ed
+   together to produce an n-bit document signature.  When two words hash to
+   the same bit position there will be a false match.  If all words in
+   the query have matches (real or false) then the table row must be
+   retrieved to see if the match is correct.
+  </para>
+-->
+<para>
+    GiST索引是有<firstterm>损耗的</firstterm>，这意味着该索引可能会产生错误的匹配，
+并且有必要检查实际的表行消除这种错误匹配（<productname>PostgreSQL</productname>需要时自动执行）。
+GiST索引是有损耗的，因为每个文档在索引中通过一个固定长度的标签进行表示。
+它是通过散列每个单词到一个n位的字符串的单一的点产生，所有这些位OR-ed一起产生一个n位的文件标签。
+当两个单词散列到相同点的位置，将有一个错误匹配。如果查询中的所有单词匹配（真实的或错误的），
+则必须检索表行查看匹配是否是正确的。
+</para>
+
+  <!--
+<para>
+   Lossiness causes performance degradation due to unnecessary fetches of table
+   records that turn out to be false matches.  Since random access to table
+   records is slow, this limits the usefulness of GiST indexes.  The
+   likelihood of false matches depends on several factors, in particular the
+   number of unique words, so using dictionaries to reduce this number is
+   recommended.
+  </para>
+-->
+<para>
+    数据丢失导致了性能下降，由于表记录的不必要的获取，产生了错误的匹配。
+由于随机访问表记录是缓慢的，这限制了GiST索引的效能。错误匹配的可能性取决于几个因素，
+特别是独特词的数量，所以推荐使用词典来降低这些数量。
+</para>
+
+  <!--
+<para>
+   GIN indexes are not lossy for standard queries, but their performance
+   depends logarithmically on the number of unique words.
+   (However, GIN indexes store only the words (lexemes) of <type>tsvector</>
+   values, and not their weight labels.  Thus a table row recheck is needed
+   when using a query that involves weights.)
+  </para>
+-->
+<para>
+    GIN索引并没有损耗标准查询，但它们的性能取决于对数独特的单词数。
+（然而，GIN索引只存储<type>tsvector</>值的字（词），而不是它们的权重标签。因此，
+当使用涉及权重的查询时，需要复查一个表行。）
+</para>
+
+  
+<para>
+   <!--
+   In choosing which index type to use, GiST or GIN, consider these
+   performance differences:
+   -->
+   
+   在选择要使用的索引类型时，GiST或者GIN考虑这些性能上的差异：
+
+   <itemizedlist  spacing="compact" mark="bullet">
+    <listitem>
+     <para>
+ <!--
+      GIN index lookups are about three times faster than GiST
+  -->
+   GIN索引查找比GiST快约三倍 
+     </para>
+
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      GIN indexes take about three times longer to build than GiST
+     </para>
+-->
+<para>
+     GIN索引建立比GIST需要大约三倍的时间。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      GIN indexes are moderately slower to update than GiST indexes, but
+      about 10 times slower if fast-update support was disabled
+      (see <xref linkend="gin-fast-update"> for details)
+     </para>
+-->
+<para>
+     GIN索引更新比GiST索引速度慢，但如果快速更新支持无效，则慢了大约10倍（详情请见节<xref linkend="gin-fast-update">）
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      GIN indexes are two-to-three times larger than GiST indexes
+     </para>
+-->
+<para>
+      GIN索引比GiST索引大两到三倍
+</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <!--
+<para>
+   As a rule of thumb, <acronym>GIN</acronym> indexes are best for static data
+   because lookups are faster.  For dynamic data, GiST indexes are
+   faster to update.  Specifically, <acronym>GiST</acronym> indexes are very
+   good for dynamic data and fast if the number of unique words (lexemes) is
+   under 100,000, while <acronym>GIN</acronym> indexes will handle 100,000+
+   lexemes better but are slower to update.
+  </para>
+-->
+<para>
+    一般来说，<acronym>GIN</acronym>索引对静态数据是最好的，因为查找速度很快。对于动态数据，
+GiST索引更新比较快。具体而言，<acronym>GiST</acronym>索引非常适合动态数据，并且如果独特的字（词）在100,000以下，
+则比较快，而<acronym>GIN</acronym>索引将处理100,000+词汇，但是更新比较慢。 
+</para>
+
+  <!--
+<para>
+   Note that <acronym>GIN</acronym> index build time can often be improved
+   by increasing <xref linkend="guc-maintenance-work-mem">, while
+   <acronym>GiST</acronym> index build time is not sensitive to that
+   parameter.
+  </para>
+-->
+<para>
+   请注意，<acronym>GIN</acronym>索引编译时间通常可以通过增加<xref linkend="guc-maintenance-work-mem">改进，
+   而<acronym>GiST</acronym>索引编译时间对参数不敏感。 
+</para>
+
+  <!--
+<para>
+   Partitioning of big collections and the proper use of GiST and GIN indexes
+   allows the implementation of very fast searches with online update.
+   Partitioning can be done at the database level using table inheritance,
+   or by distributing documents over
+   servers and collecting search results using the <xref linkend="dblink">
+   module. The latter is possible because ranking functions use
+   only local information.
+  </para>
+-->
+<para>
+    大集合的分区以及GiST和GIN索引的合理使用允许非常快速的搜索与在线升级的实现。
+分区可以在数据库级别使用表继承，或者在服务器发布文档并且使用<xref linkend="dblink">模块采集搜索结果。
+后者是可能的，因为相关函数只使用本地信息。
+</para>
+
+ </sect1>
+
+ <sect1 id="textsearch-psql">
+ 
+  <!--
+  <title><application>psql</> Support</title>
+  -->
+  <title><application>psql</>支持</title>
+
+  <!--
+<para>
+   Information about text search configuration objects can be obtained
+   in <application>psql</application> using a set of commands:
+<synopsis>
+\dF{d,p,t}<optional>+</optional> <optional>PATTERN</optional>
+</synopsis>
+   An optional <literal>+</literal> produces more details.
+  </para>
+-->
+<para>
+    文本搜索配置对象的信息可以使用一组命令从<application>psql</application>中获得：
+
+<synopsis>
+\dF{d,p,t}<optional>+</optional> <optional>PATTERN</optional>
+</synopsis>
+
+    一个可选的<literal>+</literal>产生更多细节。
+</para>
+
+  
+<para>
+    <!--
+   The optional parameter <literal>PATTERN</literal> can be the name of
+   a text search object, optionally schema-qualified.  If
+   <literal>PATTERN</literal> is omitted then information about all
+   visible objects will be displayed.  <literal>PATTERN</literal> can be a
+   regular expression and can provide <emphasis>separate</emphasis> patterns
+   for the schema and object names.  The following examples illustrate this:
+   -->
+   
+    可选的参数<literal>PATTERN</literal>可以是一个文本搜索对象的名称，随意的模式匹配。
+如果<literal>PATTERN</literal>被忽略，则显示所有可见对象的信息。<literal>PATTERN</literal>可以是一个正则表达式，
+并且可以提供模式的<emphasis>独立</emphasis>形式和对象名称。下面的例子说明了这些：
+
+<screen>
+=&gt; \dF *fulltext*
+       List of text search configurations
+ Schema |  Name        | Description
+--------+--------------+-------------
+ public | fulltext_cfg |
+</screen>
+
+<screen>
+=&gt; \dF *.fulltext*
+       List of text search configurations
+ Schema   |  Name        | Description
+----------+----------------------------
+ fulltext | fulltext_cfg |
+ public   | fulltext_cfg |
+</screen>
+   <!--
+   The available commands are:
+   -->
+   可用命令是：
+  </para>
+
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>\dF<optional>+</optional> <optional>PATTERN</optional></literal></term>
+    <listitem>
+     
+<para>
+      <!--
+      List text search configurations (add <literal>+</> for more detail).
+  -->
+  罗列文本搜索配置（增加<literal>+</>获取更多细节）：
+<screen>
+=&gt; \dF russian
+            List of text search configurations
+   Schema   |  Name   |            Description             
+------------+---------+------------------------------------
+ pg_catalog | russian | configuration for russian language
+
+=&gt; \dF+ russian
+Text search configuration "pg_catalog.russian"
+Parser: "pg_catalog.default"
+      Token      | Dictionaries 
+-----------------+--------------
+ asciihword      | english_stem
+ asciiword       | english_stem
+ email           | simple
+ file            | simple
+ float           | simple
+ host            | simple
+ hword           | russian_stem
+ hword_asciipart | english_stem
+ hword_numpart   | simple
+ hword_part      | russian_stem
+ int             | simple
+ numhword        | simple
+ numword         | simple
+ sfloat          | simple
+ uint            | simple
+ url             | simple
+ url_path        | simple
+ version         | simple
+ word            | russian_stem
+</screen>
+     </para>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>\dFd<optional>+</optional> <optional>PATTERN</optional></literal></term>
+    <listitem>
+     
+<para> 
+      <!--
+      List text search dictionaries (add <literal>+</> for more detail).
+  -->
+  罗列文本搜索词典（增加<literal>+</> 获取更多细节）。
+<screen>
+=&gt; \dFd
+                            List of text search dictionaries
+   Schema   |      Name       |                        Description                        
+------------+-----------------+-----------------------------------------------------------
+ pg_catalog | danish_stem     | snowball stemmer for danish language
+ pg_catalog | dutch_stem      | snowball stemmer for dutch language
+ pg_catalog | english_stem    | snowball stemmer for english language
+ pg_catalog | finnish_stem    | snowball stemmer for finnish language
+ pg_catalog | french_stem     | snowball stemmer for french language
+ pg_catalog | german_stem     | snowball stemmer for german language
+ pg_catalog | hungarian_stem  | snowball stemmer for hungarian language
+ pg_catalog | italian_stem    | snowball stemmer for italian language
+ pg_catalog | norwegian_stem  | snowball stemmer for norwegian language
+ pg_catalog | portuguese_stem | snowball stemmer for portuguese language
+ pg_catalog | romanian_stem   | snowball stemmer for romanian language
+ pg_catalog | russian_stem    | snowball stemmer for russian language
+ pg_catalog | simple          | simple dictionary: just lower case and check for stopword
+ pg_catalog | spanish_stem    | snowball stemmer for spanish language
+ pg_catalog | swedish_stem    | snowball stemmer for swedish language
+ pg_catalog | turkish_stem    | snowball stemmer for turkish language
+</screen>
+     </para>
+
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+   <term><literal>\dFp<optional>+</optional> <optional>PATTERN</optional></literal></term>
+    <listitem>
+     
+<para>
+      <!--
+      List text search parsers (add <literal>+</> for more detail).
+  -->
+     罗列文本搜索分析器（增加<literal>+</>获取更多的细节）。
+<screen>
+=&gt; \dFp
+        List of text search parsers
+   Schema   |  Name   |     Description     
+------------+---------+---------------------
+ pg_catalog | default | default word parser
+=&gt; \dFp+
+    Text search parser "pg_catalog.default"
+     Method      |    Function    | Description 
+-----------------+----------------+-------------
+ Start parse     | prsd_start     | 
+ Get next token  | prsd_nexttoken | 
+ End parse       | prsd_end       | 
+ Get headline    | prsd_headline  | 
+ Get token types | prsd_lextype   | 
+
+        Token types for parser "pg_catalog.default"
+   Token name    |               Description                
+-----------------+------------------------------------------
+ asciihword      | Hyphenated word, all ASCII
+ asciiword       | Word, all ASCII
+ blank           | Space symbols
+ email           | Email address
+ entity          | XML entity
+ file            | File or path name
+ float           | Decimal notation
+ host            | Host
+ hword           | Hyphenated word, all letters
+ hword_asciipart | Hyphenated word part, all ASCII
+ hword_numpart   | Hyphenated word part, letters and digits
+ hword_part      | Hyphenated word part, all letters
+ int             | Signed integer
+ numhword        | Hyphenated word, letters and digits
+ numword         | Word, letters and digits
+ protocol        | Protocol head
+ sfloat          | Scientific notation
+ tag             | XML tag
+ uint            | Unsigned integer
+ url             | URL
+ url_path        | URL path
+ version         | Version number
+ word            | Word, all letters
+(23 rows)
+</screen>
+     </para>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+   <term><literal>\dFt<optional>+</optional> <optional>PATTERN</optional></literal></term>
+    <listitem>
+     
+<para>
+      <!--
+      List text search templates (add <literal>+</> for more detail).
+  -->
+   罗列文本搜索模板（增加<literal>+</>获取更多的细节）。
+<screen>
+=&gt; \dFt
+                           List of text search templates
+   Schema   |   Name    |                        Description                        
+------------+-----------+-----------------------------------------------------------
+ pg_catalog | ispell    | ispell dictionary
+ pg_catalog | simple    | simple dictionary: just lower case and check for stopword
+ pg_catalog | snowball  | snowball stemmer
+ pg_catalog | synonym   | synonym dictionary: replace word by its synonym
+ pg_catalog | thesaurus | thesaurus dictionary: phrase by phrase substitution
+</screen>
+     </para>
+
+
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+ </sect1>
+
+ <sect1 id="textsearch-limitations">
+   <!--
+  <title>Limitations</title>
+  -->
+    <title>限制</title>
+
+  
+<para>
+   <!--
+   The current limitations of <productname>PostgreSQL</productname>'s
+   text search features are:
+   -->
+   
+   <productname>PostgreSQL</productname>的文本搜索功能当前限制是：
+   <itemizedlist  spacing="compact" mark="bullet">
+    <listitem>
+     <para>
+ <!--
+ The length of each lexeme must be less than 2K bytes
+ -->
+  每个词的长度必须小于2K字节
+ </para>
+
+    </listitem>
+    <listitem>
+     <!--
+<para>The length of a <type>tsvector</type> (lexemes + positions) must be
+     less than 1 megabyte</para>
+-->
+<para>
+      <type>tsvector</type>（词+位置）的长度必须小于1兆字节
+</para>
+    </listitem>
+    <listitem>
+     <!-- TODO: number of lexemes in what?  This is unclear -->
+     <!--
+<para>The number of lexemes must be less than
+     2<superscript>64</superscript></para>
+-->
+<para>
+     词的数量必须小于2<superscript>64</superscript>
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>Position values in <type>tsvector</> must be greater than 0 and
+     no more than 16,383</para>
+-->
+<para>
+     <type>tsvector</>的位置值必须大于0，不能超过16,383
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>No more than 256 positions per lexeme</para>
+-->
+<para>
+     每词不超过256位置
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>The number of nodes (lexemes + operators) in a <type>tsquery</type>
+     must be less than 32,768</para>
+-->
+<para>
+    在<type>tsquery</type>中节点的数目（词+运算符）必须小于32768
+</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+
+  <!--
+<para>
+   For comparison, the <productname>PostgreSQL</productname> 8.1 documentation
+   contained 10,441 unique words, a total of 335,420 words, and the most
+   frequent word <quote>postgresql</> was mentioned 6,127 times in 655
+   documents.
+  </para>
+-->
+<para>
+    相比之下，<productname>PostgreSQL</productname> 8.1文档包含10441个唯一的字，共335420个字，
+并且最频繁的词<quote>postgresql</>在655个文档被提到6127次。 
+</para>
+
+   <!-- TODO we need to put a date on these numbers? -->
+  <!--
+<para>
+   Another example &mdash; the <productname>PostgreSQL</productname> mailing
+   list archives contained 910,989 unique words with 57,491,343 lexemes in
+   461,020 messages.
+  </para>
+-->
+<para>
+    另一个例子&mdash; <productname>PostgreSQL</productname>邮件列表档案包含910989个唯一的字与461，020消息中的57491343个词。
+</para>
+
+ </sect1>
+
+ <sect1 id="textsearch-migration">
+ <!--
+  <title>Migration from Pre-8.3 Text Search</title>
+  -->
+   <title>来自8.3之前文本搜索的迁移</title>
+
+  <!--
+<para>
+   Applications that use the <xref linkend="tsearch2">
+   module for text searching will need some adjustments to work
+   with the
+   built-in features:
+  </para>
+-->
+<para>
+   为文本搜索使用<xref linkend="tsearch2">模块的应用将需要内置功能的一些调整。
+</para>
+
+  <itemizedlist>
+   <listitem>
+    <!--
+<para>
+     Some functions have been renamed or had small adjustments in their
+     argument lists, and all of them are now in the <literal>pg_catalog</>
+     schema, whereas in a previous installation they would have been in
+     <literal>public</> or another non-system schema.  There is a new
+     version of <application>tsearch2</>
+     that provides a compatibility layer to solve most problems in this
+     area.
+    </para>
+-->
+<para>
+    一些函数已被重命名或在其参数列表有小的调整，并且他们现在都在<literal>pg_catalog</>模式中，
+而在以前的安装中都是在<literal>public</>或另一种非系统模式中。有一个新的<application>tsearch2</>版本，
+它提供了兼容层来解决这方面的问题。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     The old <application>tsearch2</> functions and other objects
+     <emphasis>must</> be suppressed when loading <application>pg_dump</>
+     output from a pre-8.3 database.  While many of them won't load anyway,
+     a few will and then cause problems.  One simple way to deal with this
+     is to load the new <application>tsearch2</> module before restoring
+     the dump; then it will block the old objects from being loaded.
+    </para>
+-->
+<para> 
+      当从8.3之前数据库加载<application>pg_dump</>输出时，<emphasis>必须</>抑制旧的<application>tsearch2</>函数和其他对象。
+  而他们中的许多不会加载，一些会导致问题。一个简单处理方法就是恢复转储前加载新的<application>tsearch2</>模块；
+  然后阻塞被加载的旧对象。
+</para>
+   </listitem>
+
+   <listitem>
+    <!--
+<para>
+     Text search configuration setup is completely different now.
+     Instead of manually inserting rows into configuration tables,
+     search is configured through the specialized SQL commands shown
+     earlier in this chapter.  There is no automated
+     support for converting an existing custom configuration for 8.3;
+     you're on your own here.
+    </para>
+-->
+<para>
+     文本搜索配置设置现在完全不同。不是手动插入行到配置表，搜索是通过本章节前面显示的专门的SQL命令配置。
+ 没有自动支持8.3转换现有的自定义配置；你可以在这里自己定义。
+</para>
+   </listitem>
+
+   <listitem>
+    
+<para>
+    <!--
+     Most types of dictionaries rely on some outside-the-database
+     configuration files.  These are largely compatible with pre-8.3
+     usage, but note the following differences:
+ -->
+  大多数类型的词典依靠一些外部的数据库配置文件。这些与8.3之前用法兼容，但注意以下的差异：
+
+     <itemizedlist  spacing="compact" mark="bullet">
+      <listitem>
+       <para>
+    <!--
+        Configuration files now must be placed in a single specified
+        directory (<filename>$SHAREDIR/tsearch_data</>), and must have
+        a specific extension depending on the type of file, as noted
+        previously in the descriptions of the various dictionary types.
+        This restriction was added to forestall security problems.
+-->
+配置文件现在必须放在一个单一指定的目录（<filename>$SHAREDIR/tsearch_data</>）中，
+必须有一个特定的扩展取决于文件的类型，如先前在各种词典类型的描述中指出的。
+这个限制被添加到安全问题中。
+       </para>
+      </listitem>
+  
+      <listitem>
+       <!--
+<para>
+        Configuration files must be encoded in UTF-8 encoding,
+        regardless of what database encoding is used.
+       </para>
+-->
+<para>
+       无论使用什么数据库编码，配置文件必须以UTF-8编码。
+</para>
+      </listitem>
+
+      <listitem>
+       <!--
+<para>
+        In thesaurus configuration files, stop words must be marked with
+        <literal>?</>.
+       </para>
+-->
+<para>
+        在词库的配置文件中，屏蔽词必须用<literal>?</>标记。
+</para>
+      </listitem>
+     </itemizedlist>
+    </para>
+   </listitem>
+
+  </itemizedlist>
+
+ </sect1>
+
+</chapter>

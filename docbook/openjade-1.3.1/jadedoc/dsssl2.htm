@@ -1,0 +1,457 @@
+<!-- -*- sgml -*- -->
+<html>
+
+<head>
+<meta http-equiv="Content-Type"
+content="text/html; charset=iso-8859-1">
+<meta name="GENERATOR" content="Microsoft FrontPage Express 2.0">
+<title>Experimental DSSSL extensions for XSL</title>
+</head>
+
+<body background="images/background.gif" bgcolor="#FFFFFF">
+
+<p><font face="Arial"><img src="images/dsssltitle.gif"
+alt="OpenJade" vspace="10" width="750" height="60"> </font></p>
+<div align="left">
+
+<table border="0" width="780">
+    <tr>
+        <td valign="top"><font face="Arial"><img
+        src="images/space.gif" alt="" width="145" height="10"></font></td>
+        <td><h1><font face="Arial">Experimental DSSSL extensions</font></h1>
+        <h2><font face="Arial">Contents</font></h2>
+        <ul>
+            <li><a href="#Introduction"><font face="Arial">Introduction</font></a><font
+                face="Arial"> </font></li>
+            <li><a href="#Imperative programming"><font
+                face="Arial">Imperative programming</font></a><font
+                face="Arial"> </font></li>
+            <li><a href="#Style rules"><font face="Arial">Style
+                rules</font></a><font face="Arial"> </font></li>
+            <li><a href="#ExtendedPatterns"><font face="Arial">Extended
+                Patterns</font></a><font face="Arial"> </font></li>
+            <li><a href="#Multiple patterns per rule"><font
+                face="Arial">Multiple patterns per rule</font></a><font
+                face="Arial"> </font></li>
+            <li><a href="#Flow object macros"><font face="Arial">Flow
+                object macros</font></a><font face="Arial"> </font></li>
+            <li><a href="#Characteristic value conversion"><font
+                face="Arial">Characteristic value convertion</font></a><font
+                face="Arial"> </font></li>
+            <li><a href="#Characteristic names"><font
+                face="Arial">Characteristic names</font></a><font
+                face="Arial"> </font></li>
+        </ul>
+        <h2><a name="Introduction"><font face="Arial">Introduction</font></a></h2>
+        <p><font face="Arial">This document descibes some
+        experimental extensions to DSSSL that are implemented in OpenJade. 
+	These are designed so that, with these extensions, DSSSL provides a 
+        superset of the semantics </font><a
+        href="http://www.w3.org/TR/NOTE-XSL-970910"><font
+        face="Arial">XSL</font></a><font face="Arial"> for flow
+        object tree construction. OpenJade has a <code>-2</code>
+        option that enables these extensions. </font></p>
+        <p><font face="Arial">These extensions do not include the
+        additional flow object classes and characteristics that
+        will be needed for XSL; in particular they do not include
+        the HTML/CSS flow object classes. </font></p>
+        <p><a href="#top"><font face="Arial"><img
+        src="images/top-of-page.gif" alt="Up" border="0"
+        width="11" height="15"></font></a><a href="#top"><font
+        size="2" face="Arial">Back to top</font></a><font
+        size="2" face="Arial">&nbsp;</font><font face="Arial"> </font></p>
+        <h2><a name="Imperative programming"><font face="Arial">Imperative
+        programming</font></a></h2>
+        <p><font face="Arial">The following features come from R4RS:
+        </font></p>
+        <ul>
+            <li><font face="Arial">assignment (<code>set!</code>)
+                expressions (with </font><a href="#read-only"><font
+                face="Arial">restrictions</font></a><font
+                face="Arial">) </font></li>
+            <li><font face="Arial">vectors (with </font><a
+                href="#read-only"><font face="Arial">restrictions</font></a><font
+                face="Arial">) </font></li>
+            <li><font face="Arial"><code>call-with-current-continuation</code>
+                (with </font><a href="#call/cc"><font
+                face="Arial">restrictions</font></a><font
+                face="Arial">) </font></li>
+            <li><font face="Arial"><code>begin</code> expressions
+                </font></li>
+            <li><font face="Arial">multiple expressions in
+                procedure bodies, <code>cond</code> clauses </font></li>
+            <li><font face="Arial">alternate in <code>if</code>
+                expression optional </font></li>
+            <li><font face="Arial">it is not an error when
+                nothing matches in <code>cond</code> or <code>case</code>
+                expression </font></li>
+            <li><font face="Arial"><code>eqv?</code> and <code>memv</code>
+                procedures; these behave as specified in R4RS for
+                vectors but behave the same as <code>equal?</code>
+                for strings and lists </font><p><font
+                face="Arial">This is so that case expressions can
+                use <code>eqv?</code> as required by R4RS without
+                breaking compatibility with existing DSSSL code
+                which assumes case expressions with strings and
+                lists will use <code>equal?</code>. R4RS
+                specifies that <code>eqv?</code> should return #t
+                when its arguments &quot;should normally be
+                regarded as the same object&quot;. R4RS treats
+                strings and lists as mutable and its
+                specification of <code>eqv?</code> for strings
+                and lists is consistent with this. So long as
+                DSSSL keeps strings and lists as immutable data-types
+                with value semantics, it is more consistent to
+                define <code>eqv?</code> to behave like <code>equal?</code>
+                for them. </font></p>
+            </li>
+        </ul>
+        <p><font face="Arial">The use of side-effects is
+        restricted. Assignment to top-level variables is not
+        allowed. There is also the concept that a memory location
+        can be read-only. When a memory location is read-only, it
+        is an error to change that location. An memory location
+        can be recursively marked as read-only; this means that
+        the memory location along with all memory locations
+        reachable from that memory location become read-only. A
+        memory location is recursively marked as read-only when: </font></p>
+        <ul>
+            <li><font face="Arial">an object stored in that
+                memory location is bound to a top-level variable </font></li>
+            <li><font face="Arial">an expression specifying a
+                characteristic is evaluated and a variable that
+                names that memory location occurs free in that
+                expression; for example, this would be an error: </font><pre><font
+face="Arial">
+(let ((x 10pt))
+  (make paragraph
+    font-size: (begin (set! x 12pt) x)))
+</font></pre>
+            </li>
+            <li><font face="Arial">an object stored in that
+                memory location is returned by a <code>(inherited-</code><code><var>C</var></code><code>)</code>
+                or <code>(actual-</code><code><var>C</var></code><code>)</code>
+                procedure </font></li>
+            <li><font face="Arial">an object stored in that
+                memory location is passed as the first argument
+                to the <code>node-list-map</code> procedure </font></li>
+        </ul>
+        <p><font face="Arial">A continuation created with <code>call-with-current-continuation</code>
+        cannot be called if it is read-only, and can only be used
+        to return to a stack frame in the current call chain (sometimes
+        referred to as upwards only). </font></p>
+        <p><font face="Arial">There's a <code>void</code> data
+        type with a single value which can be written as <code>#v</code>.
+        This is returned by <code>cond</code>, <code>case</code>
+        and <code>if</code> expressions which don't match. </font></p>
+        <p><a href="#top"><font face="Arial"><img
+        src="images/top-of-page.gif" alt="Up" border="0"
+        width="11" height="15"></font></a><a href="#top"><font
+        size="2" face="Arial">Back to top</font></a><font
+        size="2" face="Arial">&nbsp;</font><font face="Arial"> </font></p>
+        <h2><a name="Style rules"><font face="Arial">Style rules</font></a></h2>
+        <p><font face="Arial">When a construction rule has a
+        keyword argument list instead of a construct expression
+        it is treated as a style rule. For example, </font></p>
+        <pre><font face="Arial">
+(element H1
+  font-size: 14pt
+  font-weight: 'bold)
+</font></pre>
+        <p><font face="Arial">The keyword argument list can
+        include a <code>use:</code> keyword just as with <code>style</code>
+        expressions. See the </font><a
+        href="http://www.w3.org/TR/NOTE-XSL-970910"><font
+        face="Arial">XSL proposal</font></a><font face="Arial">
+        for the semantics of style rules. </font></p>
+        <p><a href="#top"><font face="Arial"><img
+        src="images/top-of-page.gif" alt="Up" border="0"
+        width="11" height="15"></font></a><a href="#top"><font
+        size="2" face="Arial">Back to top</font></a><font
+        size="2" face="Arial">&nbsp;</font><font face="Arial"> </font></p>
+        <h2><a name="ExtendedPatterns"><font face="Arial">Extended
+        patterns</font></a></h2>
+        <p><font face="Arial">The syntax for element patterns is
+        extended. These provide provide a superset of the
+        semantics of XSL patterns. They are allowed both in
+        element construction rules and in contexts where a <code>match-element?</code>
+        pattern is currently allowed (eg <code>select-elements</code>,
+        <code>process-matching-children</code>, <code>process-first-descendant</code>).
+        </font></p>
+        <p><font face="Arial">A pattern is either a single gi or
+        a list. A list consists of a sequence of gis, where each
+        gi can be followed by one or more keyword/value pairs (where
+        the value is always a single datum). A gi can be #t, a
+        string or a symbol. The following keywords are allowed: </font></p>
+        <dl>
+            <dt><font face="Arial"><code>id:</code> </font></dt>
+            <dd><font face="Arial">followed by a string or symbol
+                </font></dd>
+            <dt><font face="Arial"><code>class:</code> </font></dt>
+            <dd><font face="Arial">followed by a string or symbol
+                </font></dd>
+            <dt><font face="Arial"><code>repeat:</code> </font></dt>
+            <dd><font face="Arial">followed by one of the symbols
+                <code>*</code>, <code>+</code>, <code>?</code> </font></dd>
+            <dt><font face="Arial"><code>only:</code> </font></dt>
+            <dd><font face="Arial">followed by one of the symbols
+                <code>of-type</code>, <code>of-any</code> </font></dd>
+            <dt><font face="Arial"><code>position:</code> </font></dt>
+            <dd><font face="Arial">followed by one of the symbols
+                <code>first-of-type</code>, <code>first-of-any</code>,
+                <code>last-of-type</code>, <code>last-of-any</code>
+                </font></dd>
+            <dt><font face="Arial"><code>attributes:</code> </font></dt>
+            <dd><font face="Arial">followed by a list of name/value
+                pairs; for backward compatibility with <code>match-element?</code>
+                patterns in the current DSSSL standard the <code>attributes:</code>
+                keyword can be omitted; #t and #f can be used as
+                a value to test for presence or absence of
+                attributes. </font></dd>
+            <dt><font face="Arial"><code>children:</code> </font></dt>
+            <dd><font face="Arial">followed by a pattern; each of
+                the elements in the pattern must occur as child; <code>repeat:</code>
+                is not allowed in children patterns; the <code>children:</code>
+                qualifier is allowed on any gi in a pattern not
+                just the last element </font></dd>
+            <dt><font face="Arial"><code>priority:</code> </font></dt>
+            <dd><font face="Arial">followed by an integer;
+                multiple <code>priority:</code> qualifiers are
+                allowed in a pattern and will be added together </font></dd>
+            <dt><font face="Arial"><code>importance:</code> </font></dt>
+            <dd><font face="Arial">followed by an integer;
+                multiple <code>importance:</code> qualifiers are
+                allowed and will be added together </font></dd>
+        </dl>
+        <p><font face="Arial">Class attribute names are declared
+        using </font></p>
+        <pre><font face="Arial">
+(declare-class-attribute &quot;<var>class</var>&quot;)
+</font></pre>
+        <p><font face="Arial">or </font></p>
+        <pre><font face="Arial">
+(declare-class-attribute <var>class</var>)
+</font></pre>
+        <p><font face="Arial">Id attribute names can be declared
+        similarily using <code>declare-id-attribute</code>. </font></p>
+        <p><font face="Arial">Some examples: </font></p>
+        <pre><font face="Arial">
+(element (E importance: 42) <var>...</var>)
+
+(element (E attributes: (A1 V1)) <var>...</var>)
+
+(element (P E children: C) <var>...</var>)
+
+(element (P children: C priority: -11
+          E children: C attributes: (A1 V1 A2 V2))
+ <var>...</var>)
+
+(element (P E children: (A children: C B children: C)) <var>...</var>)
+</font></pre>
+        <p><font face="Arial">The last is equivalent to the
+        following in XSL syntax: </font></p>
+        <pre><font face="Arial">
+&lt;element type=&quot;P&quot;&gt;
+  &lt;target-element type=&quot;E&quot;&gt;
+     &lt;element type=&quot;A&quot;&gt;
+       &lt;element type=&quot;C&quot;/&gt;
+     &lt;/element&gt;
+     &lt;element type=&quot;B&quot;&gt;
+       &lt;element type=&quot;C&quot;/&gt;
+     &lt;/element&gt;
+  &lt;/target-element&gt;
+&lt;/element&gt;
+</font></pre>
+        <pre><a href="#top"><font face="Arial"><img
+src="images/top-of-page.gif" alt="Up" border="0" width="11"
+height="15"></font></a><a href="#top"><font size="3" face="Arial">Back to top</font></a><font
+size="3" face="Arial">&nbsp;</font></pre>
+        <h2><a name="Multiple patterns per rule"><font
+        face="Arial">Multiple patterns per rule</font></a></h2>
+        <p><font face="Arial">An <code>or-element</code>
+        construction rule has the syntax </font></p>
+        <pre><font face="Arial">
+(or-element (<var>pattern</var>+) <var>expression</var>)
+</font></pre>
+        <p><font face="Arial">where <code><var>pattern</var></code>
+        is any pattern that could be allowed in an element
+        construction rule. It is equivalent to a sequence of
+        element construction rules. </font></p>
+        <p><font face="Arial">For example, </font></p>
+        <pre><font face="Arial">
+(or-element (H1 H2 H3)
+  font-weight: 'bold)
+
+(or-element ((H1 TITLE) (H2 TITLE) (H3 TITLE))
+  font-weight: 'bold)
+</font></pre>
+        <p><font face="Arial">is equivalent to </font></p>
+        <pre><font face="Arial">
+(element H1
+  font-weight: 'bold)
+
+(element H2
+  font-weight: 'bold)
+
+(element H3
+  font-weight: 'bold)
+
+(element (H1 TITLE)
+  font-weight: 'bold)
+
+(element (H2 TITLE)
+  font-weight: 'bold)
+
+(element (H3 TITLE)
+  font-weight: 'bold)
+</font></pre>
+        <pre><a href="#top"><font face="Arial"><img
+src="images/top-of-page.gif" alt="Up" border="0" width="11"
+height="15"></font></a><a href="#top"><font size="3" face="Arial">Back to top</font></a><font
+size="2" face="Arial">&nbsp;</font></pre>
+        <h2><a name="Flow object macros"><font face="Arial">Flow
+        object macros</font></a></h2>
+        <p><font face="Arial">A flow object macro can be defined
+        like this: </font></p>
+        <p align="left"><font face="Arial">&nbsp; </font></p>
+        <div align="left"><table border="0" width="546"
+        bgcolor="#FFFFBB">
+            <tr>
+                <td width="542"><dl>
+                    <dt><font face="Arial">(declare-flow-object-macro
+                        list-item ((indent 1in) (marker &quot;\bullet&quot;)
+                        #!contents contents)<br>
+                        &nbsp; (make paragraph<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        first-line-start-indent: (- indent)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        start-indent: (+ indent (inherited-start-indent))<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (make
+                        line-field<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        field-width: indent<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal marker)</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )<br>
+                        &nbsp; contents</font></dt>
+                    <dt><font face="Arial">&nbsp; )</font></dt>
+                    <dt><font face="Arial">)<br>
+                        <br>
+                        (root<br>
+                        &nbsp;&nbsp;&nbsp; (make simple-page-sequence<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (make paragraph<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal &quot;Para 1&quot;)</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (make list-item<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal &quot;Item 1&quot;)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (make list-item<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        indent: .5in<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        marker: &quot;\black-circle&quot;<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal &quot;Sub item 1.1&quot;)</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (make list-item<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        font-weight: 'bold<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal &quot;Item 2&quot;)<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (make list-item<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal &quot;Sub item 2.1&quot;)</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (make paragraph<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        (literal &quot;Para 2&quot;)</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                        )</font></dt>
+                    <dt><font face="Arial">&nbsp;&nbsp;&nbsp; )</font></dt>
+                    <dt><font face="Arial">)</font></dt>
+                </dl>
+                </td>
+            </tr>
+        </table>
+        </div><p><font face="Arial">If the formal argument list
+        includes <code>#!contents</code> the flow object behaves
+        like a compound flow object, otherwise like an atomic
+        flow object. Inherited characteristics can be specified;
+        these are applied to a sequence flow object which is
+        automatically wrapped around what is returned by the body
+        of the flow object macro. The preceding formal arguments
+        are the non-inherited characteristics; like keyword
+        arguments they can be specified either as <code><var>id</var></code>
+        (in which case they default to #f), or as <code>(</code><code><var>id</var></code><code>
+        </code><code><var>init-expression</var></code><code>)</code>.
+        </font></p>
+        <p><font face="Arial">Note that flow object macros are
+        quite different from ordinary procedures in that the
+        macro body is not evaluated when the make expression is
+        evaluated, but rather when the flow object is to be added
+        to the tree; this allows <code>(inherited-</code><code><var>c</var></code><code>)</code>
+        and <code>(actual-</code><code><var>c</var></code><code>)</code>
+        procedures to be used in flow object macro
+        characteristics, non-inherited as well as inherited, just
+        as with normal flow objects. It is also possible to use <code>(inherited-</code><code><var>c</var></code><code>)</code>
+        and <code>(actual-</code><code><var>c</var></code><code>)</code>
+        procedures in the body of the flow object macro; they
+        will return the same result as if they were used in the
+        specification of a characteristic on the invocation of
+        the flow object macro. </font></p>
+        <p><font face="Arial">For an example of a library built
+        with the macro facility read: </font><a
+        href="../DSSSL/HTML%20Sample.html"><font face="Arial">Simple
+        XML to HTML Conversion and Rendition Example</font></a><font
+        face="Arial"> </font></p>
+        <p><a href="#top"><font face="Arial"><img
+        src="images/top-of-page.gif" alt="Up" border="0"
+        width="11" height="15"></font></a><a href="#top"><font
+        size="2" face="Arial">Back to top</font></a><font
+        size="2" face="Arial">&nbsp;</font><font face="Arial"> </font></p>
+        <h2><a name="Characteristic value conversion"><font
+        face="Arial">Characteristic value conversion</font></a></h2>
+        <p><font face="Arial">Most characteristic values can now
+        be specified as strings and will be converted
+        appropriately. For boolean valued characteristics any of
+        the strings <code>&quot;true&quot;</code>, <code>&quot;false&quot;</code>,
+        <code>&quot;yes&quot;</code> and <code>&quot;no&quot;</code>
+        are acceptable. </font></p>
+        <p><a href="#top"><font face="Arial"><img
+        src="images/top-of-page.gif" alt="Up" border="0"
+        width="11" height="15"></font></a><a href="#top"><font
+        size="2" face="Arial">Back to top</font></a><font
+        size="2" face="Arial">&nbsp;</font><font face="Arial"> </font></p>
+        <h2><a name="Characteristic names"><font face="Arial">Characteristic
+        names</font></a></h2>
+        <p><font face="Arial">The question mark that can be
+        omitted from those DSSSL characteristic names that end
+        with a question mark. This is because the question mark
+        is not (and cannot reasonably be made) a legal XML name
+        character. </font></p>
+        <p><a href="#top"><font face="Arial"><img
+        src="images/top-of-page.gif" alt="Up" border="0"
+        width="11" height="15"></font></a><a href="#top"><font
+        size="2" face="Arial">Back to top</font></a><font
+        size="2" face="Arial">&nbsp;</font><font face="Arial"> </font></p>
+        </td>
+    </tr>
+</table>
+</div>
+</body>
+</html>

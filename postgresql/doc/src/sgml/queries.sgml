@@ -1,0 +1,3272 @@
+<!-- doc/src/sgml/queries.sgml -->
+
+<chapter id="queries">
+ <!-- 
+ <title>Queries</title> 
+ -->
+<title>查询</title>
+ <indexterm zone="queries">
+  <!-- 
+  <primary>query</primary> 
+  -->
+  <primary>查询</primary>
+ </indexterm>
+
+ <indexterm zone="queries">
+  <!-- 
+  <primary>SELECT</primary> 
+  -->
+  <primary>选择</primary>
+ </indexterm>
+
+ <!--
+<para>
+  The previous chapters explained how to create tables, how to fill
+  them with data, and how to manipulate that data.  Now we finally
+  discuss how to retrieve the data from the database.
+ </para>
+-->
+<para>
+前面的章节解释了如何创建表，如何用数据填充它们，以及如何操作那些数据。
+现在我们终于可以讨论如何从数据库中检索数据了。
+</para>
+
+
+ <sect1 id="queries-overview">
+  <!-- 
+  <title>Overview</title> 
+  -->
+<title>概述</title>
+  <!--
+<para>
+   The process of retrieving or the command to retrieve data from a
+   database is called a <firstterm>query</firstterm>.  In SQL the
+   <xref linkend="sql-select"> command is
+   used to specify queries.  The general syntax of the
+   <command>SELECT</command> command is
+<synopsis>
+<optional>WITH <replaceable>with_queries</replaceable></optional> SELECT <replaceable>select_list</replaceable> FROM <replaceable>table_expression</replaceable> <optional><replaceable>sort_specification</replaceable></optional>
+</synopsis>
+   The following sections describe the details of the select list, the
+   table expression, and the sort specification.  <literal>WITH</>
+   queries are treated last since they are an advanced feature.
+  </para>
+-->
+<para>
+从数据库中检索数据的过程或命令叫做<firstterm>查询</firstterm>。
+在 SQL 里<xref linkend="sql-select">命令用于声明查询。<command>SELECT</command>命令的通用语法如下：
+<synopsis>
+<optional>WITH <replaceable>with_queries</replaceable></optional> SELECT <replaceable>select_list</replaceable> FROM <replaceable>table_expression</replaceable> <optional><replaceable>sort_specification</replaceable></optional>
+</synopsis>
+随后的几节将描述选择列表、表表达式、排序声明的细节。
+<literal>WITH</>查询被视为最后的，因为它们是一种先进的功能。
+</para>
+
+<para>
+<!-- 
+   A simple kind of query has the form:
+   -->
+   简单的查询的形式如下：
+<programlisting>
+SELECT * FROM table1;
+</programlisting>
+<!-- 
+  Assuming that there is a table called <literal>table1</literal>,
+  this command would retrieve all rows and all user-defined columns from
+  <literal>table1</literal>.  (The method of retrieval depends on the
+  client application.  For example, the
+  <application>psql</application> program will display an ASCII-art
+  table on the screen, while client libraries will offer functions to
+  extract individual values from the query result.)  The select list
+  specification <literal>*</literal> means all columns that the table
+  expression happens to provide.  A select list can also select a
+  subset of the available columns or make calculations using the
+  columns.  For example, if
+  <literal>table1</literal> has columns named <literal>a</>,
+  <literal>b</>, and <literal>c</> (and perhaps others) you can make
+  the following query: 
+  -->
+假设有一个<literal>table1</literal>表，这条命令将从<literal>table1</literal>
+中检索所有行和所有用户定义的字段。检索的方法取决于客户端应用程序。
+比如，<application>psql</application>程序将在屏幕上显示一个 ASCII 艺术构成的表格，
+客户端库将提供检索独立行和字段的函数。选择列表声明为<literal>*</literal>
+表示表表达式提供的所有可用字段。
+一个选择列表也可以选择可用字段的一个子集或者使用这些字段进行计算；
+比如，如果<literal>table1</literal>有名为<literal>a</>,<literal>b</>, <literal>c</>
+的字段(可能还有其它)，那么你可以用下面的查询(假设 b 和 c 都是数字数据类型)：  
+<programlisting>
+SELECT a, b + c FROM table1;
+</programlisting>
+<!-- 
+  (assuming that <literal>b</> and <literal>c</> are of a numerical
+  data type).
+  See <xref linkend="queries-select-lists"> for more details. 
+ -->
+参阅<xref linkend="queries-select-lists">获取更多细节。 
+ </para>
+
+ <!--
+<para>
+  <literal>FROM table1</literal> is a simple kind of
+  table expression: it reads just one table.  In general, table
+  expressions can be complex constructs of base tables, joins, and
+  subqueries.  But you can also omit the table expression entirely and
+  use the <command>SELECT</command> command as a calculator:
+<programlisting>
+SELECT 3 * 4;
+</programlisting>
+  This is more useful if the expressions in the select list return
+  varying results.  For example, you could call a function this way:
+<programlisting>
+SELECT random();
+</programlisting>
+  </para>
+-->
+<para>
+<literal>FROM table1</literal>是一种简单的表表达式：它只读取了一个表。
+通常，表表达式可以是基本表、连接、子查询的复杂构造。
+但你也可以省略表表达式而只用<command>SELECT</command>命令当做一个计算器：
+<programlisting>
+SELECT 3 * 4;
+</programlisting>
+如果选择列表里的表达式返回变化的结果，那么这个东西就更有用了。比如，
+你可以用这个方法调用函数：
+<programlisting>
+SELECT random();
+</programlisting>
+</para>
+ </sect1>
+
+
+ <sect1 id="queries-table-expressions">
+  <!-- 
+  <title>Table Expressions</title> 
+  -->
+<title>表表达式</title>
+  <indexterm zone="queries-table-expressions">
+  <!-- 
+  <primary>table expression</primary> 
+  -->
+   <primary>表表达式</primary>
+  </indexterm>
+
+  <!--
+<para>
+   A <firstterm>table expression</firstterm> computes a table.  The
+   table expression contains a <literal>FROM</> clause that is
+   optionally followed by <literal>WHERE</>, <literal>GROUP BY</>, and
+   <literal>HAVING</> clauses.  Trivial table expressions simply refer
+   to a table on disk, a so-called base table, but more complex
+   expressions can be used to modify or combine base tables in various
+   ways.
+  </para>
+-->
+<para>
+<firstterm>表表达式</firstterm>计算一个表，它包含一个<literal>FROM</>子句，
+该子句可以根据需要选用<literal>WHERE</>, <literal>GROUP BY</>,<literal>HAVING</>
+子句。大部分表表达式只是指向磁盘上的一个所谓的基本表，
+但是我们可以用更复杂的表达式以各种方法修改或组合基本表。
+</para>
+
+  <!--
+<para>
+   The optional <literal>WHERE</>, <literal>GROUP BY</>, and
+   <literal>HAVING</> clauses in the table expression specify a
+   pipeline of successive transformations performed on the table
+   derived in the <literal>FROM</> clause.  All these transformations
+   produce a virtual table that provides the rows that are passed to
+   the select list to compute the output rows of the query.
+  </para>
+-->
+<para>
+表表达式里的<literal>WHERE</>, <literal>GROUP BY</>, <literal>HAVING</>
+子句声明一系列对源自<literal>FROM</>子句的表的转换操作。
+所有这些转换最后生成一个虚拟表，传递给选择列表计算输出行。
+</para>
+
+  <sect2 id="queries-from">
+   <!-- 
+   <title>The <literal>FROM</literal> Clause</title>
+   -->
+<title><literal>FROM</literal> 子句</title>
+   <!--
+<para>
+    The <xref linkend="sql-from" endterm="sql-from-title"> derives a
+    table from one or more other tables given in a comma-separated
+    table reference list.
+<synopsis>
+FROM <replaceable>table_reference</replaceable> <optional>, <replaceable>table_reference</replaceable> <optional>, ...</optional></optional>
+</synopsis>
+
+    A table reference can be a table name (possibly schema-qualified),
+    or a derived table such as a subquery, a table join, or complex
+    combinations of these.  If more than one table reference is listed
+    in the <literal>FROM</> clause they are cross-joined (see below)
+    to form the intermediate virtual table that can then be subject to
+    transformations by the <literal>WHERE</>, <literal>GROUP BY</>,
+    and <literal>HAVING</> clauses and is finally the result of the
+    overall table expression.
+   </para>
+-->
+<para>
+<xref linkend="sql-from" endterm="sql-from-title">
+从一个逗号分隔的表引用列表中生成一个虚拟表。
+<synopsis>
+FROM <replaceable>table_reference</replaceable> <optional>, <replaceable>table_reference</replaceable> <optional>, ...</optional></optional>
+</synopsis>
+表引用可以是一个表名字(可能有模式修饰)或者是一个生成的表，
+比如子查询、表连接、或这些东西的复杂组合。如果在<literal>FROM</>子句中列出了多于一个表，
+那么它们交叉连接(见下文)形成一个派生表，该表可以进行<literal>WHERE</>, <literal>GROUP BY</>,
+<literal>HAVING</>子句的转换处理，并最后生成表表达式的结果。
+</para>
+
+   <indexterm>
+    <primary>ONLY</primary>
+   </indexterm>
+
+   <!--
+<para>
+    When a table reference names a table that is the parent of a
+    table inheritance hierarchy, the table reference produces rows of
+    not only that table but all of its descendant tables, unless the
+    key word <literal>ONLY</> precedes the table name.  However, the
+    reference produces only the columns that appear in the named table
+    &mdash; any columns added in subtables are ignored.
+   </para>
+-->
+<para>
+如果一个表引用是一个简单的父表的名字，那么将包括其所有后代子表的行，
+除非你在该表名字前面加<literal>ONLY</>关键字(这样任何子表都会被忽略)。
+</para>
+
+   <!--
+<para>
+    Instead of writing <literal>ONLY</> before the table name, you can write
+    <literal>*</> after the table name to explicitly specify that descendant
+    tables are included.  Writing <literal>*</> is not necessary since that
+    behavior is the default (unless you have changed the setting of the <xref
+    linkend="guc-sql-inheritance"> configuration option).  However writing
+    <literal>*</> might be useful to emphasize that additional tables will be
+    searched.
+   </para>
+-->
+<para>
+除了在表名字前面加<literal>ONLY</>，你可以在表名字后面写<literal>*</>
+明确指定包括后代表。写<literal>*</>不是必须的，因为这个行为是默认的
+（除非你已经改变了<xref linkend="guc-sql-inheritance">配置选项里面的设置）。
+然而写<literal>*</>可能对于强调搜索额外的表是有用的。
+</para>
+
+   <sect3 id="queries-join">
+    <!-- 
+<title>Joined Tables</title>
+-->
+<title>连接表</title>
+    <indexterm zone="queries-join">
+     <!-- 
+ <primary>join</primary> 
+ -->
+ <primary>连接</primary>
+    </indexterm>
+
+    <!--
+<para>
+     A joined table is a table derived from two other (real or
+     derived) tables according to the rules of the particular join
+     type.  Inner, outer, and cross-joins are available.
+    </para>
+-->
+<para>
+一个连接表是根据特定的连接规则从两个其它表(真实表或生成表)中派生的表。
+我们支持内连接、外连接、交叉连接。
+</para>
+
+    <variablelist>
+     <!-- 
+ <title>Join Types</title> 
+ -->
+<title>连接类型</title>
+     <varlistentry>
+      <!-- 
+  <term>Cross join</term> 
+  -->
+<term>交叉连接</term>
+      <indexterm>
+<!-- 
+       <primary>join</primary>
+       <secondary>cross</secondary> 
+   -->
+   <primary>连接</primary>
+       <secondary>交叉</secondary>
+      </indexterm>
+
+      <indexterm>
+       <!-- 
+   <primary>cross join</primary> 
+   -->
+   <primary>交叉连接</primary>
+      </indexterm>
+
+      <listitem>
+<synopsis>
+<replaceable>T1</replaceable> CROSS JOIN <replaceable>T2</replaceable>
+</synopsis>
+
+       <!--
+<para>
+        For every possible combination of rows from
+        <replaceable>T1</replaceable> and
+        <replaceable>T2</replaceable> (i.e., a Cartesian product),
+        the joined table will contain a
+        row consisting of all columns in <replaceable>T1</replaceable>
+        followed by all columns in <replaceable>T2</replaceable>.  If
+        the tables have N and M rows respectively, the joined
+        table will have N * M rows.
+       </para>
+-->
+<para>
+对每个来自<replaceable>T1</replaceable>和<replaceable>T2</replaceable>
+的行进行组合（也就是，一个笛卡尔积），连接成的表将包含这样的行：
+所有<replaceable>T1</replaceable>里面的字段后面跟着所有<replaceable>T2</replaceable>
+里面的字段。如果两表分别有 N 和 M 行，连接成的表将有 N*M 行。
+</para>
+
+       <!--
+<para>
+        <literal>FROM <replaceable>T1</replaceable> CROSS JOIN
+        <replaceable>T2</replaceable></literal> is equivalent to
+        <literal>FROM <replaceable>T1</replaceable>,
+        <replaceable>T2</replaceable></literal>.  It is also equivalent to
+        <literal>FROM <replaceable>T1</replaceable> INNER JOIN
+        <replaceable>T2</replaceable> ON TRUE</literal> (see below).
+       </para>
+-->
+<para>
+<literal>FROM <replaceable>T1</replaceable> CROSS JOIN <replaceable>T2</replaceable></literal>
+等效于<literal>FROM <replaceable>T1</replaceable>,<replaceable>T2</replaceable></literal>。
+它还等效于<literal>FROM <replaceable>T1</replaceable> INNER JOIN <replaceable>T2</replaceable> ON TRUE</literal>(见下文)。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <!-- 
+  <term>Qualified joins</term> 
+  -->
+<term>条件连接</term>
+      <indexterm>
+<!-- 
+       <primary>join</primary>
+       <secondary>outer</secondary> 
+   -->
+   <primary>连接</primary>
+       <secondary>外</secondary> 
+      </indexterm>
+
+      <indexterm>
+       <!-- 
+   <primary>outer join</primary>
+   -->
+   <primary>外连接</primary>
+      </indexterm>
+
+      <listitem>
+<synopsis>
+<replaceable>T1</replaceable> { <optional>INNER</optional> | { LEFT | RIGHT | FULL } <optional>OUTER</optional> } JOIN <replaceable>T2</replaceable> ON <replaceable>boolean_expression</replaceable>
+<replaceable>T1</replaceable> { <optional>INNER</optional> | { LEFT | RIGHT | FULL } <optional>OUTER</optional> } JOIN <replaceable>T2</replaceable> USING ( <replaceable>join column list</replaceable> )
+<replaceable>T1</replaceable> NATURAL { <optional>INNER</optional> | { LEFT | RIGHT | FULL } <optional>OUTER</optional> } JOIN <replaceable>T2</replaceable>
+</synopsis>
+
+       <!--
+<para>
+        The words <literal>INNER</literal> and
+        <literal>OUTER</literal> are optional in all forms.
+        <literal>INNER</literal> is the default;
+        <literal>LEFT</literal>, <literal>RIGHT</literal>, and
+        <literal>FULL</literal> imply an outer join.
+       </para>
+-->
+<para>
+<literal>INNER</literal>和<literal>OUTER</literal>对所有连接类型都是可选的。
+<literal>INNER</literal>为缺省。<literal>LEFT</literal>, <literal>RIGHT</literal>,
+和<literal>FULL</literal>隐含外连接。
+</para>
+
+       <!--
+<para>
+        The <firstterm>join condition</firstterm> is specified in the
+        <literal>ON</> or <literal>USING</> clause, or implicitly by
+        the word <literal>NATURAL</>.  The join condition determines
+        which rows from the two source tables are considered to
+        <quote>match</quote>, as explained in detail below.
+       </para>
+-->
+<para>
+<firstterm>连接条件</firstterm>在<literal>ON</>或<literal>USING</>子句里声明，
+或者用关键字<literal>NATURAL</>隐含地声明。
+连接条件判断来自两个源表中的那些行是<quote>匹配</quote>的，这些我们将在下面详细解释。
+</para>
+
+       <!--
+<para>
+        The <literal>ON</> clause is the most general kind of join
+        condition: it takes a Boolean value expression of the same
+        kind as is used in a <literal>WHERE</> clause.  A pair of rows
+        from <replaceable>T1</> and <replaceable>T2</> match if the
+        <literal>ON</> expression evaluates to true for them.
+       </para>
+-->
+<para>
+<literal>ON</>子句是最常见的连接条件的类型：它接收一个和<literal>WHERE</>
+子句相同的布尔表达式。如果两个分别来自<replaceable>T1</>和<replaceable>T2</>
+的行在<literal>ON</>表达式上运算的结果为真，那么它们就算是匹配的行。
+</para>
+
+       <!--
+<para>
+        <literal>USING</> is a shorthand notation: it takes a
+        comma-separated list of column names, which the joined tables
+        must have in common, and forms a join condition specifying
+        equality of each of these pairs of columns.  Furthermore, the
+        output of <literal>JOIN USING</> has one column for each of
+        the equated pairs of input columns, followed by the
+        remaining columns from each table.  Thus, <literal>USING (a, b,
+        c)</literal> is equivalent to <literal>ON (t1.a = t2.a AND
+        t1.b = t2.b AND t1.c = t2.c)</literal> with the exception that
+        if <literal>ON</> is used there will be two columns
+        <literal>a</>, <literal>b</>, and <literal>c</> in the result,
+        whereas with <literal>USING</> there will be only one of each
+        (and they will appear first if <command>SELECT *</> is used).
+       </para>
+-->
+<para>
+<literal>USING</>是一个连接条件的缩写语法：它接收一个用逗号分隔的字段名列表，
+这些字段必须是连接表共有的并且其值必须相同。最后，<literal>JOIN USING</>
+会将每一对相等的输入字段输出为一个字段，其后跟着所有其它字段。
+因此，<literal>USING (a, b, c)</literal> 等效于<literal>ON (t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c)</literal>
+只不过是如果使用了<literal>ON</>，那么在结果里<literal>a</>, <literal>b</>和<literal>c</>
+字段都会有两个，而用<literal>USING</>的时候就只会有一个（如果使用了<command>SELECT *</>
+的话，他们会优先发生）。
+</para>
+
+       <!--
+<para>
+        <indexterm>
+         <primary>join</primary>
+         <secondary>natural</secondary>
+        </indexterm>
+        <indexterm>
+         <primary>natural join</primary>
+        </indexterm>
+        Finally, <literal>NATURAL</> is a shorthand form of
+        <literal>USING</>: it forms a <literal>USING</> list
+        consisting of all column names that appear in both
+        input tables.  As with <literal>USING</>, these columns appear
+        only once in the output table.  If there are no common
+        columns, <literal>NATURAL</literal> behaves like
+        <literal>CROSS JOIN</literal>.
+       </para>
+-->
+<para>
+        <indexterm>
+         <primary>连接</primary>
+         <secondary>自然</secondary>
+        </indexterm>
+        <indexterm>
+         <primary>自然连接</primary>
+        </indexterm>
+最后，<literal>NATURAL</>是<literal>USING</>的缩写形式：
+它自动形成一个由两个表中同名的字段组成的<literal>USING</>列表(同名字段只出现一次)。
+如果没有同名的字段，<literal>NATURAL</literal>的行为会像<literal>CROSS JOIN</literal>。
+</para>
+     
+<para>
+  <!--
+        The possible types of qualified join are:
+-->
+条件连接可能的类型是：
+       <variablelist>
+        <varlistentry>
+         <term><literal>INNER JOIN</></term>
+
+         <listitem>
+<!-- 
+          <para>
+           For each row R1 of T1, the joined table has a row for each
+           row in T2 that satisfies the join condition with R1.
+          </para>
+ -->
+<para>
+内连接。对于 T1 中的每一行 R1 ，如果能在 T2 中找到一个或多个满足连接条件的行，
+那么这些满足条件的每一行都在连接表中生成一行。
+</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>LEFT OUTER JOIN</></term>
+
+         <indexterm>
+<!-- 
+          <primary>join</primary>
+          <secondary>left</secondary> 
+-->
+          <primary>连接</primary>
+          <secondary>左</secondary>
+         </indexterm>
+
+         <indexterm>
+          <!-- 
+  <primary>left join</primary> 
+  -->
+  <primary>左链接</primary>
+         </indexterm>
+
+         <listitem>
+          <!--
+<para>
+           First, an inner join is performed.  Then, for each row in
+           T1 that does not satisfy the join condition with any row in
+           T2, a joined row is added with null values in columns of
+           T2.  Thus, the joined table always has at least
+           one row for each row in T1.
+          </para>
+-->
+<para>
+左外连接。首先执行一次内连接。然后为每一个 T1 中无法在 T2 中找到匹配的行生成一行，
+该行中对应 T2 的列用 NULL 补齐。因此，生成的连接表里总是包含来自 T1 里的每一行至少一个副本。
+</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>RIGHT OUTER JOIN</></term>
+
+         <indexterm>
+<!-- 
+          <primary>join</primary>
+          <secondary>right</secondary> 
+-->
+          <primary>连接</primary>
+          <secondary>右</secondary>
+         </indexterm>
+
+         <indexterm>
+          <!-- <primary>right join</primary> -->
+  <primary>右连接</primary>
+         </indexterm>
+
+         <listitem>
+          <!--
+<para>
+           First, an inner join is performed.  Then, for each row in
+           T2 that does not satisfy the join condition with any row in
+           T1, a joined row is added with null values in columns of
+           T1.  This is the converse of a left join: the result table
+           will always have a row for each row in T2.
+          </para>
+-->
+<para>
+右外连接。首先执行一次内连接。然后为每一个 T2 中无法在 T1 中找到匹配的行生成一行，
+该行中对应 T1 的列用 NULL 补齐。因此，生成的连接表里总是包含来自 T2 里的每一行至少一个副本。
+</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>FULL OUTER JOIN</></term>
+
+         <listitem>
+          <!--
+<para>
+           First, an inner join is performed.  Then, for each row in
+           T1 that does not satisfy the join condition with any row in
+           T2, a joined row is added with null values in columns of
+           T2.  Also, for each row of T2 that does not satisfy the
+           join condition with any row in T1, a joined row with null
+           values in the columns of T1 is added.
+          </para>
+-->
+<para>
+全连接。首先执行一次内连接。然后为每一个 T1 与 T2 中找不到匹配的行生成一行，
+该行中无法匹配的列用 NULL 补齐。因此，生成的连接表里无条件地包含 T1 和 T2 里的每一行至少一个副本。
+</para>
+         </listitem>
+        </varlistentry>
+       </variablelist>
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+
+    <!--
+<para>
+     Joins of all types can be chained together or nested: either or
+     both <replaceable>T1</replaceable> and
+     <replaceable>T2</replaceable> can be joined tables.  Parentheses
+     can be used around <literal>JOIN</> clauses to control the join
+     order.  In the absence of parentheses, <literal>JOIN</> clauses
+     nest left-to-right.
+    </para>
+-->
+<para>
+如果<replaceable>T1</replaceable>和<replaceable>T2</replaceable>
+之一或全部是可以连接的表，那么所有类型的连接都可以串连或嵌套在一起。
+你可以在<literal>JOIN</>子句周围使用圆括弧来控制连接顺序，如果没有圆括弧，
+那么<literal>JOIN</>子句从左向右嵌套。
+</para>
+
+    
+<para>
+<!--
+     To put this together, assume we have tables <literal>t1</literal>:
+ -->
+为了解释这些问题，假设我们有一个表<literal>t1</literal>:
+<programlisting>
+ num | name
+-----+------
+   1 | a
+   2 | b
+   3 | c
+</programlisting>
+<!-- 
+     and <literal>t2</literal>: 
+ -->
+和<literal>t2</literal>:
+<programlisting>
+ num | value
+-----+-------
+   1 | xxx
+   3 | yyy
+   5 | zzz
+</programlisting>
+<!-- 
+     then we get the following results for the various joins: 
+ -->
+然后我们用不同的连接方式可以获得各种结果： 
+<screen>
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 CROSS JOIN t2;</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   1 | a    |   3 | yyy
+   1 | a    |   5 | zzz
+   2 | b    |   1 | xxx
+   2 | b    |   3 | yyy
+   2 | b    |   5 | zzz
+   3 | c    |   1 | xxx
+   3 | c    |   3 | yyy
+   3 | c    |   5 | zzz
+(9 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 INNER JOIN t2 ON t1.num = t2.num;</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   3 | c    |   3 | yyy
+(2 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 INNER JOIN t2 USING (num);</>
+ num | name | value
+-----+------+-------
+   1 | a    | xxx
+   3 | c    | yyy
+(2 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 NATURAL INNER JOIN t2;</>
+ num | name | value
+-----+------+-------
+   1 | a    | xxx
+   3 | c    | yyy
+(2 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 LEFT JOIN t2 ON t1.num = t2.num;</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   2 | b    |     |
+   3 | c    |   3 | yyy
+(3 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 LEFT JOIN t2 USING (num);</>
+ num | name | value
+-----+------+-------
+   1 | a    | xxx
+   2 | b    |
+   3 | c    | yyy
+(3 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 RIGHT JOIN t2 ON t1.num = t2.num;</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   3 | c    |   3 | yyy
+     |      |   5 | zzz
+(3 rows)
+
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 FULL JOIN t2 ON t1.num = t2.num;</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   2 | b    |     |
+   3 | c    |   3 | yyy
+     |      |   5 | zzz
+(4 rows)
+</screen>
+    </para>
+
+   
+<para>
+ <!--
+     The join condition specified with <literal>ON</> can also contain
+     conditions that do not relate directly to the join.  This can
+     prove useful for some queries but needs to be thought out
+     carefully.  For example:
+ -->
+用<literal>ON</>声明的连接条件也可以包含与连接不直接相关的条件。
+这种功能可能对某些查询很有用，但是需要我们仔细想清楚。比如： 
+<screen>
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 LEFT JOIN t2 ON t1.num = t2.num AND t2.value = 'xxx';</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   2 | b    |     |
+   3 | c    |     |
+(3 rows)
+</screen>
+<!-- 
+     Notice that placing the restriction in the <literal>WHERE</> clause
+     produces a different result: 
+-->
+请注意，将限制放在在<literal>WHERE</>子句中将会产生不同的结果：
+<screen>
+<prompt>=&gt;</> <userinput>SELECT * FROM t1 LEFT JOIN t2 ON t1.num = t2.num WHERE t2.value = 'xxx';</>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+(1 row)
+</screen>
+<!-- 
+     This is because a restriction placed in the <literal>ON</>
+     clause is processed <emphasis>before</> the join, while
+     a restriction placed in the <literal>WHERE</> clause is processed
+     <emphasis>after</> the join. 
+-->
+这是因为限制放在<literal>ON</>子句中时是<emphasis>先于</>连接处理的，
+而限制放在<literal>WHERE</>子句中时是<emphasis>后于</>连接处理的。
+    </para>
+
+   </sect3>
+
+   <sect3 id="queries-table-aliases">
+    <!-- 
+<title>Table and Column Aliases</title> 
+-->
+<title>表和列别名</title>
+    <indexterm zone="queries-table-aliases">
+<!-- 
+     <primary>alias</primary>
+     <secondary>in the FROM clause</secondary> 
+-->
+     <primary>别名</primary>
+     <secondary>在FROM子句中</secondary> 
+    </indexterm>
+
+    <indexterm>
+<!-- 
+     <primary>label</primary>
+     <see>alias</see> 
+-->
+     <primary>标签</primary>
+     <see>别名</see>
+    </indexterm>
+
+    <!--
+<para>
+     A temporary name can be given to tables and complex table
+     references to be used for references to the derived table in
+     the rest of the query.  This is called a <firstterm>table
+     alias</firstterm>.
+    </para>
+-->
+<para>
+你可以给表或复杂的表引用起一个临时的<firstterm>表别名</firstterm>，以便被其余的查询引用。
+</para>
+
+   
+<para>
+ <!--
+     To create a table alias, write
+ -->
+要创建一个表别名，可以这样： 
+<synopsis>
+FROM <replaceable>table_reference</replaceable> AS <replaceable>alias</replaceable>
+</synopsis>
+<!-- 
+     or 
+ -->
+或： 
+<synopsis>
+FROM <replaceable>table_reference</replaceable> <replaceable>alias</replaceable>
+</synopsis>
+<!-- 
+     The <literal>AS</literal> key word is optional noise.
+     <replaceable>alias</replaceable> can be any identifier.
+-->
+<literal>AS</literal>关键字没啥特别的含义。<replaceable>alias</replaceable>可以是任意标识符。
+    </para>
+
+
+   
+<para>
+ <!--
+     A typical application of table aliases is to assign short
+     identifiers to long table names to keep the join clauses
+     readable.  For example:
+ -->
+表别名的典型应用是给长表名赋予比较短的标识，好让连接子句更易读一些。比如：
+<programlisting>
+SELECT * FROM some_very_long_table_name s JOIN another_fairly_long_name a ON s.id = a.num;
+</programlisting>
+    </para>
+
+   
+<para>
+ <!--
+     The alias becomes the new name of the table reference so far as the
+     current query is concerned &mdash; it is not allowed to refer to the
+     table by the original name elsewhere in the query.  Thus, this is not
+     valid:
+-->
+取了别名之后就不允许再用最初的名字了。因此，这是不合法的：
+<programlisting>
+SELECT * FROM my_table AS m WHERE my_table.a &gt; 5;    -- wrong
+</programlisting>
+    </para>
+   
+<para>
+ <!--
+     Table aliases are mainly for notational convenience, but it is
+     necessary to use them when joining a table to itself, e.g.:
+ -->
+表别名主要是为了方便标记，但对于自连接却是必须的。比如：
+<programlisting>
+SELECT * FROM people AS mother JOIN people AS child ON mother.id = child.mother_id;
+</programlisting>
+<!-- 
+     Additionally, an alias is required if the table reference is a
+     subquery (see <xref linkend="queries-subqueries">). 
+-->
+另外，要引用子查询的结果也必须使用别名(参见<xref linkend="queries-subqueries">)。
+    </para>
+    
+<para>
+<!--
+     Parentheses are used to resolve ambiguities.  In the following example,
+     the first statement assigns the alias <literal>b</literal> to the second
+     instance of <literal>my_table</>, but the second statement assigns the
+     alias to the result of the join:
+-->
+圆括弧用于解决歧义。下面的第一个语句把别名<literal>b</literal>赋予第二个<literal>my_table</>表；
+而第二个语句则把别名<literal>b</literal>赋予了连接的结果。
+<programlisting>
+SELECT * FROM my_table AS a CROSS JOIN my_table AS b ...
+SELECT * FROM (my_table AS a CROSS JOIN my_table) AS b ...
+</programlisting>
+    </para>
+    
+<para>
+<!--
+     Another form of table aliasing gives temporary names to the columns of
+     the table, as well as the table itself:
+-->
+另外一种形式的表别名除了给表赋予别名外，还给该表的字段也赋予了别名：
+<synopsis>
+FROM <replaceable>table_reference</replaceable> <optional>AS</optional> <replaceable>alias</replaceable> ( <replaceable>column1</replaceable> <optional>, <replaceable>column2</replaceable> <optional>, ...</optional></optional> )
+</synopsis>
+<!-- 
+     If fewer column aliases are specified than the actual table has
+     columns, the remaining columns are not renamed.  This syntax is
+     especially useful for self-joins or subqueries. 
+-->
+如果声明的字段别名比表里实际的字段少，那么后面的字段就没有别名。
+这个语法对于自连接或子查询特别有用。
+    </para>
+    
+<para>
+<!--
+     When an alias is applied to the output of a <literal>JOIN</>
+     clause, the alias hides the original
+     name(s) within the <literal>JOIN</>.  For example:
+-->
+ 如果用这些形式中的任何一种给一个<literal>JOIN</>子句的输出结果附加了一个别名，
+ 那么该别名就在<literal>JOIN</>里隐藏了其原始的名字。比如：
+<programlisting>
+SELECT a.* FROM my_table AS a JOIN your_table AS b ON ...
+</programlisting>
+     <!-- 
+ is valid SQL, but: 
+ -->
+ 是合法 SQL ，但是：
+<programlisting>
+SELECT a.* FROM (my_table AS a JOIN your_table AS b ON ...) AS c
+</programlisting>
+<!-- 
+     is not valid; the table alias <literal>a</> is not visible
+     outside the alias <literal>c</>. 
+-->
+是不合法的：别名<literal>a</>在别名<literal>c</>的外面是看不到的。
+    </para>
+
+   </sect3>
+
+   <sect3 id="queries-subqueries">
+    <!-- 
+<title>Subqueries</title> 
+-->
+<title>子查询</title>
+    <indexterm zone="queries-subqueries">
+     <!-- 
+ <primary>subquery</primary> 
+ -->
+ <primary>子查询</primary>
+    </indexterm>
+
+    
+<para>
+<!--
+     Subqueries specifying a derived table must be enclosed in
+     parentheses and <emphasis>must</emphasis> be assigned a table
+     alias name (as in <xref linkend="queries-table-aliases">).  For
+     example:
+-->
+子查询的结果(派生表)<emphasis>必须</emphasis>包围在圆括弧里并且必须赋予一个别名(参阅
+<xref linkend="queries-table-aliases">)。比如：
+<programlisting>
+FROM (SELECT * FROM table1) AS alias_name
+</programlisting>
+    </para>
+
+
+    <!--
+<para>
+     This example is equivalent to <literal>FROM table1 AS
+     alias_name</literal>.  More interesting cases, which cannot be
+     reduced to a plain join, arise when the subquery involves
+     grouping or aggregation.
+    </para>
+-->
+<para>
+这个例子等效于<literal>FROM table1 AS alias_name</literal>。
+更有趣的例子是在子查询里面有分组或聚集的时候，
+这个时候子查询不能归纳成一个简单的连接。
+</para>
+    
+<para>
+<!--
+     A subquery can also be a <command>VALUES</> list:
+-->
+子查询也可以是一个<command>VALUES</>列表：
+<programlisting>
+FROM (VALUES ('anne', 'smith'), ('bob', 'jones'), ('joe', 'blow'))
+     AS names(first, last)
+</programlisting>
+<!-- 
+     Again, a table alias is required.  Assigning alias names to the columns
+     of the <command>VALUES</> list is optional, but is good practice.
+     For more information see <xref linkend="queries-values">. 
+-->
+这种情况同样也必须要取一个别名。还可以为<command>VALUES</>列表中的字段取别名，
+并且被认为是一个好习惯。更多信息参见<xref linkend="queries-values">。
+    </para>
+
+   </sect3>
+
+   <sect3 id="queries-tablefunctions">
+    <!-- 
+<title>Table Functions</title> 
+-->
+<title>表函数</title>
+    <!-- 
+<indexterm zone="queries-tablefunctions"><primary>table function</></> 
+-->
+<indexterm zone="queries-tablefunctions"><primary>表函数</></>
+    <indexterm zone="queries-tablefunctions">
+<!-- 
+     <primary>function</>
+     <secondary>in the FROM clause</> 
+-->
+     <primary>函数</>
+     <secondary>在FROM子句中</> 
+    </indexterm>
+
+    <!--
+<para>
+     Table functions are functions that produce a set of rows, made up
+     of either base data types (scalar types) or composite data types
+     (table rows).  They are used like a table, view, or subquery in
+     the <literal>FROM</> clause of a query. Columns returned by table
+     functions can be included in <literal>SELECT</>,
+     <literal>JOIN</>, or <literal>WHERE</> clauses in the same manner
+     as a table, view, or subquery column.
+    </para>
+-->
+<para>
+表函数是那些生成一个行集合的函数，这个集合可以是由基本数据类型(标量类型)组成，
+也可以是由复合数据类型(表的行)组成。他们的用法类似一个表、视图、或 <literal>FROM</>
+子句里的子查询。表函数返回的字段可以像一个表、视图、或者子查询字段那样包含在
+<literal>SELECT</>,<literal>JOIN</>,<literal>WHERE</>子句里。
+</para>
+
+    <!--
+<para>
+     If a table function returns a base data type, the single result
+     column name matches the function name. If the function returns a
+     composite type, the result columns get the same names as the
+     individual attributes of the type.
+    </para>
+-->
+<para>
+如果表函数返回基本数据类型，那么单一结果字段的名字匹配函数名。
+如果表函数返回复合数据类型，那么多个结果字段的名字和该类型的每个属性的名字相同。
+</para>
+
+    <!--
+<para>
+     A table function can be aliased in the <literal>FROM</> clause,
+     but it also can be left unaliased. If a function is used in the
+     <literal>FROM</> clause with no alias, the function name is used
+     as the resulting table name.
+    </para>
+-->
+<para>
+可以在<literal>FROM</>子句中为表函数取一个别名，也可以不取别名。
+如果一个函数在<literal>FROM</>子句中没有别名，那么将使用函数名作为结果表的名字。
+</para>
+   
+<para>
+ <!--
+     Some examples:
+ -->
+一些例子： 
+<programlisting>
+CREATE TABLE foo (fooid int, foosubid int, fooname text);
+
+CREATE FUNCTION getfoo(int) RETURNS SETOF foo AS $$
+    SELECT * FROM foo WHERE fooid = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM getfoo(1) AS t1;
+
+SELECT * FROM foo
+    WHERE foosubid IN (
+                        SELECT foosubid
+                        FROM getfoo(foo.fooid) z
+                        WHERE z.fooid = foo.fooid
+                      );
+
+CREATE VIEW vw_getfoo AS SELECT * FROM getfoo(1);
+
+SELECT * FROM vw_getfoo;
+</programlisting>
+    </para>
+    
+<para>
+<!--
+     In some cases it is useful to define table functions that can
+     return different column sets depending on how they are invoked.
+     To support this, the table function can be declared as returning
+     the pseudotype <type>record</>.  When such a function is used in
+     a query, the expected row structure must be specified in the
+     query itself, so that the system can know how to parse and plan
+     the query.  Consider this example:
+ -->
+有时侯，把一个函数定义成根据不同的调用方法可以返回不同的字段是很有用的。
+为了支持这个，表函数可以声明为返回伪类型<type>record</>。如果在查询里使用这样的函数，
+那么我们必须在查询中声明预期的行结构，这样系统才知道如何分析和规划该查询。
+让我们看看下面的例子： 
+<programlisting>
+SELECT *
+    FROM dblink('dbname=mydb', 'SELECT proname, prosrc FROM pg_proc')
+      AS t1(proname name, prosrc text)
+    WHERE proname LIKE 'bytea%';
+</programlisting>
+<!-- 
+     The <xref linkend="CONTRIB-DBLINK-FUNCTION"> function
+     (part of the <xref linkend="dblink"> module) executes
+     a remote query.  It is declared to return
+     <type>record</> since it might be used for any kind of query.
+     The actual column set must be specified in the calling query so
+     that the parser knows, for example, what <literal>*</> should
+     expand to. 
+-->
+<xref linkend="CONTRIB-DBLINK-FUNCTION">函数（<xref linkend="dblink">模块的一部分）
+执行一个远程的查询。它声明为返回<type>record</>，因为它可能会被用于任何类型的查询。
+实际的字段集必须在调用它的查询中声明，这样分析器才知道类似<literal>*</>
+这样的东西应该扩展成什么样子。
+    </para>
+
+   </sect3>
+
+   <sect3 id="queries-lateral">
+    <!-- 
+<title><literal>LATERAL</> Subqueries</title> 
+-->
+<title><literal>LATERAL</> 子查询</title>
+    <indexterm zone="queries-lateral">
+<!-- 
+     <primary>LATERAL</>
+     <secondary>in the FROM clause</> 
+-->
+     <primary>LATERAL</>
+     <secondary>在FROM子句中</> 
+    </indexterm>
+
+    <!--
+<para>
+     Subqueries appearing in <literal>FROM</> can be
+     preceded by the key word <literal>LATERAL</>.  This allows them to
+     reference columns provided by preceding <literal>FROM</> items.
+     (Without <literal>LATERAL</literal>, each subquery is
+     evaluated independently and so cannot cross-reference any other
+     <literal>FROM</> item.)
+    </para>
+-->
+<para>
+<literal>FROM</>子句中出现的子查询可以放在关键字<literal>LATERAL</>之前。
+这样就允许它们引用通过前置<literal>FROM</>条目提供的字段。（如果没有<literal>LATERAL</literal>，
+那么每个子查询都被认为是独立的并且不能交叉引用任何其他的<literal>FROM</>条目。）
+</para>
+
+    <!--
+<para>
+     Table functions appearing in <literal>FROM</> can also be
+     preceded by the key word <literal>LATERAL</>, but for functions the
+     key word is optional; the function's arguments can contain references
+     to columns provided by preceding <literal>FROM</> items in any case.
+    </para>
+-->
+<para>
+<literal>FROM</>中出现的表函数也可以出现在关键字<literal>LATERAL</>之前，
+但是对于函数来说，这个关键字是可选的；函数的参数在任何情况下都可以包含通过前置<literal>FROM</>
+条目提供的字段。
+</para>
+
+    <!--
+<para>
+     A <literal>LATERAL</literal> item can appear at top level in the
+     <literal>FROM</> list, or within a <literal>JOIN</> tree.  In the latter
+     case it can also refer to any items that are on the left-hand side of a
+     <literal>JOIN</> that it is on the right-hand side of.
+    </para>
+-->
+<para>
+<literal>LATERAL</literal>条目可以出现在<literal>FROM</>列表的顶级，或者在<literal>JOIN</>树中。
+在后者的情况下，它在<literal>JOIN</>右侧时也可以参考左侧的条目。
+</para>
+
+    <!--
+<para>
+     When a <literal>FROM</> item contains <literal>LATERAL</literal>
+     cross-references, evaluation proceeds as follows: for each row of the
+     <literal>FROM</> item providing the cross-referenced column(s), or
+     set of rows of multiple <literal>FROM</> items providing the
+     columns, the <literal>LATERAL</literal> item is evaluated using that
+     row or row set's values of the columns.  The resulting row(s) are
+     joined as usual with the rows they were computed from.  This is
+     repeated for each row or set of rows from the column source table(s).
+    </para>
+-->
+<para>
+当<literal>FROM</>包含<literal>LATERAL</literal>交叉引用时，评估收益如下：
+<literal>FROM</>条目的每行或多个<literal>FROM</>条目的行组提供交叉引用的字段，
+<literal>LATERAL</literal>条目被评估为使用行或行组的字段值。结果行像平常一样加入他们的计算行。
+这些来自字段原表中的行或行组就这样重复。 
+</para>
+
+    
+<para>
+<!--
+     A trivial example of <literal>LATERAL</literal> is
+-->
+一个<literal>LATERAL</literal>常见的例子是：
+<programlisting>
+SELECT * FROM foo, LATERAL (SELECT * FROM bar WHERE bar.id = foo.bar_id) ss;
+</programlisting>
+<!-- 
+     This is not especially useful since it has exactly the same result as
+     the more conventional 
+-->
+这并不是特别有用的，因为它的结果正好和更传统做法的相同。
+<programlisting>
+SELECT * FROM foo, bar WHERE bar.id = foo.bar_id;
+</programlisting>
+<!-- 
+     <literal>LATERAL</literal> is primarily useful when the cross-referenced
+     column is necessary for computing the row(s) to be joined.  A common
+     application is providing an argument value for a set-returning function.
+     For example, supposing that <function>vertices(polygon)</> returns the
+     set of vertices of a polygon, we could identify close-together vertices
+     of polygons stored in a table with: 
+-->
+<literal>LATERAL</literal>当交叉引用字段对于加入的计算行是重要的时是主要有用的。
+一个常见的应用是为一个set-returning函数提供一个参数值。例如，假设<function>vertices(polygon)</>
+返回一个多边形的顶点坐标，我们可以识别出多边形的顶点距离近的存储在一个表中：
+<programlisting>
+SELECT p1.id, p2.id, v1, v2
+FROM polygons p1, polygons p2,
+     LATERAL vertices(p1.poly) v1,
+     LATERAL vertices(p2.poly) v2
+WHERE (v1 &lt;-&gt; v2) &lt; 10 AND p1.id != p2.id;
+</programlisting>
+     <!-- 
+ This query could also be written 
+ -->
+ 这条语句也可以写成：
+<programlisting>
+SELECT p1.id, p2.id, v1, v2
+FROM polygons p1 CROSS JOIN LATERAL vertices(p1.poly) v1,
+     polygons p2 CROSS JOIN LATERAL vertices(p2.poly) v2
+WHERE (v1 &lt;-&gt; v2) &lt; 10 AND p1.id != p2.id;
+</programlisting>
+<!-- 
+     or in several other equivalent formulations.  (As already mentioned,
+     the <literal>LATERAL</> key word is unnecessary in this example, but
+     we use it for clarity.)
+-->
+或者几个其他等价的形式。（就像之前提到的，<literal>LATERAL</>关键字在这个例子中不是必须的，
+但是我们为了明确而是用它。）
+    </para>
+    
+<para>
+<!--
+     It is often particularly handy to <literal>LEFT JOIN</> to a
+     <literal>LATERAL</literal> subquery, so that source rows will appear in
+     the result even if the <literal>LATERAL</literal> subquery produces no
+     rows for them.  For example, if <function>get_product_names()</> returns
+     the names of products made by a manufacturer, but some manufacturers in
+     our table currently produce no products, we could find out which ones
+     those are like this:
+-->
+<literal>LEFT JOIN</>对于<literal>LATERAL</literal>子查询来说往往是特别有用的，
+所以即使<literal>LATERAL</literal>子查询不产生行，源行也将出现在结果中。例如，
+如果<function>get_product_names()</>返回一个制造商制造的产品名字，
+但是一些在我们表中的制造商当前没有生产任何产品，我们可以像下面这样找出这些制造商：
+<programlisting>
+SELECT m.name
+FROM manufacturers m LEFT JOIN LATERAL get_product_names(m.id) pname ON true
+WHERE pname IS NULL;
+</programlisting>
+    </para>
+
+   </sect3>
+  </sect2>
+
+  <sect2 id="queries-where">
+   <!-- 
+   <title>The <literal>WHERE</literal> Clause</title> 
+   -->
+<title><literal>WHERE</literal>子句</title>
+   <indexterm zone="queries-where">
+    <primary>WHERE</primary>
+   </indexterm>
+
+<para>
+<!--
+    The syntax of the <xref linkend="sql-where"
+    endterm="sql-where-title"> is
+-->
+<xref linkend="sql-where" endterm="sql-where-title">子句的语法是：
+<synopsis>
+WHERE <replaceable>search_condition</replaceable>
+</synopsis>
+<!-- 
+    where <replaceable>search_condition</replaceable> is any value
+    expression (see <xref linkend="sql-expressions">) that
+    returns a value of type <type>boolean</type>.
+-->
+这里的<replaceable>search_condition</replaceable>是一个返回类型为 <type>boolean</type>
+的值表达式(参阅<xref linkend="sql-expressions">)。
+   </para>
+
+   <!--
+<para>
+    After the processing of the <literal>FROM</> clause is done, each
+    row of the derived virtual table is checked against the search
+    condition.  If the result of the condition is true, the row is
+    kept in the output table, otherwise (i.e., if the result is
+    false or null) it is discarded.  The search condition typically
+    references at least one column of the table generated in the
+    <literal>FROM</> clause; this is not required, but otherwise the
+    <literal>WHERE</> clause will be fairly useless.
+   </para>
+-->
+<para>
+在完成对<literal>FROM</>子句的处理之后，生成的每一行都会按照搜索条件进行检查。
+如果结果是真，那么该行保留在输出表中，否则(也就是结果是假或NULL)就把它抛弃。
+搜索条件通常至少要引用一列在<literal>FROM</>子句里生成的列，这不是必须的，
+但如果不这样的话，<literal>WHERE</>子句就没什么意义了。 
+</para>
+
+   <note>
+   
+<para>
+ <!--
+     The join condition of an inner join can be written either in
+     the <literal>WHERE</> clause or in the <literal>JOIN</> clause.
+     For example, these table expressions are equivalent:
+--> 
+内连接的连接条件既可以写在<literal>WHERE</>子句里也可以写在<literal>JOIN</>子句里。
+比如，下面的表表达式是等效的：
+<programlisting>
+FROM a, b WHERE a.id = b.id AND b.val &gt; 5
+</programlisting>
+<!-- 
+     and: 
+-->
+和：
+<programlisting>
+FROM a INNER JOIN b ON (a.id = b.id) WHERE b.val &gt; 5
+</programlisting>
+<!-- 
+     or perhaps even: 
+-->
+或者可能还有：
+<programlisting>
+FROM a NATURAL JOIN b WHERE b.val &gt; 5
+</programlisting>
+<!-- 
+     Which one of these you use is mainly a matter of style.  The
+     <literal>JOIN</> syntax in the <literal>FROM</> clause is
+     probably not as portable to other SQL database management systems,
+     even though it is in the SQL standard.  For
+     outer joins there is no choice:  they must be done in
+     the <literal>FROM</> clause.  The <literal>ON</> or <literal>USING</>
+     clause of an outer join is <emphasis>not</> equivalent to a
+     <literal>WHERE</> condition, because it results in the addition
+     of rows (for unmatched input rows) as well as the removal of rows
+     in the final result. 
+-->
+你想用哪个只是风格问题。<literal>FROM</>子句里的<literal>JOIN</>
+语法可能不那么容易移植到其它产品中。即使它是在SQL标准。对于外连接而言，
+我们没有选择：连接条件必须在<literal>FROM</>子句中完成。
+外连接的<literal>ON</>或<literal>USING</>子句<emphasis>不</>等于<literal>WHERE</>条件，
+因为它导致最终结果中行的增(那些不匹配的输入行)和删。 
+    </para>
+   </note>
+
+   
+<para>
+<!--
+    Here are some examples of <literal>WHERE</literal> clauses:
+-->
+这里是一些<literal>WHERE</literal>子句的例子： 
+<programlisting>
+SELECT ... FROM fdt WHERE c1 &gt; 5
+
+SELECT ... FROM fdt WHERE c1 IN (1, 2, 3)
+
+SELECT ... FROM fdt WHERE c1 IN (SELECT c1 FROM t2)
+
+SELECT ... FROM fdt WHERE c1 IN (SELECT c3 FROM t2 WHERE c2 = fdt.c1 + 10)
+
+SELECT ... FROM fdt WHERE c1 BETWEEN (SELECT c3 FROM t2 WHERE c2 = fdt.c1 + 10) AND 100
+
+SELECT ... FROM fdt WHERE EXISTS (SELECT c1 FROM t2 WHERE c2 &gt; fdt.c1)
+</programlisting>
+<!-- 
+    <literal>fdt</literal> is the table derived in the
+    <literal>FROM</> clause. Rows that do not meet the search
+    condition of the <literal>WHERE</> clause are eliminated from
+    <literal>fdt</literal>. Notice the use of scalar subqueries as
+    value expressions.  Just like any other query, the subqueries can
+    employ complex table expressions.  Notice also how
+    <literal>fdt</literal> is referenced in the subqueries.
+    Qualifying <literal>c1</> as <literal>fdt.c1</> is only necessary
+    if <literal>c1</> is also the name of a column in the derived
+    input table of the subquery.  But qualifying the column name adds
+    clarity even when it is not needed.  This example shows how the column
+    naming scope of an outer query extends into its inner queries. 
+-->
+在上面的例子里，<literal>fdt</literal>是从<literal>FROM</>子句中派生的表。
+那些不符合<literal>WHERE</>子句的搜索条件的行将从<literal>fdt</literal>中删除。
+请注意我们把标量子查询当做一个值表达式来用。就像其它查询一样，
+子查询里也可以使用复杂的表表达式。同时还请注意子查询
+是如何引用<literal>fdt</literal>的。把<literal>c1</>修饰成<literal>fdt.c1</>
+只有在<literal>c1</>是该子查询生成的列名字时才是必须的，
+但修饰列名字可以增加语句的准确性(即使有时不是必须的)。
+这个例子就演示了字段名字范围如何从外层查询扩展到它的内层查询。 
+   </para>
+
+  </sect2>
+
+
+  <sect2 id="queries-group">
+   <!-- <title>The <literal>GROUP BY</literal> and <literal>HAVING</literal> Clauses</title> -->
+<title><literal>GROUP BY</literal>和<literal>HAVING</literal>子句</title>
+   <indexterm zone="queries-group">
+    <primary>GROUP BY</primary>
+   </indexterm>
+
+   <indexterm zone="queries-group">
+    <primary>grouping</primary>
+   </indexterm>
+
+   <!--
+<para>
+    After passing the <literal>WHERE</> filter, the derived input
+    table might be subject to grouping, using the <literal>GROUP BY</>
+    clause, and elimination of group rows using the <literal>HAVING</>
+    clause.
+   </para>
+-->
+<para>
+在通过了<literal>WHERE</>过滤器之后，生成的输入表可以继续用<literal>GROUP BY</>
+子句进行分组，然后用<literal>HAVING</>子句选取一些分组行。 
+</para>
+
+<synopsis>
+SELECT <replaceable>select_list</replaceable>
+    FROM ...
+    <optional>WHERE ...</optional>
+    GROUP BY <replaceable>grouping_column_reference</replaceable> <optional>, <replaceable>grouping_column_reference</replaceable></optional>...
+</synopsis>
+
+   
+<para>
+<!--
+    The <xref linkend="sql-groupby" endterm="sql-groupby-title"> is
+    used to group together those rows in a table that have the same
+    values in all the columns listed. The order in which the columns
+    are listed does not matter.  The effect is to combine each set
+    of rows having common values into one group row that
+    represents all rows in the group.  This is done to
+    eliminate redundancy in the output and/or compute aggregates that
+    apply to these groups.  For instance:
+-->
+<xref linkend="sql-groupby" endterm="sql-groupby-title">子句用于把那些所有列出的
+grouping_column_reference值都相同的行聚集在一起，缩减为一行，
+这样就可以删除输出里的重复和/或计算应用于这些组的聚集。这些字段的列出顺序无关紧要。
+比如：
+<screen>
+<prompt>=&gt;</> <userinput>SELECT * FROM test1;</>
+ x | y
+---+---
+ a | 3
+ c | 2
+ b | 5
+ a | 1
+(4 rows)
+
+<prompt>=&gt;</> <userinput>SELECT x FROM test1 GROUP BY x;</>
+ x
+---
+ a
+ b
+ c
+(3 rows)
+</screen>
+   </para>
+
+   <!--
+<para>
+    In the second query, we could not have written <literal>SELECT *
+    FROM test1 GROUP BY x</literal>, because there is no single value
+    for the column <literal>y</> that could be associated with each
+    group.  The grouped-by columns can be referenced in the select list since
+    they have a single value in each group.
+   </para>
+-->
+<para>
+在第二个查询里，我们不能写成<literal>SELECT * FROM test1 GROUP BY x</literal>，
+因为字段<literal>y</>里没有哪个值可以和每个组关联起来。
+被分组的字段可以在选择列表中引用是因为它们每个组都有单一的数值。
+</para>
+   
+<para>
+<!--
+    In general, if a table is grouped, columns that are not
+    listed in <literal>GROUP BY</> cannot be referenced except in aggregate
+    expressions.  An example with aggregate expressions is:
+-->
+通常，如果一个表被分了组，不在<literal>GROUP BY</>中列出的字段只能在总表达式中被引用。
+一个带聚集表达式的例子是：
+<screen>
+<prompt>=&gt;</> <userinput>SELECT x, sum(y) FROM test1 GROUP BY x;</>
+ x | sum
+---+-----
+ a |   4
+ b |   5
+ c |   2
+(3 rows)
+</screen>
+<!-- 
+    Here <literal>sum</literal> is an aggregate function that
+    computes a single value over the entire group.  More information
+    about the available aggregate functions can be found in <xref
+    linkend="functions-aggregate">. 
+-->
+这里的<literal>sum</literal>是一个聚集函数，它在组上计算总和。
+有关可用的聚集函数的更多信息可以在<xref linkend="functions-aggregate">中找到。
+   </para>
+
+   <tip>
+    <!--
+<para>
+     Grouping without aggregate expressions effectively calculates the
+     set of distinct values in a column.  This can also be achieved
+     using the <literal>DISTINCT</> clause (see <xref
+     linkend="queries-distinct">).
+    </para>
+-->
+<para>
+没有有效的聚合表达式分组可以计算一列中不同值的设置。
+这个可以通过<literal>DISTINCT</>子句来实现(参考<xref linkend="queries-distinct">). 
+</para>
+   </tip>
+
+   
+<para>
+<!--
+    Here is another example:  it calculates the total sales for each
+    product (rather than the total sales of all products):
+-->
+这里是另外一个例子：它计算每种产品的总销售额(而不是所有产品的总销售额)。
+<programlisting>
+SELECT product_id, p.name, (sum(s.units) * p.price) AS sales
+    FROM products p LEFT JOIN sales s USING (product_id)
+    GROUP BY product_id, p.name, p.price;
+</programlisting>
+<!-- 
+    In this example, the columns <literal>product_id</literal>,
+    <literal>p.name</literal>, and <literal>p.price</literal> must be
+    in the <literal>GROUP BY</> clause since they are referenced in
+    the query select list (but see below).  The column
+    <literal>s.units</> does not have to be in the <literal>GROUP
+    BY</> list since it is only used in an aggregate expression
+    (<literal>sum(...)</literal>), which represents the sales
+    of a product.  For each product, the query returns a summary row about
+    all sales of the product. 
+-->
+在这个例子里，字段<literal>product_id</literal>，<literal>p.name</literal>
+和<literal>p.price</literal>必须在<literal>GROUP BY</>子句里，
+因为它们都在查询选择列表里被引用了（但见下文）。<literal>s.units</>字段不必在
+<literal>GROUP BY</>列表里，因为它只是在一个聚集表达式(<literal>sum(...)</literal>)里使用，
+它代表一组产品的销售总额。对于每种产品，这个查询都返回一个该产品的总销售额。 
+   </para>
+
+   <!-- 
+   <indexterm><primary>functional dependency</primary></indexterm> 
+   -->
+<indexterm><primary>函数依赖</primary></indexterm>
+   <!--
+<para>
+    If the products table is set up so that, say,
+    <literal>product_id</literal> is the primary key, then it would be
+    enough to group by <literal>product_id</literal> in the above example,
+    since name and price would be <firstterm>functionally
+    dependent</firstterm> on the product ID, and so there would be no
+    ambiguity about which name and price value to return for each product
+    ID group.
+   </para>
+-->
+<para>
+如果产品表是这样设置的，就说<literal>product_id</literal>是主键，
+那么它足够在上面的例子中对<literal>product_id</literal>分组，
+因为名字和价格将会<firstterm>函数依赖</firstterm>于产品ID，
+这样将不会在返回每个产品ID组时有名字和价格的分歧。
+</para>
+
+   <!--
+<para>
+    In strict SQL, <literal>GROUP BY</> can only group by columns of
+    the source table but <productname>PostgreSQL</productname> extends
+    this to also allow <literal>GROUP BY</> to group by columns in the
+    select list.  Grouping by value expressions instead of simple
+    column names is also allowed.
+   </para>
+-->
+<para>
+在严格的SQL里，<literal>GROUP BY</>只能对源表的列进行分组，但<productname>PostgreSQL</productname>
+把这个扩展为也允许<literal>GROUP BY</>对选择列表中的字段进行分组。
+也允许对值表达式进行分组，而不仅仅是简单的字段。
+</para>
+
+   <indexterm>
+    <primary>HAVING</primary>
+   </indexterm>
+   
+<para>
+<!--
+    If a table has been grouped using <literal>GROUP BY</literal>,
+    but only certain groups are of interest, the
+    <literal>HAVING</literal> clause can be used, much like a
+    <literal>WHERE</> clause, to eliminate groups from the result.
+    The syntax is:
+-->
+如果一个表已经用<literal>GROUP BY</literal>分了组，
+然后你又只对其中的某些组感兴趣，那么就可以用<literal>HAVING</literal>子句筛选分组。
+必须像<literal>WHERE</>子句，从结果中消除组，语法是：
+<synopsis>
+SELECT <replaceable>select_list</replaceable> FROM ... <optional>WHERE ...</optional> GROUP BY ... HAVING <replaceable>boolean_expression</replaceable>
+</synopsis>
+<!-- 
+    Expressions in the <literal>HAVING</> clause can refer both to
+    grouped expressions and to ungrouped expressions (which necessarily
+    involve an aggregate function). 
+-->
+在<literal>HAVING</>子句中的表达式可以引用分组的表达式和未分组的表达式
+(后者必须涉及一个聚集函数)。
+   </para>
+
+
+   
+<para>
+<!--
+    Example:
+-->
+例子：
+<screen>
+<prompt>=&gt;</> <userinput>SELECT x, sum(y) FROM test1 GROUP BY x HAVING sum(y) &gt; 3;</>
+ x | sum
+---+-----
+ a |   4
+ b |   5
+(2 rows)
+
+<prompt>=&gt;</> <userinput>SELECT x, sum(y) FROM test1 GROUP BY x HAVING x &lt; 'c';</>
+ x | sum
+---+-----
+ a |   4
+ b |   5
+(2 rows)
+</screen>
+   </para>
+
+   
+<para>
+<!--
+    Again, a more realistic example:
+-->
+然后是一个更现实的例子：
+<programlisting>
+SELECT product_id, p.name, (sum(s.units) * (p.price - p.cost)) AS profit
+    FROM products p LEFT JOIN sales s USING (product_id)
+    WHERE s.date &gt; CURRENT_DATE - INTERVAL '4 weeks'
+    GROUP BY product_id, p.name, p.price, p.cost
+    HAVING sum(p.price * s.units) &gt; 5000;
+</programlisting>
+<!-- 
+    In the example above, the <literal>WHERE</> clause is selecting
+    rows by a column that is not grouped (the expression is only true for
+    sales during the last four weeks), while the <literal>HAVING</>
+    clause restricts the output to groups with total gross sales over
+    5000.  Note that the aggregate expressions do not necessarily need
+    to be the same in all parts of the query. 
+-->
+在上面的例子里，<literal>WHERE</>子句根据未分组的字段选择数据行 
+(表达式只是对那些最近四周发生的销售为真)。而<literal>HAVING</>
+子句在分组之后选择那些销售总额超过5000的组。
+请注意聚集表达式不需要在查询中的所有地方都一样。 
+   </para>
+
+
+   <!--
+<para>
+    If a query contains aggregate function calls, but no <literal>GROUP BY</>
+    clause, grouping still occurs: the result is a single group row (or
+    perhaps no rows at all, if the single row is then eliminated by
+    <literal>HAVING</>).
+    The same is true if it contains a <literal>HAVING</> clause, even
+    without any aggregate function calls or <literal>GROUP BY</> clause.
+   </para>
+-->
+<para>
+如果一个查询调用了聚合函数，但没有<literal>GROUP BY</>子句，分组仍然发生：
+结果是单一组行（或者如果单一行被<literal>HAVING</>所淘汰，那么也许没有行）。
+同样，它包含一个<literal>HAVING</>子句，甚至没有任何聚合函数的调用或<literal>GROUP BY</>子句。 
+</para>
+  </sect2>
+
+  <sect2 id="queries-window">
+   <!-- 
+   <title>Window Function Processing</title> 
+   -->
+<title>窗口函数处理</title>
+   <indexterm zone="queries-window">
+<!-- 
+    <primary>window function</primary>
+    <secondary>order of execution</> 
+-->
+    <primary>窗口函数</primary>
+    <secondary>执行顺序</>
+   </indexterm>
+
+   <!--
+<para>
+    If the query contains any window functions (see
+    <xref linkend="tutorial-window">,
+    <xref linkend="functions-window"> and
+    <xref linkend="syntax-window-functions">), these functions are evaluated
+    after any grouping, aggregation, and <literal>HAVING</> filtering is
+    performed.  That is, if the query uses any aggregates, <literal>GROUP
+    BY</>, or <literal>HAVING</>, then the rows seen by the window functions
+    are the group rows instead of the original table rows from
+    <literal>FROM</>/<literal>WHERE</>.
+   </para>
+-->
+<para>
+如果查询包含窗口函数(参考<xref linkend="tutorial-window">，<xref linkend="functions-window">
+和<xref linkend="syntax-window-functions">)，这些函数在执行了分组、聚合和<literal>HAVING</>
+过滤之后被评估。也就是说，如果查询使用任何的聚合、<literal>GROUP BY</>或<literal>HAVING</>，
+那么由窗口函数发现的行是该组行而不是从<literal>FROM</>/<literal>WHERE</>得到的原始表行。 
+</para>
+
+   <!--
+<para>
+    When multiple window functions are used, all the window functions having
+    syntactically equivalent <literal>PARTITION BY</> and <literal>ORDER BY</>
+    clauses in their window definitions are guaranteed to be evaluated in a
+    single pass over the data. Therefore they will see the same sort ordering,
+    even if the <literal>ORDER BY</> does not uniquely determine an ordering.
+    However, no guarantees are made about the evaluation of functions having
+    different <literal>PARTITION BY</> or <literal>ORDER BY</> specifications.
+    (In such cases a sort step is typically required between the passes of
+    window function evaluations, and the sort is not guaranteed to preserve
+    ordering of rows that its <literal>ORDER BY</> sees as equivalent.)
+   </para>
+-->
+<para>
+当多个窗口函数被使用的时候，所有在它们的窗口定义里依照语法地等效于
+<literal>PARTITION BY</>和<literal>ORDER BY</>子句的窗口函数保证在同一个过去的数据里被评估。
+因此它们将看到同样的排序，
+即使<literal>ORDER BY</>不唯一确定一个排序。然而，不确保所做出的关于评价的功能有不同的
+<literal>PARTITION BY</>或<literal>ORDER BY</>规范。（在这种情况下，
+一个排序步骤通常需要在窗口函数评估之间传递，并且不保证行的排序看似跟<literal>ORDER BY</>等效。） 
+</para>
+
+   <!--
+<para>
+    Currently, window functions always require presorted data, and so the
+    query output will be ordered according to one or another of the window
+    functions' <literal>PARTITION BY</>/<literal>ORDER BY</> clauses.
+    It is not recommended to rely on this, however.  Use an explicit
+    top-level <literal>ORDER BY</> clause if you want to be sure the
+    results are sorted in a particular way.
+   </para>
+-->
+<para>
+目前，窗口函数总是需要分类数据，所以查询输出将按照一个或另一个窗口函数的
+<literal>PARTITION BY</>/<literal>ORDER BY</>子句。它不是说依赖于此。
+如果你想要确保结果是按特定的方式分类那么使用显式的顶级ORDER BY子句。 
+</para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="queries-select-lists">
+  <!-- 
+  <title>Select Lists</title> 
+  -->
+<title>选择列表</title>
+  <indexterm>
+<!-- 
+   <primary>SELECT</primary>
+   <secondary>select list</secondary> 
+ -->
+    <primary>选择</primary>
+   <secondary>选择列表</secondary>
+  </indexterm>
+
+  <!--
+<para>
+   As shown in the previous section,
+   the table expression in the <command>SELECT</command> command
+   constructs an intermediate virtual table by possibly combining
+   tables, views, eliminating rows, grouping, etc.  This table is
+   finally passed on to processing by the <firstterm>select list</firstterm>.  The select
+   list determines which <emphasis>columns</emphasis> of the
+   intermediate table are actually output.
+  </para>
+-->
+<para>
+如前面的小节说明的那样，在<command>SELECT</command>命令中的表表达式通过组合表、
+视图、删除行、分组等构造了一个中介性的虚拟表。这个表最后传递给<firstterm>选择列表</firstterm>处理。
+选择列表判断最终实际输出虚拟表的哪些<emphasis>字段</emphasis>。
+</para>
+
+  <sect2 id="queries-select-list-items">
+   <!-- 
+   <title>Select-List Items</title> 
+   -->
+<title>选择列表项</title>
+   <indexterm>
+    <primary>*</primary>
+   </indexterm>
+
+   
+<para>
+<!--
+    The simplest kind of select list is <literal>*</literal> which
+    emits all columns that the table expression produces.  Otherwise,
+    a select list is a comma-separated list of value expressions (as
+    defined in <xref linkend="sql-expressions">).  For instance, it
+    could be a list of column names:
+-->
+最简单的选择列表是<literal>*</literal>，它输出表表达式生成的所有字段。
+否则，一个选择列表是一个逗号分隔的值表达式的列表(和在<xref linkend="sql-expressions">
+里定义的一样)。比如，它可能是一个字段名列表：
+<programlisting>
+SELECT a, b, c FROM ...
+</programlisting>
+<!-- 
+     The columns names <literal>a</>, <literal>b</>, and <literal>c</>
+     are either the actual names of the columns of tables referenced
+     in the <literal>FROM</> clause, or the aliases given to them as
+     explained in <xref linkend="queries-table-aliases">.  The name
+     space available in the select list is the same as in the
+     <literal>WHERE</> clause, unless grouping is used, in which case
+     it is the same as in the <literal>HAVING</> clause. 
+-->
+字段名<literal>a</>, <literal>b</>,<literal>c</>要么是在<literal>FROM</>
+子句里引用的表中字段的实际名字，要么是<xref linkend="queries-table-aliases">
+里解释的别名。选择列表中的名字空间和<literal>WHERE</>子句中的名字空间是一样的，
+除非你使用了分组，否则它和<literal>HAVING</>子句中的名字空间也一样。
+   </para>
+
+   
+<para>
+<!--
+    If more than one table has a column of the same name, the table
+    name must also be given, as in:
+-->
+如果多个表有重复的字段名，那么你还必须给出表名字，例如：
+<programlisting>
+SELECT tbl1.a, tbl2.a, tbl1.b FROM ...
+</programlisting>
+<!-- 
+    When working with multiple tables, it can also be useful to ask for
+    all the columns of a particular table:
+-->
+当使用多个表时，给出表名还有助于引用该表的所有字段：
+<programlisting>
+SELECT tbl1.*, tbl2.a FROM ...
+</programlisting>
+    <!-- 
+(See also <xref linkend="queries-where">.) 
+-->
+又见<xref linkend="queries-where">。
+   </para>
+
+   <!--
+<para>
+    If an arbitrary value expression is used in the select list, it
+    conceptually adds a new virtual column to the returned table.  The
+    value expression is evaluated once for each result row, with
+    the row's values substituted for any column references.  But the
+    expressions in the select list do not have to reference any
+    columns in the table expression of the <literal>FROM</> clause;
+    they can be constant arithmetic expressions, for instance.
+   </para>
+-->
+<para>
+如果将值表达式用于选择列表，那么它在概念上向返回的表中增加了一个新的虚拟字段。
+值表达式为结果中的每一行进行一次计算，计算之前用该行的数值替换任何表达式里引用的字段。
+不过选择列表中的这个表达式并非一定要引用来自<literal>FROM</>子句中表表达式里面的字段，
+比如，它也可以是任意常量算术表达式。
+</para>
+  </sect2>
+
+  <sect2 id="queries-column-labels">
+   <!-- 
+   <title>Column Labels</title> 
+   -->
+<title>字段标签</title>
+   <indexterm zone="queries-column-labels">
+<!-- 
+    <primary>alias</primary>
+    <secondary>in the select list</secondary>
+-->
+    <primary>别名</primary>
+    <secondary>在选择列表中</secondary>
+   </indexterm>
+
+  
+<para>
+ <!--
+    The entries in the select list can be assigned names for subsequent
+    processing, such as for use in an <literal>ORDER BY</> clause
+    or for display by the client application.  For example:
+-->
+选择列表中的列表项可以赋予名字，以便于进一步的处理。
+例如在<literal>ORDER BY</>子句中的使用或通过客户端应用程序显示。比如：
+<programlisting>
+SELECT a AS value, b + c AS sum FROM ...
+</programlisting>
+   </para>
+
+   <!--
+<para>
+    If no output column name is specified using <literal>AS</>,
+    the system assigns a default column name.  For simple column references,
+    this is the name of the referenced column.  For function
+    calls, this is the name of the function.  For complex expressions,
+    the system will generate a generic name.
+   </para>
+-->
+<para>
+如果没有使用<literal>AS</>声明字段名字，那么系统将赋予一个缺省值。
+对于简单的字段引用，它是该字段的名字。对于函数调用，它是该函数的名字。
+对于复杂表达式，系统会生成一个通用的名字。
+</para>
+ 
+<para>
+ <!--
+    The <literal>AS</> keyword is optional, but only if the new column
+    name does not match any
+    <productname>PostgreSQL</productname> keyword (see <xref
+    linkend="sql-keywords-appendix">).  To avoid an accidental match to
+    a keyword, you can double-quote the column name.  For example,
+    <literal>VALUE</> is a keyword, so this does not work:
+-->
+只有当新列名与任何<productname>PostgreSQL</productname>
+关键字不匹配时<literal>AS</>关键字是可选的（见<xref linkend="sql-keywords-appendix">），
+您可以给列名加上双引号来避免意外匹配关键字。例如，<literal>VALUE</>是一个关键字，
+所以这样是不起作用的：
+<programlisting>
+SELECT a value, b + c AS sum FROM ...
+</programlisting>
+    <!-- 
+but this does: 
+-->
+但这样可以:
+<programlisting>
+SELECT a "value", b + c AS sum FROM ...
+</programlisting>
+<!-- 
+    For protection against possible
+    future keyword additions, it is recommended that you always either
+    write <literal>AS</literal> or double-quote the output column name. 
+-->
+为了防止和未来补充的关键字发生冲突，建议您要么写<literal>AS</literal>，
+要么为输出列名加双引号标记。
+   </para>
+
+
+   <note>
+    <!--
+<para>
+     The naming of output columns here is different from that done in
+     the <literal>FROM</> clause (see <xref
+     linkend="queries-table-aliases">).  It is possible
+     to rename the same column twice, but the name assigned in
+     the select list is the one that will be passed on.
+    </para>
+-->
+<para>
+输出字段的命名和在<literal>FROM</>子句里的命名是不一样的(参阅<xref linkend="queries-table-aliases">)。
+这样就允许你对同一个字段命名两次，FROM 子句里的名字将被选择列表使用，
+而选择列表中新取的名字将被最终输出。
+</para>
+   </note>
+  </sect2>
+
+  <sect2 id="queries-distinct">
+   <title><literal>DISTINCT</literal></title>
+
+   <indexterm zone="queries-distinct">
+    <primary>DISTINCT</primary>
+   </indexterm>
+
+   <indexterm zone="queries-distinct">
+    <!-- 
+<primary>duplicates</primary> 
+-->
+<primary>复制</primary>
+   </indexterm>
+
+   
+<para>
+<!--
+    After the select list has been processed, the result table can
+    optionally be subject to the elimination of duplicate rows.  The
+    <literal>DISTINCT</literal> key word is written directly after
+    <literal>SELECT</literal> to specify this:
+-->
+在处理完选择列表之后，生成的表可以删除重复行。直接在<literal>SELECT</literal>
+后面写上<literal>DISTINCT</literal>关键字即可：
+<synopsis>
+SELECT DISTINCT <replaceable>select_list</replaceable> ...
+</synopsis>
+<!-- 
+    (Instead of <literal>DISTINCT</> the key word <literal>ALL</literal>
+    can be used to specify the default behavior of retaining all rows.) 
+-->
+如果不用<literal>DISTINCT</>你可以用<literal>ALL</literal>声明保留所有行的缺省行为。
+   </para>
+
+
+   <indexterm>
+    <!-- 
+<primary>null value</> 
+-->
+<primary>null 值</>
+    <secondary sortas="DISTINCT">in DISTINCT</>
+   </indexterm>
+
+   <!--
+<para>
+    Obviously, two rows are considered distinct if they differ in at
+    least one column value.  Null values are considered equal in this
+    comparison.
+   </para>
+-->
+<para>
+显然，如果两行里至少有一个字段值不同，那么我们认为这两行是独立的。
+NULL 在这里被认为是相同的。
+</para>
+
+   
+<para>
+<!--
+    Alternatively, an arbitrary expression can determine what rows are
+    to be considered distinct:
+-->
+另外，我们还可以用表达式来判断什么样的行可以认为是独立的：
+<synopsis>
+SELECT DISTINCT ON (<replaceable>expression</replaceable> <optional>, <replaceable>expression</replaceable> ...</optional>) <replaceable>select_list</replaceable> ...
+</synopsis>
+<!-- 
+    Here <replaceable>expression</replaceable> is an arbitrary value
+    expression that is evaluated for all rows.  A set of rows for
+    which all the expressions are equal are considered duplicates, and
+    only the first row of the set is kept in the output.  Note that
+    the <quote>first row</quote> of a set is unpredictable unless the
+    query is sorted on enough columns to guarantee a unique ordering
+    of the rows arriving at the <literal>DISTINCT</> filter.
+    (<literal>DISTINCT ON</> processing occurs after <literal>ORDER
+    BY</> sorting.) 
+-->
+这里的<replaceable>expression</replaceable>是一个值表达式，
+它为每一行计算。如果一组行计算出的该表达式的值都相同，那么就认为这些行是重复的，
+并只输出第一行。请注意这里的<quote>第一行</quote>是不可预料的，
+除非你在足够多的字段上对该查询进行了排序，保证到达<literal>DISTINCT</>
+过滤器时行的顺序是唯一的(<literal>DISTINCT ON</>将在<literal>ORDER BY</>排序之后处理)。
+   </para>
+
+   <!--
+<para>
+    The <literal>DISTINCT ON</> clause is not part of the SQL standard
+    and is sometimes considered bad style because of the potentially
+    indeterminate nature of its results.  With judicious use of
+    <literal>GROUP BY</> and subqueries in <literal>FROM</>, this
+    construct can be avoided, but it is often the most convenient
+    alternative.
+   </para>
+-->
+<para>
+<literal>DISTINCT ON</>子句不是 SQL 标准的一部分，有时候被认为是一个糟糕的风格，
+因为它的结果是不可判定的。如果用有可选的<literal>GROUP BY</>和在<literal>FROM</>
+中的子查询可以达到目的，那么我们可以避免使用这个构造，但是通常它是更方便的方法。
+</para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="queries-union">
+  <!-- 
+  <title>Combining Queries</title> 
+  -->
+<title>组合查询</title>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>UNION</primary> 
+   -->
+   <primary>并集</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>INTERSECT</primary> 
+   -->
+   <primary>交集</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>EXCEPT</primary> 
+   -->
+   <primary>差集</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>set union</primary> 
+   -->
+   <primary>集合并</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>set intersection</primary> 
+   -->
+   <primary>集合交</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>set difference</primary> 
+   -->
+   <primary>集合差</primary>
+  </indexterm>
+  <indexterm zone="queries-union">
+   <!-- 
+   <primary>set operation</primary> 
+   -->
+   <primary>集合运算</primary>
+  </indexterm>
+
+  
+<para>
+<!--
+   The results of two queries can be combined using the set operations
+   union, intersection, and difference.  The syntax is
+ -->
+可以对两个查询的结果进行集合操作(并、交、差)。语法是： 
+<synopsis>
+<replaceable>query1</replaceable> UNION <optional>ALL</optional> <replaceable>query2</replaceable>
+<replaceable>query1</replaceable> INTERSECT <optional>ALL</optional> <replaceable>query2</replaceable>
+<replaceable>query1</replaceable> EXCEPT <optional>ALL</optional> <replaceable>query2</replaceable>
+</synopsis>
+<!-- 
+   <replaceable>query1</replaceable> and
+   <replaceable>query2</replaceable> are queries that can use any of
+   the features discussed up to this point.  Set operations can also
+   be nested and chained, for example 
+-->
+<replaceable>query1</replaceable>和<replaceable>query2</replaceable>
+可以是讨论过的所有查询。集合操作也可以嵌套和级连，比如：
+<synopsis>
+<replaceable>query1</replaceable> UNION <replaceable>query2</replaceable> UNION <replaceable>query3</replaceable>
+</synopsis>
+<!-- 
+   which is executed as:
+-->
+它实际上等价于：
+<synopsis>
+(<replaceable>query1</replaceable> UNION <replaceable>query2</replaceable>) UNION <replaceable>query3</replaceable>
+</synopsis>
+  </para>
+
+  <!--
+<para>
+   <literal>UNION</> effectively appends the result of
+   <replaceable>query2</replaceable> to the result of
+   <replaceable>query1</replaceable> (although there is no guarantee
+   that this is the order in which the rows are actually returned).
+   Furthermore, it eliminates duplicate rows from its result, in the same
+   way as <literal>DISTINCT</>, unless <literal>UNION ALL</> is used.
+  </para>
+-->
+<para>
+<literal>UNION</>把<replaceable>query2</replaceable>的结果附加到<replaceable>query1</replaceable>
+的结果上(不过我们不能保证这就是这些行实际的返回顺序)，并且像<literal>DISTINCT</>
+那样删除结果中所有重复的行(除非声明了<literal>UNION ALL</>)。
+</para>
+
+  <!--
+<para>
+   <literal>INTERSECT</> returns all rows that are both in the result
+   of <replaceable>query1</replaceable> and in the result of
+   <replaceable>query2</replaceable>.  Duplicate rows are eliminated
+   unless <literal>INTERSECT ALL</> is used.
+  </para>
+-->
+<para>
+<literal>INTERSECT</>返回那些同时存在于<replaceable>query1</replaceable>
+和<replaceable>query2</replaceable>结果中的行，除非声明了<literal>INTERSECT ALL</>，
+否则所有重复行都被删除。
+</para>
+
+  <!--
+<para>
+   <literal>EXCEPT</> returns all rows that are in the result of
+   <replaceable>query1</replaceable> but not in the result of
+   <replaceable>query2</replaceable>.  (This is sometimes called the
+   <firstterm>difference</> between two queries.)  Again, duplicates
+   are eliminated unless <literal>EXCEPT ALL</> is used.
+  </para>
+-->
+<para>
+<literal>EXCEPT</>返回所有在<replaceable>query1</replaceable>结果中但是不在<replaceable>query2</replaceable>
+结果中的行(有时侯这叫做两个查询的<firstterm>差</>)。除非声明了<literal>EXCEPT ALL</>，
+否则所有重复行都被删除。
+</para>
+
+  <!--
+<para>
+   In order to calculate the union, intersection, or difference of two
+   queries, the two queries must be <quote>union compatible</quote>,
+   which means that they return the same number of columns and
+   the corresponding columns have compatible data types, as
+   described in <xref linkend="typeconv-union-case">.
+  </para>
+-->
+<para>
+为了能够计算两个查询的并、交、差，这两个查询必须是<quote>并集兼容的</quote>，
+也就是它们都返回同样数量的列，并且对应的列有兼容的数据类型，
+就像<xref linkend="typeconv-union-case">里描述的那样。
+</para>
+ </sect1>
+
+
+ <sect1 id="queries-order">
+  <!-- 
+  <title>Sorting Rows</title> 
+  -->
+<title>行排序</title>
+  <indexterm zone="queries-order">
+   <!-- 
+   <primary>sorting</primary> 
+   -->
+   <primary>排序</primary>
+  </indexterm>
+
+  <indexterm zone="queries-order">
+   <primary>ORDER BY</primary>
+  </indexterm>
+
+  <!--
+<para>
+   After a query has produced an output table (after the select list
+   has been processed) it can optionally be sorted.  If sorting is not
+   chosen, the rows will be returned in an unspecified order.  The actual
+   order in that case will depend on the scan and join plan types and
+   the order on disk, but it must not be relied on.  A particular
+   output ordering can only be guaranteed if the sort step is explicitly
+   chosen.
+  </para>
+-->
+<para>
+在查询生成输出表之后，也就是在处理完选择列表之后，你还可以对输出表进行排序。
+如果没有排序，那么行将以不可预测的顺序返回(实际顺序将取决于扫描和连接规划类型和在磁盘上的顺序，
+但是肯定不能依赖这些东西)。确定的顺序只能在明确地使用了排序步骤之后才能保证。
+</para>
+
+  
+<para>
+<!--
+   The <literal>ORDER BY</> clause specifies the sort order:
+-->
+<literal>ORDER BY</>子句用于声明排序顺序:
+<synopsis>
+SELECT <replaceable>select_list</replaceable>
+    FROM <replaceable>table_expression</replaceable>
+    ORDER BY <replaceable>sort_expression1</replaceable> <optional>ASC | DESC</optional> <optional>NULLS { FIRST | LAST }</optional>
+             <optional>, <replaceable>sort_expression2</replaceable> <optional>ASC | DESC</optional> <optional>NULLS { FIRST | LAST }</optional> ...</optional>
+</synopsis>
+<!-- 
+   The sort expression(s) can be any expression that would be valid in the
+   query's select list.  An example is: 
+-->
+sort_expression 是任何可用于选择列表的表达式，例如：
+<programlisting>
+SELECT a, b FROM table1 ORDER BY a + b, c;
+</programlisting>
+   <!-- 
+   When more than one expression is specified,
+   the later values are used to sort rows that are equal according to the
+   earlier values.  Each expression can be followed by an optional
+   <literal>ASC</> or <literal>DESC</> keyword to set the sort direction to
+   ascending or descending.  <literal>ASC</> order is the default.
+   Ascending order puts smaller values first, where
+   <quote>smaller</quote> is defined in terms of the
+   <literal>&lt;</literal> operator.  Similarly, descending order is
+   determined with the <literal>&gt;</literal> operator. 
+   -->
+如果指定了多个排序表达式，那么仅在前面的表达式排序相等的情况下才使用后面的表达式做进一步排序。
+每个表达式都可以跟一个可选的<literal>ASC</>(升序，默认) 或<literal>DESC</>(降序)以设置排序方向。
+升序先输出小的数值，这里的<quote>小</quote>是以<literal>&lt;</literal>操作符的角度定义的。
+类似的是，降序是以<literal>&gt;</literal>操作符来判断的。   
+    <footnote>
+<!--
+     <para>
+      Actually, <productname>PostgreSQL</> uses the <firstterm>default B-tree
+      operator class</> for the expression's data type to determine the sort
+      ordering for <literal>ASC</> and <literal>DESC</>.  Conventionally,
+      data types will be set up so that the <literal>&lt;</literal> and
+      <literal>&gt;</literal> operators correspond to this sort ordering,
+      but a user-defined data type's designer could choose to do something
+      different.
+     </para>
+-->
+<para>
+事实上，<productname>PostgreSQL</>使用<firstterm>默认的B-tree操作符类</>
+为表达式的数据类型确定<literal>ASC</>和<literal>DESC</>排序顺序。
+一般来说，数据类型将被转换为适合于 <literal>&lt;</literal>和
+<literal>&gt;</literal>操作符进行排序。但是对于用户自定义的数据类型可以不必如此。
+</para>
+    </footnote>
+  </para>
+
+  <!--
+<para>
+   The <literal>NULLS FIRST</> and <literal>NULLS LAST</> options can be
+   used to determine whether nulls appear before or after non-null values
+   in the sort ordering.  By default, null values sort as if larger than any
+   non-null value; that is, <literal>NULLS FIRST</> is the default for
+   <literal>DESC</> order, and <literal>NULLS LAST</> otherwise.
+  </para>
+-->
+<para>
+<literal>NULLS FIRST</>和<literal>NULLS LAST</>选项可以决定在排序操作中在
+ non-null 值之前还是之后。默认情况下，空值大于任何非空值；也就是说，<literal>DESC</>
+ 排序默认是<literal>NULLS FIRST</>，否则为<literal>NULLS LAST</>。
+</para>
+
+  <!--
+<para>
+   Note that the ordering options are considered independently for each
+   sort column.  For example <literal>ORDER BY x, y DESC</> means
+   <literal>ORDER BY x ASC, y DESC</>, which is not the same as
+   <literal>ORDER BY x DESC, y DESC</>.
+  </para>
+-->
+<para>
+注意，排序选项对于每个排序列是相对独立的。例如<literal>ORDER BY x, y DESC</>
+意思是说<literal>ORDER BY x ASC, y DESC</>，不同于<literal>ORDER BY x DESC, y DESC</>。
+</para>
+
+  
+<para>
+<!--
+   A <replaceable>sort_expression</> can also be the column label or number
+   of an output column, as in:
+-->
+一个<replaceable>sort_expression</>也可以是字段名或字段编号，如:
+   
+<programlisting>
+SELECT a + b AS sum, c FROM table1 ORDER BY sum;
+SELECT a, max(b) FROM table1 GROUP BY a ORDER BY 1;
+</programlisting>
+<!-- 
+   both of which sort by the first output column.  Note that an output
+   column name has to stand alone, that is, it cannot be used in an expression
+   &mdash; for example, this is <emphasis>not</> correct: 
+-->
+都按照第一个字段进行排序。需要注意的是，输出字段名必须是独立的(不允许在表达式中使用)。
+比如，下面的语句是<emphasis>错误</>的：
+<programlisting>
+<!-- 
+SELECT a + b AS sum, c FROM table1 ORDER BY sum + c;          &#045;- wrong 
+-->
+SELECT a + b AS sum, c FROM table1 ORDER BY sum + c;          -- 错误的
+</programlisting>
+<!-- 
+   This restriction is made to reduce ambiguity.  There is still
+   ambiguity if an <literal>ORDER BY</> item is a simple name that
+   could match either an output column name or a column from the table
+   expression.  The output column is used in such cases.  This would
+   only cause confusion if you use <literal>AS</> to rename an output
+   column to match some other table column's name. 
+-->
+这样的限制主要是为了避免歧义。另外，如果某个排序表达式能够同时匹配输出字段名和表表达式中的字段名，
+也会导致歧义(此时使用输出字段名)。当然，这种情况仅在你使用了<literal>AS</>
+重命名输出字段并且恰好与其它表的字段同名的时候才会发生。
+  </para>
+
+
+  <!--
+<para>
+   <literal>ORDER BY</> can be applied to the result of a
+   <literal>UNION</>, <literal>INTERSECT</>, or <literal>EXCEPT</>
+   combination, but in this case it is only permitted to sort by
+   output column names or numbers, not by expressions.
+  </para>
+-->
+<para>
+<literal>ORDER BY</>可以应用于<literal>UNION</>, <literal>INTERSECT</>,<literal>EXCEPT</>
+组合的计算结果，不过在这种情况下，只允许按照字段的名字或编号进行排序，而不允许按照表达式进行排序。
+</para>
+ </sect1>
+
+
+ <sect1 id="queries-limit">
+  <!-- 
+  <title><literal>LIMIT</literal> and <literal>OFFSET</literal></title> 
+  -->
+<title><literal>LIMIT</literal>和<literal>OFFSET</literal></title>
+  <indexterm zone="queries-limit">
+   <primary>LIMIT</primary>
+  </indexterm>
+
+  <indexterm zone="queries-limit">
+   <primary>OFFSET</primary>
+  </indexterm>
+
+  
+<para>
+<!--
+   <literal>LIMIT</> and <literal>OFFSET</> allow you to retrieve just
+   a portion of the rows that are generated by the rest of the query:
+-->
+<literal>LIMIT</>和<literal>OFFSET</>子句允许你只取出查询结果中的一部分数据行：
+<synopsis>
+SELECT <replaceable>select_list</replaceable>
+    FROM <replaceable>table_expression</replaceable>
+    <optional> ORDER BY ... </optional>
+    <optional> LIMIT { <replaceable>number</replaceable> | ALL } </optional> <optional> OFFSET <replaceable>number</replaceable> </optional>
+</synopsis>
+  </para>
+
+  <!--
+<para>
+   If a limit count is given, no more than that many rows will be
+   returned (but possibly less, if the query itself yields less rows).
+   <literal>LIMIT ALL</> is the same as omitting the <literal>LIMIT</>
+   clause.
+  </para>
+-->
+<para>
+如果给出了一个 LIMIT 计数，那么将返回不超过该数字的行(也可能更少些，
+因为可能查询本身生成的总行数就比较少)。<literal>LIMIT ALL</>和省略<literal>LIMIT</>子句是一样的。
+</para>
+
+  <!--
+<para>
+   <literal>OFFSET</> says to skip that many rows before beginning to
+   return rows.  <literal>OFFSET 0</> is the same as omitting the
+   <literal>OFFSET</> clause, and <literal>LIMIT NULL</> is the same
+   as omitting the <literal>LIMIT</> clause.  If both <literal>OFFSET</>
+   and <literal>LIMIT</> appear, then <literal>OFFSET</> rows are
+   skipped before starting to count the <literal>LIMIT</> rows that
+   are returned.
+  </para>
+-->
+<para>
+<literal>OFFSET</>指明在开始返回行之前忽略多少行。<literal>OFFSET 0</>和省略
+<literal>OFFSET</>子句是一样的，<literal>LIMIT NULL</>和省略<literal>LIMIT</>子句
+是一样的。如果<literal>OFFSET</>和<literal>LIMIT</>都出现了，那么在计算返回的<literal>LIMIT</>
+之前先忽略<literal>OFFSET</>指定的行数。
+</para>
+
+  <!--
+<para>
+   When using <literal>LIMIT</>, it is important to use an
+   <literal>ORDER BY</> clause that constrains the result rows into a
+   unique order.  Otherwise you will get an unpredictable subset of
+   the query's rows. You might be asking for the tenth through
+   twentieth rows, but tenth through twentieth in what ordering? The
+   ordering is unknown, unless you specified <literal>ORDER BY</>.
+  </para>
+-->
+<para>
+使用<literal>LIMIT</>的同时使用<literal>ORDER BY</>子句把结果行约束成一个唯一的顺序是一个好主意。
+否则你就会得到一个不可预料的子集。你要的可能是第十到二十行，但以什么顺序的十到二十？
+除非你声明了<literal>ORDER BY</>，否则顺序是未知的。
+</para>
+
+  <!--
+<para>
+   The query optimizer takes <literal>LIMIT</> into account when
+   generating query plans, so you are very likely to get different
+   plans (yielding different row orders) depending on what you give
+   for <literal>LIMIT</> and <literal>OFFSET</>.  Thus, using
+   different <literal>LIMIT</>/<literal>OFFSET</> values to select
+   different subsets of a query result <emphasis>will give
+   inconsistent results</emphasis> unless you enforce a predictable
+   result ordering with <literal>ORDER BY</>.  This is not a bug; it
+   is an inherent consequence of the fact that SQL does not promise to
+   deliver the results of a query in any particular order unless
+   <literal>ORDER BY</> is used to constrain the order.
+  </para>
+-->
+<para>
+查询优化器在生成查询规划的时候会考虑<literal>LIMIT</>，
+因此如果你给<literal>LIMIT</>和<literal>OFFSET</>的值不同，
+那么你很可能得到不同的规划(产生不同的行顺序)。因此，
+使用不同的<literal>LIMIT</>/<literal>OFFSET</>值选择不同的子集<emphasis>将生成不一致的结果</emphasis>，
+除非你用<literal>ORDER BY</>强制一个可预料的顺序。这可不是臭虫，
+而是一个很自然的结果，因为 SQL 没有许诺把查询的结果按照任何特定的顺序发出，
+除非用了<literal>ORDER BY</>来约束顺序。
+</para>
+
+  <!--
+<para>
+   The rows skipped by an <literal>OFFSET</> clause still have to be
+   computed inside the server; therefore a large <literal>OFFSET</>
+   might be inefficient.
+  </para>
+-->
+<para>
+<literal>OFFSET</>子句忽略的行仍然需要在服务器内部计算；
+因此，一个很大的<literal>OFFSET</>可能还是不够有效率。
+</para>
+ </sect1>
+
+
+ <sect1 id="queries-values">
+  <!-- 
+  <title><literal>VALUES</literal> Lists</title> 
+  -->
+<title><literal>VALUES</literal>列表</title>
+  <indexterm zone="queries-values">
+   <primary>VALUES</primary>
+  </indexterm>
+
+ 
+<para>
+ <!--
+   <literal>VALUES</> provides a way to generate a <quote>constant table</>
+   that can be used in a query without having to actually create and populate
+   a table on-disk.  The syntax is
+-->
+可以在查询中使用由<literal>VALUES</>生成的<quote>常数表</>，
+而无需在磁盘上实际创建这个表。语法如下：
+<synopsis>
+VALUES ( <replaceable class="PARAMETER">expression</replaceable> [, ...] ) [, ...]
+</synopsis>
+<!-- 
+   Each parenthesized list of expressions generates a row in the table.
+   The lists must all have the same number of elements (i.e., the number
+   of columns in the table), and corresponding entries in each list must
+   have compatible data types.  The actual data type assigned to each column
+   of the result is determined using the same rules as for <literal>UNION</>
+   (see <xref linkend="typeconv-union-case">). 
+-->
+每个括号中的表达式列表生成表中的一行。每个列表中的项数(也就是字段数)必须相等，
+并且对应的数据类型必须兼容。最终表中每个字段的数据类型将使用与<literal>UNION</>
+(参见<xref linkend="typeconv-union-case">)相同的规则确定。
+  </para>
+
+  
+<para>
+<!--
+   As an example:
+-->
+例如:
+<programlisting>
+VALUES (1, 'one'), (2, 'two'), (3, 'three');
+</programlisting>
+<!-- 
+   will return a table of two columns and three rows.  It's effectively
+   equivalent to:
+-->
+将得到 2 列 3 行的表。并且与下面的语句等价：
+<programlisting>
+SELECT 1 AS column1, 'one' AS column2
+UNION ALL
+SELECT 2, 'two'
+UNION ALL
+SELECT 3, 'three';
+</programlisting>
+<!-- 
+   By default, <productname>PostgreSQL</productname> assigns the names
+   <literal>column1</>, <literal>column2</>, etc. to the columns of a
+   <literal>VALUES</> table.  The column names are not specified by the
+   SQL standard and different database systems do it differently, so
+   it's usually better to override the default names with a table alias
+   list, like this:
+-->
+<productname>PostgreSQL</productname>默认将<literal>VALUES</>
+所得到的表中各字段分别命名为<literal>column1</>, <literal>column2</>等等。
+SQL 标准并未规定此种情况下的字段名命名规范，不同的数据库系统对此的处理也各不相同，
+所以最好明确指定字段的名字，像下面这样：
+<programlisting>
+=> SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter);
+ num | letter
+-----+--------
+   1 | one
+   2 | two
+   3 | three
+(3 rows)
+</programlisting>
+  </para>
+  
+<para>
+<!--
+   Syntactically, <literal>VALUES</> followed by expression lists is
+   treated as equivalent to:
+-->
+语法上，带有表达式列表的<literal>VALUES</>和下面的语句等价：
+<synopsis>
+SELECT <replaceable>select_list</replaceable> FROM <replaceable>table_expression</replaceable>
+</synopsis>
+<!-- 
+   and can appear anywhere a <literal>SELECT</> can.  For example, you can
+   use it as part of a <literal>UNION</>, or attach a
+   <replaceable>sort_specification</replaceable> (<literal>ORDER BY</>,
+   <literal>LIMIT</>, and/or <literal>OFFSET</>) to it.  <literal>VALUES</>
+   is most commonly used as the data source in an <command>INSERT</> command,
+   and next most commonly as a subquery. 
+-->
+并且可以出现在任何<literal>SELECT</>可以出现的地方。例如，你可以把它用于<literal>UNION</>
+的一部分，或者在其上附加一个<replaceable>sort_specification</replaceable>
+(<literal>ORDER BY</>,<literal>LIMIT</>,<literal>OFFSET</>)。<literal>VALUES</>
+通常用作<command>INSERT</>命令的数据源或者子查询。
+  </para>
+
+  <!--
+<para>
+   For more information see <xref linkend="sql-values">.
+  </para>
+-->
+<para>
+更多信息参见<xref linkend="sql-values">。
+</para>
+
+ </sect1>
+
+
+ <sect1 id="queries-with">
+  <!-- 
+  <title><literal>WITH</literal> Queries (Common Table Expressions)</title> 
+  -->
+<title><literal>WITH</literal> 查询 (通用表表达式)</title>
+  <indexterm zone="queries-with">
+   <primary>WITH</primary>
+   <secondary>in SELECT</secondary>
+  </indexterm>
+
+  <indexterm>
+   <!-- 
+   <primary>common table expression</primary> 
+   -->
+   <primary>通用表表达式</primary>
+   <see>WITH</see>
+  </indexterm>
+
+  <!--
+<para>
+   <literal>WITH</> provides a way to write auxiliary statements for use in a
+   larger query.  These statements, which are often referred to as Common
+   Table Expressions or <acronym>CTE</acronym>s, can be thought of as defining
+   temporary tables that exist just for one query.  Each auxiliary statement
+   in a <literal>WITH</> clause can be a <command>SELECT</>,
+   <command>INSERT</>, <command>UPDATE</>, or <command>DELETE</>; and the
+   <literal>WITH</> clause itself is attached to a primary statement that can
+   also be a <command>SELECT</>, <command>INSERT</>, <command>UPDATE</>, or
+   <command>DELETE</>.
+  </para>
+-->
+<para>
+<literal>WITH</>提供了一种在更大的查询中编写辅助语句的方式。
+这个通常称为通用表表达式或<acronym>CTE</acronym>s的辅助语句可以认为是定义只存在于一个查询中的临时表。
+每个<literal>WITH</>子句中的辅助语句可以是一个<command>SELECT</>,<command>INSERT</>, <command>UPDATE</>
+或 <command>DELETE</>；并且<literal>WITH</>子句本身附加到的初级语句可以是一个<command>SELECT</>, 
+<command>INSERT</>, <command>UPDATE</>或<command>DELETE</>。
+</para>
+
+ <sect2 id="queries-with-select">
+   <!-- 
+   <title><command>SELECT</> in <literal>WITH</></title> 
+   -->
+<title><literal>WITH</>中的<command>SELECT</></title>
+  
+<para>
+<!--
+   The basic value of <command>SELECT</> in <literal>WITH</> is to
+   break down complicated queries into simpler parts.  An example is:
+-->
+<literal>WITH</>中<command>SELECT</>的本意是为了将复杂的查询分解为更简单的部分。一个例子是：
+<programlisting>
+WITH regional_sales AS (
+        SELECT region, SUM(amount) AS total_sales
+        FROM orders
+        GROUP BY region
+     ), top_regions AS (
+        SELECT region
+        FROM regional_sales
+        WHERE total_sales &gt; (SELECT SUM(total_sales)/10 FROM regional_sales)
+     )
+SELECT region,
+       product,
+       SUM(quantity) AS product_units,
+       SUM(amount) AS product_sales
+FROM orders
+WHERE region IN (SELECT region FROM top_regions)
+GROUP BY region, product;
+</programlisting>
+<!-- 
+   which displays per-product sales totals in only the top sales regions.
+   The <literal>WITH</> clause defines two auxiliary statements named
+   <structname>regional_sales</> and <structname>top_regions</>,
+   where the output of <structname>regional_sales</> is used in
+   <structname>top_regions</> and the output of <structname>top_regions</>
+   is used in the primary <command>SELECT</> query.
+   This example could have been written without <literal>WITH</>,
+   but we'd have needed two levels of nested sub-<command>SELECT</command>s.  It's a bit
+   easier to follow this way. 
+-->
+它显示了每个产品仅在销售区域的销售总额。<literal>WITH</>子句定义了两个名为
+<structname>regional_sales</> 和 <structname>top_regions</>的辅助语句，
+<structname>regional_sales</>的输出用于<structname>top_regions</>，
+而<structname>top_regions</>的输出用于初级的<command>SELECT</>查询。
+这个例子也可以不用<literal>WITH</>来写，但是需要两级嵌套的子<command>SELECT</command>查询。
+用这种方法更容易理解。
+  </para>
+
+  
+<para>
+<!--
+   The optional <literal>RECURSIVE</> modifier changes <literal>WITH</>
+   from a mere syntactic convenience into a feature that accomplishes
+   things not otherwise possible in standard SQL.  Using
+   <literal>RECURSIVE</>, a <literal>WITH</> query can refer to its own
+   output.  A very simple example is this query to sum the integers from 1
+   through 100:
+-->
+可选的<literal>RECURSIVE</>修饰符将<literal>WITH</>
+从一个单纯的语法方便改变为在SQL标准中不可能实现的功能。
+使用<literal>RECURSIVE</>，一个<literal>WITH</>查询可以引用它自己的输出。
+一个非常简单的例子是查询1到100的和：
+<programlisting>
+WITH RECURSIVE t(n) AS (
+    VALUES (1)
+  UNION ALL
+    SELECT n+1 FROM t WHERE n &lt; 100
+)
+SELECT sum(n) FROM t;
+</programlisting>
+<!-- 
+   The general form of a recursive <literal>WITH</> query is always a
+   <firstterm>non-recursive term</>, then <literal>UNION</> (or
+   <literal>UNION ALL</>), then a
+   <firstterm>recursive term</>, where only the recursive term can contain
+   a reference to the query's own output.  Such a query is executed as
+   follows:
+-->
+一个递归<literal>WITH</>查询的一般形式总是一个<firstterm>non-recursive term</>，
+然后<literal>UNION</>（或者<literal>UNION ALL</>），然后一个<firstterm>recursive term</>，
+其中只有递归的术语可以包含一个对查询自己输出的引用。这样一个查询像下面那样执行：
+  </para>
+
+  <procedure>
+   <!-- 
+   <title>Recursive Query Evaluation</title> 
+   -->
+<title>递归查询评估</title>
+   <step performance="required">
+    <!--
+<para>
+     Evaluate the non-recursive term.  For <literal>UNION</> (but not
+     <literal>UNION ALL</>), discard duplicate rows.  Include all remaining
+     rows in the result of the recursive query, and also place them in a
+     temporary <firstterm>working table</>.
+    </para>
+-->
+<para>
+评估非递归的术语。使用<literal>UNION</>（而不是<literal>UNION ALL</>）去除重复的行。
+包括在递归查询结果中所有剩余的行，并将它们放入临时的<firstterm>工作表</>。
+</para>
+   </step>
+
+   <step performance="required">
+    <!--
+<para>
+     So long as the working table is not empty, repeat these steps:
+    </para>
+-->
+<para>
+只要工作表不为空，那么将重复这些步骤：
+</para>
+    <substeps>
+     <step performance="required">
+      <!--
+<para>
+       Evaluate the recursive term, substituting the current contents of
+       the working table for the recursive self-reference.
+       For <literal>UNION</> (but not <literal>UNION ALL</>), discard
+       duplicate rows and rows that duplicate any previous result row.
+       Include all remaining rows in the result of the recursive query, and
+       also place them in a temporary <firstterm>intermediate table</>.
+      </para>
+-->
+<para>
+评估递归术语，为递归自我参照替换当前工作表内容。用<literal>UNION</>(并不是<literal>UNION ALL</>)，
+去除重复的行和与以前结果行重复的行。包括所有在递归查询结果中剩余的行，
+并将它们放入一个临时的<firstterm>中间表</>。
+</para>
+     </step>
+
+     <step performance="required">
+      <!--
+<para>
+       Replace the contents of the working table with the contents of the
+       intermediate table, then empty the intermediate table.
+      </para>
+-->
+<para>
+用中间表的内容替换工作表的内容，然后清空中间表。
+</para>
+     </step>
+    </substeps>
+   </step>
+  </procedure>
+
+  <note>
+   <!--
+<para>
+    Strictly speaking, this process is iteration not recursion, but
+    <literal>RECURSIVE</> is the terminology chosen by the SQL standards
+    committee.
+   </para>
+-->
+<para>
+严格的说，该过程是迭代而不是递归，但是<literal>RECURSIVE</>是通过 SQL 标准委员会选择的术语。
+</para>
+  </note>
+
+  <!--
+<para>
+   In the example above, the working table has just a single row in each step,
+   and it takes on the values from 1 through 100 in successive steps.  In
+   the 100th step, there is no output because of the <literal>WHERE</>
+   clause, and so the query terminates.
+  </para>
+-->
+<para>
+在上面的例子中，在每一步中仅有一个工作表行，并且在后续的步骤中它的值将从 1 升至 100。
+在第 100 步，因为<literal>WHERE</>子句的原因没有任何输出，因此查询终止。
+</para>
+
+  
+<para>
+<!--
+   Recursive queries are typically used to deal with hierarchical or
+   tree-structured data.  A useful example is this query to find all the
+   direct and indirect sub-parts of a product, given only a table that
+   shows immediate inclusions:
+-->
+递归查询通常用于处理分层或树状结构数据。一个有用的示例查询是查找所有直接或间接的产品的附带部分，
+仅提供一个表来显示即时的包含：
+<programlisting>
+WITH RECURSIVE included_parts(sub_part, part, quantity) AS (
+    SELECT sub_part, part, quantity FROM parts WHERE part = 'our_product'
+  UNION ALL
+    SELECT p.sub_part, p.part, p.quantity
+    FROM included_parts pr, parts p
+    WHERE p.part = pr.sub_part
+  )
+SELECT sub_part, SUM(quantity) as total_quantity
+FROM included_parts
+GROUP BY sub_part
+</programlisting>
+  </para>
+
+
+  
+<para>
+<!--
+   When working with recursive queries it is important to be sure that
+   the recursive part of the query will eventually return no tuples,
+   or else the query will loop indefinitely.  Sometimes, using
+   <literal>UNION</> instead of <literal>UNION ALL</> can accomplish this
+   by discarding rows that duplicate previous output rows.  However, often a
+   cycle does not involve output rows that are completely duplicate: it may be
+   necessary to check just one or a few fields to see if the same point has
+   been reached before.  The standard method for handling such situations is
+   to compute an array of the already-visited values.  For example, consider
+   the following query that searches a table <structname>graph</> using a
+   <structfield>link</> field:
+-->
+当使用递归查询的时候，确保查询的递归部分最终不会返回元组是很重要的，
+否则查询将会无限的循环下去。有时，通过使用<literal>UNION</>替代<literal>UNION ALL</>
+去除掉与前面输出重复的行可以实现这个。然而，通常一个周期不涉及那些完全复制的输出行：
+检查一个或几个字段来查看是否存在事先达成的相同点可能是必要的。
+处理这种情况的标准方式是计算一个已经访问过的数值的数组。
+例如，请考虑下面的查询，使用<structfield>link</>字段搜索一个表<structname>graph</>：
+<programlisting>
+WITH RECURSIVE search_graph(id, link, data, depth) AS (
+        SELECT g.id, g.link, g.data, 1
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link
+)
+SELECT * FROM search_graph;
+</programlisting>
+<!-- 
+   This query will loop if the <structfield>link</> relationships contain
+   cycles.  Because we require a <quote>depth</> output, just changing
+   <literal>UNION ALL</> to <literal>UNION</> would not eliminate the looping.
+   Instead we need to recognize whether we have reached the same row again
+   while following a particular path of links.  We add two columns
+   <structfield>path</> and <structfield>cycle</> to the loop-prone query:
+ -->
+如果<structfield>link</>关系包含循环那么这个查询将会循环。
+因为我们需要一个<quote>深度</>输出，仅改变<literal>UNION ALL</>为<literal>UNION</>
+将不会消除循环。相反，我们需要认识到当我们按照特定的链接路径时是否再次得到了相同的行。
+我们添加两列<structfield>path</>和<structfield>cycle</>到倾向循环的查询： 
+<programlisting>
+WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
+        SELECT g.id, g.link, g.data, 1,
+          ARRAY[g.id],
+          false
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1,
+          path || g.id,
+          g.id = ANY(path)
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link AND NOT cycle
+)
+SELECT * FROM search_graph;
+</programlisting>
+<!-- 
+   Aside from preventing cycles, the array value is often useful in its own
+   right as representing the <quote>path</> taken to reach any particular row.
+-->
+除了防止循环，该数组值通常是有用的，在它的右边作为代表用来得到任何特定行的<quote>路径</>。
+  </para>
+
+
+  
+<para>
+<!--
+   In the general case where more than one field needs to be checked to
+   recognize a cycle, use an array of rows.  For example, if we needed to
+   compare fields <structfield>f1</> and <structfield>f2</>:
+-->
+在一般情况下，需要检测多个字段来识别一个循环时使用一个行数组。例如，
+如果我们需要对比字段<structfield>f1</>和<structfield>f2</>：
+<programlisting>
+WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
+        SELECT g.id, g.link, g.data, 1,
+          ARRAY[ROW(g.f1, g.f2)],
+          false
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1,
+          path || ROW(g.f1, g.f2),
+          ROW(g.f1, g.f2) = ANY(path)
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link AND NOT cycle
+)
+SELECT * FROM search_graph;
+</programlisting>
+  </para>
+
+  <tip>
+   <!--
+<para>
+    Omit the <literal>ROW()</> syntax in the common case where only one field
+    needs to be checked to recognize a cycle.  This allows a simple array
+    rather than a composite-type array to be used, gaining efficiency.
+   </para>
+-->
+<para>
+在常见的情况下，当只需要检查一个字段来识别循环的时候忽略<literal>ROW()</>语法。
+这允许使用一个简单的数组而不是一个复杂类型的数组，增加查询的效率。
+</para>
+  </tip>
+
+  <tip>
+   <!--
+<para>
+    The recursive query evaluation algorithm produces its output in
+    breadth-first search order.  You can display the results in depth-first
+    search order by making the outer query <literal>ORDER BY</> a
+    <quote>path</> column constructed in this way.
+   </para>
+-->
+<para>
+递归查询评估算法产生以广度优先搜索顺序的输出。
+您可以按照深度优先查询排序通过外部查询<literal>ORDER BY</>一个<quote>path</>列来显示结果。
+</para>
+  </tip>
+
+ 
+<para>
+ <!--
+   A helpful trick for testing queries
+   when you are not certain if they might loop is to place a <literal>LIMIT</>
+   in the parent query.  For example, this query would loop forever without
+   the <literal>LIMIT</>:
+-->
+当您不能确定它们是否会循环的时候，在一个父查询中放置<literal>LIMIT</>是一个对于测试查询有用的技巧。
+例如，这个查询将在没有<literal>LIMIT</>的情况下无限循环：
+<programlisting>
+WITH RECURSIVE t(n) AS (
+    SELECT 1
+  UNION ALL
+    SELECT n+1 FROM t
+)
+SELECT n FROM t LIMIT 100;
+</programlisting>
+<!-- 
+   This works because <productname>PostgreSQL</productname>'s implementation
+   evaluates only as many rows of a <literal>WITH</> query as are actually
+   fetched by the parent query.  Using this trick in production is not
+   recommended, because other systems might work differently.  Also, it
+   usually won't work if you make the outer query sort the recursive query's
+   results or join them to some other table, because in such cases the
+   outer query will usually try to fetch all of the <literal>WITH</> query's
+   output anyway.
+-->
+它能工作是因为<productname>PostgreSQL</productname>
+的实现评估只有<literal>WITH</>查询的行实际上是通过父查询获取的。
+在实际的生产环境下不推荐使用该技巧，因为其它的系统可能以不同的方式工作。
+同样，如果您使用外部查询将递归查询结果排序或将它们加入到别的表中，
+那么它通常是不工作的，因为在这种情况下外部查询将获取所有<literal>WITH</>
+查询的输出。
+  </para>
+
+  <!--
+<para>
+   A useful property of <literal>WITH</> queries is that they are evaluated
+   only once per execution of the parent query, even if they are referred to
+   more than once by the parent query or sibling <literal>WITH</> queries.
+   Thus, expensive calculations that are needed in multiple places can be
+   placed within a <literal>WITH</> query to avoid redundant work.  Another
+   possible application is to prevent unwanted multiple evaluations of
+   functions with side-effects.
+   However, the other side of this coin is that the optimizer is less able to
+   push restrictions from the parent query down into a <literal>WITH</> query
+   than an ordinary sub-query.  The <literal>WITH</> query will generally be
+   evaluated as written, without suppression of rows that the parent query
+   might discard afterwards.  (But, as mentioned above, evaluation might stop
+   early if the reference(s) to the query demand only a limited number of
+   rows.)
+  </para>
+-->
+<para>
+一个有用的<literal>WITH</>查询属性是每个父查询执行一次它们只做一次评估，
+即使它们不止一次地通过父查询或<literal>WITH</>查询引用。所以，
+昂贵的需要在多个地方放置的计算可以通过设置<literal>WITH</>查询来避免冗余工作。
+另一个可能的应用是防止不必要的副作用函数的多个评估。然而，另一方面，比起普通的子查询，
+优化器不能够避开父查询拆分为一个<literal>WITH</>查询的限制。通常<literal>WITH</>
+查询将如上评估，没有行限制的父查询可能丢失。（但是，正如上面所说，
+如果查询参考只需要数量有限的行，评估可能会很早终止。）
+</para>
+
+  <!--
+<para>
+   The examples above only show <literal>WITH</> being used with
+   <command>SELECT</>, but it can be attached in the same way to
+   <command>INSERT</>, <command>UPDATE</>, or <command>DELETE</>.
+   In each case it effectively provides temporary table(s) that can
+   be referred to in the main command.
+  </para>
+-->
+<para>
+上面的例子只显示了<literal>WITH</>在<command>SELECT</>中的使用，
+但是它也可以用同样的方式附加到<command>INSERT</>, <command>UPDATE</>或 <command>DELETE</>。
+在每种情况下它都有效的提供可以在主要的命令中引用的临时表。
+</para>
+ </sect2>
+
+ <sect2 id="queries-with-modifying">
+   <!-- 
+   <title>Data-Modifying Statements in <literal>WITH</></title> 
+   -->
+<title><literal>WITH</>中的数据修改语句</title>
+   
+<para>
+<!--
+    You can use data-modifying statements (<command>INSERT</>,
+    <command>UPDATE</>, or <command>DELETE</>) in <literal>WITH</>.  This
+    allows you to perform several different operations in the same query.
+    An example is:
+-->
+你可以在<literal>WITH</>中使用数据修改语句(<command>INSERT</>,<command>UPDATE</>
+或 <command>DELETE</>)。这允许你在相同的查询中执行几个不同的操作，一个例子是：
+<programlisting>
+WITH moved_rows AS (
+    DELETE FROM products
+    WHERE
+        "date" &gt;= '2010-10-01' AND
+        "date" &lt; '2010-11-01'
+    RETURNING *
+)
+INSERT INTO products_log
+SELECT * FROM moved_rows;
+</programlisting>
+<!-- 
+    This query effectively moves rows from <structname>products</> to
+    <structname>products_log</>.  The <command>DELETE</> in <literal>WITH</>
+    deletes the specified rows from <structname>products</>, returning their
+    contents by means of its <literal>RETURNING</> clause; and then the
+    primary query reads that output and inserts it into
+    <structname>products_log</>. 
+-->
+这个查询有效的移动<structname>products</>中的行到<structname>products_log</>。
+<literal>WITH</>中的<command>DELETE</>从<structname>products</>中删除指定的行，
+并且通过<literal>RETURNING</>子句返回它们的内容；
+然后初级查询读取那个输出并且插入到<structname>products_log</>中。
+   </para>
+
+<!--
+<para>
+    A fine point of the above example is that the <literal>WITH</> clause is
+    attached to the <command>INSERT</>, not the sub-<command>SELECT</> within
+    the <command>INSERT</>.  This is necessary because data-modifying
+    statements are only allowed in <literal>WITH</> clauses that are attached
+    to the top-level statement.  However, normal <literal>WITH</> visibility
+    rules apply, so it is possible to refer to the <literal>WITH</>
+    statement's output from the sub-<command>SELECT</>.
+   </para>
+-->
+<para>
+上面例子的一个优点是<literal>WITH</>子句是附加到<command>INSERT</>，
+而不是<command>INSERT</>中的子<command>SELECT</>查询。
+这是必须的，因为数据修改语句只允许在附加到顶级语句的<literal>WITH</>子句中使用。
+然而，因为正常的<literal>WITH</>可见性规则的应用，所以从子<command>SELECT</>查询中引用<literal>WITH</>
+语句的输出是可能的。
+</para>
+
+   
+<para>
+<!--
+    Data-modifying statements in <literal>WITH</> usually have
+    <literal>RETURNING</> clauses, as seen in the example above.
+    It is the output of the <literal>RETURNING</> clause, <emphasis>not</> the
+    target table of the data-modifying statement, that forms the temporary
+    table that can be referred to by the rest of the query.  If a
+    data-modifying statement in <literal>WITH</> lacks a <literal>RETURNING</>
+    clause, then it forms no temporary table and cannot be referred to in
+    the rest of the query.  Such a statement will be executed nonetheless.
+    A not-particularly-useful example is:
+-->
+在<literal>WITH</>中的数据修改语句通常都有<literal>RETURNING</>子句，就像上面的例子一样。
+它是<literal>RETURNING</>子句的输出，<emphasis>不</>是数据修改语句的目标表，
+形成的临时表可以被其他的查询引用。如果<literal>WITH</>中的数据修改语句缺少了
+<literal>RETURNING</>子句，那么将没有临时表生成，也就不能被其他的查询引用。
+这样的语句将仍然被执行。一个不是特别有用的例子是：
+<programlisting>
+WITH t AS (
+    DELETE FROM foo
+)
+DELETE FROM bar;
+</programlisting>
+
+<!-- 
+    This example would remove all rows from tables <structname>foo</> and
+    <structname>bar</>.  The number of affected rows reported to the client
+    would only include rows removed from <structname>bar</>. 
+-->
+这个例子将删除表<structname>foo</>和<structname>bar</>中的所有行。
+报告给客户端的受影响行的数量将只包含从<structname>bar</>中删除的行。
+   </para>
+
+   
+<para>
+<!--
+    Recursive self-references in data-modifying statements are not
+    allowed.  In some cases it is possible to work around this limitation by
+    referring to the output of a recursive <literal>WITH</>, for example:
+-->
+数据修改语句中不允许递归的自引用。在某些情况下通过引用递归的<literal>WITH</>
+输出，可能绕开这个限制，例如：
+<programlisting>
+WITH RECURSIVE included_parts(sub_part, part) AS (
+    SELECT sub_part, part FROM parts WHERE part = 'our_product'
+  UNION ALL
+    SELECT p.sub_part, p.part
+    FROM included_parts pr, parts p
+    WHERE p.part = pr.sub_part
+  )
+DELETE FROM parts
+  WHERE part IN (SELECT part FROM included_parts);
+</programlisting>
+<!-- 
+    This query would remove all direct and indirect subparts of a product.
+-->
+这个查询将删除一个产品所有直接或非直接的subparts。
+   </para>
+
+   <!--
+<para>
+    Data-modifying statements in <literal>WITH</> are executed exactly once,
+    and always to completion, independently of whether the primary query
+    reads all (or indeed any) of their output.  Notice that this is different
+    from the rule for <command>SELECT</> in <literal>WITH</>: as stated in the
+    previous section, execution of a <command>SELECT</> is carried only as far
+    as the primary query demands its output.
+   </para>
+-->
+<para>
+<literal>WITH</>中的数据修改语句被直接执行一次，并且总是完成，
+独立的主查询读取所有（或者实际上是任意）它们的输出。
+注意，这和在<literal>WITH</>中<command>SELECT</>的规则不同：
+就像前一节规定的那样，<command>SELECT</>的执行直到首级查询需要它的输出时才实施。
+</para>
+   
+<para>
+<!--
+    The sub-statements in <literal>WITH</> are executed concurrently with
+    each other and with the main query.  Therefore, when using data-modifying
+    statements in <literal>WITH</>, the order in which the specified updates
+    actually happen is unpredictable.  All the statements are executed with
+    the same <firstterm>snapshot</> (see <xref linkend="mvcc">), so they
+    cannot <quote>see</> each others' effects on the target tables.  This
+    alleviates the effects of the unpredictability of the actual order of row
+    updates, and means that <literal>RETURNING</> data is the only way to
+    communicate changes between different <literal>WITH</> sub-statements and
+    the main query.  An example of this is that in
+-->
+<literal>WITH</>中的子语句之间和与主查询之间兼容的执行。因此，
+当在<literal>WITH</>中使用数据修改语句时，其他的指定的更新实际上是不可预知发生的。
+所有的语句都在相同的<firstterm>快照</>中执行（见<xref linkend="mvcc">），
+所以他们不能<quote>看见</>彼此对目标表的影响。这样减轻了实际行更新的不可预知的影响，
+并且意味着<literal>RETURNING</>数据是唯一在不同的<literal>WITH</>子语句和主查询间交流变化的方式。
+一个例子是：
+<programlisting>
+WITH t AS (
+    UPDATE products SET price = price * 1.05
+    RETURNING *
+)
+SELECT * FROM products;
+</programlisting>
+<!-- 
+    the outer <command>SELECT</> would return the original prices before the
+    action of the <command>UPDATE</>, while in
+ -->
+外层的<command>SELECT</>将在<command>UPDATE</>动作之前返回原价，而在：
+<programlisting>
+WITH t AS (
+    UPDATE products SET price = price * 1.05
+    RETURNING *
+)
+SELECT * FROM t;
+</programlisting>
+<!-- 
+    the outer <command>SELECT</> would return the updated data.
+-->
+中，外层<command>SELECT</>将返回更新了的数据。
+   </para>
+
+   <!--
+<para>
+    Trying to update the same row twice in a single statement is not
+    supported.  Only one of the modifications takes place, but it is not easy
+    (and sometimes not possible) to reliably predict which one.  This also
+    applies to deleting a row that was already updated in the same statement:
+    only the update is performed.  Therefore you should generally avoid trying
+    to modify a single row twice in a single statement.  In particular avoid
+    writing <literal>WITH</> sub-statements that could affect the same rows
+    changed by the main statement or a sibling sub-statement.  The effects
+    of such a statement will not be predictable.
+   </para>
+-->
+<para>
+不支持尝试在一个语句中更新相同的行两次。如果尝试了，那么只有一个修改会发生，
+但是不容易（或者有时不可能）准确预测是哪一个。这个同样适用于删除一个已经在相同语句中更新了的行：
+只有更新被执行。因此你通常应该避免尝试在一个语句中修改一个行两次。特别的，
+避免写可能影响被主语句或同级子语句改变了的行的<literal>WITH</>子语句。
+这样一个语句的影响将是不可预测的。
+</para>
+
+   <!--
+<para>
+    At present, any table used as the target of a data-modifying statement in
+    <literal>WITH</> must not have a conditional rule, nor an <literal>ALSO</>
+    rule, nor an <literal>INSTEAD</> rule that expands to multiple statements.
+   </para>
+-->
+<para>
+目前，任何作为在<literal>WITH</>中的数据修改语句目标的表，不必有扩展到多个语句的条件规则、
+<literal>ALSO</>规则和<literal>INSTEAD</>规则。
+</para>
+
+  </sect2>
+
+ </sect1>
+
+</chapter>

@@ -1,0 +1,553 @@
+<!-- doc/src/sgml/recovery-config.sgml -->
+
+<chapter id="recovery-config">
+<!--
+  <title>Recovery Configuration</title>
+  -->
+  <title>恢复配置</title> 
+
+  <indexterm>
+   <primary>configuration</primary>
+   <secondary>of recovery</secondary>
+   <tertiary>of a standby server</tertiary>
+  </indexterm>
+
+   <!--
+<para>
+    This chapter describes the settings available in the
+    <filename>recovery.conf</><indexterm><primary>recovery.conf</></>
+    file. They apply only for the duration of the
+    recovery.  They must be reset for any subsequent recovery you wish to
+    perform.  They cannot be changed once recovery has begun.
+   </para>
+-->
+<para>
+   这一章介绍<filename>recovery.conf</><indexterm><primary>recovery.conf</></>中可用设置。它们仅用于恢复的时间。
+   它们必须为后续希望的恢复进行重置，一旦开始恢复，那么不能进行修改。
+</para>
+
+   <!--
+<para>
+     Settings in <filename>recovery.conf</> are specified in the format
+     <literal>name = 'value'</>. One parameter is specified per line.
+     Hash marks (<literal>#</literal>) designate the rest of the
+     line as a comment.  To embed a single quote in a parameter
+     value, write two quotes (<literal>''</>).
+   </para>
+-->
+<para>
+    <filename>recovery.conf</>中的设置采用的是<literal>name = 'value'</>的形式。 
+每一行声明一个参数。(<literal>#</literal>)用于注释。
+使用2个引号(<literal>''</>)，在参数值中嵌入一个单引号。
+</para>
+
+   <!--
+<para>
+    A sample file, <filename>share/recovery.conf.sample</>,
+    is provided in the installation's <filename>share/</> directory.
+   </para>
+-->
+<para>
+   安装目录的<filename>share/</>路径下有一个简单的例子，<filename>share/recovery.conf.sample</>。
+</para>
+
+  <sect1 id="archive-recovery-settings">
+
+  <!--
+    <title>Archive Recovery Settings</title>
+-->
+<title>归档恢复设置</title>
+     <variablelist>
+
+     <varlistentry id="restore-command" xreflabel="restore_command">
+      <term><varname>restore_command</varname> (<type>string</type>)</term>
+      <indexterm>
+        <primary><varname>restore_command</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        The shell command to execute to retrieve an archived segment of
+        the WAL file series. This parameter is required for archive recovery,
+        but optional for streaming replication.
+        Any <literal>%f</> in the string is
+        replaced by the name of the file to retrieve from the archive,
+        and any <literal>%p</> is replaced by the copy destination path name
+        on the server.
+        (The path name is relative to the current working directory,
+        i.e., the cluster's data directory.)
+        Any <literal>%r</> is replaced by the name of the file containing the
+        last valid restart point. That is the earliest file that must be kept
+        to allow a restore to be restartable, so this information can be used
+        to truncate the archive to just the minimum required to support
+        restarting from the current restore. <literal>%r</> is typically only
+        used by warm-standby configurations
+        (see <xref linkend="warm-standby">).
+        Write <literal>%%</> to embed an actual <literal>%</> character.
+       </para>
+-->
+<para>
+    检索WAL文件中已归档段的SHELL命令。对归档恢复来说这个参数是必须的，
+但对流复制来说是可选的。 字符串中的任何一个<literal>%f</>是用归档检索中的文件名替换，
+并且<literal>%p</>是用服务器上的复制目的地的路径上复制目的地的路径名替换。
+（路径名是相对当前工作路径的，如客户端的data路径）
+任意一个<literal>%r</>是用包含最新可用重启点的文件名替换。这是最早的文件，
+必须保留以转储，从而实现一致性，
+因此这个信息可以用于截断归档至实现从当前转储中重启的最低要求。 
+<literal>%r</>典型的只用于热备配置(参阅<xref linkend="warm-standby">)。
+<literal>%%</>可以嵌入一个实际的<literal>%</>字符。
+</para>
+
+       
+<para>
+         <!--
+        It is important for the command to return a zero exit status
+        only if it succeeds.  The command <emphasis>will</> be asked for file
+        names that are not present in the archive; it must return nonzero
+        when so asked.  Examples:
+-->
+
+对命令来说，只有当成功时返回一个零退出状态是很重要的。
+命令<emphasis>将</>被要求归档命令中没有出现的文件名； 
+当为要求是，必须返回非零。如：
+
+<programlisting>
+restore_command = 'cp /mnt/server/archivedir/%f "%p"'
+restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
+</programlisting>
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="archive-cleanup-command" xreflabel="archive_cleanup_command">
+      <term><varname>archive_cleanup_command</varname> (<type>string</type>)</term>
+      <indexterm>
+        <primary><varname>archive_cleanup_command</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        This optional parameter specifies a shell command that will be executed
+        at every restartpoint.  The purpose of
+        <varname>archive_cleanup_command</> is to provide a mechanism for
+        cleaning up old archived WAL files that are no longer needed by the
+        standby server.
+        Any <literal>%r</> is replaced by the name of the file containing the
+        last valid restart point.
+        That is the earliest file that must be <emphasis>kept</> to allow a
+        restore to be restartable, and so all files earlier than <literal>%r</>
+        may be safely removed.
+        This information can be used to truncate the archive to just the
+        minimum required to support restart from the current restore.
+        The <xref linkend="pgarchivecleanup"> module
+        is often used in <varname>archive_cleanup_command</> for
+        single-standby configurations, for example:
+<programlisting>archive_cleanup_command = 'pg_archivecleanup /mnt/server/archivedir %r'</programlisting>
+        Note however that if multiple standby servers are restoring from the
+        same archive directory, you will need to ensure that you do not delete
+        WAL files until they are no longer needed by any of the servers.
+        <varname>archive_cleanup_command</> would typically be used in a
+        warm-standby configuration (see <xref linkend="warm-standby">).
+        Write <literal>%%</> to embed an actual <literal>%</> character in the
+        command.
+       </para>
+-->
+<para>
+    这个选项参数声明一个在每次重启时执行的shell命令。
+<varname>archive_cleanup_command</>为清理备库不需要的归档WAL文件提供一个机制。 
+任何一个<literal>%r</>由包含最新可用重启点的文件名代替。这是最早的文件，
+因此必须<emphasis>保留</>以允许转储能够重新启动，因此所有早于<literal>%r</>的文件可以安全的移除。
+这个信息可以用于删除归档至能满足从当前转储重启的最低要求。 
+对典型单备配置中的<varname>archive_cleanup_command</>而言， 
+经常使用<xref linkend="pgarchivecleanup">模块，比如：
+<programlisting>archive_cleanup_command = 'pg_archivecleanup /mnt/server/archivedir %r'</programlisting>
+然而需要注意的是，如果多个备服务器从相同的归档路径转储，
+需要确保在任何一个备服务器不在需要之前，不能删除WAL文件。
+在热备配置中，会明显的用到<varname>archive_cleanup_command</>
+(参阅<xref linkend="warm-standby">)。
+通过<literal>%%</>，在命令中嵌入一个实际的<literal>%</>字符。
+
+</para>
+       <!--
+<para>
+        If the command returns a non-zero exit status then a WARNING log
+        message will be written.
+       </para>
+-->
+<para>
+     如果命令返回一个非0的退出状态，那么将写一个警告日志信息。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-end-command" xreflabel="recovery_end_command">
+      <term><varname>recovery_end_command</varname> (<type>string</type>)</term>
+      <indexterm>
+        <primary><varname>recovery_end_command</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        This parameter specifies a shell command that will be executed once only
+        at the end of recovery. This parameter is optional. The purpose of the
+        <varname>recovery_end_command</> is to provide a mechanism for cleanup
+        following replication or recovery.
+        Any <literal>%r</> is replaced by the name of the file containing the
+        last valid restart point, like in <xref linkend="archive-cleanup-command">.
+       </para>
+-->
+<para>
+     这个参数是可选的，用于声明一个只在恢复完成时执行的SHELL命令。 
+ <varname>recovery_end_command</>的目的是为复制或恢复之后进行的清理动作提供一个机制。
+ <literal>%r</>由包含最新可用重启点的文件名代替，
+ 如在<xref linkend="archive-cleanup-command">中的那样。
+</para>
+       <!--
+<para>
+        If the command returns a non-zero exit status then a WARNING log
+        message will be written and the database will proceed to start up
+        anyway.  An exception is that if the command was terminated by a
+        signal, the database will not proceed with startup.
+       </para>
+-->
+<para>
+     如果命令返回一个非0的退出状态，那么将写一个警告日志信息，
+ 并且数据库将会继续启动。如果命令被一个信号终止，数据库不会继续启动。
+</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+  </sect1>
+
+  <sect1 id="recovery-target-settings">
+
+    <!--
+    <title>Recovery Target Settings</title>
+-->
+<title>恢复目标设置</title>
+     <variablelist>
+
+     <varlistentry id="recovery-target-name" xreflabel="recovery_target_name">
+      <term><varname>recovery_target_name</varname>
+           (<type>string</type>)
+      </term>
+      <indexterm>
+        <primary><varname>recovery_target_name</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        This parameter specifies the named restore point, created with
+        <function>pg_create_restore_point()</> to which recovery will proceed.
+        At most one of <varname>recovery_target_name</>,
+        <xref linkend="recovery-target-time"> or
+        <xref linkend="recovery-target-xid"> can be specified.  The default is to
+        recover to the end of the WAL log.
+       </para>
+-->
+<para>
+    此参数声明命名的还原点，
+创建<function>pg_create_restore_point()</>继续恢复。
+可以指定<varname>recovery_target_name</>,
+<xref linkend="recovery-target-time">或者
+<xref linkend="recovery-target-xid">最多之一。
+默认是恢复到WAL日志的结尾。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-time" xreflabel="recovery_target_time">
+      <term><varname>recovery_target_time</varname>
+           (<type>timestamp</type>)
+      </term>
+      <indexterm>
+        <primary><varname>recovery_target_time</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        This parameter specifies the time stamp up to which recovery
+        will proceed.
+        At most one of <varname>recovery_target_time</>,
+        <xref linkend="recovery-target-name"> or
+        <xref linkend="recovery-target-xid"> can be specified.
+        The default is to recover to the end of the WAL log.
+        The precise stopping point is also influenced by
+        <xref linkend="recovery-target-inclusive">.
+       </para>
+-->
+<para>
+     这个参数设置一个时间戳，达到这个时间戳时会继续进行恢复。
+ 在大多数的<varname>recovery_target_time</>,
+        <xref linkend="recovery-target-name">或者
+        <xref linkend="recovery-target-xid">都可以声明这个参数。
+ 缺省是恢复到WAL日志的结尾。精确的停止点也受到<xref linkend="recovery-target-inclusive">的影响。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-xid" xreflabel="recovery_target_xid">
+      <term><varname>recovery_target_xid</varname> (<type>string</type>)</term>
+      <indexterm>
+        <primary><varname>recovery_target_xid</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        This parameter specifies the transaction ID up to which recovery
+        will proceed. Keep in mind
+        that while transaction IDs are assigned sequentially at transaction
+        start, transactions can complete in a different numeric order.
+        The transactions that will be recovered are those that committed
+        before (and optionally including) the specified one.
+        At most one of <varname>recovery_target_xid</>,
+        <xref linkend="recovery-target-name"> or
+        <xref linkend="recovery-target-time"> can be specified.
+        The default is to recover to the end of the WAL log.
+        The precise stopping point is also influenced by
+        <xref linkend="recovery-target-inclusive">.
+       </para>
+-->
+<para>
+    这个参数声明一个事务ID，达到这个ID号继续进行恢复。
+需要注意的是，当在事务开始时，顺序分配事务ID，事务会以不同数字顺序结束。
+将被恢复的事务是那些在一个指定事务前（或包含该事务）提交事务。
+在大多数<varname>recovery_target_xid</>,
+    <xref linkend="recovery-target-name">或者
+    <xref linkend="recovery-target-time">都可以声明参数。
+缺省是恢复到WAL日志尾。精确的停止时间也受<xref linkend="recovery-target-inclusive">的影响。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-inclusive"
+                   xreflabel="recovery_target_inclusive">
+      <term><varname>recovery_target_inclusive</varname>
+        (<type>boolean</type>)
+      </term>
+      <indexterm>
+        <primary><varname>recovery_target_inclusive</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        Specifies whether we stop just after the specified recovery target
+        (<literal>true</literal>), or just before the recovery target
+        (<literal>false</literal>).
+        Applies to both <xref linkend="recovery-target-time">
+        and <xref linkend="recovery-target-xid">, whichever one is
+        specified for this recovery.  This indicates whether transactions
+        having exactly the target commit time or ID, respectively, will
+        be included in the recovery.  Default is <literal>true</>.
+       </para>
+-->
+<para>
+    声明是否在指定恢复目标(<literal>true</literal>)之后停止，或在这(<literal>false</literal>)之前停止。 
+应用于<xref linkend="recovery-target-time">
+    和<xref linkend="recovery-target-xid">，
+无论哪个，都是为这个恢复声明的。这表示事务是否具有明确的目标提交时间或ID，
+会分别被包含在恢复中。缺省是<literal>true</>。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-timeline"
+                   xreflabel="recovery_target_timeline">
+      <term><varname>recovery_target_timeline</varname>
+        (<type>string</type>)
+      </term>
+      <indexterm>
+        <primary><varname>recovery_target_timeline</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        Specifies recovering into a particular timeline.  The default is
+        to recover along the same timeline that was current when the
+        base backup was taken. Setting this to <literal>latest</> recovers
+        to the latest timeline found in the archive, which is useful in
+        a standby server. Other than that you only need to set this parameter
+        in complex re-recovery situations, where you need to return to
+        a state that itself was reached after a point-in-time recovery.
+        See <xref linkend="backup-timelines"> for discussion.
+       </para>
+-->
+<para>
+     声明在一个指定时间线进行恢复。缺省是当前正在进行基础备份的时间线。
+ 设置它为<literal>latest</>恢复归档中发现的最新时间线，这在备用服务器中是有用的。
+ 只需要在复杂的重新恢复的情况下声明这个参数，在这种情况下，
+ 需要返回一个在PITR之后需要达到的状态。
+ 参阅<xref linkend="backup-timelines">获取更多详细信息。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="pause-at-recovery-target"
+                   xreflabel="pause_at_recovery_target">
+      <term><varname>pause_at_recovery_target</varname>
+        (<type>boolean</type>)
+      </term>
+      <indexterm>
+        <primary><varname>pause_at_recovery_target</> recovery parameter</primary>
+      </indexterm>
+      <listitem>
+       <!--
+<para>
+        Specifies whether recovery should pause when the recovery target
+        is reached. The default is true.
+        This is intended to allow queries to be executed against the
+        database to check if this recovery target is the most desirable
+        point for recovery. The paused state can be resumed by using
+        <function>pg_xlog_replay_resume()</> (See
+        <xref linkend="functions-recovery-control-table">), which then
+        causes recovery to end. If this recovery target is not the
+        desired stopping point, then shutdown the server, change the
+        recovery target settings to a later target and restart to
+        continue recovery.
+       </para>
+-->
+<para>
+     当达到恢复目标时，指定是否恢复应该暂停。默认是真。
+ 如果恢复目标是恢复最理想的点，这是为了允许查询被执行反对
+ 检查数据库。暂停状态可以使用<function>pg_xlog_replay_resume()</>（参见
+ <xref linkend="functions-recovery-control-table">）恢复，然后
+ 使恢复结束。如果恢复目标不是所需的停止点，那么关闭服务器，更改
+ 恢复目标设置为以后的目标并重新启动继续恢复。    
+</para>
+       <!--
+<para>
+        This setting has no effect if <xref linkend="guc-hot-standby"> is not
+        enabled, or if no recovery target is set.
+       </para>
+-->
+<para>
+    如果不启用<xref linkend="guc-hot-standby">，或者没有设置恢复目标，那么这个设置
+不起作用。
+</para>
+      </listitem>
+     </varlistentry>
+
+     </variablelist>
+   </sect1>
+
+  <sect1 id="standby-settings">
+
+  <!--
+    <title>Standby Server Settings</title>
+-->
+<title>备用服务器设置</title>
+     <variablelist>
+
+       <varlistentry id="standby-mode" xreflabel="standby_mode">
+        <term><varname>standby_mode</varname> (<type>boolean</type>)</term>
+        <indexterm>
+          <primary><varname>standby_mode</> recovery parameter</primary>
+        </indexterm>
+        <listitem>
+         <!--
+<para>
+          Specifies whether to start the <productname>PostgreSQL</> server as
+          a standby. If this parameter is <literal>on</>, the server will
+          not stop recovery when the end of archived WAL is reached, but
+          will keep trying to continue recovery by fetching new WAL segments
+          using <varname>restore_command</>
+          and/or by connecting to the primary server as specified by the
+          <varname>primary_conninfo</> setting.
+         </para>
+-->
+<para>
+    声明是否需要启动<productname>PostgreSQL</>服务器为一个standby。 
+如果这个参数为<literal>on</>，在达到归档WAL尾时，服务器不会停止恢复， 
+但会通过使用<varname>restore_command</>抓取新的WAL段（和/或通过连接到主服务器，
+如<varname>primary_conninfo</>设置声明的那样）来尝试继续恢复。
+</para>
+        </listitem>
+       </varlistentry>
+       <varlistentry id="primary-conninfo" xreflabel="primary_conninfo">
+        <term><varname>primary_conninfo</varname> (<type>string</type>)</term>
+        <indexterm>
+          <primary><varname>primary_conninfo</> recovery parameter</primary>
+        </indexterm>
+        <listitem>
+         <!--
+<para>
+          Specifies a connection string to be used for the standby server
+          to connect with the primary. This string is in the format
+          described in <xref linkend="libpq-connstring">. If any option is
+          unspecified in this string, then the corresponding environment
+          variable (see <xref linkend="libpq-envars">) is checked. If the
+          environment variable is not set either, then
+          defaults are used.
+         </para>
+-->
+<para>
+     为连接到主服务器的备服务器声明一个连接字符串。
+ 这个字符串的格式在<xref linkend="libpq-connstring">中描述，
+ 如果字符串中没有声明选项，
+ 那么会检查相关的环境变量（参阅<xref linkend="libpq-envars">）。 
+ 如果环境变量也没有设置，那么使用缺省的。
+</para>
+         <!--
+<para>
+          The connection string should specify the host name (or address)
+          of the primary server, as well as the port number if it is not
+          the same as the standby server's default.
+          Also specify a user name corresponding to a suitably-privileged role
+          on the primary (see
+          <xref linkend="streaming-replication-authentication">).
+          A password needs to be provided too, if the primary demands password
+          authentication.  It can be provided in the
+          <varname>primary_conninfo</varname> string, or in a separate
+          <filename>~/.pgpass</> file on the standby server (use
+          <literal>replication</> as the database name).
+          Do not specify a database name in the
+          <varname>primary_conninfo</varname> string.
+         </para>
+-->
+<para>
+   连接字符串应该声明主库的主机名（或地址），以及端口号（如果与备库的缺省端口不同）。
+   同样的，声明一个用户名对应主库上具有合适权限的角色
+   （参阅<xref linkend="streaming-replication-authentication">）。
+   如果主库要求密码验证，那么还需要提供一个密码。
+   可以在<varname>primary_conninfo</varname>字符串中提供， 
+   或者在备库上一个单独的<filename>~/.pgpass</>文件中（以<literal>replication</>作为数据库名）。
+   不用在<varname>primary_conninfo</varname>字符串中声明数据库名。
+</para>
+         <!--
+<para>
+          This setting has no effect if <varname>standby_mode</> is <literal>off</>.
+         </para>
+-->
+<para>
+    如果<varname>standby_mode</>设置为<literal>off</>时，则这个设置不起作用。
+</para>
+        </listitem>
+       </varlistentry>
+       <varlistentry id="trigger-file" xreflabel="trigger_file">
+        <term><varname>trigger_file</varname> (<type>string</type>)</term>
+        <indexterm>
+          <primary><varname>trigger_file</> recovery parameter</primary>
+        </indexterm>
+        <listitem>
+         <!--
+<para>
+          Specifies a trigger file whose presence ends recovery in the
+          standby.  Even if this value is not set, you can still promote
+          the standby using <command>pg_ctl promote</>.
+          This setting has no effect if <varname>standby_mode</> is <literal>off</>.
+         </para>
+-->
+<para>
+    指定一个触发器文件，用于在备库中结束恢复。
+即使不设置此值，你还可以使用<command>pg_ctl promote</>促进备份。
+如果<varname>standby_mode</>为<literal>off</>，则这个设置不起作用。
+</para>
+        </listitem>
+       </varlistentry>
+
+     </variablelist>
+   </sect1>
+
+</chapter>

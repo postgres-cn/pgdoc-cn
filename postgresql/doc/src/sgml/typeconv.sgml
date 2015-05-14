@@ -1,0 +1,1636 @@
+<!-- doc/src/sgml/typeconv.sgml -->
+
+<chapter id="typeconv">
+<!-- 
+<title>Type Conversion</title> 
+-->
+<title>类型转换</title>
+
+<indexterm zone="typeconv">
+ <!-- 
+ <primary>data type</primary>
+ <secondary>conversion</secondary> 
+ -->
+ <primary>数据类型</primary>
+ <secondary>转换</secondary>
+</indexterm>
+
+<!--
+<para>
+<acronym>SQL</acronym> statements can, intentionally or not, require
+the mixing of different data types in the same expression.
+<productname>PostgreSQL</productname> has extensive facilities for
+evaluating mixed-type expressions.
+</para>
+-->
+<para>
+<acronym>SQL</acronym>语句可能(有意无意地)要求在同一表达式里混合不同的数据类型。
+<productname>PostgreSQL</productname>在计算混合类型表达式方面有许多扩展性很强的功能。
+</para>
+
+<!--
+<para>
+In many cases a user does not need
+to understand the details of the type conversion mechanism.
+However, implicit conversions done by <productname>PostgreSQL</productname>
+can affect the results of a query.  When necessary, these results
+can be tailored by using <emphasis>explicit</emphasis> type conversion.
+</para>
+-->
+<para>
+在大多数情况下，用户不需要明白类型转换机制的细节。但是，
+由<productname>PostgreSQL</productname>所进行的隐含类型转换会对查询的结果产生影响，
+必要时这些影响又可以用<emphasis>明确</emphasis>类型转换进行剪裁利用。
+</para>
+
+<!--
+<para>
+This chapter introduces the <productname>PostgreSQL</productname>
+type conversion mechanisms and conventions.
+Refer to the relevant sections in <xref linkend="datatype"> and <xref linkend="functions">
+for more information on specific data types and allowed functions and
+operators.
+</para>
+-->
+<para>
+本章介绍<productname>PostgreSQL</productname>类型转换的传统和机制。
+关于特定的类型和函数及操作符的进一步信息，请参考<xref linkend="datatype">
+和<xref linkend="functions">里的相关章节。
+</para>
+
+<sect1 id="typeconv-overview">
+<!-- 
+<title>Overview</title> 
+-->
+<title>概述</title>
+
+<!--
+<para>
+<acronym>SQL</acronym> is a strongly typed language. That is, every data item
+has an associated data type which determines its behavior and allowed usage.
+<productname>PostgreSQL</productname> has an extensible type system that is
+more general and flexible than other <acronym>SQL</acronym> implementations.
+Hence, most type conversion behavior in <productname>PostgreSQL</productname>
+is governed by general rules rather than by <foreignphrase>ad hoc</>
+heuristics.  This allows the use of mixed-type expressions even with
+user-defined types.
+</para>
+-->
+<para>
+<acronym>SQL</acronym>是强类型语言。也就是说，每个数据都与一个决定其行为和用法的数据类型相关联。
+<productname>PostgreSQL</productname>有一个可扩展的数据类型系统，
+该系统比其它<acronym>SQL</acronym>实现更具通用性和灵活性。因而，
+<productname>PostgreSQL</productname>中大多数类型转换是由通用规则来管理的，
+而不是由专门的试探法分析的，这种做法允许使用混合类型的表达式，
+即便是其中包含用户定义的类型也如此。
+</para>
+
+
+<para>
+<!--
+The <productname>PostgreSQL</productname> scanner/parser divides lexical
+elements into five fundamental categories: integers, non-integer numbers,
+strings, identifiers, and key words.  Constants of most non-numeric types are
+first classified as strings. The <acronym>SQL</acronym> language definition
+allows specifying type names with strings, and this mechanism can be used in
+<productname>PostgreSQL</productname> to start the parser down the correct
+path. For example, the query:
+-->
+<productname>PostgreSQL</productname>扫描/分析器只将词法元素分解成五个基本种类：
+整数、浮点数、字符串、标识符、关键字。大多数非数字类型首先表征为字符串，
+<acronym>SQL</acronym>语言的定义允许将类型名声明为字符串，
+这个机制被<productname>PostgreSQL</productname>用于保证分析器沿着正确的方向运行。
+例如，下面查询：
+<screen>
+SELECT text 'Origin' AS "label", point '(0,0)' AS "value";
+
+ label  | value
+--------+-------
+ Origin | (0,0)
+(1 row)
+</screen>
+<!-- 
+has two literal constants, of type <type>text</type> and <type>point</type>.
+If a type is not specified for a string literal, then the placeholder type
+<type>unknown</type> is assigned initially, to be resolved in later
+stages as described below.
+-->
+有两个文本常量，类型分别为<type>text</type>和<type>point</type>。
+如果没有为字符串文本声明类型，该文本先被初始化成一个拥有存储空间的
+<type>unknown</type>类型，该类型将在后面描述的晚期阶段分析。
+</para>
+
+<para>
+<!--
+There are four fundamental <acronym>SQL</acronym> constructs requiring
+distinct type conversion rules in the <productname>PostgreSQL</productname>
+parser:
+-->
+在<productname>PostgreSQL</productname>分析器里，
+有四种基本的<acronym>SQL</acronym>元素需要独立的类型转换规则：
+<variablelist>
+<varlistentry>
+<!-- 
+<term>
+Function calls
+</term> 
+-->
+<term>
+函数调用
+</term>
+<listitem>
+<!-- 
+<para>
+Much of the <productname>PostgreSQL</productname> type system is built around a
+rich set of functions. Functions can have one or more arguments.
+Since <productname>PostgreSQL</productname> permits function
+overloading, the function name alone does not uniquely identify the function
+to be called; the parser must select the right function based on the data
+types of the supplied arguments.
+</para> 
+-->
+<para>
+多数<productname>PostgreSQL</productname>类型系统是建筑在一套丰富的函数上的。
+函数调用可以有一个或多个参数。因为<productname>PostgreSQL</productname>允许函数重载，
+所以函数名自身并不唯一地标识将要调用的函数，
+分析器必须根据函数提供的参数类型选择正确的函数。
+</para> 
+</listitem>
+</varlistentry>
+<varlistentry>
+<!-- 
+<term>
+Operators
+</term> 
+-->
+<term>
+操作符
+</term>
+<listitem>
+<!--
+<para>
+<productname>PostgreSQL</productname> allows expressions with
+prefix and postfix unary (one-argument) operators,
+as well as binary (two-argument) operators.  Like functions, operators can
+be overloaded, so the same problem of selecting the right operator
+exists.
+</para>
+-->
+<para>
+<productname>PostgreSQL</productname>允许在表达式上使用前缀或后缀(单目)操作符，
+也允许表达式内部使用双目操作符(两个参数)。像函数一样，操作符也可以被重载，
+因此操作符的选择也和函数一样取决于参数类型。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<!-- 
+<term>
+Value Storage
+</term>
+ -->
+<term>
+值存储
+</term>
+<listitem>
+<!--
+<para>
+<acronym>SQL</acronym> <command>INSERT</command> and <command>UPDATE</command> statements place the results of
+expressions into a table. The expressions in the statement must be matched up
+with, and perhaps converted to, the types of the target columns.
+</para>
+-->
+<para>
+<command>INSERT</command>和<command>UPDATE</command>语句将表达式结果放入表中。
+语句中的表达式类型必须和目标字段的类型一致或者可以转换为一致。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<!-- 
+<term>
+<literal>UNION</literal>, <literal>CASE</literal>, and related constructs
+</term> 
+-->
+<term>
+<literal>UNION</literal>, <literal>CASE</literal>和相关构造
+</term>
+<listitem>
+<!--
+<para>
+Since all query results from a unionized <command>SELECT</command> statement
+must appear in a single set of columns, the types of the results of each
+<command>SELECT</> clause must be matched up and converted to a uniform set.
+Similarly, the result expressions of a <literal>CASE</> construct must be
+converted to a common type so that the <literal>CASE</> expression as a whole
+has a known output type.  The same holds for <literal>ARRAY</> constructs,
+and for the <function>GREATEST</> and <function>LEAST</> functions.
+</para>
+-->
+<para>
+因为联合<command>SELECT</command>语句中的所有查询结果必须在一列里显示出来，
+所以每个<command>SELECT</>子句中的元素类型必须相互匹配并转换成一套统一类型。
+类似地，一个<literal>CASE</>构造的结果表达式必须转换成统一的类型，
+这样<literal>CASE</>表达式自身作为整体有一种已知输出类型。
+同样的要求也存在于<literal>ARRAY</>构造以及<function>GREATEST</>和<function>LEAST</>函数中。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+
+<!--
+<para>
+The system catalogs store information about which conversions, or
+<firstterm>casts</firstterm>, exist between which data types, and how to
+perform those conversions.  Additional casts can be added by the user
+with the <xref linkend="sql-createcast">
+command.  (This is usually
+done in conjunction with defining new data types.  The set of casts
+between built-in types has been carefully crafted and is best not
+altered.)
+</para>
+-->
+<para>
+系统表<firstterm>casts</firstterm>存储有关哪种数据类型之间存在哪种转换以及如何执行这些转换的信息。
+额外的转换可以由用户通过<xref linkend="sql-createcast">命令增加。
+这个通常和定义一种新的数据类型一起完成。内置的类型转换集已经经过仔细的雕琢了，
+因此最好不要去更改它们。
+</para>
+
+<indexterm>
+ <!-- 
+ <primary>data type</primary>
+ <secondary>category</secondary> 
+ -->
+ <primary>数据类型</primary>
+ <secondary>分类</secondary>
+</indexterm>
+
+<!--
+<para>
+An additional heuristic provided by the parser allows improved determination
+of the proper casting behavior among groups of types that have implicit casts.
+Data types are divided into several basic <firstterm>type
+categories</firstterm>, including <type>boolean</type>, <type>numeric</type>,
+<type>string</type>, <type>bitstring</type>, <type>datetime</type>,
+<type>timespan</type>, <type>geometric</type>, <type>network</type>, and
+user-defined.  (For a list see <xref linkend="catalog-typcategory-table">;
+but note it is also possible to create custom type categories.)  Within each
+category there can be one or more <firstterm>preferred types</firstterm>, which
+are preferred when there is a choice of possible types.  With careful selection
+of preferred types and available implicit casts, it is possible to ensure that
+ambiguous expressions (those with multiple candidate parsing solutions) can be
+resolved in a useful way.
+</para>
+-->
+<para>
+分析器中还提供了一个额外的搜索器，允许提高对有隐含转换的类型组之间的适当的转换行为的决断。
+数据类型分成了几个基本<firstterm>类型分类</firstterm>，包括：<type>boolean</type>, 
+<type>numeric</type>, <type>string</type>, <type>bitstring</type>, <type>datetime</type>,
+ <type>timespan</type>, <type>geometric</type>, <type>network</type>, user-defined(用户定义)。
+（参阅列表<xref linkend="catalog-typcategory-table">；
+但是要注意的是创建自定义的类型分类也是可能的。）
+每种类型都有一种或多种<firstterm>首选类型</firstterm>用于解决类型选择的问题。
+小心的选择首选类型和可用的隐含转换，就有可能保证有歧义的表达式（那些有多个候选解析方案的）
+可以用有效的方式解决。
+</para>
+
+
+<para>
+<!--
+All type conversion rules are designed with several principles in mind:
+-->
+所有类型转换规则都是建立在下面几个基本原则上的：
+<itemizedlist>
+<listitem>
+<!-- 
+<para>
+Implicit conversions should never have surprising or unpredictable outcomes.
+</para> 
+-->
+<para>
+隐含转换决不能有奇怪的或不可预见的输出。
+</para>
+</listitem>
+
+<listitem>
+<!--
+<para>
+There should be no extra overhead in the parser or executor
+if a query does not need implicit type conversion.
+That is, if a query is well-formed and the types already match, then the query should execute
+without spending extra time in the parser and without introducing unnecessary implicit conversion
+calls in the query.
+</para>
+-->
+<para>
+如果一个查询不需要隐含的类型转换，分析器或执行器不应该进行更多的额外操作。
+这就是说，任何一个类型匹配、格式清晰的查询不应该在分析器里耗费更多的时间，
+也不应该向查询中引入任何不必要的隐含类型转换调用。
+</para>
+
+<!--
+<para>
+Additionally, if a query usually requires an implicit conversion for a function, and
+if then the user defines a new function with the correct argument types, the parser
+should use this new function and no longer do implicit conversion to use the old function.
+</para>
+-->
+<para>
+另外，如果一个查询通常使用某个函数进行隐含类型转换，而用户定义了一个有正确参数的函数，
+解释器应该使用新函数取代原先旧函数的隐含操作。
+</para>
+</listitem>
+</itemizedlist>
+</para>
+
+</sect1>
+
+<sect1 id="typeconv-oper">
+<!-- 
+<title>Operators</title> 
+-->
+<title>操作符</title>
+
+<indexterm zone="typeconv-oper">
+ <!-- 
+ <primary>operator</primary>
+ <secondary>type resolution in an invocation</secondary> 
+ -->
+ <primary>操作符</primary>
+ <secondary>调用中的类型解析</secondary>
+</indexterm>
+
+  <!--
+<para>
+   The specific operator that is referenced by an operator expression
+   is determined using the following procedure.
+   Note that this procedure is indirectly affected
+   by the precedence of the involved operators, since that will determine
+   which sub-expressions are taken to be the inputs of which operators.
+   See <xref linkend="sql-precedence"> for more information.
+  </para>
+-->
+<para>
+下面讲解的过程解释了操作符表达式如何确定引用哪个操作符。
+请注意这个过程受被调用操作符的优先级影响，因为这将决定哪个子表达式被用来作为操作符的输入。
+参阅<xref linkend="sql-precedence">获取更多信息。
+</para>
+
+<procedure>
+<!-- 
+<title>Operator Type Resolution</title> 
+-->
+<title>操作符类型解析</title>
+
+<step performance="required">
+<!--
+<para>
+Select the operators to be considered from the
+<classname>pg_operator</classname> system catalog.  If a non-schema-qualified
+operator name was used (the usual case), the operators
+considered are those with the matching name and argument count that are
+visible in the current search path (see <xref linkend="ddl-schemas-path">).
+If a qualified operator name was given, only operators in the specified
+schema are considered.
+</para>
+-->
+<para>
+从系统表<classname>pg_operator</classname>中选出要考虑的操作符。
+如果使用了一个不带模式修饰的操作符名(常见的状况)，
+那么认为该操作符是那些在当前搜索路径中名字和参数个数都匹配的操作符
+(参阅<xref linkend="ddl-schemas-path">)。如果给出一个带修饰的操作符名，
+那么只考虑指定模式中的操作符。
+</para>
+
+<substeps>
+<step performance="optional">
+<!--
+<para>
+If the search path finds multiple operators with identical argument types,
+only the one appearing earliest in the path is considered.  Operators with
+different argument types are considered on an equal footing regardless of
+search path position.
+</para>
+-->
+<para>
+如果搜索路径中找到了多个相同参数类型的操作符，那么只考虑最早出现在路径中的那一个。
+但是不同参数类型的操作符将被平等看待，而不管它们在路径中的位置如何。
+</para>
+</step>
+</substeps>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Check for an operator accepting exactly the input argument types.
+If one exists (there can be only one exact match in the set of
+operators considered), use it.
+</para>
+-->
+<para>
+查找精确接受输入参数类型的操作符。如果找到一个(在一组被考虑的操作符中，
+可能只存在一个精确匹配的)，则用之。
+</para>
+
+<substeps>
+<step performance="optional">
+<!--
+<para>
+If one argument of a binary operator invocation is of the <type>unknown</type> type,
+then assume it is the same type as the other argument for this check.
+Invocations involving two <type>unknown</type> inputs, or a unary operator
+with an <type>unknown</type> input, will never find a match at this step.
+</para>
+-->
+<para>
+如果一个双目操作符调用中的一个参数是<type>unknown</type>类型，
+则在本次检查中假设其与另一个参数类型相同。包括两个<type>unknown</type>
+输入的调用或一个一元带有<type>unknown</type>输入的操作符，将绝不会在此处找到匹配。
+</para>
+</step>
+</substeps>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Look for the best match.
+</para>
+-->
+<para>
+寻找最优匹配。
+</para>
+<substeps>
+<step performance="required">
+<!--
+<para>
+Discard candidate operators for which the input types do not match
+and cannot be converted (using an implicit conversion) to match.
+<type>unknown</type> literals are
+assumed to be convertible to anything for this purpose.  If only one
+candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+抛弃那些输入类型不匹配并且也不能隐式转换成匹配的候选操作符。
+<type>unknown</type>文本在这种情况下可以转换成任何东西。
+如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+Run through all candidates and keep those with the most exact matches
+on input types.  (Domains are considered the same as their base type
+for this purpose.)  Keep all candidates if none have exact matches.
+If only one candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+遍历所有候选操作符，保留那些输入类型匹配最准确的。此时，域被看作和他们的基本类型相同。
+如果没有一个操作符能被保留，则保留所有候选。如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+Run through all candidates and keep those that accept preferred types (of the
+input data type's type category) at the most positions where type conversion
+will be required.
+Keep all candidates if none accept preferred types.
+If only one candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+遍历所有候选操作符，保留那些需要类型转换时接受(属于输入数据类型的类型范畴的)首选类型位置最多的操作符。
+如果没有接受首选类型的操作符，则保留所有候选。如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+If any input arguments are <type>unknown</type>, check the type
+categories accepted at those argument positions by the remaining
+candidates.  At each position, select the <type>string</type> category
+if any
+candidate accepts that category.  (This bias towards string is appropriate
+since an unknown-type literal looks like a string.) Otherwise, if
+all the remaining candidates accept the same type category, select that
+category; otherwise fail because the correct choice cannot be deduced
+without more clues.  Now discard
+candidates that do not accept the selected type category.  Furthermore,
+if any candidate accepts a preferred type in that category,
+discard candidates that accept non-preferred types for that argument.
+Keep all candidates if none survive these tests.
+If only one candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+如果有任何输入参数是<type>unknown</type>类型，检查剩余的候选操作符对应参数位置的类型范畴。
+在每一个能够接受字符串类型范畴的位置使用 <type>string</type>类型(这种对字符串的偏爱是合适的，
+因为 unknown 文本确实像字符串)。另外，如果所有剩下的候选操作符都接受相同的类型范畴，
+则选择该类型范畴，否则抛出一个错误(因为在没有更多线索的条件下无法作出正确的选择)。
+现在抛弃不接受选定的类型范畴的候选操作符，然后，
+如果任意候选操作符在某个给定的参数位置接受一个首选类型，
+则抛弃那些在该参数位置接受非首选类型的候选操作符。
+如果没有一个操作符能被保留，则保留所有候选。如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+If there are both <type>unknown</type> and known-type arguments, and all
+the known-type arguments have the same type, assume that the
+<type>unknown</type> arguments are also of that type, and check which
+candidates can accept that type at the <type>unknown</type>-argument
+positions.  If exactly one candidate passes this test, use it.
+Otherwise, fail.
+</para>
+-->
+<para>
+如果同时有<type>unknown</type>和已知类型的参数，并且所有已知类型的参数都是相同的类型，
+那么假设<type>unknown</type>参数也是那种类型，并检查哪个候选操作符在<type>unknown</type>
+参数位置接受那个类型。如果只有一个操作符符合，那么使用它。否则，产生一个错误。
+</para>
+</step>
+</substeps>
+</step>
+</procedure>
+
+<!--
+<para>
+Some examples follow.
+</para>
+-->
+<para>
+下面是一些例子。
+</para>
+
+<example>
+<!-- 
+<title>Factorial Operator Type Resolution</title> 
+-->
+<title>阶乘操作符类型解析</title>
+
+
+<para>
+<!--
+There is only one factorial operator (postfix <literal>!</>)
+defined in the standard catalog, and it takes an argument of type
+<type>bigint</type>.
+The scanner assigns an initial type of <type>integer</type> to the argument
+in this query expression:
+-->
+在系统表中里只有一个阶乘操作符（后缀<literal>!</>），它以<type>bigint</type>作为参数。
+扫描器给下面查询表达式的参数赋予<type>integer</type>的初始类型：
+<screen>
+SELECT 40 ! AS "40 factorial";
+
+                   40 factorial
+--------------------------------------------------
+ 815915283247897734345611269596115894272000000000
+(1 row)
+</screen>
+
+<!-- 
+So the parser does a type conversion on the operand and the query
+is equivalent to: 
+-->
+分析器对参数做类型转换，查询等效于：
+
+<screen>
+SELECT CAST(40 AS bigint) ! AS "40 factorial";
+</screen>
+</para>
+
+</example>
+
+<example>
+<!-- 
+<title>String Concatenation Operator Type Resolution</title> 
+-->
+<title>字符串连接操作符类型分析</title>
+
+<!--
+<para>
+A string-like syntax is used for working with string types and for
+working with complex extension types.
+Strings with unspecified type are matched with likely operator candidates.
+</para>
+-->
+<para>
+一种字符串风格的语法既可以用于字符串也可以用于复杂的扩展类型。
+未声明类型的字符串将被所有可能的候选操作符匹配。
+</para>
+
+<para>
+<!--
+An example with one unspecified argument:
+-->
+有一个未声明的参数的例子：
+<screen>
+SELECT text 'abc' || 'def' AS "text and unknown";
+
+ text and unknown
+------------------
+ abcdef
+(1 row)
+</screen>
+</para>
+
+<!--
+<para>
+In this case the parser looks to see if there is an operator taking <type>text</type>
+for both arguments. Since there is, it assumes that the second argument should
+be interpreted as type <type>text</type>.
+</para>
+-->
+<para>
+本例中分析器寻找两个参数都是<type>text</type>的操作符。确实这样的操作符，
+因此另一个参数就被认为是<type>text</type>类型。
+</para>
+
+
+<para>
+<!--
+Here is a concatenation of two values of unspecified types:
+-->
+下面是连接两个未声明类型的值：
+<screen>
+SELECT 'abc' || 'def' AS "unspecified";
+
+ unspecified
+-------------
+ abcdef
+(1 row)
+</screen>
+</para>
+
+<!--
+<para>
+In this case there is no initial hint for which type to use, since no types
+are specified in the query. So, the parser looks for all candidate operators
+and finds that there are candidates accepting both string-category and
+bit-string-category inputs.  Since string category is preferred when available,
+that category is selected, and then the
+preferred type for strings, <type>text</type>, is used as the specific
+type to resolve the unknown-type literals as.
+</para>
+-->
+<para>
+因为查询中没有声明任何类型，所以本例中对类型没有任何初始提示。因此，
+分析器查找所有候选操作符，发现既存在接受字符串类型范畴的操作符也存在接受位串类型范畴的操作符。
+因为字符串类型范畴是首选，所以选择字符串类型范畴的首选类型<type>text</type>
+作为解析未知类型文本的声明类型。
+</para>
+</example>
+
+<example>
+<!-- 
+<title>Absolute-Value and Negation Operator Type Resolution</title> 
+-->
+<title>绝对值和取反操作符类型分析</title>
+
+<para>
+<!--
+The <productname>PostgreSQL</productname> operator catalog has several
+entries for the prefix operator <literal>@</>, all of which implement
+absolute-value operations for various numeric data types.  One of these
+entries is for type <type>float8</type>, which is the preferred type in
+the numeric category.  Therefore, <productname>PostgreSQL</productname>
+will use that entry when faced with an <type>unknown</> input:
+-->
+<productname>PostgreSQL</productname>操作符表里面有几条记录对应于前缀操作符<literal>@</>，
+它们都用于为各种数值类型实现绝对值操作。其中之一用于<type>float8</type>类型，
+它是数值类型范畴中的首选类型。因此，在面对<type>unknown</>输入的时候，
+<productname>PostgreSQL</productname>会使用该类型：
+<screen>
+SELECT @ '-4.5' AS "abs";
+ abs
+-----
+ 4.5
+(1 row)
+</screen>
+<!-- 
+Here the system has implicitly resolved the unknown-type literal as type
+<type>float8</type> before applying the chosen operator.  We can verify that
+<type>float8</type> and not some other type was used:
+ -->
+此处，系统在应用选定的操作符之前隐式的转换unknown类型的文字为<type>float8</type>类型。
+我们可以验证它是<type>float8</type>而不是其它类型：
+<screen>
+SELECT @ '-4.5e500' AS "abs";
+
+ERROR:  "-4.5e500" is out of range for type double precision
+</screen>
+</para>
+
+
+<para>
+<!--
+On the other hand, the prefix operator <literal>~</> (bitwise negation)
+is defined only for integer data types, not for <type>float8</type>.  So, if we
+try a similar case with <literal>~</>, we get:
+-->
+另一方面，前缀操作符<literal>~</>(按位取反)只为整数数据类型定义，
+而不为<type>float8</type>定义。因此，如果我们用<literal>~</>做类似的实验将得到：
+<screen>
+SELECT ~ '20' AS "negation";
+
+ERROR:  operator is not unique: ~ "unknown"
+HINT:  Could not choose a best candidate operator. You might need to add
+explicit type casts.
+</screen>
+<!-- 
+This happens because the system cannot decide which of the several
+possible <literal>~</> operators should be preferred.  We can help
+it out with an explicit cast: 
+-->
+这是因为系统无法决定几个可能的<literal>~</>操作符中究竟应该使用哪一个。
+我们可以用明确地类型转换来帮它：
+<screen>
+SELECT ~ CAST('20' AS int8) AS "negation";
+
+ negation
+----------
+      -21
+(1 row)
+</screen>
+</para>
+
+</example>
+
+<example>
+<!-- 
+<title>Array Inclusion Operator Type Resolution</title> 
+-->
+<title>数组包含操作符类型分析</title>
+
+<para>
+<!--
+Here is another example of resolving an operator with one known and one
+unknown input:
+-->
+这里是解决一个操作符带有一个已知和一个未知类型输入的例子：
+<screen>
+SELECT array[1,2] &lt;@ '{1,2,3}' as "is subset";
+
+ is subset
+-----------
+ t
+(1 row)
+</screen>
+<!-- 
+The <productname>PostgreSQL</productname> operator catalog has several
+entries for the infix operator <literal>&lt;@</>, but the only two that
+could possibly accept an integer array on the left-hand side are
+array inclusion (<type>anyarray</> <literal>&lt;@</> <type>anyarray</>)
+and range inclusion (<type>anyelement</> <literal>&lt;@</> <type>anyrange</>).
+Since none of these polymorphic pseudo-types (see <xref
+linkend="datatype-pseudo">) are considered preferred, the parser cannot
+resolve the ambiguity on that basis.  However, the last resolution rule tells
+it to assume that the unknown-type literal is of the same type as the other
+input, that is, integer array.  Now only one of the two operators can match,
+so array inclusion is selected.  (Had range inclusion been selected, we would
+have gotten an error, because the string does not have the right format to be
+a range literal.) 
+-->
+<productname>PostgreSQL</productname>操作符表有几条记录对应于中缀操作符<literal>&lt;@</>，
+但是只有两个可以在左侧接受一个整数数组的操作符是数组包含(<type>anyarray</> <literal>&lt;@</> <type>anyarray</>)
+和范围包含(<type>anyelement</> <literal>&lt;@</> <type>anyrange</>)的。
+因为没有多态的伪类型(参阅<xref linkend="datatype-pseudo">)是首选的，所以解析器不能解决这个基础上的歧义。
+然而，最后一个解析规则告诉我们，假设未知类型的文字是和另外一个输入相同的类型，也就是，整数数组。
+现在只有两个操作符中的一个可以匹配，所以选择数组包含。（如果我们选择了范围包含，
+我们将得到一个错误，因为字符串没有正确的格式成为范围的文字。）
+</para>
+
+</example>
+
+</sect1>
+
+<sect1 id="typeconv-func">
+<!-- 
+<title>Functions</title> 
+-->
+<title>函数</title>
+
+<indexterm zone="typeconv-func">
+ <!-- 
+ <primary>function</primary>
+ <secondary>type resolution in an invocation</secondary> 
+ -->
+ <primary>函数</primary>
+ <secondary>调用中的类型解析</secondary>
+</indexterm>
+
+  <!--
+<para>
+   The specific function that is referenced by a function call
+   is determined using the following procedure.
+  </para>
+-->
+<para>
+下面讲解的过程解释了如何在一次函数调用中确定所使用的究竟是哪个函数。
+</para>
+
+<procedure>
+<!-- 
+<title>Function Type Resolution</title> 
+-->
+<title>函数类型解析</title>
+
+<step performance="required">
+<!--
+<para>
+Select the functions to be considered from the
+<classname>pg_proc</classname> system catalog.  If a non-schema-qualified
+function name was used, the functions
+considered are those with the matching name and argument count that are
+visible in the current search path (see <xref linkend="ddl-schemas-path">).
+If a qualified function name was given, only functions in the specified
+schema are considered.
+</para>
+-->
+<para>
+从系统表<classname>pg_proc</classname>中选择要考虑的函数。如果使用了一个不带模式修饰的函数名字，
+那么认为该函数是那些在当前搜索路径中名字和参数个数都匹配的函数(参阅<xref linkend="ddl-schemas-path">)。
+如果给出一个带修饰的函数名，那么只考虑指定模式中的函数。
+</para>
+
+<substeps>
+<step performance="optional">
+<!--
+<para>
+If the search path finds multiple functions of identical argument types,
+only the one appearing earliest in the path is considered.  Functions of
+different argument types are considered on an equal footing regardless of
+search path position.
+</para>
+-->
+<para>
+如果搜索路径中找到了多个相同参数类型的函数，那么只考虑最早出现在路径中的那一个。
+但是不同参数类型的函数将被平等看待，而不管它们在路径中的位置如何。
+</para>
+</step>
+<step performance="optional">
+<!--
+<para>
+If a function is declared with a <literal>VARIADIC</> array parameter, and
+the call does not use the <literal>VARIADIC</> keyword, then the function
+is treated as if the array parameter were replaced by one or more occurrences
+of its element type, as needed to match the call.  After such expansion the
+function might have effective argument types identical to some non-variadic
+function.  In that case the function appearing earlier in the search path is
+used, or if the two functions are in the same schema, the non-variadic one is
+preferred.
+</para>
+-->
+<para>
+如果使用一个<literal>VARIADIC</>数组参数声明一个函数，并且调用时不使用关键字<literal>VARIADIC</>，
+那么该函被认为数组参数被一个或更多它的元素类型的实体代替，并且需要去匹配调用。
+经过这样的扩展，这个函数可能有和非可变函数相同的有效参数类型。在这种情况下，
+使用在搜索路径中出现比较早的函数，或者如果两个函数在相同的模式中，那么首选非可变的一个。
+</para>
+</step>
+<step performance="optional">
+<!--
+<para>
+Functions that have default values for parameters are considered to match any
+call that omits zero or more of the defaultable parameter positions.  If more
+than one such function matches a call, the one appearing earliest in the
+search path is used.  If there are two or more such functions in the same
+schema with identical parameter types in the non-defaulted positions (which is
+possible if they have different sets of defaultable parameters), the system
+will not be able to determine which to prefer, and so an <quote>ambiguous
+function call</> error will result if no better match to the call can be
+found.
+</para>
+-->
+<para>
+考虑使用有默认参数值的函数来匹配任何省略了零或者多个默认表参数位置的调用。
+如果多个这样的函数匹配一个调用，那么使用最早出现在搜索路径中的那个。
+如果在非默认位置有两个或者更多带有相同模式相同参数类型这样的函数
+（他们的默认参数设置可能有不同），系统将不能确定去选择哪个，
+并且如果不能找到更好的函数匹配调用，那么将会产生一个<quote>ambiguous function call</>错误。
+</para>
+</step>
+</substeps>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Check for a function accepting exactly the input argument types.
+If one exists (there can be only one exact match in the set of
+functions considered), use it.
+(Cases involving <type>unknown</type> will never find a match at
+this step.)
+</para>
+-->
+<para>
+查找精确接受输入参数类型的函数。如果找到一个(在一组被考虑的函数中，
+可能只存在一个精确匹配的)，则用之。包含<type>unknown</type>类型的函数调用绝不会在此处找到匹配。
+</para>
+</step>
+
+<step performance="required">
+<para>
+<!--
+If no exact match is found, see if the function call appears
+to be a special type conversion request.  This happens if the function call
+has just one argument and the function name is the same as the (internal)
+name of some data type.  Furthermore, the function argument must be either
+an unknown-type literal, or a type that is binary-coercible to the named
+data type, or a type that could be converted to the named data type by
+applying that type's I/O functions (that is, the conversion is either to or
+from one of the standard string types).  When these conditions are met,
+the function call is treated as a form of <literal>CAST</> specification.
+-->
+如果没有找到精确的匹配，则看看函数调用是否需要一个特殊的类型转换。
+如果函数调用只有一个参数并且函数名与某些数据类型的内部名称相同，那么就会出现这种情况。
+另外，该函数的参数必须是一个未知类型的文本，或者与某个已命名数据类型二进制兼容，
+或者是一个可以通过请求那种类型的I/O函数转换为已命名数据类型。（也就是，
+要么可以转换成标准字符串类型，要么可以从标准字符串类型转换而来。）如果符合这些条件，
+那么该函数调用被认为是一种<literal>CAST</>声明。
+  <footnote>
+<!--
+   <para>
+    The reason for this step is to support function-style cast specifications
+    in cases where there is not an actual cast function.  If there is a cast
+    function, it is conventionally named after its output type, and so there
+    is no need to have a special case.  See
+    <xref linkend="sql-createcast">
+    for additional commentary.
+   </para>
+-->
+<para>
+这一步骤的原因是为了支持函数风格的转换声明，防止没有实际转换函数的情况。
+如果有一个转换函数，它是按照惯例以它的输出类型命名的，这样就不需要一个特例。
+参阅<xref linkend="sql-createcast">获取额外的说明。
+</para>
+  </footnote>
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+Look for the best match.
+</para>
+-->
+<para>
+寻找最优匹配。
+</para>
+<substeps>
+<step performance="required">
+<!--
+<para>
+Discard candidate functions for which the input types do not match
+and cannot be converted (using an implicit conversion) to match.
+<type>unknown</type> literals are
+assumed to be convertible to anything for this purpose.  If only one
+candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+抛弃那些输入类型不匹配并且也不能隐式转换成匹配的候选函数。<type>unknown</type>
+文本在这种情况下可以转换成任何东西。如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+Run through all candidates and keep those with the most exact matches
+on input types.  (Domains are considered the same as their base type
+for this purpose.)  Keep all candidates if none have exact matches.
+If only one candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+遍历所有候选函数，保留那些输入类型匹配最准确的。此时，
+域被看作和他们的基本类型相同。如果没有一个函数能准确匹配，则保留所有候选。
+如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+Run through all candidates and keep those that accept preferred types (of the
+input data type's type category) at the most positions where type conversion
+will be required.
+Keep all candidates if none accept preferred types.
+If only one candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+遍历所有候选函数，保留那些需要类型转换时接受(属于输入数据类型的类型范畴的)
+首选类型位置最多的函数。如果没有接受首选类型的函数，则保留所有候选。
+如果只剩下一个候选项，则用之，否则继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+If any input arguments are <type>unknown</type>, check the type categories
+accepted
+at those argument positions by the remaining candidates.  At each position,
+select the <type>string</type> category if any candidate accepts that category.
+(This bias towards string
+is appropriate since an unknown-type literal looks like a string.)
+Otherwise, if all the remaining candidates accept the same type category,
+select that category; otherwise fail because
+the correct choice cannot be deduced without more clues.
+Now discard candidates that do not accept the selected type category.
+Furthermore, if any candidate accepts a preferred type in that category,
+discard candidates that accept non-preferred types for that argument.
+Keep all candidates if none survive these tests.
+If only one candidate remains, use it; else continue to the next step.
+</para>
+-->
+<para>
+如果有任何输入参数是<type>unknown</type>类型，检查剩余的候选函数对应参数位置的类型范畴。
+在每一个能够接受字符串类型范畴的位置使用<type>string</type>类型(这种对字符串的偏爱是合适的，
+因为 unknown 文本确实像字符串)。另外，如果所有剩下的候选函数都接受相同的类型范畴，
+则选择该类型范畴，否则抛出一个错误(因为在没有更多线索的条件下无法作出正确的选择)。
+现在抛弃不接受选定的类型范畴的候选函数，然后，如果任意候选函数在那个范畴接受一个首选类型，
+则抛弃那些在该参数位置接受非首选类型的候选函数。如果没有一个候选符合这些测试则保留所有候选。
+如果只有一个候选函数符合，则使用它；否则，继续下一步。
+</para>
+</step>
+<step performance="required">
+<!--
+<para>
+If there are both <type>unknown</type> and known-type arguments, and all
+the known-type arguments have the same type, assume that the
+<type>unknown</type> arguments are also of that type, and check which
+candidates can accept that type at the <type>unknown</type>-argument
+positions.  If exactly one candidate passes this test, use it.
+Otherwise, fail.
+</para>
+-->
+<para>
+如果同时有<type>unknown</type>和已知类型的参数，并且所有已知类型的参数有相同的类型，
+假设<type>unknown</type>参数也是这种类型，检查哪个候选函数可以在<type>unknown</type>
+参数位置接受这种类型。如果正好一个候选符合，那么使用它。否则，产生一个错误。
+</para>
+</step>
+</substeps>
+</step>
+</procedure>
+
+<!--
+<para>
+Note that the <quote>best match</> rules are identical for operator and
+function type resolution.
+Some examples follow.
+</para>
+-->
+<para>
+请注意，<quote>最佳匹配</>规则对操作符和对函数的类型分析都是一样的。下面是一些例子。
+</para>
+
+<example>
+<!-- 
+<title>Rounding Function Argument Type Resolution</title> 
+-->
+<title>圆整函数参数类型解析</title>
+
+<para>
+<!--
+There is only one <function>round</function> function that takes two
+arguments; it takes a first argument of type <type>numeric</type> and
+a second argument of type <type>integer</type>.
+So the following query automatically converts
+the first argument of type <type>integer</type> to
+<type>numeric</type>:
+-->
+只有一个<function>round</function>函数有两个参数(第一个是<type>numeric</type>，
+第二个是<type>integer</type>)。所以下面的查询自动把第一个类型为<type>integer</type>
+的参数转换成<type>numeric</type>类型：
+<screen>
+SELECT round(4, 4);
+
+ round
+--------
+ 4.0000
+(1 row)
+</screen>
+
+<!-- 
+That query is actually transformed by the parser to: 
+-->
+实际上它被分析器转换成：
+<screen>
+SELECT round(CAST (4 AS numeric), 4);
+</screen>
+</para>
+
+
+<para>
+<!--
+Since numeric constants with decimal points are initially assigned the
+type <type>numeric</type>, the following query will require no type
+conversion and therefore might be slightly more efficient:
+-->
+因为带小数点的数值常量初始时被赋予<type>numeric</type>类型，
+因此下面的查询将不需要类型转换，并且可能会略微高效一些：
+<screen>
+SELECT round(4.0, 4);
+</screen>
+</para>
+</example>
+
+<example>
+<!-- 
+<title>Substring Function Type Resolution</title> 
+-->
+<title>子字符串函数类型解析</title>
+
+
+<para>
+<!--
+There are several <function>substr</function> functions, one of which
+takes types <type>text</type> and <type>integer</type>.  If called
+with a string constant of unspecified type, the system chooses the
+candidate function that accepts an argument of the preferred category
+<literal>string</literal> (namely of type <type>text</type>).
+-->
+有好几个<function>substr</function>函数，其中一个接受<type>text</type>
+和<type>integer</type>类型。如果用一个未声明类型的字符串常量调用它，
+系统将选择接受<literal>string</literal>类型范畴的首选类型
+(也就是<type>text</type>类型)的候选函数。
+<screen>
+SELECT substr('1234', 3);
+
+ substr
+--------
+     34
+(1 row)
+</screen>
+</para>
+
+
+<para>
+<!--
+If the string is declared to be of type <type>varchar</type>, as might be the case
+if it comes from a table, then the parser will try to convert it to become <type>text</type>:
+-->
+如果该字符串声明为<type>varchar</type>类型，就像从表中取出来的数据一样，
+分析器将试着将其转换成<type>text</type>类型：
+<screen>
+SELECT substr(varchar '1234', 3);
+
+ substr
+--------
+     34
+(1 row)
+</screen>
+<!-- 
+This is transformed by the parser to effectively become:
+ -->
+被分析器转换后实际上变成：
+<screen>
+SELECT substr(CAST (varchar '1234' AS text), 3);
+</screen>
+</para>
+
+
+<para>
+<note>
+<!--
+<para>
+The parser learns from the <structname>pg_cast</> catalog that
+<type>text</type> and <type>varchar</type>
+are binary-compatible, meaning that one can be passed to a function that
+accepts the other without doing any physical conversion.  Therefore, no
+type conversion call is really inserted in this case.
+</para>
+-->
+<para>
+分析器从<structname>pg_cast</>表中了解到<type>text</type>和<type>varchar</type>
+是二进制兼容的，意思是说一个可以传递给接受另一个的函数而不需要做任何物理转换。
+因此，在这种情况下，实际上没有做任何类型转换。
+</para>
+</note>
+</para>
+
+
+<para>
+<!--
+And, if the function is called with an argument of type <type>integer</type>,
+the parser will try to convert that to <type>text</type>:
+-->
+而且，如果以<type>integer</type>为参数调用函数，分析器将试图将其转换成<type>text</type>类型：
+<screen>
+SELECT substr(1234, 3);
+ERROR:  function substr(integer, integer) does not exist
+HINT:  No function matches the given name and argument types. You might need
+to add explicit type casts.
+</screen>
+<!-- 
+This does not work because <type>integer</> does not have an implicit cast
+to <type>text</>.  An explicit cast will work, however: 
+-->
+这样是不行的，因为<type>integer</>不能隐式的转换为<type>text</>。
+需要一个明确的转换才行：
+<screen>
+SELECT substr(CAST (1234 AS text), 3);
+
+ substr
+--------
+     34
+(1 row)
+</screen>
+</para>
+
+</example>
+
+</sect1>
+
+<sect1 id="typeconv-query">
+<!-- 
+<title>Value Storage</title> 
+-->
+<title>值存储</title>
+
+  <!--
+<para>
+   Values to be inserted into a table are converted to the destination
+   column's data type according to the
+   following steps.
+  </para>
+-->
+<para>
+要插入表中的数值也根据下面的步骤转换成目标列的数据类型。
+</para>
+
+<procedure>
+<!-- 
+<title>Value Storage Type Conversion</title> 
+-->
+<title>值存储数据类型解析</title>
+
+<step performance="required">
+<!--
+<para>
+Check for an exact match with the target.
+</para>
+-->
+<para>
+查找与目标字段准确的匹配。
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Otherwise, try to convert the expression to the target type.  This will succeed
+if there is a registered cast between the two types.
+If the expression is an unknown-type literal, the contents of
+the literal string will be fed to the input conversion routine for the target
+type.
+</para>
+-->
+<para>
+试着将表达式直接转换成目标类型。如果已知这两种类型之间存在一个已注册的转换函数，
+那么直接调用该转换函数即可。如果表达式是一个未知类型文本，
+该文本字符串的内容将交给目标类型的输入转换过程。
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Check to see if there is a sizing cast for the target type.  A sizing
+cast is a cast from that type to itself.  If one is found in the
+<structname>pg_cast</> catalog, apply it to the expression before storing
+into the destination column.  The implementation function for such a cast
+always takes an extra parameter of type <type>integer</type>, which receives
+the destination column's <structfield>atttypmod</> value (typically its
+declared length, although the interpretation of <structfield>atttypmod</>
+varies for different data types), and it may take a third <type>boolean</>
+parameter that says whether the cast is explicit or implicit.  The cast
+function
+is responsible for applying any length-dependent semantics such as size
+checking or truncation.
+</para>
+-->
+<para>
+检查一下看看目标类型是否有长度转换。长度转换是一个从某类型到自身的转换。
+如果在<structname>pg_cast</>表里面找到一个，那么在存储到目标字段之前先在表达式上应用。
+这样的转换函数总是接受一个额外的类型为<type>integer</type>的参数，
+它接收目标字段的<structfield>atttypmod</>值(实际上是其声明长度，<structfield>atttypmod</>
+的解释随不同的数据类型而不同)，并且它可能接受一个<type>boolean</>类型的第三个参数，
+表示转换是显式的还是隐式的。转换函数负责施加那些长度相关的语义，比如长度检查或者截断。
+</para>
+</step>
+
+</procedure>
+
+<example>
+<!-- 
+<title><type>character</type> Storage Type Conversion</title> 
+-->
+<title><type>character</type> 存储类型转换</title>
+
+
+<para>
+<!--
+For a target column declared as <type>character(20)</type> the following
+statement shows that the stored value is sized correctly:
+-->
+对一个目标列定义为<type>character(20)</type>的语句，下面的语句显示存储值的长度正确：
+<screen>
+CREATE TABLE vv (v character(20));
+INSERT INTO vv SELECT 'abc' || 'def';
+SELECT v, octet_length(v) FROM vv;
+
+          v           | octet_length
+----------------------+--------------
+ abcdef               |           20
+(1 row)
+</screen>
+</para>
+
+<!--
+<para>
+What has really happened here is that the two unknown literals are resolved
+to <type>text</type> by default, allowing the <literal>||</literal> operator
+to be resolved as <type>text</type> concatenation.  Then the <type>text</type>
+result of the operator is converted to <type>bpchar</type> (<quote>blank-padded
+char</>, the internal name of the <type>character</type> data type) to match the target
+column type.  (Since the conversion from <type>text</type> to
+<type>bpchar</type> is binary-coercible, this conversion does
+not insert any real function call.)  Finally, the sizing function
+<literal>bpchar(bpchar, integer, boolean)</> is found in the system catalog
+and applied to the operator's result and the stored column length.  This
+type-specific function performs the required length check and addition of
+padding spaces.
+</para>
+-->
+<para>
+这里真正发生的事情是两个 unknown 文本缺省解析成<type>text</type>，
+这样就允许<literal>||</literal>操作符解析成<type>text</type>连接。
+然后操作符的<type>text</type>结果转换成<type>bpchar</type>(<quote>空白填充的字符型</>，
+<type>character</type>类型内部名称)以匹配目标字段类型。不过，从<type>text</type>
+到<type>bpchar</type>的转换是二进制兼容的，这样的转换是隐含的并且实际上不做任何函数调用。
+最后，在系统表里找到长度转换函数<literal>bpchar(bpchar, integer, boolean)</>
+并且应用于该操作符的结果和存储的字段长。这个类型相关的函数执行所需的长度检查和额外的空白填充。
+</para>
+</example>
+</sect1>
+
+<sect1 id="typeconv-union-case">
+<!-- 
+<title><literal>UNION</literal>, <literal>CASE</literal>, and Related Constructs</title> 
+-->
+<title><literal>UNION</literal>, <literal>CASE</literal> 和相关构造 </title>
+
+<indexterm zone="typeconv-union-case">
+ <primary>UNION</primary>
+ <!-- 
+ <secondary>determination of result type</secondary> 
+ -->
+ <secondary>确定结果类型</secondary>
+</indexterm>
+
+<indexterm zone="typeconv-union-case">
+ <primary>CASE</primary>
+ <!-- 
+ <secondary>determination of result type</secondary> 
+ -->
+ <secondary>确定结果类型</secondary>
+</indexterm>
+
+<indexterm zone="typeconv-union-case">
+ <primary>ARRAY</primary>
+ <!-- 
+ <secondary>determination of result type</secondary>
+ -->
+ <secondary>确定结果类型</secondary>
+</indexterm>
+
+<indexterm zone="typeconv-union-case">
+ <primary>VALUES</primary>
+ <!-- 
+ <secondary>determination of result type</secondary> 
+ -->
+ <secondary>确定结果类型</secondary>
+</indexterm>
+
+<indexterm zone="typeconv-union-case">
+ <primary>GREATEST</primary>
+ <!-- 
+ <secondary>determination of result type</secondary> 
+ -->
+ <secondary>确定结果类型</secondary>
+</indexterm>
+
+<indexterm zone="typeconv-union-case">
+ <primary>LEAST</primary>
+ <!-- 
+ <secondary>determination of result type</secondary> 
+ -->
+ <secondary>确定结果类型</secondary>
+</indexterm>
+
+<!--
+<para>
+SQL <literal>UNION</> constructs must match up possibly dissimilar
+types to become a single result set.  The resolution algorithm is
+applied separately to each output column of a union query.  The
+<literal>INTERSECT</> and <literal>EXCEPT</> constructs resolve
+dissimilar types in the same way as <literal>UNION</>.  The
+<literal>CASE</>, <literal>ARRAY</>, <literal>VALUES</>,
+<function>GREATEST</> and <function>LEAST</> constructs use the identical
+algorithm to match up their component expressions and select a result
+data type.
+</para>
+-->
+<para>
+SQL <literal>UNION</> 构造必须把那些可能不太相似的类型匹配起来成为一个结果集。
+解析算法分别应用于联合查询的每个输出字段。<literal>INTERSECT</>和<literal>EXCEPT</>
+构造对不相同的类型使用和 <literal>UNION</>相同的算法进行解析。
+<literal>CASE</>, <literal>ARRAY</>, <literal>VALUES</>, <function>GREATEST</>,
+和<function>LEAST</>构造也使用同样的算法匹配它的部件表达式并且选择一个结果数据类型。
+</para>
+
+<procedure>
+<!-- 
+<title>Type Resolution for <literal>UNION</literal>, <literal>CASE</literal>,
+and Related Constructs</title>
+ -->
+ <title><literal>UNION</literal>, <literal>CASE</literal>和相关构造的类型解析</title>
+
+<step performance="required">
+<!--
+<para>
+If all inputs are of the same type, and it is not <type>unknown</type>,
+resolve as that type.  Otherwise, replace any domain types in the list with
+their underlying base types.
+</para>
+-->
+<para>
+如果所有输入都是相同的类型，并且不是<type>unknown</type>类型，那么解析成这种类型。
+否则，用它们潜在的基本类型替换列表中的域类型。
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+If all inputs are of type <type>unknown</type>, resolve as type
+<type>text</type> (the preferred type of the string category).
+Otherwise, <type>unknown</type> inputs are ignored.
+</para>
+-->
+<para>
+如果所有输入都是<type>unknown</type>类型则解析成<type>text</type>类型
+(字符串类型范畴的首选类型)。否则，忽略<type>unknown</type>输入。
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+If the non-unknown inputs are not all of the same type category, fail.
+</para>
+-->
+<para>
+如果非 unknown 输入不属于同一个类型范畴，失败。
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Choose the first non-unknown input type which is a preferred type in
+that category, if there is one.
+</para>
+-->
+<para>
+如果有，则选取第一个属于该范畴中首选类型的非 unknown 输入类型。
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Otherwise, choose the last non-unknown input type that allows all the
+preceding non-unknown inputs to be implicitly converted to it.  (There
+always is such a type, since at least the first type in the list must
+satisfy this condition.)
+</para>
+-->
+<para>
+否则，选择最后一个允许所有前面的非unknown输入隐式转换为它的非unknown输入类型。
+（总是有这么一种类型，因为至少列表上的第一种类型必须适合这种情况。）
+</para>
+</step>
+
+<step performance="required">
+<!--
+<para>
+Convert all inputs to the selected type.  Fail if there is not a
+conversion from a given input to the selected type.
+</para>
+-->
+<para>
+把所有输入转换为所选的类型。如果从给定的输入到所选的类型没有一个转换则失败。
+</para>
+</step>
+</procedure>
+
+<!--
+<para>
+Some examples follow.
+</para>
+-->
+<para>
+下面是一些例子。
+</para>
+
+<example>
+<!-- 
+<title>Type Resolution with Underspecified Types in a Union</title> 
+-->
+<title>Union中的待定类型解析</title>
+
+
+<para>
+<screen>
+SELECT text 'a' AS "text" UNION SELECT 'b';
+
+ text
+------
+ a
+ b
+(2 rows)
+</screen>
+<!--
+Here, the unknown-type literal <literal>'b'</literal> will be resolved to type <type>text</type>.
+-->
+这里，unknown 类型文本<literal>'b'</literal>将被解析成<type>text</type>类型。
+</para>
+
+</example>
+
+<example>
+<!-- 
+<title>Type Resolution in a Simple Union</title> 
+-->
+<title>简单Union中的类型解析</title>
+
+
+<para>
+<screen>
+SELECT 1.2 AS "numeric" UNION SELECT 1;
+
+ numeric
+---------
+       1
+     1.2
+(2 rows)
+</screen>
+<!--
+The literal <literal>1.2</> is of type <type>numeric</>,
+and the <type>integer</type> value <literal>1</> can be cast implicitly to
+<type>numeric</>, so that type is used.
+-->
+文本<literal>1.2</>的类型为<type>numeric</>，而且<type>integer</type>类型的<literal>1</>
+可以隐含地转换为<type>numeric</>，因此使用这个类型。
+</para>
+
+</example>
+
+<example>
+<!-- 
+<title>Type Resolution in a Transposed Union</title> 
+-->
+<title>转置Union中的类型解析</title>
+
+
+<para>
+<screen>
+SELECT 1 AS "real" UNION SELECT CAST('2.2' AS REAL);
+
+ real
+------
+    1
+  2.2
+(2 rows)
+</screen>
+<!--
+Here, since type <type>real</> cannot be implicitly cast to <type>integer</>,
+but <type>integer</> can be implicitly cast to <type>real</>, the union
+result type is resolved as <type>real</>.
+-->
+这里，因为类型<type>real</>不能被隐含转换成<type>integer</>，但是<type>integer</>
+可以隐含转换成<type>real</>，那么联合的结果类型将是<type>real</>。
+</para>
+</example>
+
+</sect1>
+</chapter>

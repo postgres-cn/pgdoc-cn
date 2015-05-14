@@ -1,0 +1,987 @@
+<!-- doc/src/sgml/tablefunc.sgml -->
+
+<sect1 id="tablefunc" xreflabel="tablefunc">
+ <title>tablefunc</title>
+
+ <indexterm zone="tablefunc">
+  <primary>tablefunc</primary>
+ </indexterm>
+
+ <para>
+  <filename>tablefun</> 扩展包括了返回表记录(即:多行)的一系列函数 .  这些函数在数据记录的处理和运用C函数返回多行记录
+中是非常有用的 
+ <!--  The <filename>tablefunc</> module includes various functions that return
+tables (that is, multiple rows). These functions are useful both in their
+own right and as examples of how to write C functions that return
+multiple rows. -->
+ </para>
+
+ <sect2>
+  <title>函数列表 <!-- Functions Provided  --></title>
+
+  <para>
+   <xref linkend="tablefunc-functions"> 列出了<filename>tablefunc</filename> 扩展提供的函数
+   <!--  <xref linkend="tablefunc-functions"> shows the functions provided
+by the <filename>tablefunc</filename> module. -->
+  </para>
+
+  <table id="tablefunc-functions">
+   <title><filename>tablefunc</>函数  <!--  <filename>tablefunc</> Functions --></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>函数<!-- Function--></entry>
+      <entry>返回值<!--Returns --></entry>
+      <entry>描述<!-- Description--></entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><function>normal_rand(int numvals, float8 mean, float8 stddev)</function></entry>
+      <entry><type>setof float8</></entry>
+      <entry>
+      返回一系列正态分布的随机值
+      <!--Produces a set of normally distributed random values -->
+      </entry>
+     </row>
+     <row>
+      <entry><function>crosstab(text sql)</function></entry>
+      <entry><type>setof record</></entry>
+      <entry>
+       返回一个行名加上N列数值的二维表，其中的N由查询产生的结果确定。
+      <!--  Produces a <quote>pivot table</> containing
+row names plus <replaceable>N</> value columns, where
+<replaceable>N</> is determined by the row type specified in the calling -->
+     </entry>
+     </row>
+     <row>
+      <entry><function>crosstab<replaceable>N</>(text sql)</function></entry>
+      <entry><type>setof table_crosstab_<replaceable>N</></></entry>
+      <entry>
+       返回一个行名加上N列数值的二维表
+       <function>crosstab2</>, <function>crosstab3</>, and
+       <function>crosstab4</> 是系统定义的, 你可以按照下面描述的定义
+       <function>crosstab<replaceable>N</></> 
+       <!-- Produces a <quote>pivot table</> containing
+row names plus <replaceable>N</> value columns.
+<function>crosstab2</>, <function>crosstab3</>, and
+<function>crosstab4</> are predefined, but you can create additional
+<function>crosstab<replaceable>N</></> functions as described below -->      
+     </entry>
+     </row>
+     <row>
+      <entry><function>crosstab(text source_sql, text category_sql)</function></entry>
+      <entry><type>setof record</></entry>
+      <entry>
+       返回一个二维表列值由第二个查询指定
+     <!-- --> 
+     </entry>
+     </row>
+     <row>
+      <entry><function>crosstab(text sql, int N)</function></entry>
+      <entry><type>setof record</></entry>
+      <entry>
+       <para><function>crosstab(text)</>的废弃版本.
+        <replaceable>N</> 被忽略,因为列值的行数由查询决定
+      <!-- Obsolete version of <function>crosstab(text)</>.
+The parameter <replaceable>N</> is now ignored, since the number of
+value columns is always determined by the calling query --> 
+      </para>
+      </entry>
+     </row>
+     <row>
+      <entry>
+       <function>
+        connectby(text relname, text keyid_fld, text parent_keyid_fld
+        [, text orderby_fld ], text start_with, int max_depth
+        [, text branch_delim ])
+       </function>
+       <indexterm><primary>connectby</primary></indexterm>
+      </entry>
+      <entry><type>setof record</></entry>
+      <entry>
+       返回一个分层的树状结构
+     <!-- Produces a representation of a hierarchical tree structure--> 
+     </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <sect3>
+   <title><function>normal_rand</function></title>
+
+   <indexterm>
+    <primary>normal_rand</primary>
+   </indexterm>
+
+<synopsis>
+normal_rand(int numvals, float8 mean, float8 stddev) returns setof float8
+</synopsis>
+
+    <para>
+     <!--<function>normal_rand</> produces a set of normally distributed random
+     values (Gaussian distribution).-->
+     normal函数返回一系列正态分布的随机值(高斯分布)
+    </para>
+
+    <para>
+    <!--
+     <parameter>numvals</parameter> is the number of values to be returned
+     from the function. <parameter>mean</parameter> is the mean of the normal
+     distribution of values and <parameter>stddev</parameter> is the standard
+     deviation of the normal distribution of values.-->
+     numvals是这个函数返回值的数目,mean时正态分布的平均值,stddev是正态分布的方差
+    </para>
+
+    <para>
+     <!-- For example, this call requests 1000 values with a mean of 5 and a
+     standard deviation of 3: -->
+     例如:这个查询返回1000个均值为5,方差为3的值
+    </para>
+
+<screen>
+test=# SELECT * FROM normal_rand(1000, 5, 3);
+     normal_rand
+----------------------
+     1.56556322244898
+     9.10040991424657
+     5.36957140345079
+   -0.369151492880995
+    0.283600703686639
+       .
+       .
+       .
+     4.82992125404908
+     9.71308014517282
+     2.49639286969028
+(1000 rows)
+</screen>
+  </sect3>
+
+  <sect3>
+   <title><function>crosstab(text)</function></title>
+
+   <indexterm>
+    <primary>crosstab</primary>
+   </indexterm>
+
+<synopsis>
+crosstab(text sql)
+crosstab(text sql, int N)
+</synopsis>
+
+   <para>
+   <!--
+    The <function>crosstab</> function is used to produce <quote>pivot</>
+    displays, wherein data is listed across the page rather than down.
+    For example, we might have data like -->
+    crosstab函数返回一个二维表,数据在这个表里通过横向而非纵向列出,例如: 我们已有数据如下:
+<programlisting>
+row1    val11
+row1    val12
+row1    val13
+...
+row2    val21
+row2    val22
+row2    val23
+...
+</programlisting>
+    <!--which we wish to display like-->
+     而我们想要按如下输出:
+<programlisting>
+row1    val11   val12   val13   ...
+row2    val21   val22   val23   ...
+...
+</programlisting>
+    <!--
+    The <function>crosstab</> function takes a text parameter that is a SQL
+    query producing raw data formatted in the first way, and produces a table
+    formatted in the second way.-->
+    crosstab函数使用一个SQL查询作为参数,返回一个给定格式的二维表
+   </para> 
+
+   <para>
+    <!--
+    The <parameter>sql</parameter> parameter is a SQL statement that produces
+    the source set of data. This statement must return one
+    <structfield>row_name</structfield> column, one
+    <structfield>category</structfield> column, and one
+    <structfield>value</structfield> column.  <parameter>N</parameter> is an
+    obsolete parameter, ignored if supplied (formerly this had to match the
+    number of output value columns, but now that is determined by the
+    calling query).-->
+    sql参数用来产生一组数据源,这个语句必须返回1个row_name列,一个category列,一个value列.
+    N是一个废弃的参数,
+   </para>
+
+   <para>
+    <!--For example, the provided query might produce a set something like:-->
+    例如,一个查询需要产生如下形式的数据:
+<programlisting>
+ row_name    cat    value
+----------+-------+-------
+  row1      cat1    val1
+  row1      cat2    val2
+  row1      cat3    val3
+  row1      cat4    val4
+  row2      cat1    val5
+  row2      cat2    val6
+  row2      cat3    val7
+  row2      cat4    val8
+</programlisting>
+   </para>
+
+   <para>
+    <!--
+    The <function>crosstab</> function is declared to return <type>setof
+    record</type>, so the actual names and types of the output columns must be
+    defined in the <literal>FROM</> clause of the calling <command>SELECT</>
+    statement, for example:
+    -->
+    crosstab函数返回一系列记录,输出列的实际名字和类型必须定义在FROM字句中,例如:
+<programlisting>
+SELECT * FROM crosstab('...') AS ct(row_name text, category_1 text, category_2 text);
+</programlisting>
+    This example produces a set something like:
+<programlisting>
+           &lt;== value  columns  ==&gt;
+ row_name   category_1   category_2
+----------+------------+------------
+  row1        val1         val2
+  row2        val5         val6
+</programlisting>
+   </para>
+
+   <para>
+    <!---
+    The <literal>FROM</> clause must define the output as one
+    <structfield>row_name</> column (of the same data type as the first result
+    column of the SQL query) followed by N <structfield>value</> columns
+    (all of the same data type as the third result column of the SQL query).
+    You can set up as many output value columns as you wish.  The names of the
+    output columns are up to you.
+    -->
+    FROM字句必须定义一个row_name(和你查询返回第一列具有相同数据类型)列和一个和N个value列
+    (和查询返回第三列的类型匹配).
+    由你来定义输出列的名字和数量.
+   </para>
+
+   <para>
+    <!--
+    The <function>crosstab</> function produces one output row for each
+    consecutive group of input rows with the same
+    <structfield>row_name</structfield> value.  It fills the output
+    <structfield>value</> columns, left to right, with the
+    <structfield>value</structfield> fields from these rows.  If there
+    are fewer rows in a group than there are output <structfield>value</>
+    columns, the extra output columns are filled with nulls; if there are
+    more rows, the extra input rows are skipped.
+    -->
+    crosstab函数对于具有相同row_name的一组数据返回一行.它使用这些行
+  从左到右填充输出到二维表.如果这组数据少于输出的列数,则使用null填充,
+    如果有多余的行数,则额外的输入将被忽略
+    </para>
+
+   <para>
+    <!--
+    In practice the SQL query should always specify <literal>ORDER BY 1,2</>
+    to ensure that the input rows are properly ordered, that is, values with
+    the same <structfield>row_name</structfield> are brought together and
+    correctly ordered within the row.  Notice that <function>crosstab</>
+    itself does not pay any attention to the second column of the query
+    result; it's just there to be ordered by, to control the order in which
+    the third-column values appear across the page.
+    -->
+    SQL查询应该一直指定ORDER BY1,2来确保输入的数据时有序的,即,
+    具有相同row_name的行是连续的并且在一行的输出中是有序的.注意crosstab
+    不关注第二列查询的结果;它只是用来保证第三列的值在输出中的排序.  
+ </para>
+
+   <para>
+   <!--
+    Here is a complete example:-->
+     这是一个完整的例子:
+<programlisting>
+CREATE TABLE ct(id SERIAL, rowid TEXT, attribute TEXT, value TEXT);
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att1','val1');
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att2','val2');
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att3','val3');
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att4','val4');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att1','val5');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att2','val6');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att3','val7');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att4','val8');
+
+SELECT *
+FROM crosstab(
+  'select rowid, attribute, value
+   from ct
+   where attribute = ''att2'' or attribute = ''att3''
+   order by 1,2')
+AS ct(row_name text, category_1 text, category_2 text, category_3 text);
+
+ row_name | category_1 | category_2 | category_3
+----------+------------+------------+------------
+ test1    | val2       | val3       |
+ test2    | val6       | val7       |
+(2 rows)
+</programlisting>
+   </para>
+
+   <para>
+   <!--
+    You can avoid always having to write out a <literal>FROM</> clause to
+    define the output columns, by setting up a custom crosstab function that
+    has the desired output row type wired into its definition.  This is
+    described in the next section.  Another possibility is to embed the
+    required <literal>FROM</> clause in a view definition.
+-->
+   可以通过定义一个crosstab函数去定义任意类型,数量的列,来避免每次在FROM
+ 字句中制定输出列的值和类型.这将在下一节中讲解.另外一种方式是在定义视图的
+   FROM字句中制定.
+</para>
+
+  </sect3>
+
+  <sect3>
+   <title><function>crosstab<replaceable>N</>(text)</function></title>
+
+   <indexterm>
+    <primary>crosstab</primary>
+   </indexterm>
+
+<synopsis>
+crosstab<replaceable>N</>(text sql)
+</synopsis>
+
+    <para>
+     <!--
+     The <function>crosstab<replaceable>N</></> functions are examples of how
+     to set up custom wrappers for the general <function>crosstab</> function,
+     so that you need not write out column names and types in the calling
+     <command>SELECT</> query.  The <filename>tablefunc</> module includes
+     <function>crosstab2</>, <function>crosstab3</>, and
+     <function>crosstab4</>, whose output row types are defined as
+    -->
+    crosstabN函数是crosstab函数封装的一个例子,在使用SELECT查询中,你可以不指定列数
+   和类型.tablefunc扩展定义了crosstab2,crosstab3,crosstab4函数中列的类型数量.    
+</para>
+
+<programlisting>
+CREATE TYPE tablefunc_crosstab_N AS (
+    row_name TEXT,
+    category_1 TEXT,
+    category_2 TEXT,
+        .
+        .
+        .
+    category_N TEXT
+);
+</programlisting>
+
+    <para>
+     <!--
+     Thus, these functions can be used directly when the input query produces
+     <structfield>row_name</> and <structfield>value</> columns of type
+     <type>text</>, and you want 2, 3, or 4 output values columns.
+     In all other ways they behave exactly as described above for the
+     general <function>crosstab</> function.
+    --> 
+    当输入查询返回text类型的row_name并且你有2,3,4列输出值时你可以直接使用
+   这些函数.其他情况需要像上面的定义crosstab函数一样.
+    </para>
+
+    <para>
+     <!--
+     For instance, the example given in the previous section would also
+     work as
+     -->
+     例如,上面的例子也可以像下面一样运行.
+<programlisting>
+SELECT *
+FROM crosstab3(
+  'select rowid, attribute, value
+   from ct
+   where attribute = ''att2'' or attribute = ''att3''
+   order by 1,2');
+</programlisting>
+    </para>
+
+    <para>
+     <!--
+     These functions are provided mostly for illustration purposes. You
+     can create your own return types and functions based on the
+     underlying <function>crosstab()</> function.  There are two ways
+     to do it:
+     -->
+     这些函数大部分只是为了举例说明.你可以按照crosstab函数定义你需要的返回类型的
+     函数.这里有两种方法来实现:
+    <itemizedlist>
+     <listitem>
+      <para>
+      <!--
+       Create a composite type describing the desired output columns,
+       similar to the examples in
+       <filename>contrib/tablefunc/tablefunc1.0.sql</>.
+       Then define a
+       unique function name accepting one <type>text</> parameter and returning
+       <type>setof your_type_name</>, but linking to the same underlying
+       <function>crosstab</> C function.  For example, if your source data
+       produces row names that are <type>text</>, and values that are
+       <type>float8</>, and you want 5 value columns:
+       -->
+       定义一个复合类型的输出列类似于contrib/tablefunc/tablefunc--1.0.sql中的例子.
+      按照crosstab函数定义的方式,定义一个唯一函数名来接收一个text类型的参数,返回setof your_type_name.
+例如,你的数据源返回一个text类型的row_name,values字段为float8类型,并且你需要5列:
+<programlisting>
+CREATE TYPE my_crosstab_float8_5_cols AS (
+    my_row_name text,
+    my_category_1 float8,
+    my_category_2 float8,
+    my_category_3 float8,
+    my_category_4 float8,
+    my_category_5 float8
+);
+
+CREATE OR REPLACE FUNCTION crosstab_float8_5_cols(text)
+    RETURNS setof my_crosstab_float8_5_cols
+    AS '$libdir/tablefunc','crosstab' LANGUAGE C STABLE STRICT;
+</programlisting>
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       <!--
+       Use <literal>OUT</> parameters to define the return type implicitly.
+       The same example could also be done this way:
+        -->
+        使用OUT参数定义返回值类型.上面的例子可以像下面定义:
+<programlisting>
+CREATE OR REPLACE FUNCTION crosstab_float8_5_cols(
+    IN text,
+    OUT my_row_name text,
+    OUT my_category_1 float8,
+    OUT my_category_2 float8,
+    OUT my_category_3 float8,
+    OUT my_category_4 float8,
+    OUT my_category_5 float8)
+  RETURNS setof record
+  AS '$libdir/tablefunc','crosstab' LANGUAGE C STABLE STRICT;
+</programlisting>
+      </para>
+     </listitem>
+    </itemizedlist>
+    </para>
+
+  </sect3>
+
+  <sect3>
+   <title><function>crosstab(text, text)</function></title>
+
+   <indexterm>
+    <primary>crosstab</primary>
+   </indexterm>
+
+<synopsis>
+crosstab(text source_sql, text category_sql)
+</synopsis>
+   <para>
+   <!--
+    The main limitation of the single-parameter form of <function>crosstab</>
+    is that it treats all values in a group alike, inserting each value into
+    the first available column.  If you want the value
+    columns to correspond to specific categories of data, and some groups
+    might not have data for some of the categories, that doesn't work well.
+    The two-parameter form of <function>crosstab</> handles this case by
+    providing an explicit list of the categories corresponding to the
+    output columns.
+    -->
+   单参数的crosstab函数的主要限制是处理一组记录时插入每一个值到第一个列中.
+   如果你想插入值到指定的数据属性中,一些数据可能没有该属性的值,这样它将不能很好
+  的处理.两个参数的crosstab通过提供一个指定的属性列表能较好的处理该类问题.
+   </para>
+
+   <para>
+   <!--
+    <parameter>source_sql</parameter> is a SQL statement that produces the
+    source set of data.  This statement must return one
+    <structfield>row_name</structfield> column, one
+    <structfield>category</structfield> column, and one
+    <structfield>value</structfield> column. It may also have one or more
+    <quote>extra</quote> columns.
+    The <structfield>row_name</structfield> column must be first. The
+    <structfield>category</structfield> and <structfield>value</structfield>
+    columns must be the last two columns, in that order.  Any columns between
+    <structfield>row_name</structfield> and
+    <structfield>category</structfield> are treated as <quote>extra</>.
+    The <quote>extra</quote> columns are expected to be the same for all rows
+    with the same <structfield>row_name</structfield> value.
+   -->
+    source_sql语句返回一组数据源.这个语句返回一个row_name列,一个category列
+   ,和一个value列,它也可能有一个或多个extra列.row_name必须是第一列.category和
+    value列必须是最后两列.任何在在row_name和category中间的列被认为时extra列.
+   有相同row_name的extra列被认为是相同的.
+    </para>
+
+   <para>
+   <!--
+    For example, <parameter>source_sql</parameter> might produce a set
+    something like:
+   -->
+   例如,source_sql可能返回下面的一系列记录:
+<programlisting>
+SELECT row_name, extra_col, cat, value FROM foo ORDER BY 1;
+
+ row_name    extra_col   cat    value
+----------+------------+-----+---------
+  row1         extra1    cat1    val1
+  row1         extra1    cat2    val2
+  row1         extra1    cat4    val4
+  row2         extra2    cat1    val5
+  row2         extra2    cat2    val6
+  row2         extra2    cat3    val7
+  row2         extra2    cat4    val8
+</programlisting>
+   </para>
+
+   <para>
+   <!--
+    <parameter>category_sql</parameter> is a SQL statement that produces
+    the set of categories. This statement must return only one column.
+    It must produce at least one row, or an error will be generated.
+    Also, it must not produce duplicate values, or an error will be
+    generated.  <parameter>category_sql</parameter> might be something like:
+   -->
+    category_sql返回categories记录.这个语句只能返回一列.它必须最少返回一行,否则
+    会报错.它也不能返回重复的值,否则会报错.category_sql必须如下面:
+ 
+<programlisting>
+SELECT DISTINCT cat FROM foo ORDER BY 1;
+    cat
+  -------
+    cat1
+    cat2
+    cat3
+    cat4
+</programlisting>
+   </para>
+
+   <para>
+    <!--
+    The <function>crosstab</> function is declared to return <type>setof
+    record</type>, so the actual names and types of the output columns must be
+    defined in the <literal>FROM</> clause of the calling <command>SELECT</>
+    statement, for example:
+   -->
+    crosstab函数返回一系列记录,列的名字和类型必须定义在SELECT中的FROM字句中.
+<programlisting>
+SELECT * FROM crosstab('...', '...')
+    AS ct(row_name text, extra text, cat1 text, cat2 text, cat3 text, cat4 text);
+</programlisting>
+   </para>
+
+   <para>
+    <!--
+    This will produce a result something like:
+    -->
+   这将返回如下记录:
+<programlisting>
+                  &lt;==  value  columns   ==&gt;
+row_name   extra   cat1   cat2   cat3   cat4
+---------+-------+------+------+------+------
+  row1     extra1  val1   val2          val4
+  row2     extra2  val5   val6   val7   val8
+</programlisting>
+   </para>
+
+   <para>
+    <!---
+    The <literal>FROM</> clause must define the proper number of output
+    columns of the proper data types.  If there are <replaceable>N</>
+    columns in the <parameter>source_sql</> query's result, the first
+    <replaceable>N</>-2 of them must match up with the first
+    <replaceable>N</>-2 output columns.  The remaining output columns
+    must have the type of the last column of the <parameter>source_sql</>
+    query's result, and there must be exactly as many of them as there
+    are rows in the <parameter>category_sql</parameter> query's result.
+    -->
+    FROM字句必须定义类型匹配的适当数量的列.如果在source_sql中返回N列,前面的N-2
+    列必须匹配前N-2列.剩下的列必须和source_sql返回的列类型匹配,并且返回的行数需要和category_sql返回
+   的相同.   
+</para>
+
+   <para>
+    <!--
+    The <function>crosstab</> function produces one output row for each
+    consecutive group of input rows with the same
+    <structfield>row_name</structfield> value.  The output
+    <structfield>row_name</structfield> column, plus any <quote>extra</>
+    columns, are copied from the first row of the group.  The output
+    <structfield>value</> columns are filled with the
+    <structfield>value</structfield> fields from rows having matching
+    <structfield>category</> values.  If a row's <structfield>category</>
+    does not match any output of the <parameter>category_sql</parameter>
+    query, its <structfield>value</structfield> is ignored.  Output
+    columns whose matching category is not present in any input row
+    of the group are filled with nulls.
+   -->
+   crosstab函数对于具有相同row_name的一组连续记录返回一行输出.复制这组记录
+  的第一行到row_name和extra列.记录中匹配category的值填充到value列中.
+   如果一行的category不能匹配任何category_sql返回的结果,它的值将被忽略.
+   如果输入行中的category不匹配任何category_sql的返回结果,这一个输出列 将被填充为null.
+</para>
+
+   <para>
+   <!--
+    In practice the <parameter>source_sql</parameter> query should always
+    specify <literal>ORDER BY 1</> to ensure that values with the same
+    <structfield>row_name</structfield> are brought together.  However,
+    ordering of the categories within a group is not important.
+    Also, it is essential to be sure that the order of the
+    <parameter>category_sql</parameter> query's output matches the specified
+    output column order.
+    -->
+    实际上source_sql一直使用ORDER BY 1去确保具有相同row_name的行连续.然而,
+   categories排序不是必须.它实际上时为了保证匹配category_sql的记录有序.
+   </para>
+
+   <para>
+   <!--
+    Here are two complete examples:
+   -->
+   这有两个完整的例子:
+<programlisting>
+create table sales(year int, month int, qty int);
+insert into sales values(2007, 1, 1000);
+insert into sales values(2007, 2, 1500);
+insert into sales values(2007, 7, 500);
+insert into sales values(2007, 11, 1500);
+insert into sales values(2007, 12, 2000);
+insert into sales values(2008, 1, 1000);
+
+select * from crosstab(
+  'select year, month, qty from sales order by 1',
+  'select m from generate_series(1,12) m'
+) as (
+  year int,
+  "Jan" int,
+  "Feb" int,
+  "Mar" int,
+  "Apr" int,
+  "May" int,
+  "Jun" int,
+  "Jul" int,
+  "Aug" int,
+  "Sep" int,
+  "Oct" int,
+  "Nov" int,
+  "Dec" int
+);
+ year | Jan  | Feb  | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov  | Dec
+------+------+------+-----+-----+-----+-----+-----+-----+-----+-----+------+------
+ 2007 | 1000 | 1500 |     |     |     |     | 500 |     |     |     | 1500 | 2000
+ 2008 | 1000 |      |     |     |     |     |     |     |     |     |      |
+(2 rows)
+</programlisting>
+
+<programlisting>
+CREATE TABLE cth(rowid text, rowdt timestamp, attribute text, val text);
+INSERT INTO cth VALUES('test1','01 March 2003','temperature','42');
+INSERT INTO cth VALUES('test1','01 March 2003','test_result','PASS');
+INSERT INTO cth VALUES('test1','01 March 2003','volts','2.6987');
+INSERT INTO cth VALUES('test2','02 March 2003','temperature','53');
+INSERT INTO cth VALUES('test2','02 March 2003','test_result','FAIL');
+INSERT INTO cth VALUES('test2','02 March 2003','test_startdate','01 March 2003');
+INSERT INTO cth VALUES('test2','02 March 2003','volts','3.1234');
+
+SELECT * FROM crosstab
+(
+  'SELECT rowid, rowdt, attribute, val FROM cth ORDER BY 1',
+  'SELECT DISTINCT attribute FROM cth ORDER BY 1'
+)
+AS
+(
+       rowid text,
+       rowdt timestamp,
+       temperature int4,
+       test_result text,
+       test_startdate timestamp,
+       volts float8
+);
+ rowid |          rowdt           | temperature | test_result |      test_startdate      | volts
+-------+--------------------------+-------------+-------------+--------------------------+--------
+ test1 | Sat Mar 01 00:00:00 2003 |          42 | PASS        |                          | 2.6987
+ test2 | Sun Mar 02 00:00:00 2003 |          53 | FAIL        | Sat Mar 01 00:00:00 2003 | 3.1234
+(2 rows)
+</programlisting>
+   </para>
+
+   <para>
+    <!--
+    You can create predefined functions to avoid having to write out
+    the result column names and types in each query.  See the examples
+    in the previous section.  The underlying C function for this form
+    of <function>crosstab</> is named <literal>crosstab_hash</>.
+    -->
+    你能预定义一个函数来避免在每一个查询中都指定输出列的名字和类型.
+    查看前面部分的例子.构成这种形式的crosstab被命名为crosstab_hash.
+    </para>
+
+  </sect3>
+
+  <sect3>
+   <title><function>connectby</function></title>
+
+   <indexterm>
+    <primary>connectby</primary>
+   </indexterm>
+
+<synopsis>
+connectby(text relname, text keyid_fld, text parent_keyid_fld
+          [, text orderby_fld ], text start_with, int max_depth
+          [, text branch_delim ])
+</synopsis>
+
+   <para>
+    <!--
+    The <function>connectby</> function produces a display of hierarchical
+    data that is stored in a table.  The table must have a key field that
+    uniquely identifies rows, and a parent-key field that references the
+    parent (if any) of each row.  <function>connectby</> can display the
+    sub-tree descending from any row.
+   -->
+    connectby函数返回一个表的分层显示.这个表必须有一个键值去唯一的标识一行,
+    并且有一个父节点键值去关联每一行.connectby能从任意一行列出一个子树
+   </para>
+
+   <para>
+    <xref linkend="tablefunc-connectby-parameters"> explains the
+    parameters.
+   </para>
+
+   <table id="tablefunc-connectby-parameters">
+    <title><function>connectby</function> 参数</title>
+    <tgroup cols="2">
+     <thead>
+      <row>
+       <entry>参数</entry>
+       <entry>描述</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><parameter>relname</parameter></entry>
+       <entry><!--Name of the source relation--> 源表的名字</entry>
+      </row>
+      <row>
+       <entry><parameter>keyid_fld</parameter></entry>
+       <entry><!--Name of the key field-->键值的名字</entry>
+      </row>
+      <row>
+       <entry><parameter>parent_keyid_fld</parameter></entry>
+       <entry><!--Name of the parent-key field-->父节点键值的名字</entry>
+      </row>
+      <row>
+       <entry><parameter>orderby_fld</parameter></entry>
+       <entry><!--Name of the field to order siblings by (optional)--> 排序兄弟的字段名字</entry>
+      </row>
+      <row>
+       <entry><parameter>start_with</parameter></entry>
+       <entry><!--Key value of the row to start at--> 键值开始值</entry>
+      </row>
+      <row>
+       <entry><parameter>max_depth</parameter></entry>
+       <entry><!--Maximum depth to descend to, or zero for unlimited depth-->最大深度,0表示深度无限</entry>
+      </row>
+      <row>
+       <entry><parameter>branch_delim</parameter></entry>
+       <entry><!--String to separate keys with in branch output (optional)-->每个分支的独立键值</entry>
+      </row>
+      </tbody>
+     </tgroup>
+    </table>
+
+    <para>
+ <!--
+     The key and parent-key fields can be any data type, but they must be
+     the same type.  Note that the <parameter>start_with</> value must be
+     entered as a text string, regardless of the type of the key field.
+     -->    
+    键值和父节点键值可以是相同的任意类型,注意start_with必须是一个字符串,无论key的类型.
+</para>
+
+    <para>
+    <!--
+     The <function>connectby</> function is declared to return <type>setof
+     record</type>, so the actual names and types of the output columns must be
+     defined in the <literal>FROM</> clause of the calling <command>SELECT</>
+     statement, for example:
+     -->
+    connectby函数返回一系列记录,所以输出列的名字和类型必须定义在SELECT的FROM字句中,例如:
+    </para>
+
+<programlisting>
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'pos', 'row2', 0, '~')
+    AS t(keyid text, parent_keyid text, level int, branch text, pos int);
+</programlisting>
+
+    <para>
+     <!--
+     The first two output columns are used for the current row's key and
+     its parent row's key; they must match the type of the table's key field.
+     The third output column is the depth in the tree and must be of type
+     <type>integer</>.  If a <parameter>branch_delim</parameter> parameter was
+     given, the next output column is the branch display and must be of type
+     <type>text</>.  Finally, if an <parameter>orderby_fld</parameter>
+     parameter was given, the last output column is a serial number, and must
+     be of type <type>integer</>.
+     -->
+    输出的前两列做为现在行的键值和父节点的键值;他们必须和表的键值类型
+    匹配.第三列为节点在树中的深度必须为整形.如果给出branch_delim参数,下一列是
+    一个text类型的分支列,最后如果给出orderby_fld参数最后一列是一个整形的自增值.
+    </para>
+
+    <para>
+     <!--
+     The <quote>branch</> output column shows the path of keys taken to
+     reach the current row.  The keys are separated by the specified
+     <parameter>branch_delim</parameter> string.  If no branch display is
+     wanted, omit both the <parameter>branch_delim</parameter> parameter
+     and the branch column in the output column list.
+    -->
+    branch列给出键值到达当前行的路径.键值被branch_delim字段给出的字符分割开.
+    如果不想显示分支,在每一个输出列表中忽略branch_delim和branch参数.
+    </para>
+
+    <para>
+     <!--
+     If the ordering of siblings of the same parent is important,
+     include the <parameter>orderby_fld</parameter> parameter to
+     specify which field to order siblings by.  This field can be of any
+     sortable data type.  The output column list must include a final
+     integer serial-number column, if and only if
+     <parameter>orderby_fld</parameter> is specified.
+     -->
+     如果想要排序同一个父节点的兄弟节点,指定orderby_fld参数来指定需要排序兄弟
+     节点的字段.如果orderby_fld被指定,输出列一定包括一个整形自增的列.
+    </para>
+
+    <para>
+     <!--
+     The parameters representing table and field names are copied as-is
+     into the SQL queries that <function>connectby</> generates internally.
+     Therefore, include double quotes if the names are mixed-case or contain
+     special characters.  You may also need to schema-qualify the table name.
+     -->
+     表和字段值的参数被connectby函数自动的复制到查询语句中.因此如果名字包含特殊
+     字符或者混合字段请使用"",你可能也需要使用模式来限定表名.
+     </para>
+
+    <para>
+    <!--
+     In large tables, performance will be poor unless there is an index on
+     the parent-key field.
+     -->
+     在大的表中,除非在父节点的键值上有一个索引,否则效率将会很差.
+    </para>
+
+    <para>
+     <!--
+     It is important that the <parameter>branch_delim</parameter> string
+     not appear in any key values, else <function>connectby</> may incorrectly
+     report an infinite-recursion error.  Note that if
+     <parameter>branch_delim</parameter> is not provided, a default value
+     of <literal>~</> is used for recursion detection purposes.
+      -->
+     在键值中不出现branch_delim参数是很重要的,否则connectby可能错误的报告一个死循环的错误.
+     如果不使用branch_delim参数,为了递归检查将使用~来作为默认值.
+     <!-- That pretty well sucks.  FIXME -->
+    </para>
+
+    <para>
+     <!--
+     Here is an example:
+     -->
+    下面是一个例子:
+<programlisting>
+CREATE TABLE connectby_tree(keyid text, parent_keyid text, pos int);
+
+INSERT INTO connectby_tree VALUES('row1',NULL, 0);
+INSERT INTO connectby_tree VALUES('row2','row1', 0);
+INSERT INTO connectby_tree VALUES('row3','row1', 0);
+INSERT INTO connectby_tree VALUES('row4','row2', 1);
+INSERT INTO connectby_tree VALUES('row5','row2', 0);
+INSERT INTO connectby_tree VALUES('row6','row4', 0);
+INSERT INTO connectby_tree VALUES('row7','row3', 0);
+INSERT INTO connectby_tree VALUES('row8','row6', 0);
+INSERT INTO connectby_tree VALUES('row9','row5', 0);
+
+-- with branch, without orderby_fld (order of results is not guaranteed)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'row2', 0, '~')
+ AS t(keyid text, parent_keyid text, level int, branch text);
+ keyid | parent_keyid | level |       branch
+-------+--------------+-------+---------------------
+ row2  |              |     0 | row2
+ row4  | row2         |     1 | row2~row4
+ row6  | row4         |     2 | row2~row4~row6
+ row8  | row6         |     3 | row2~row4~row6~row8
+ row5  | row2         |     1 | row2~row5
+ row9  | row5         |     2 | row2~row5~row9
+(6 rows)
+
+-- without branch, without orderby_fld (order of results is not guaranteed)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'row2', 0)
+ AS t(keyid text, parent_keyid text, level int);
+ keyid | parent_keyid | level
+-------+--------------+-------
+ row2  |              |     0
+ row4  | row2         |     1
+ row6  | row4         |     2
+ row8  | row6         |     3
+ row5  | row2         |     1
+ row9  | row5         |     2
+(6 rows)
+
+-- with branch, with orderby_fld (notice that row5 comes before row4)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'pos', 'row2', 0, '~')
+ AS t(keyid text, parent_keyid text, level int, branch text, pos int);
+ keyid | parent_keyid | level |       branch        | pos
+-------+--------------+-------+---------------------+-----
+ row2  |              |     0 | row2                |   1
+ row5  | row2         |     1 | row2~row5           |   2
+ row9  | row5         |     2 | row2~row5~row9      |   3
+ row4  | row2         |     1 | row2~row4           |   4
+ row6  | row4         |     2 | row2~row4~row6      |   5
+ row8  | row6         |     3 | row2~row4~row6~row8 |   6
+(6 rows)
+
+-- without branch, with orderby_fld (notice that row5 comes before row4)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'pos', 'row2', 0)
+ AS t(keyid text, parent_keyid text, level int, pos int);
+ keyid | parent_keyid | level | pos
+-------+--------------+-------+-----
+ row2  |              |     0 |   1
+ row5  | row2         |     1 |   2
+ row9  | row5         |     2 |   3
+ row4  | row2         |     1 |   4
+ row6  | row4         |     2 |   5
+ row8  | row6         |     3 |   6
+(6 rows)
+</programlisting>
+    </para>
+   </sect3>
+
+ </sect2>
+
+ <sect2>
+  <title>Author</title>
+
+  <para>
+   Joe Conway
+  </para>
+
+ </sect2>
+
+</sect1>

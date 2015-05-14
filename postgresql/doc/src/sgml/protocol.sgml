@@ -1,0 +1,6595 @@
+<!-- doc/src/sgml/protocol.sgml -->
+
+<chapter id="protocol">
+<!--
+ <title>Frontend/Backend Protocol</title>
+-->
+<title>前/后端协议</title>
+
+ <indexterm zone="protocol">
+<!--
+  <primary>protocol</primary>
+  <secondary>frontend-backend</secondary>
+-->
+  <primary>协议</primary>
+  <secondary>前/后端</secondary>
+ </indexterm>
+
+ <para>
+<!--
+  <productname>PostgreSQL</productname> uses a message-based protocol
+  for communication between frontends and backends (clients and servers).
+  The protocol is supported over <acronym>TCP/IP</acronym> and also over
+  Unix-domain sockets.  Port number 5432 has been registered with IANA as
+  the customary TCP port number for servers supporting this protocol, but
+  in practice any non-privileged port number can be used.
+-->
+<application>PostgreSQL</application>使用一种基于消息的协议用于前端和后端(服务器和客户机)之间通讯。
+该协议是在 <acronym>TCP/IP</acronym> 和 Unix 域套接字上实现的。
+端口号 5432 已经在 IANA 注册为使用这种协议的常用端口，但实际上任何非特权端口号都可以使用。
+ </para>
+
+ <para>
+<!--
+  This document describes version 3.0 of the protocol, implemented in
+  <productname>PostgreSQL</productname> 7.4 and later.  For descriptions
+  of the earlier protocol versions, see previous releases of the
+  <productname>PostgreSQL</productname> documentation.  A single server
+  can support multiple protocol versions.  The initial
+  startup-request message tells the server which protocol version the
+  client is attempting to use, and then the server follows that protocol
+  if it is able.
+-->
+这份文档描述了版本 3.0 的协议，在 <productname>PostgreSQL</productname> 7.4 和以后的版本中实现。
+对于以前的协议的描述，请参考以前版本的 <productname>PostgreSQL</productname> 文档。
+一个服务器可以支持多种协议版本。初始化的启动消息告诉服务器客户端可以接受的协议版本，然后服务器则遵守该版本的协议(如果它能做到的话)。
+ </para>
+
+  <para>
+<!--
+   In order to serve multiple clients efficiently, the server launches
+   a new <quote>backend</> process for each client.
+   In the current implementation, a new child
+   process is created immediately after an incoming connection is detected.
+   This is transparent to the protocol, however.  For purposes of the
+   protocol, the terms <quote>backend</> and <quote>server</> are
+   interchangeable; likewise <quote>frontend</> and <quote>client</>
+   are interchangeable.
+-->
+为了可以有效地为多个客户端提供服务，服务器为每个客户端派生一个新的<quote>后端</>进程。
+在目前的实现里，在检测到到来的连接请求后，马上创建一个新的子进程。
+不过，这些是对协议透明的。对于协议而言，术语<quote>后端</>和<quote>服务器</>是可以互换的；类似的还有<quote>前端</>和<quote>客户端</>也是可以互换的。
+  </para>
+
+ <sect1 id="protocol-overview">
+<!--
+  <title>Overview</title>
+-->
+  <title>概要</title>
+
+  <para>
+<!--
+   The protocol has separate phases for startup and normal operation.
+   In the startup phase, the frontend opens a connection to the server
+   and authenticates itself to the satisfaction of the server.  (This might
+   involve a single message, or multiple messages depending on the
+   authentication method being used.)  If all goes well, the server then sends
+   status information to the frontend, and finally enters normal operation.
+   Except for the initial startup-request message, this part of the
+   protocol is driven by the server.
+-->
+协议在启动和正常操作过程中有不同的阶段。
+在启动阶段里，前端打开一个到服务器的连接并且认证自身以满足服务器。
+这些可能包含一条消息，也可能包含多条消息，根据使用的认证方法而不同。
+如果所有这些事情都运行平稳，那么服务器就发送状态信息给前端，并最后进入正常操作。
+除了初始化的启动请求之外，这部分协议是服务器驱动的。
+  </para>
+
+  <para>
+<!--
+   During normal operation, the frontend sends queries and
+   other commands to the backend, and the backend sends back query results
+   and other responses.  There are a few cases (such as <command>NOTIFY</>)
+   wherein the
+   backend will send unsolicited messages, but for the most part this portion
+   of a session is driven by frontend requests.
+-->
+在正常操作中，前端发送查询和其它命令到后端，然后后端返回查询结果和其它响应。
+有少数几种情况(比如 <command>NOTIFY</>)是后端发送主动提供的消息，但绝大多数情况下会话都是由前端请求驱动的。
+  </para>
+
+  <para>
+<!--
+   Termination of the session is normally by frontend choice, but can be
+   forced by the backend in certain cases.  In any case, when the backend
+   closes the connection, it will roll back any open (incomplete) transaction
+   before exiting.
+-->
+会话的终止通常是由前端来选择的，但是也可以在某些情况下由后端强制执行。
+不管那种情况，如果后端关闭连接，那么他将在退出之前回滚(完成)所有打开的(未完成的)事务。
+  </para>
+
+  <para>
+<!--
+   Within normal operation, SQL commands can be executed through either of
+   two sub-protocols.  In the <quote>simple query</> protocol, the frontend
+   just sends a textual query string, which is parsed and immediately
+   executed by the backend.  In the <quote>extended query</> protocol,
+   processing of queries is separated into multiple steps: parsing,
+   binding of parameter values, and execution.  This offers flexibility
+   and performance benefits, at the cost of extra complexity.
+-->
+在正常操作中，SQL 命令可以通过两个子协议中的任何一个执行。
+在<quote>简单查询</>协议中，前端只是发送一个文本查询串，然后后端马上解析并执行它。
+在<quote>扩展查询</>协议中，查询的处理被分割为多个步骤：解析，参数值绑定，和执行。
+这样就可以提供灵活性和性能的改进，代价是额外的复杂性。
+  </para>
+
+  <para>
+<!--
+   Normal operation has additional sub-protocols for special operations
+   such as <command>COPY</>.
+-->
+正常操作有用于类似 <command>COPY</> 这样的额外的子协议。
+  </para>
+
+ <sect2 id="protocol-message-concepts">
+<!--
+  <title>Messaging Overview</title>
+-->
+  <title>消息概述</title>
+
+  <para>
+<!--
+   All communication is through a stream of messages.  The first byte of a
+   message identifies the message type, and the next four bytes specify the
+   length of the rest of the message (this length count includes itself, but
+   not the message-type byte).  The remaining contents of the message are
+   determined by the message type.  For historical reasons, the very first
+   message sent by the client (the startup message) has no initial
+   message-type byte.
+-->
+所有通讯都是通过一个消息流进行的。
+消息的第一个字节标识消息类型，然后后面跟着的四个字节声明消息剩下部分的长度(这个长度包括长度域自身，但是不包括消息类型字节)。
+剩下的消息内容由消息类型决定。由于历史原因，客户端发送的最早的消息(启动消息)没有初始的消息类型字节。
+  </para>
+
+  <para>
+<!--
+   To avoid losing synchronization with the message stream, both servers and
+   clients typically read an entire message into a buffer (using the byte
+   count) before attempting to process its contents.  This allows easy
+   recovery if an error is detected while processing the contents.  In
+   extreme situations (such as not having enough memory to buffer the
+   message), the receiver can use the byte count to determine how much
+   input to skip before it resumes reading messages.
+-->
+为了避免和消息流失去同步，服务器和客户端通常都是把整个消息读取到一个缓冲区里(使用字节计数)，然后才试图处理其内容。
+这样在处理内容的过程中，如果发现错误，就比较容易恢复。
+在非常罕见的情况下(比如说没有足够的内存用来缓冲消息)，接收端可以使用字节计数来判断它在重新读取消息之前需要忽略多少输入。
+  </para>
+
+  <para>
+<!--
+   Conversely, both servers and clients must take care never to send an
+   incomplete message.  This is commonly done by marshaling the entire message
+   in a buffer before beginning to send it.  If a communications failure
+   occurs partway through sending or receiving a message, the only sensible
+   response is to abandon the connection, since there is little hope of
+   recovering message-boundary synchronization.
+-->
+通常，服务器和客户端都需要注意决不发送一条不完整的消息。
+这些通常是通过在发送消息之前，在一个缓冲区里整理整条消息。
+如果在发送或者接受一条消息的中间发生了通讯错误，那么唯一合理的反应是放弃连接，因为能够恢复消息边界同步的可能性很小。
+  </para>
+ </sect2>
+
+  <sect2 id="protocol-query-concepts">
+<!--
+   <title>Extended Query Overview</title>
+-->
+   <title>扩展查询概述</title>
+
+   <para>
+<!--
+    In the extended-query protocol, execution of SQL commands is divided
+    into multiple steps.  The state retained between steps is represented
+    by two types of objects: <firstterm>prepared statements</> and
+    <firstterm>portals</>.  A prepared statement represents the result of
+    parsing and semantic analysis of a textual query string.
+    A prepared statement is not in itself ready to execute, because it might
+    lack specific values for <firstterm>parameters</>.  A portal represents
+    a ready-to-execute or already-partially-executed statement, with any
+    missing parameter values filled in.  (For <command>SELECT</> statements,
+    a portal is equivalent to an open cursor, but we choose to use a different
+    term since cursors don't handle non-<command>SELECT</> statements.)
+-->
+在扩展查询协议中，SQL 命令的执行是被分割成多个步骤的。
+步骤与步骤之间保存的状态是由两类的对象代表的：<firstterm>预备语句</>和<firstterm>入口</>。
+一个预备语句代表一个文本查询字符串的经过语法分析，语意分析，以及规划之后的结果。
+一个预备语句不一定就是可以执行的，因为它可能还缺乏<firstterm>参数</>的值。
+一个入口代表一个已经可以执行的或者已经部分执行过的语句，所有参数都已经填充到位了。
+(对于 <command>SELECT</> 语句，入口等效于一个打开的游标，使用不同的术语是因为游标不能处理非 <command>SELECT</> 语句)。
+   </para>
+
+   <para>
+<!--
+    The overall execution cycle consists of a <firstterm>parse</> step,
+    which creates a prepared statement from a textual query string; a
+    <firstterm>bind</> step, which creates a portal given a prepared
+    statement and values for any needed parameters; and an
+    <firstterm>execute</> step that runs a portal's query.  In the case of
+    a query that returns rows (<command>SELECT</>, <command>SHOW</>, etc),
+    the execute step can be told to fetch only
+    a limited number of rows, so that multiple execute steps might be needed
+    to complete the operation.
+-->
+完整的执行周期包括一个<firstterm>解析</>步骤，它用一个文本的查询字符串创建一个预备语句；
+一个<firstterm>绑定</>步骤，它用一个预备语句和任何所需要的参数值创建一个入口；
+以及一个<firstterm>执行</>步骤，它运行一个入口的查询。
+如果是一个返回数据行的查询(<command>SELECT</>, <command>SHOW</> 等)，可以告诉执行步骤只抓取有限的一些行，这样就可能需要多个执行步骤来完成操作。
+   </para>
+
+   <para>
+<!--
+    The backend can keep track of multiple prepared statements and portals
+    (but note that these exist only within a session, and are never shared
+    across sessions).  Existing prepared statements and portals are
+    referenced by names assigned when they were created.  In addition,
+    an <quote>unnamed</> prepared statement and portal exist.  Although these
+    behave largely the same as named objects, operations on them are optimized
+    for the case of executing a query only once and then discarding it,
+    whereas operations on named objects are optimized on the expectation
+    of multiple uses.
+-->
+后端可以跟踪多个预备语句和入口(但是要注意，这些只在一个会话内部存在，从来不能在会话之间共享)。
+现存的预备语句和入口都是用创建它们的时候赋予的名字引用的。
+另外，还存在一个<quote>未命名</>的预备语句和入口。
+尽管它们的行为和命名对象大部分相同，但是它们是针对只执行一次然后就抛弃的查询进行优化过的，而在命名对象上的操作是针对多次使用优化的。
+   </para>
+  </sect2>
+
+  <sect2 id="protocol-format-codes">
+<!--
+   <title>Formats and Format Codes</title>
+-->
+   <title>格式和格式代码</title>
+
+   <para>
+<!--
+    Data of a particular data type might be transmitted in any of several
+    different <firstterm>formats</>.  As of <productname>PostgreSQL</> 7.4
+    the only supported formats are <quote>text</> and <quote>binary</>,
+    but the protocol makes provision for future extensions.  The desired
+    format for any value is specified by a <firstterm>format code</>.
+    Clients can specify a format code for each transmitted parameter value
+    and for each column of a query result.  Text has format code zero,
+    binary has format code one, and all other format codes are reserved
+    for future definition.
+-->
+特定数据类型的数据可以用几种不同的<firstterm>格式</>中的任意一种来传递。
+到 <productname>PostgreSQL</> 7.4 的时候，只支持<quote>文本</>和<quote>二进制</>两种格式，但是协议为未来的扩展提供了的手段。
+任意值要求的格式是用一个<firstterm>格式代码</>声明的。客户端可以为每个传输的参数值和查询结果的每个字段声明一个格式代码。
+文本的格式代码是0，二进制的格式代码是1，所有其它的格式代码都保留给将来定义。
+   </para>
+
+   <para>
+<!--
+    The text representation of values is whatever strings are produced
+    and accepted by the input/output conversion functions for the
+    particular data type.  In the transmitted representation, there is
+    no trailing null character; the frontend must add one to received
+    values if it wants to process them as C strings.
+    (The text format does not allow embedded nulls, by the way.)
+-->
+文本方式的数值是特定数据类型的输入/输出转换函数接受或者生成的数值的字符串形式。
+在传输时的表现上，字符串末尾没有空字符；如果前端要想把收到的值当作 C 字符串处理，那么必须自己加上一个。
+(另外，文本格式不允许嵌入的空。)
+
+   </para>
+
+   <para>
+<!--
+    Binary representations for integers use network byte order (most
+    significant byte first).  For other data types consult the documentation
+    or source code to learn about the binary representation.  Keep in mind
+    that binary representations for complex data types might change across
+    server versions; the text format is usually the more portable choice.
+-->
+整数的二进制表现形式采用网络字节序(高位在前)。
+对于其它数据类型，请参考文档或者源代码了解其二进制表现形式。
+请注意，复杂的数据类型的二进制形式可能在不同服务器版本之间变化；文本格式通常是最具有移植性的选择。
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="protocol-flow">
+<!--
+  <title>Message Flow</title>
+-->
+  <title>消息流</title>
+
+  <para>
+<!--
+   This section describes the message flow and the semantics of each
+   message type.  (Details of the exact representation of each message
+   appear in <xref linkend="protocol-message-formats">.)  There are
+   several different sub-protocols depending on the state of the
+   connection: start-up, query, function call,
+   <command>COPY</command>, and termination.  There are also special
+   provisions for asynchronous operations (including notification
+   responses and command cancellation), which can occur at any time
+   after the start-up phase.
+-->
+本节描述消息流，以及每种消息类型的语意(每种消息的准确表现细节在<xref linkend="protocol-message-formats">里)。
+因连接的状态不同，存在几种不同的子协议：启动、查询、函数调用、<command>COPY</command> 、结束。
+还有用于异步操作(包括通知响应和命令取消)的特殊规定，这些异步操作可能在启动阶段过后的任何时间产生。
+  </para>
+
+  <sect2>
+<!--
+   <title>Start-up</title>
+-->
+   <title>启动</title>
+
+   <para>
+<!--
+    To begin a session, a frontend opens a connection to the server and sends
+    a startup message.  This message includes the names of the user and of the
+    database the user wants to connect to; it also identifies the particular
+    protocol version to be used.  (Optionally, the startup message can include
+    additional settings for run-time parameters.)
+    The server then uses this information and
+    the contents of its configuration files (such as
+    <filename>pg_hba.conf</filename>) to determine
+    whether the connection is provisionally acceptable, and what additional
+    authentication is required (if any).
+-->
+要开始一个会话，前端打开一个与服务器的连接并且发送一个启动消息。
+这个消息包括用户名以及用户希望与之连接的数据库；它还标识要使用的特定的协议版本。
+(另外，启动消息可以包括用于运行时参数的额外设置。)
+服务器然后就使用这些信息以及它的配置文件的内容(比如 <filename>pg_hba.conf</filename>)以判断这个连接是否可以接受，以及需要什么样的额外的认证(如果有)。
+   </para>
+
+   <para>
+<!--
+    The server then sends an appropriate authentication request message,
+    to which the frontend must reply with an appropriate authentication
+    response message (such as a password).
+    For all authentication methods except GSSAPI and SSPI, there is at most
+    one request and one response. In some methods, no response
+    at all is needed from the frontend, and so no authentication request
+    occurs. For GSSAPI and SSPI, multiple exchanges of packets may be needed
+    to complete the authentication.
+-->
+然后服务器就发送合适的认证请求消息，前端必须用合适的认证响应消息来响应(比如一个口令)。
+对所有的认证方法，除了GSSAPI和SSPI，最多只有一次请求和响应。
+有些认证方法则根本不需要前端的响应，因此就没有认证请求发生。
+对于GSSAPI和SSPI，为了完成认证则可能需要多次数据包的交换。
+   </para>
+
+   <para>
+<!--
+    The authentication cycle ends with the server either rejecting the
+    connection attempt (ErrorResponse), or sending AuthenticationOk.
+-->
+认证周期的结束要么是服务器拒绝连接(ErrorResponse)，要么是服务器发送AuthenticationOk消息。
+   </para>
+
+   <para>
+<!--
+    The possible messages from the server in this phase are:
+-->
+这个阶段来自服务器可能消息是：
+
+    <variablelist>
+     <varlistentry>
+      <term>ErrorResponse</term>
+      <listitem>
+       <para>
+<!--
+        The connection attempt has been rejected.
+        The server then immediately closes the connection.
+-->
+连接请求被拒绝。然后服务器马上关闭连接。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationOk</term>
+      <listitem>
+       <para>
+<!--
+        The authentication exchange is successfully completed.
+-->
+认证信息的交换成功完成。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationKerberosV5</term>
+      <listitem>
+       <para>
+<!--
+        The frontend must now take part in a Kerberos V5
+        authentication dialog (not described here, part of the
+        Kerberos specification) with the server.  If this is
+        successful, the server responds with an AuthenticationOk,
+        otherwise it responds with an ErrorResponse.
+-->
+现在前端必须与服务器进行一次 KerberosV5 认证对话(是Kerberos规范的一部分，在这里没有描述)。
+如果对话成功，服务器响应一个 AuthenticationOk消息，否则它响应一个 ErrorResponse消息。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationCleartextPassword</term>
+      <listitem>
+       <para>
+<!--
+        The frontend must now send a PasswordMessage containing the
+        password in clear-text form.  If
+        this is the correct password, the server responds with an
+        AuthenticationOk, otherwise it responds with an ErrorResponse.
+-->
+现在前端必须发送一个包含明文口令的 PasswordMessage包。
+如果这是正确的口令，服务器用一个 AuthenticationOk 包响应，否则它响应一个 ErrorResponse 包。
+
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationMD5Password</term>
+      <listitem>
+       <para>
+<!--
+        The frontend must now send a PasswordMessage containing the
+        password (with username) encrypted via MD5, then encrypted
+        again using the 4-byte random salt specified in the
+        AuthenticationMD5Password message.  If this is the correct
+        password, the server responds with an AuthenticationOk,
+        otherwise it responds with an ErrorResponse.  The actual
+        PasswordMessage can be computed in SQL as <literal>concat('md5',
+        md5(concat(md5(concat(password, username)), random-salt)))</>.
+        (Keep in mind the <function>md5()</> function returns its
+        result as a hex string.)
+-->
+现在前端必须发送一个包含用 MD5 加密的口令（包括用户名）的 PasswordMessage ，加密时使用在 AuthenticationMD5Password 消息里指定的 4 字节随机盐粒。
+如果这是正确口令，服务器用一个 AuthenticationOk 响应，否则它用一个 ErrorResponse 响应。
+实际的PasswordMessage可以通过SQL语句<literal>concat('md5',md5(concat(md5(concat(password, username)), random-salt)))</>计算得到。
+(注意<function>md5()</> 函数的返回值是16进制表示的字符串。)
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSCMCredential</term>
+      <listitem>
+       <para>
+<!--
+        This response is only possible for local Unix-domain connections
+        on platforms that support SCM credential messages.  The frontend
+        must issue an SCM credential message and then send a single data
+        byte.  (The contents of the data byte are uninteresting; it's
+        only used to ensure that the server waits long enough to receive
+        the credential message.)  If the credential is acceptable,
+        the server responds with an
+        AuthenticationOk, otherwise it responds with an ErrorResponse.
+        (This message type is only issued by pre-9.1 servers.  It may
+        eventually be removed from the protocol specification.)
+-->
+这个响应只会在那些支持 SCM 信任消息的本地 Unix 域连接上出现。
+前端必须发出一条 SCM 信任消息然后发送一个数据字节。
+（数据字节的内容并不会被关心；它的作用只是确保服务器等待了足够长的时间来接受信任信息。）
+如果信任是可以接受的，那么服务器用 AuthenticationOk 响应，否则用 ErrorResponse 响应。
+（只有9.1以前的服务器才可能发出这个消息，并且这个消息最终可能会被从协议中删除。）
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationGSS</term>
+      <listitem>
+       <para>
+<!--
+        The frontend must now initiate a GSSAPI negotiation. The frontend
+        will send a PasswordMessage with the first part of the GSSAPI
+        data stream in response to this. If further messages are needed,
+        the server will respond with AuthenticationGSSContinue.
+-->
+现在前端必须发起一个GSSAPI协商。
+作为响应前端将随着GSSAPI数据流的最初部分发送一个PasswordMessage包。
+如果需要进一步的消息，服务端将以AuthenticationGSSContinue作为响应。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSSPI</term>
+      <listitem>
+       <para>
+<!--
+        The frontend must now initiate a SSPI negotiation. The frontend
+        will send a PasswordMessage with the first part of the SSPI
+        data stream in response to this. If further messages are needed,
+        the server will respond with AuthenticationGSSContinue.
+-->
+现在前端必须发起一个SSPI协商。
+作为响应前端将随着SSPI数据流的最初部分发送一个PasswordMessage包。
+如果需要进一步的消息，服务端将以AuthenticationGSSContinue作为响应。
+       </para>
+      </listitem>
+
+     </varlistentry>
+     <varlistentry>
+      <term>AuthenticationGSSContinue</term>
+      <listitem>
+       <para>
+<!--
+        This message contains the response data from the previous step
+        of GSSAPI or SSPI negotiation (AuthenticationGSS, AuthenticationSSPI
+        or a previous AuthenticationGSSContinue). If the GSSAPI
+        or SSPI data in this message
+        indicates more data is needed to complete the authentication,
+        the frontend must send that data as another PasswordMessage. If
+        GSSAPI or SSPI authentication is completed by this message, the server
+        will next send AuthenticationOk to indicate successful authentication
+        or ErrorResponse to indicate failure.
+-->
+这个消息包含GSSAPI或SSPI协商的上一个步骤（AuthenticationGSS, AuthenticationSSPI或前一个AuthenticationGSSContinue）的响应数据。
+如果这个消息中的GSSAPI或SSPI数据指示需要更多的数据以完成认证过程，前端必须用另一个PasswordMessage包发送这些数据。
+如果通过这个消息GSSAPI或SSPI认证已完成，服务端下次将发送AuthenticationOk指示认证成功或ErrorResponse指示认证失败。
+       </para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+
+   <para>
+<!--
+    If the frontend does not support the authentication method
+    requested by the server, then it should immediately close the
+    connection.
+-->
+如果前端不支持服务器要求的认证方式，那么它应该马上关闭连接。
+   </para>
+
+   <para>
+<!--
+    After having received AuthenticationOk, the frontend must wait
+    for further messages from the server.  In this phase a backend process
+    is being started, and the frontend is just an interested bystander.
+    It is still possible for the startup attempt
+    to fail (ErrorResponse), but in the normal case the backend will send
+    some ParameterStatus messages, BackendKeyData, and finally ReadyForQuery.
+-->
+在收到 AuthenticationOk 包之后，前端必须等待来自后端的更多消息。
+在这个阶段会启动一个后端进程，而前端只是一个感兴趣的看热闹的。
+启动尝试仍然有可能失败 (ErrorResponse)，但是通常情况下，后端将发送一些 ParameterStatus 消息、BackendKeyData 、最后是 ReadyForQuery 。
+   </para>
+
+   <para>
+<!--
+    During this phase the backend will attempt to apply any additional
+    run-time parameter settings that were given in the startup message.
+    If successful, these values become session defaults.  An error causes
+    ErrorResponse and exit.
+-->
+在这个阶段，后端将尝试应用任何在启动消息里给出的额外的运行时参数设置。
+如果成功，这些值将成为会话的缺省值。错误将导致 ErrorResponse 并退出。
+   </para>
+
+   <para>
+<!--
+    The possible messages from the backend in this phase are:
+-->
+这个阶段来自后端的可能消息是：
+
+    <variablelist>
+     <varlistentry>
+      <term>BackendKeyData</term>
+      <listitem>
+       <para>
+<!--
+        This message provides secret-key data that the frontend must
+        save if it wants to be able to issue cancel requests later.
+        The frontend should not respond to this message, but should
+        continue listening for a ReadyForQuery message.
+-->
+这个消息提供了密钥(secret-key)数据，前端如果想要在稍后发出取消的请求，则必须保存这个数据。
+前端不应该响应这个消息，但是应该继续侦听等待 ReadyForQuery 消息。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>ParameterStatus</term>
+      <listitem>
+       <para>
+<!--
+        This message informs the frontend about the current (initial)
+         setting of backend parameters, such as <xref
+          linkend="guc-client-encoding"> or <xref linkend="guc-datestyle">.
+         The frontend can ignore this message, or record the settings
+         for its future use; see <xref linkend="protocol-async"> for
+         more details.  The frontend should not respond to this
+         message, but should continue listening for a ReadyForQuery
+         message.
+-->
+这个消息告诉前端有关后端参数的当前(初始化)设置，比如 <xref linkend="guc-client-encoding"> 或 <xref linkend="guc-datestyle"> 等。
+前端可以忽略这个消息，或者记录其设置用于将来使用；参阅<xref linkend="protocol-async">获取更多细节。
+前端不应该响应这个消息，而是应该继续侦听 ReadyForQuery 消息。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>ReadyForQuery</term>
+      <listitem>
+       <para>
+<!--
+        Start-up is completed.  The frontend can now issue commands.
+-->
+后端启动成功，前端现在可以发出命令。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>ErrorResponse</term>
+      <listitem>
+       <para>
+<!--
+        Start-up failed.  The connection is closed after sending this
+        message.
+-->
+后端启动失败。在发送完这个消息之后连接被关闭。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>NoticeResponse</term>
+      <listitem>
+       <para>
+<!--
+        A warning message has been issued.  The frontend should
+        display the message but continue listening for ReadyForQuery
+        or ErrorResponse.
+-->
+发出了一个警告消息。前端应该显示这个消息，并且继续等待 ReadyForQuery 或 ErrorResponse 。
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   <para>
+<!--
+    The ReadyForQuery message is the same one that the backend will
+    issue after each command cycle.  Depending on the coding needs of
+    the frontend, it is reasonable to consider ReadyForQuery as
+    starting a command cycle, or to consider ReadyForQuery as ending the
+    start-up phase and each subsequent command cycle.
+-->
+后端在每个查询循环后都会发出一个相同的 ReadyForQuery 消息。
+前端可以合理地认为 ReadyForQuery 是一个查询循环的开始，
+或者认为 ReadyForQuery 是启动阶段和每个随后查询循环的结束，具体是哪种情况取决于前端的编码需要。
+   </para>
+  </sect2>
+
+  <sect2>
+<!--
+   <title>Simple Query</title>
+-->
+   <title>简单查询</title>
+
+   <para>
+<!--
+    A simple query cycle is initiated by the frontend sending a Query message
+    to the backend.  The message includes an SQL command (or commands)
+    expressed as a text string.
+    The backend then sends one or more response
+    messages depending on the contents of the query command string,
+    and finally a ReadyForQuery response message.  ReadyForQuery
+    informs the frontend that it can safely send a new command.
+    (It is not actually necessary for the frontend to wait for
+    ReadyForQuery before issuing another command, but the frontend must
+    then take responsibility for figuring out what happens if the earlier
+    command fails and already-issued later commands succeed.)
+-->
+一个查询循环是由前端发送一条 Query 消息给后端进行初始化的。
+这条消息包含一个用文本字符串表示的 SQL 命令(或者一些命令)。
+后端根据查询命令字符串的内容发送一条或者更多条响应消息给前端，并且最后是一条 ReadyForQuery 响应消息。
+ReadyForQuery 通知前端它可以安全地发送新命令了。
+(实际上前端不必在发送其它命令之前等待 ReadyForQuery ，但是这样一来，前端必须负责区分早先发出的命令失败，而稍后发出的命令成功的情况。)
+   </para>
+
+   <para>
+<!--
+    The possible response messages from the backend are:
+-->
+从后端来的可能的消息是：
+
+    <variablelist>
+     <varlistentry>
+      <term>CommandComplete</term>
+      <listitem>
+       <para>
+<!--
+        An SQL command completed normally.
+-->
+一个 SQL 命令正常结束
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>CopyInResponse</term>
+      <listitem>
+       <para>
+<!--
+        The backend is ready to copy data from the frontend to a
+        table; see <xref linkend="protocol-copy">.
+-->
+后端已经准备好从前端拷贝数据到一个表里面去。又见<xref linkend="protocol-copy">。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>CopyOutResponse</term>
+      <listitem>
+       <para>
+<!--
+        The backend is ready to copy data from a table to the
+        frontend; see <xref linkend="protocol-copy">.
+-->
+后端已经准备好从一个表里拷贝数据到前端里面去。又见<xref linkend="protocol-copy">。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>RowDescription</term>
+      <listitem>
+       <para>
+<!--
+        Indicates that rows are about to be returned in response to
+        a <command>SELECT</command>, <command>FETCH</command>, etc query.
+        The contents of this message describe the column layout of the rows.
+        This will be followed by a DataRow message for each row being returned
+        to the frontend.
+-->
+表示为了响应一个 <command>SELECT</command>, <command>FETCH</command> 等的查询，将要返回一个行。
+这条消息的内容描述了这行的字段布局。这条消息后面将跟着每个返回给前端的行一个的 DataRow 消息。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>DataRow</term>
+      <listitem>
+       <para>
+<!--
+        One of the set of rows returned by
+        a <command>SELECT</command>, <command>FETCH</command>, etc query.
+-->
+<command>SELECT</command>, <command>FETCH</command> 等查询返回的结果集中的一行。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>EmptyQueryResponse</term>
+      <listitem>
+       <para>
+<!--
+        An empty query string was recognized.
+-->
+识别了一个空的查询字符串。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>ErrorResponse</term>
+      <listitem>
+       <para>
+<!--
+        An error has occurred.
+-->
+出错了。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>ReadyForQuery</term>
+      <listitem>
+       <para>
+<!--
+        Processing of the query string is complete.  A separate
+        message is sent to indicate this because the query string might
+        contain multiple SQL commands.  (CommandComplete marks the
+        end of processing one SQL command, not the whole string.)
+        ReadyForQuery will always be sent, whether processing
+        terminates successfully or with an error.
+-->
+查询字符串的处理完成。发送一个独立的消息来标识这个是因为查询字符串可能包含多个 SQL 命令。
+(CommandComplete 只是标记一条 SQL 命令处理完毕，而不是整个字符串。)
+ReadyForQuery 总会被发送，不管是处理成功结束还是产生错误。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>NoticeResponse</term>
+      <listitem>
+       <para>
+<!--
+        A warning message has been issued in relation to the query.
+        Notices are in addition to other responses, i.e., the backend
+        will continue processing the command.
+-->
+发送了一个与查询有关的警告消息。注意警告消息是附加在其它响应上的，也就是说,后端将继续处理该命令。
+       </para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+
+   <para>
+<!--
+    The response to a <command>SELECT</> query (or other queries that
+    return row sets, such as <command>EXPLAIN</> or <command>SHOW</>)
+    normally consists of RowDescription, zero or more
+    DataRow messages, and then CommandComplete.
+    <command>COPY</> to or from the frontend invokes special protocol
+    as described in <xref linkend="protocol-copy">.
+    All other query types normally produce only
+    a CommandComplete message.
+-->
+<command>SELECT</>(或其它返回结果集的查询，比如 <command>EXPLAIN</> 或 <command>SHOW</>)查询的响应通常包含 RowDescription ，零个或者多个 DataRow 消息，以及最后的 CommandComplete 。
+从或者到前端的 <command>COPY</> 使用<xref linkend="protocol-copy">里提到的特殊的协议。所有其它查询类型通常只生成一个 CommandComplete 消息。
+   </para>
+
+   <para>
+<!--
+    Since a query string could contain several queries (separated by
+    semicolons), there might be several such response sequences before the
+    backend finishes processing the query string.  ReadyForQuery is issued
+    when the entire string has been processed and the backend is ready to
+    accept a new query string.
+-->
+因为查询字符串可能包含若干个查询(用分号分隔)，所以在后端完成查询字符串的处理之前可能有好几个这样的响应序列。
+如果整个字符串已经处理完，后端已经准备好接受新查询字符串的时候则发出 ReadyForQuery 消息。
+   </para>
+
+   <para>
+<!--
+    If a completely empty (no contents other than whitespace) query string
+    is received, the response is EmptyQueryResponse followed by ReadyForQuery.
+-->
+如果收到一个完全空(除了空白之外没有内容)的查询字符串，那么响应是一条 EmptyQueryResponse 后面跟着 ReadyForQuery 。
+   </para>
+
+   <para>
+<!--
+    In the event of an error, ErrorResponse is issued followed by
+    ReadyForQuery.  All further processing of the query string is aborted by
+    ErrorResponse (even if more queries remained in it).  Note that this
+    might occur partway through the sequence of messages generated by an
+    individual query.
+-->
+在出现错误的时候，发出一个 ErrorResponse 消息，后面跟着 ReadyForQuery 。
+查询字符串的所有后继的处理都被 ErrorResponse 中止(即使里面还有查询也这么干)。
+请注意这些事情可能在处理一个查询产生的消息序列的中途发生。
+   </para>
+
+   <para>
+<!--
+    In simple Query mode, the format of retrieved values is always text,
+    except when the given command is a <command>FETCH</> from a cursor
+    declared with the <literal>BINARY</> option.  In that case, the
+    retrieved values are in binary format.  The format codes given in
+    the RowDescription message tell which format is being used.
+-->
+在简单查询模式，检索出来的数值的格式总是文本的，除非给出的命令是从一个声明了<literal>BINARY</>选项的游标上的<command>FETCH</> 。
+在这种情况下，检索出来的数值是二进制格式的。在 RowDescription 消息里给出的格式代码告诉用了哪种格式。
+   </para>
+
+   <para>
+<!--
+    A frontend must be prepared to accept ErrorResponse and
+    NoticeResponse messages whenever it is expecting any other type of
+    message.  See also <xref linkend="protocol-async"> concerning messages
+    that the backend might generate due to outside events.
+-->
+前端在等待其它类型的消息时必须准备接收 ErrorResponse 和 NoticeResponse 消息。
+参阅<xref linkend="protocol-async">后端因为外部的事件可能生成的消息。
+   </para>
+
+   <para>
+<!--
+    Recommended practice is to code frontends in a state-machine style
+    that will accept any message type at any time that it could make sense,
+    rather than wiring in assumptions about the exact sequence of messages.
+-->
+建议的方法是把前端代码写成状态机的风格，它可以在任何时刻接受任何有意义的消息，而不是写成假设消息的准确序列的代码。
+   </para>
+  </sect2>
+
+  <sect2 id="protocol-flow-ext-query">
+<!--
+   <title>Extended Query</title>
+-->
+   <title>扩展查询</title>
+
+   <para>
+<!--
+    The extended query protocol breaks down the above-described simple
+    query protocol into multiple steps.  The results of preparatory
+    steps can be re-used multiple times for improved efficiency.
+    Furthermore, additional features are available, such as the possibility
+    of supplying data values as separate parameters instead of having to
+    insert them directly into a query string.
+-->
+扩展的查询协议把上面描述的简单协议分裂成若干个步骤。准备的步骤可以多次复用以提高效率。
+另外，还可以获得额外的特性，比如把数据值作为独立的参数提供的可能性，而不是把它们直接插入一个查询字符串。
+   </para>
+
+   <para>
+<!--
+    In the extended protocol, the frontend first sends a Parse message,
+    which contains a textual query string, optionally some information
+    about data types of parameter placeholders, and the
+    name of a destination prepared-statement object (an empty string
+    selects the unnamed prepared statement).  The response is
+    either ParseComplete or ErrorResponse.  Parameter data types can be
+    specified by OID; if not given, the parser attempts to infer the
+    data types in the same way as it would do for untyped literal string
+    constants.
+-->
+在扩展的协议里，前端首先发送一个 Parse 消息，它包含一个文本查询字符串，另外还有一些有关参数占位符的数据类型的信息，以及一个最终预备语句对象的名字(一个空字符串选择未命名的预备语句)。
+响应要么是一个 ParseComplete 要么是 ErrorResponse 。参数数据类型可以用 OID 来声明；如果没有给出，那么分析器将试图用它对付无类型的字符串常量的方法来推导其数据类型。
+   </para>
+
+   <note>
+    <para>
+<!--
+     A parameter data type can be left unspecified by setting it to zero,
+     or by making the array of parameter type OIDs shorter than the
+     number of parameter symbols (<literal>$</><replaceable>n</>)
+     used in the query string.  Another special case is that a parameter's
+     type can be specified as <type>void</> (that is, the OID of the
+     <type>void</> pseudotype).  This is meant to allow parameter symbols
+     to be used for function parameters that are actually OUT parameters.
+     Ordinarily there is no context in which a <type>void</> parameter
+     could be used, but if such a parameter symbol appears in a function's
+     parameter list, it is effectively ignored.  For example, a function
+     call such as <literal>foo($1,$2,$3,$4)</> could match a function with
+     two IN and two OUT arguments, if <literal>$3</> and <literal>$4</>
+     are specified as having type <type>void</>.
+-->
+一个参数数据类型可以通过设置为零，或者让参数类型 OID 的数目比查询字符串里的参数符号(<literal>$</><replaceable>n</>)的数目少的方法不予声明。
+另外一个特例是参数的类型可以声明为 <type>void</>(也就是伪类型 <type>void</> 的 OID)。
+这是为了允许用于某些函数参数的参数符号实际上是 OUT 参数。
+通常情况下，没有什么环境会用到 <type>void</> 参数，但是如果在函数的参数列表里出现了这么一个参数符号，那么它实际上会被忽略。
+比如，一个像这样的函数调用：<literal>foo($1,$2,$3,$4)</>，如果<literal>$3</>和<literal>$4</>声明为类型是 <type>void</> ，那么这个函数调用可以匹配一个带有两个 IN 和两个 OUT 参数的函数。
+    </para>
+   </note>
+
+   <note>
+    <para>
+<!--
+     The query string contained in a Parse message cannot include more
+     than one SQL statement; else a syntax error is reported.  This
+     restriction does not exist in the simple-query protocol, but it
+     does exist in the extended protocol, because allowing prepared
+     statements or portals to contain multiple commands would complicate
+     the protocol unduly.
+-->
+在一个 Parse 消息里包含的查询字符串不能包含超过一个 SQL 语句；否则就会报告一个语法错误。
+这个限制在简单查询协议中并不存在，但是它存在于扩展的协议中，因为允许预备语句或者入口包含多个命令将导致协议过度地复杂。
+    </para>
+   </note>
+
+   <para>
+<!--
+    If successfully created, a named prepared-statement object lasts till
+    the end of the current session, unless explicitly destroyed.  An unnamed
+    prepared statement lasts only until the next Parse statement specifying
+    the unnamed statement as destination is issued.  (Note that a simple
+    Query message also destroys the unnamed statement.)  Named prepared
+    statements must be explicitly closed before they can be redefined by
+    another Parse message, but this is not required for the unnamed statement.
+    Named prepared statements can also be created and accessed at the SQL
+    command level, using <command>PREPARE</> and <command>EXECUTE</>.
+-->
+如果成功创建了一个命名的预备语句对象，那么它将持续到当前会话结束，除非明确删除。
+一个未命名的预备语句只持续到下一个声明未命名的语句的 Parse 语句发出为止(请注意一个简单的查询消息也删除未命名语句)。
+命名的预备语句必须明确地关闭，然后才能用一个 Parse 消息重新定义，但是未命名的语句并不要求这个动作。
+命名的预备语句也可以在 SQL 命令级创建和访问，方法是使用 <command>PREPARE</> 和 <command>EXECUTE</>。
+   </para>
+
+   <para>
+<!--
+    Once a prepared statement exists, it can be readied for execution using a
+    Bind message.  The Bind message gives the name of the source prepared
+    statement (empty string denotes the unnamed prepared statement), the name
+    of the destination portal (empty string denotes the unnamed portal), and
+    the values to use for any parameter placeholders present in the prepared
+    statement.  The
+    supplied parameter set must match those needed by the prepared statement.
+    (If you declared any <type>void</> parameters in the Parse message,
+    pass NULL values for them in the Bind message.)
+    Bind also specifies the format to use for any data returned
+    by the query; the format can be specified overall, or per-column.
+    The response is either BindComplete or ErrorResponse.
+-->
+只要预备语句还存在，那么就可以使用 Bind 消息很容易地使之进入执行状态。
+Bind 消息给出源预备语句的名字(空字符串表示未命名的预备语句)，目标入口的名字(空字符串表示未命名的入口)，以及用于那些在预备语句中出现的所有参数占位符的数值。
+提供的参数集必须匹配那些预备语句需要的东西。(如果你在 Parse 消息里声明任何 <type>void</> 参数，那么在 Bind 消息里给它们传递 NULL 值。)
+Bind 还声明用于查询返回的任何数据的格式；格式可以一次声明，也可以每个字段进行声明。响应要么是 BindComplete 要么是 ErrorResponse 。
+   </para>
+
+   <note>
+    <para>
+<!--
+     The choice between text and binary output is determined by the format
+     codes given in Bind, regardless of the SQL command involved.  The
+     <literal>BINARY</> attribute in cursor declarations is irrelevant when
+     using extended query protocol.
+-->
+输出的格式是文本还是二进制是由 Bind 里给出的格式代码决定的，不管用的是什么 SQL 命令。
+在使用扩展的查询协议的时候，游标声明里的 <literal>BINARY</> 属性是不起作用的。
+    </para>
+   </note>
+
+   <para>
+<!--
+    Query planning typically occurs when the Bind message is processed.
+    If the prepared statement has no parameters, or is executed repeatedly,
+    the server might save the created plan and re-use it during subsequent
+    Bind messages for the same prepared statement.  However, it will do so
+    only if it finds that a generic plan can be created that is not much
+    less efficient than a plan that depends on the specific parameter values
+    supplied.  This happens transparently so far as the protocol is concerned.
+-->
+典型的查询计划在处理Bind消息后生成。
+预备语句如果不包含参数，或者被反复执行的情况下，服务端可能会保存创建好的查询计划并在后续的针对同样的Bind消息中重用它。
+但是，只有确保这样作成的通用的查询计划不至于比依赖于特定参数值的查询计划效率差太多的情况下，服务端才会这么做。
+就协议而言这些是透明的。
+   </para>
+
+   <para>
+<!--
+    If successfully created, a named portal object lasts till the end of the
+    current transaction, unless explicitly destroyed.  An unnamed portal is
+    destroyed at the end of the transaction, or as soon as the next Bind
+    statement specifying the unnamed portal as destination is issued.  (Note
+    that a simple Query message also destroys the unnamed portal.)  Named
+    portals must be explicitly closed before they can be redefined by another
+    Bind message, but this is not required for the unnamed portal.
+    Named portals can also be created and accessed at the SQL
+    command level, using <command>DECLARE CURSOR</> and <command>FETCH</>.
+-->
+如果成功创建了一个命名的入口对象，那么它将持续到当前会话结束，除非明确删除。
+一个未命名的入口只持续到事务结束或下一个声明未命名的入口的 Bind消息发出为止(请注意一个简单的查询消息也删除未命名入口)。
+命名的入口必须明确地关闭，然后才能用另一个 Bind 消息重新定义，但是未命名的语句并不要求这个动作。
+命名的入口也可以在 SQL 命令级创建和访问，方法是使用<command>DECLARE CURSOR</>和<command>FETCH</>。
+   </para>
+
+   <para>
+<!--
+    Once a portal exists, it can be executed using an Execute message.
+    The Execute message specifies the portal name (empty string denotes the
+    unnamed portal) and
+    a maximum result-row count (zero meaning <quote>fetch all rows</>).
+    The result-row count is only meaningful for portals
+    containing commands that return row sets; in other cases the command is
+    always executed to completion, and the row count is ignored.
+    The possible
+    responses to Execute are the same as those described above for queries
+    issued via simple query protocol, except that Execute doesn't cause
+    ReadyForQuery or RowDescription to be issued.
+-->
+只要存在一个入口，那么就可以用一个 Execute 消息执行它。
+Execute 消息声明入口的名字(空字符串表示未命名入口)和一个最大的结果行计数(零表示<quote>抓取所有行</>)。
+结果行计数只对包含返回结果集的入口有意义；在其它情况下，该命令总是执行到结束，而行计数会被忽略。
+Execute 可能的响应和那些通过简单查询协议发出的查询一样，只不过 Execute 不会导致后端发出 ReadyForQuery 或者 RowDescription 。
+   </para>
+
+   <para>
+<!--
+    If Execute terminates before completing the execution of a portal
+    (due to reaching a nonzero result-row count), it will send a
+    PortalSuspended message; the appearance of this message tells the frontend
+    that another Execute should be issued against the same portal to
+    complete the operation.  The CommandComplete message indicating
+    completion of the source SQL command is not sent until
+    the portal's execution is completed.  Therefore, an Execute phase is
+    always terminated by the appearance of exactly one of these messages:
+    CommandComplete, EmptyQueryResponse (if the portal was created from
+    an empty query string), ErrorResponse, or PortalSuspended.
+-->
+如果 Execute 在一个入口的执行完成之前终止(因为达到了一个非零的结果行计数)，它将发送一个 PortalSuspended 消息；这个消息的出现告诉前端应该在同一个入口上发出另外一个 Execute 以完成操作。
+在入口的执行完成之前，不会发出表示源 SQL 命令结束的 CommandComplete 消息。
+因此 Execute 阶段的结束总是由出现下列之一的消息标志的：CommandComplete 、EmptyQueryResponse(如果入口是从一个空字符串创建出来的)、ErrorResponse 、PortalSuspended 。
+   </para>
+
+   <para>
+<!--
+    At completion of each series of extended-query messages, the frontend
+    should issue a Sync message.  This parameterless message causes the
+    backend to close the current transaction if it's not inside a
+    <command>BEGIN</>/<command>COMMIT</> transaction block (<quote>close</>
+    meaning to commit if no error, or roll back if error).  Then a
+    ReadyForQuery response is issued.  The purpose of Sync is to provide
+    a resynchronization point for error recovery.  When an error is detected
+    while processing any extended-query message, the backend issues
+    ErrorResponse, then reads and discards messages until a Sync is reached,
+    then issues ReadyForQuery and returns to normal message processing.
+    (But note that no skipping occurs if an error is detected
+    <emphasis>while</> processing Sync &mdash; this ensures that there is one
+    and only one ReadyForQuery sent for each Sync.)
+-->
+每个扩展查询消息序列完成后，前端都应该发出一条 Sync 消息。
+这个无参数的消息导致后端关闭当前事务——如果当前事务不是在一个<command>BEGIN</>/<command>COMMIT</>事务块中的话(<quote>关闭</>的意思就是在没有错误的情况下提交，或者是有错误的情况下回滚)。
+然后响应一条 ReadyForQuery 消息。Sync 的目的是提供一个错误恢复的重新同步的点。
+如果在处理任何扩展查询消息的时候侦测到任何错误，那么后端发出 ErrorResponse ，然后读取并抛弃消息，直到一个 sync 的到来，然后发出 ReadyForQuery 并且返回到正常的消息处理中。
+(但是要注意如果<emphasis>正在</>处理 Sync 的时候发生了错误，那么不会忽略任何东西 —这样就保证了为每个 Sync 发出一个并且只有一个的 ReadyForQuery 。
+   </para>
+
+   <note>
+    <para>
+<!--
+     Sync does not cause a transaction block opened with <command>BEGIN</>
+     to be closed.  It is possible to detect this situation since the
+     ReadyForQuery message includes transaction status information.
+-->
+Sync 并不导致一个用<command>BEGIN</>打开的事务块关闭。可以侦测到这种情况，因为 ReadyForQuery 消息包含事务状态信息。
+    </para>
+   </note>
+
+   <para>
+<!--
+    In addition to these fundamental, required operations, there are several
+    optional operations that can be used with extended-query protocol.
+-->
+除了这些基本的，必须的操作之外，在扩展查询协议里还有几种可选的操作可以使用。
+   </para>
+
+   <para>
+<!--
+    The Describe message (portal variant) specifies the name of an existing
+    portal (or an empty string for the unnamed portal).  The response is a
+    RowDescription message describing the rows that will be returned by
+    executing the portal; or a NoData message if the portal does not contain a
+    query that will return rows; or ErrorResponse if there is no such portal.
+-->
+Describe 消息(入口变体)指定一个现有的入口的名字(如果是一个未命名的入口则是一个空字符串)。
+响应是一个 RowDescription 消息，它描述了执行入口将要返回的行；或者是一个 NoData 消息(如果入口并不包含会返回行的查询)；或者是一个 ErrorResponse(如果没有这个入口)。
+   </para>
+
+   <para>
+<!--
+    The Describe message (statement variant) specifies the name of an existing
+    prepared statement (or an empty string for the unnamed prepared
+    statement).  The response is a ParameterDescription message describing the
+    parameters needed by the statement, followed by a RowDescription message
+    describing the rows that will be returned when the statement is eventually
+    executed (or a NoData message if the statement will not return rows).
+    ErrorResponse is issued if there is no such prepared statement.  Note that
+    since Bind has not yet been issued, the formats to be used for returned
+    columns are not yet known to the backend; the format code fields in the
+    RowDescription message will be zeroes in this case.
+-->
+Describe 消息(语句变体)指定一个现有的预备语句的名字(如果是一个未命名的预备语句则是一个空字符串)。
+响应是一个描述该语句需要的参数的 ParameterDescription 消息，后面跟着一个描述语句最终执行后返回的行的 RowDescription 消息(或者是 NoData 消息，如果该语句不返回行)。
+如果没有这样的预备语句，则返回 ErrorResponse 。
+请注意因为还没有发出 Bind ，所以后端还不知道用于返回字段的格式；在这种情况下，RowDescription 消息里面的格式代码字段将是零。
+   </para>
+
+   <tip>
+    <para>
+<!--
+     In most scenarios the frontend should issue one or the other variant
+     of Describe before issuing Execute, to ensure that it knows how to
+     interpret the results it will get back.
+-->
+在大多数情况下，前端在发出 Execute 之前应该发出某种 Describe 的变体，以保证它知道如何解析它将得到的结果。
+    </para>
+   </tip>
+
+   <para>
+<!--
+    The Close message closes an existing prepared statement or portal
+    and releases resources.  It is not an error to issue Close against
+    a nonexistent statement or portal name.  The response is normally
+    CloseComplete, but could be ErrorResponse if some difficulty is
+    encountered while releasing resources.  Note that closing a prepared
+    statement implicitly closes any open portals that were constructed
+    from that statement.
+-->
+Close 消息关闭一个现有的预备语句或者入口，并且释放资源。
+对一个不存在的语句或者入口名字发出 Close 不是一个错误。
+响应通常是 CloseComplete ，但如果在释放资源的时候发生了一些困难也可以是 ErrorResponse 。
+请注意关闭一个预备语句隐含地关闭任何从该语句构造出来的打开的入口。
+   </para>
+
+   <para>
+<!--
+    The Flush message does not cause any specific output to be generated,
+    but forces the backend to deliver any data pending in its output
+    buffers.  A Flush must be sent after any extended-query command except
+    Sync, if the frontend wishes to examine the results of that command before
+    issuing more commands.  Without Flush, messages returned by the backend
+    will be combined into the minimum possible number of packets to minimize
+    network overhead.
+-->
+Flush 消息并不导致任何特定的输出的生成，但是强制后端发送任何还在它的输出缓冲区中停留的数据。
+Flush 必须在除 Sync 外的任何扩展查询命令后面发出(如果前端希望在发出更多的命令之前检查该命令的结果的话)。
+如果不 Flush ，后端返回的消息将组合成最小可能的数据包个数，以减少网络负荷。
+   </para>
+
+   <note>
+    <para>
+<!--
+     The simple Query message is approximately equivalent to the series Parse,
+     Bind, portal Describe, Execute, Close, Sync, using the unnamed prepared
+     statement and portal objects and no parameters.  One difference is that
+     it will accept multiple SQL statements in the query string, automatically
+     performing the bind/describe/execute sequence for each one in succession.
+     Another difference is that it will not return ParseComplete, BindComplete,
+     CloseComplete, or NoData messages.
+-->
+简单查询消息大概等于一系列使用未命名的预备语句和无参数的入口对象的 Parse 、Bind 、入口 Describe 、Execute 、Close 、Sync 。
+一个区别是它会在查询字符串中接受多个 SQL 语句，并在会话中为每个语句自动执行绑定/描述/执行序列。
+另外一个区别是它不会返回 ParseComplete 、Bindcomplete 、CloseComplete 、NoData 消息。
+    </para>
+   </note>
+  </sect2>
+
+  <sect2>
+<!--
+   <title>Function Call</title>
+-->
+   <title>函数调用</title>
+
+   <para>
+<!--
+    The Function Call sub-protocol allows the client to request a direct
+    call of any function that exists in the database's
+    <structname>pg_proc</structname> system catalog.  The client must have
+    execute permission for the function.
+-->
+函数调用子协议允许客户端请求一个对存在于数据库<structname>pg_proc</structname>系统表中的任意函数的直接调用。
+客户端必须在该函数上有执行的权限。
+   </para>
+
+   <note>
+    <para>
+<!--
+     The Function Call sub-protocol is a legacy feature that is probably best
+     avoided in new code.  Similar results can be accomplished by setting up
+     a prepared statement that does <literal>SELECT function($1, ...)</>.
+     The Function Call cycle can then be replaced with Bind/Execute.
+-->
+函数调用子协议是一个遗留的特性，在新代码里最好避免用它。
+类似的结果可以通过设置一个<literal>SELECT function($1, ...)</>预备语句获得。
+这样函数调用循环就可以用 Bind/Execute 代替。
+    </para>
+   </note>
+
+   <para>
+<!--
+    A Function Call cycle is initiated by the frontend sending a
+    FunctionCall message to the backend.  The backend then sends one
+    or more response messages depending on the results of the function
+    call, and finally a ReadyForQuery response message.  ReadyForQuery
+    informs the frontend that it can safely send a new query or
+    function call.
+-->
+一个函数调用循环是由前端向后端发送一条 FunctionCall 消息初始化的。
+然后后端根据函数调用的结果发送一条或者更多响应消息，并且在最后是一条 ReadyForQuery 响应消息。
+ReadyForQuery 通知前端它可以安全地发送一条新的查询或者函数调用了。
+   </para>
+
+   <para>
+<!--
+    The possible response messages from the backend are:
+-->
+从后端来的可能的消息是：
+
+    <variablelist>
+     <varlistentry>
+      <term>ErrorResponse</term>
+      <listitem>
+       <para>
+<!--
+        An error has occurred.
+-->
+发生了一个错误。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>FunctionCallResponse</term>
+      <listitem>
+       <para>
+<!--
+        The function call was completed and returned the result given
+        in the message.
+        (Note that the Function Call protocol can only handle a single
+        scalar result, not a row type or set of results.)
+-->
+函数调用完成并且在消息中返回一个结果。
+(请注意，函数调用协议只能处理单个标量结果，不能处理行类型或者结果集。)
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>ReadyForQuery</term>
+      <listitem>
+       <para>
+<!--
+        Processing of the function call is complete.  ReadyForQuery
+        will always be sent, whether processing terminates
+        successfully or with an error.
+-->
+函数调用处理完成。ReadyForQuery 将总是被发送，不管是成功完成处理还是发生了一个错误。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>NoticeResponse</term>
+      <listitem>
+       <para>
+<!--
+        A warning message has been issued in relation to the function
+        call.  Notices are in addition to other responses, i.e., the
+        backend will continue processing the command.
+-->
+发出了一条有关该函数调用的警告消息。通知是附加在其它响应上的，也就是说，后端将继续处理命令。
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+  </sect2>
+
+  <sect2 id="protocol-copy">
+<!--
+   <title>COPY Operations</title>
+-->
+   <title>COPY操作</title>
+
+   <para>
+<!--
+    The <command>COPY</> command allows high-speed bulk data transfer
+    to or from the server.  Copy-in and copy-out operations each switch
+    the connection into a distinct sub-protocol, which lasts until the
+    operation is completed.
+-->
+<command>COPY</>命令允许在服务器和客户端之间高速的大批量数据传输。
+拷贝入和拷贝出操作每个都把连接切换到一个独立的子协议中，并且持续到操作结束。
+   </para>
+
+   <para>
+<!--
+    Copy-in mode (data transfer to the server) is initiated when the
+    backend executes a <command>COPY FROM STDIN</> SQL statement.  The backend
+    sends a CopyInResponse message to the frontend.  The frontend should
+    then send zero or more CopyData messages, forming a stream of input
+    data.  (The message boundaries are not required to have anything to do
+    with row boundaries, although that is often a reasonable choice.)
+    The frontend can terminate the copy-in mode by sending either a CopyDone
+    message (allowing successful termination) or a CopyFail message (which
+    will cause the <command>COPY</> SQL statement to fail with an
+    error).  The backend then reverts to the command-processing mode it was
+    in before the <command>COPY</> started, which will be either simple or
+    extended query protocol.  It will next send either CommandComplete
+    (if successful) or ErrorResponse (if not).
+-->
+拷贝入模式(数据传输到服务器)是在后端执行一个<command>COPY FROM STDIN</>语句的时候初始化的。
+后端发送一个 CopyInResponse 消息给前端。
+前端应该发送零条或者更多 CopyData 消息，形成一个输出数据的流。
+(消息的边界和行的边界没有任何相关性要求，尽管通常那就是合理的边界选择。)
+前端可以通过发送一个 CopyDone 消息来终止拷贝入操作(允许成功终止)，也可以发出一个 CopyFail 消息(它将导致 <command>COPY</> 语句带着错误失败)。
+然后后端就恢复回它在 <command>COPY</> 开始之前的命令处理模式，可能是简单查询协议，也可能是扩展查询协议。
+然后它会发送 CommandComplete(如果成功)或者 ErrorResponse(如果失败)。
+   </para>
+
+   <para>
+<!--
+    In the event of a backend-detected error during copy-in mode (including
+    receipt of a CopyFail message), the backend will issue an ErrorResponse
+    message.  If the <command>COPY</> command was issued via an extended-query
+    message, the backend will now discard frontend messages until a Sync
+    message is received, then it will issue ReadyForQuery and return to normal
+    processing.  If the <command>COPY</> command was issued in a simple
+    Query message, the rest of that message is discarded and ReadyForQuery
+    is issued.  In either case, any subsequent CopyData, CopyDone, or CopyFail
+    messages issued by the frontend will simply be dropped.
+-->
+如果在拷贝入模式下后端检测到了错误(包括接受接收到 CopyFiail 消息，或者是任何除了 CopyData 或者 CopyDone 之外的前端消息)，那么后端将发出一个 ErrorResponse 消息。
+如果<command>COPY</> 命令是通过一个扩展的查询消息发出的，那么后端从现在开始将抛弃前端消息，直到一个 Sync 消息到达，然后它将发出 ReadyForQuery 并且返回到正常的处理中。
+如果<command>COPY</> 命令是在一个简单查询消息里发出的，那么该消息剩余部分被丢弃然后发出 ReadyForQuery 消息。
+不管是哪种情况，任何前端发出的 CopyData, CopyDone, CopyFail 消息都将被简单地抛弃。
+   </para>
+
+   <para>
+<!--
+    The backend will ignore Flush and Sync messages received during copy-in
+    mode.  Receipt of any other non-copy message type constitutes an error
+    that will abort the copy-in state as described above.  (The exception for
+    Flush and Sync is for the convenience of client libraries that always
+    send Flush or Sync after an Execute message, without checking whether
+    the command to be executed is a <command>COPY FROM STDIN</>.)
+-->
+后端将会忽略拷贝入模式时接收到的 Flush 和 Sync 消息。
+收到任何其它非拷贝消息，会引发错误，如前所述这样会导致退出拷贝入状态。
+(Flush 和 Sync 的例外是为了方便客户端库在执行 Execute 消息后始终发送 Flush 或 Sync 而不检查所执行的命令是否是一个 COPY FROM STDIN 命令。)
+   </para>
+
+   <para>
+<!--
+    Copy-out mode (data transfer from the server) is initiated when the
+    backend executes a <command>COPY TO STDOUT</> SQL statement.  The backend
+    sends a CopyOutResponse message to the frontend, followed by
+    zero or more CopyData messages (always one per row), followed by CopyDone.
+    The backend then reverts to the command-processing mode it was
+    in before the <command>COPY</> started, and sends CommandComplete.
+    The frontend cannot abort the transfer (except by closing the connection
+    or issuing a Cancel request),
+    but it can discard unwanted CopyData and CopyDone messages.
+-->
+拷贝出模式(数据从服务器发出)是在后端执行一个<command>COPY TO STDOUT</>语句的时候初始化的。
+后端发出一个 CopyOutResponse 消息给前端，后面跟着零或者多个 CopyData 消息(总是每行一个)，然后跟着 CopyDone 。
+然后后端回退到它在<command>COPY</>开始之前的命令处理模式，然后发送 CommandComplete 。
+前端不能退出传输(除非是关闭连接或者发出一个 Cancel 请求)，但是它可以抛弃不需要的 CopyData 和 CopyDone 消息。
+   </para>
+
+   <para>
+<!--
+    In the event of a backend-detected error during copy-out mode,
+    the backend will issue an ErrorResponse message and revert to normal
+    processing.  The frontend should treat receipt of ErrorResponse as
+    terminating the copy-out mode.
+-->
+在拷贝出模式中，如果后端检测到错误，那么它将发出一个 ErrorResponse 消息并且回到正常的处理。
+前端应该把收到 ErrorResponse当作终止拷贝出模式的标志。
+   </para>
+
+   <para>
+<!--
+    It is possible for NoticeResponse and ParameterStatus messages to be
+    interspersed between CopyData messages; frontends must handle these cases,
+    and should be prepared for other asynchronous message types as well (see
+    <xref linkend="protocol-async">).  Otherwise, any message type other than
+    CopyData or CopyDone may be treated as terminating copy-out mode.
+-->
+NoticeResponse和ParameterStatus消息有可能夹在CopyData消息间出现。
+前端必须处理这种情况，并且也应该准备好处理其它异步消息(参阅<xref linkend="protocol-async">)。
+除此以外，任何CopyData和CopyDone以外的消息应该被视作拷贝出模式的中止。
+   </para>
+
+   <para>
+<!--
+    There is another Copy-related mode called copy-both, which allows
+    high-speed bulk data transfer to <emphasis>and</> from the server.
+    Copy-both mode is initiated when a backend in walsender mode
+    executes a <command>START_REPLICATION</command> statement.  The
+    backend sends a CopyBothResponse message to the frontend.  Both
+    the backend and the frontend may then send CopyData messages
+    until either end sends a CopyDone message. After the client
+    sends a CopyDone message, the connection goes from copy-both mode to
+    copy-out mode, and the client may not send any more CopyData messages.
+    Similarly, when the server sends a CopyDone message, the connection
+    goes into copy-in mode, and the server may not send any more CopyData
+    messages. After both sides have sent a CopyDone message, the copy mode
+    is terminated, and the backend reverts to the command-processing mode.
+    In the event of a backend-detected error during copy-both mode,
+    the backend will issue an ErrorResponse message, discard frontend messages
+    until a Sync message is received, and then issue ReadyForQuery and return
+    to normal processing.  The frontend should treat receipt of ErrorResponse
+    as terminating the copy in both directions; no CopyDone should be sent
+    in this case.  See <xref linkend="protocol-replication"> for more
+    information on the subprotocol transmitted over copy-both mode.
+-->
+还有一个拷贝相关的模式，称作双向拷贝，它允许从<emphasis>和</>到服务端的高速的批量数据传输。
+双向拷贝模式由处于walsender模式的后端执行一条<command>START_REPLICATION</command>语句初始化。
+后端发送一个CopyBothResponse给前端。然后后端和前端可能都发送CopyData消息，直到有一方发出一个CopyDone消息。
+客户端发送CopyDone消息后，连接从双向拷贝模式切换到拷贝出模式，并且客户端不应该再发出任何CopyData消息。
+相似的，如果服务端发出CopyDone消息，连接进入拷贝入模式，并且服务端不应该再发出任何CopyData消息。
+两边都发送了CopyDone消息后，拷贝模式终止，后端返回到命令处理模式。
+在双向拷贝模式中，如果后端检出错误，将发出一个ErrorResponse消息，丢弃任何来自前端的消息直到收到Sync消息，然后发送ReadyForQuery消息并返回到普通的处理模式。
+前端应把收到ErrorResponse消息作为在两个方向上都终止拷贝的标志，这个时候不应该发出CopyDone消息。
+请参阅<xref linkend="protocol-replication">获得更多有关双向拷贝模式下子协议传输的信息。
+   </para>
+
+   <para>
+<!--
+    The CopyInResponse, CopyOutResponse and CopyBothResponse messages
+    include fields that inform the frontend of the number of columns
+    per row and the format codes being used for each column.  (As of
+    the present implementation, all columns in a given <command>COPY</>
+    operation will use the same format, but the message design does not
+    assume this.)
+-->
+CopyInResponse，CopyOutResponse和 CopyBothResponse 消息包含了告诉前端每行的字段数以及每个字段使用的格式代码的信息。
+(就目前的实现而言，某个<command>COPY</>操作的所有字段都使用同样的格式，但是消息设计并不做这个假设。)
+   </para>
+
+  </sect2>
+
+  <sect2 id="protocol-async">
+<!--
+   <title>Asynchronous Operations</title>
+-->
+   <title>异步操作</title>
+
+   <para>
+<!--
+    There are several cases in which the backend will send messages that
+    are not specifically prompted by the frontend's command stream.
+    Frontends must be prepared to deal with these messages at any time,
+    even when not engaged in a query.
+    At minimum, one should check for these cases before beginning to
+    read a query response.
+-->
+有几种情况下后端会发送一些并非由特定的前端的命令流提示的消息。
+在任何时候前端都必须准备处理这些消息，即使是并未涉及到查询处理的时候。
+至少，应该在开始读取查询响应之前检查这些情况。
+   </para>
+
+   <para>
+<!--
+    It is possible for NoticeResponse messages to be generated due to
+    outside activity; for example, if the database administrator commands
+    a <quote>fast</> database shutdown, the backend will send a NoticeResponse
+    indicating this fact before closing the connection.  Accordingly,
+    frontends should always be prepared to accept and display NoticeResponse
+    messages, even when the connection is nominally idle.
+-->
+NoticeResponse 消息有可能是因为外部的活动而生成的；比如，如果数据库管理员进行一次<quote>快速</>数据库关闭，那么后端将在关闭连接之前发送一个 NoticeResponse 来通知这件事。
+因此，前端应该总是准备接受和显示 NoticeResponse 消息，即使连接表面上是空闲的时候也如此。
+   </para>
+
+   <para>
+<!--
+    ParameterStatus messages will be generated whenever the active
+    value changes for any of the parameters the backend believes the
+    frontend should know about.  Most commonly this occurs in response
+    to a <command>SET</> SQL command executed by the frontend, and
+    this case is effectively synchronous &mdash; but it is also possible
+    for parameter status changes to occur because the administrator
+    changed a configuration file and then sent the
+    <systemitem>SIGHUP</systemitem> signal to the server.  Also,
+    if a <command>SET</command> command is rolled back, an appropriate
+    ParameterStatus message will be generated to report the current
+    effective value.
+-->
+如果后端认为前端应该知道的任何参数的实际值发生了变化，那么都会产生 ParameterStatus 消息。
+这些最经常发生的地方是前端执行的一个<command>SET</command>命令的响应，并且这个时候实际上是同步(但是也有可能是数据库管理员改变了配置文件然后<systemitem>SIGHUP</systemitem>了服务器导致的参数状态的变化)。
+同样，如果一个<command>SET</command>命令回滚，那么也会生成合适的 ParameterStatus 消息以报告当前有效的数值。
+   </para>
+
+   <para>
+<!--
+    At present there is a hard-wired set of parameters for which
+    ParameterStatus will be generated: they are
+    <varname>server_version</>,
+    <varname>server_encoding</>,
+    <varname>client_encoding</>,
+    <varname>application_name</>,
+    <varname>is_superuser</>,
+    <varname>session_authorization</>,
+    <varname>DateStyle</>,
+    <varname>IntervalStyle</>,
+    <varname>TimeZone</>,
+    <varname>integer_datetimes</>, and
+    <varname>standard_conforming_strings</>.
+    (<varname>server_encoding</>, <varname>TimeZone</>, and
+    <varname>integer_datetimes</> were not reported by releases before 8.0;
+    <varname>standard_conforming_strings</> was not reported by releases
+    before 8.1;
+    <varname>IntervalStyle</> was not reported by releases before 8.4;
+    <varname>application_name</> was not reported by releases before 9.0.)
+    Note that
+    <varname>server_version</>,
+    <varname>server_encoding</> and
+    <varname>integer_datetimes</>
+    are pseudo-parameters that cannot change after startup.
+    This set might change in the future, or even become configurable.
+    Accordingly, a frontend should simply ignore ParameterStatus for
+    parameters that it does not understand or care about.
+-->
+目前，系统内有一套会生成 ParameterStatus 消息的硬编码的参数：他们是
+<varname>server_version</>、<varname>server_encoding</>、<varname>client_encoding</>、<varname>application_name</>、<varname>is_superuser</>、<varname>session_authorization</>、<varname>DateStyle</>、<varname>IntervalStyle</>、<varname>TimeZone</>、<varname>integer_datetimes</>以及<varname>standard_conforming_strings</>。
+（8.0以前的版本不会报告<varname>server_encoding</>、<varname>TimeZone</>和<varname>integer_datetimes</>。
+8.1以前的版本不会报告<varname>standard_conforming_strings</>。
+8.4以前的版本不会报告<varname>IntervalStyle</>。
+9.0以前的版本不会报告<varname>application_name</>。）
+请注意<varname>server_version</>、<varname>server_encoding</>和<varname>integer_datetimes</>是伪参数，启动后不能修改。
+这个参数集合可能在将会改变，或者甚至是变成可以配置的。因此，前端应该简单地忽略那些它不懂或者不关心的 ParameterStatus 。
+   </para>
+
+   <para>
+<!--
+    If a frontend issues a <command>LISTEN</command> command, then the
+    backend will send a NotificationResponse message (not to be
+    confused with NoticeResponse!)  whenever a
+    <command>NOTIFY</command> command is executed for the same
+    channel name.
+-->
+如果前端发出一个<command>LISTEN</command>命令，那么为同一个通道名执行了<command>NOTIFY</command>命令后，将收到后端发来的一个 NotificationResponse 消息(不要和 NoticeResponse 混淆)。
+   </para>
+
+   <note>
+    <para>
+<!--
+     At present, NotificationResponse can only be sent outside a
+     transaction, and thus it will not occur in the middle of a
+     command-response series, though it might occur just before ReadyForQuery.
+     It is unwise to design frontend logic that assumes that, however.
+     Good practice is to be able to accept NotificationResponse at any
+     point in the protocol.
+-->
+目前，NotificationResponse 只能在一个事务外面发送，因此它将不会在一个命令响应序列中间出现，但是它可能在 ReadyForQuery 之前出现。
+不过，在前端逻辑中做上述假设是不明智的。好的做法是在协议的任何点上都可以接受 NotificationResponse 。
+
+    </para>
+   </note>
+  </sect2>
+
+  <sect2>
+<!--
+   <title>Canceling Requests in Progress</title>
+-->
+<title>取消正在处理的请求</title>
+
+   <para>
+<!--
+    During the processing of a query, the frontend might request
+    cancellation of the query.  The cancel request is not sent
+    directly on the open connection to the backend for reasons of
+    implementation efficiency: we don't want to have the backend
+    constantly checking for new input from the frontend during query
+    processing.  Cancel requests should be relatively infrequent, so
+    we make them slightly cumbersome in order to avoid a penalty in
+    the normal case.
+-->
+在一条查询正在处理的时候，前端可能请求取消这个查询。
+这样的取消请求不是直接通过打开的当前连接发送给后端的，这么做是因为实现的有效性：不希望后端在处理查询的过程中不停地检查前端来的输入。
+取消请求应该相对而言比较少见，所以把取消做得稍微笨拙一些，以便不影响正常状况的性能。
+   </para>
+
+   <para>
+<!--
+    To issue a cancel request, the frontend opens a new connection to
+    the server and sends a CancelRequest message, rather than the
+    StartupMessage message that would ordinarily be sent across a new
+    connection.  The server will process this request and then close
+    the connection.  For security reasons, no direct reply is made to
+    the cancel request message.
+-->
+要发送一条取消请求，前端打开一个与服务器的新连接并且发送一条 CancelRequest 消息，而不是通常在新连接中经常发送的 StartupPacket 消息。
+服务器将处理这个请求然后关闭连接。出于安全原因，对取消请求消息不做直接的响应。
+   </para>
+
+   <para>
+<!--
+    A CancelRequest message will be ignored unless it contains the
+    same key data (PID and secret key) passed to the frontend during
+    connection start-up.  If the request matches the PID and secret
+    key for a currently executing backend, the processing of the
+    current query is aborted.  (In the existing implementation, this is
+    done by sending a special signal to the backend process that is
+    processing the query.)
+-->
+除非 CancelRequest 消息包含与连接启动过程中传递给前端的相同的键数据(PID 和安全键字)，否则它将被忽略。
+如果该请求匹配当前运行着的后端的 PID 和安全键字，则退出当前查询的处理(目前的实现里采用的方法是向正在处理该查询的后端进程发送一个特殊的信号)。
+   </para>
+
+   <para>
+<!--
+    The cancellation signal might or might not have any effect &mdash; for
+    example, if it arrives after the backend has finished processing
+    the query, then it will have no effect.  If the cancellation is
+    effective, it results in the current command being terminated
+    early with an error message.
+-->
+取消信号可能有也可能没有任何作用。
+例如，如果它在后端已经完成了查询的处理后到达，那么它就没有作用。
+如果取消起作用了，其结果是当前命令带着一个错误消息提前退出。
+   </para>
+
+   <para>
+<!--
+    The upshot of all this is that for reasons of both security and
+    efficiency, the frontend has no direct way to tell whether a
+    cancel request has succeeded.  It must continue to wait for the
+    backend to respond to the query.  Issuing a cancel simply improves
+    the odds that the current query will finish soon, and improves the
+    odds that it will fail with an error message instead of
+    succeeding.
+-->
+这么做是对安全和有效性通盘考虑的结果，前端没有直接的方法获知一个取消请求是否成功。
+它必须继续等待后端对查询响应。执行取消仅仅是增加了当前查询快些结束的可能性，以及增加了当前查询会带着一条错误消息失败而不是成功执行的可能性。
+   </para>
+
+   <para>
+<!--
+    Since the cancel request is sent across a new connection to the
+    server and not across the regular frontend/backend communication
+    link, it is possible for the cancel request to be issued by any
+    process, not just the frontend whose query is to be canceled.
+    This might provide additional flexibility when building
+    multiple-process applications.  It also introduces a security
+    risk, in that unauthorized persons might try to cancel queries.
+    The security risk is addressed by requiring a dynamically
+    generated secret key to be supplied in cancel requests.
+-->
+因为取消请求是通过新的连接发送给服务器而不是通过通常的前/后端通讯连接，所以取消请求可能是任意进程执行的，而不仅仅是要取消查询的前端。
+这样可能对创建多进程应用有某种灵活性的好处。但是同时这样也带来了安全风险，因为这样任何一个非认证用户都可能试图取消查询。
+这个安全风险通过要求在取消请求中提供一个动态生成的安全键字排除。
+   </para>
+  </sect2>
+
+  <sect2>
+<!--
+   <title>Termination</title>
+-->
+<title>终止</title>
+
+   <para>
+<!--
+    The normal, graceful termination procedure is that the frontend
+    sends a Terminate message and immediately closes the connection.
+    On receipt of this message, the backend closes the connection and
+    terminates.
+-->
+通常，优雅的终止过程是前端发送一条 Terminate消息并且立刻关闭连接。一旦收到这个消息，后端马上关闭连接并且退出。
+   </para>
+
+   <para>
+<!--
+    In rare cases (such as an administrator-commanded database shutdown)
+    the backend might disconnect without any frontend request to do so.
+    In such cases the backend will attempt to send an error or notice message
+    giving the reason for the disconnection before it closes the connection.
+-->
+在少数情况下(比如通过一个管理员命令关闭数据库)，后端可能在没有任何前端请求的情况下断开连接。
+在这种情况下，后端将在它断开连接之前尝试发送一个错误或者通知消息，给出断开的原因。
+   </para>
+
+   <para>
+<!--
+    Other termination scenarios arise from various failure cases, such as core
+    dump at one end or the other, loss of the communications link, loss of
+    message-boundary synchronization, etc.  If either frontend or backend sees
+    an unexpected closure of the connection, it should clean
+    up and terminate.  The frontend has the option of launching a new backend
+    by recontacting the server if it doesn't want to terminate itself.
+    Closing the connection is also advisable if an unrecognizable message type
+    is received, since this probably indicates loss of message-boundary sync.
+-->
+其它终止的情况发生在各种失效的场合，比如某一方的内核转储，失去通讯链路，丢失了消息边界同步等。
+不管是前端还是后端看到了一个意外的连接关闭，那么它应该清理现场并且终止。
+如果前端不想终止自己，那么它可以通过再次连接服务器的方式重启一个新的后端。
+如果收到了一个无法识别的消息，那么也建议关闭连接，因为出现这种情况可能意味着是丢失了消息边界的同步。
+   </para>
+
+   <para>
+<!--
+    For either normal or abnormal termination, any open transaction is
+    rolled back, not committed.  One should note however that if a
+    frontend disconnects while a non-<command>SELECT</command> query
+    is being processed, the backend will probably finish the query
+    before noticing the disconnection.  If the query is outside any
+    transaction block (<command>BEGIN</> ... <command>COMMIT</>
+    sequence) then its results might be committed before the
+    disconnection is recognized.
+-->
+不管是正常还是异常的终止，任何打开的事务都会回滚，而不是提交。
+不过，应该注意的是如果一个前端在一个非<command>SELECT</command>查询正在处理的时候断开，那么后端很可能在注意到断开之前先完成查询的处理。
+如果查询处于任何事务块之外((<command>BEGIN</> ... <command>COMMIT</>序列)，那么其结果很可能在得知断开之前被提交。
+   </para>
+  </sect2>
+
+  <sect2>
+<!--
+   <title><acronym>SSL</acronym> Session Encryption</title>
+-->
+   <title><acronym>SSL</acronym>会话加密</title>
+
+   <para>
+<!--
+    If <productname>PostgreSQL</> was built with
+    <acronym>SSL</acronym> support, frontend/backend communications
+    can be encrypted using <acronym>SSL</acronym>.  This provides
+    communication security in environments where attackers might be
+    able to capture the session traffic. For more information on
+    encrypting <productname>PostgreSQL</productname> sessions with
+    <acronym>SSL</acronym>, see <xref linkend="ssl-tcp">.
+-->
+如果编译<productname>PostgreSQL</>的时候打开了<acronym>SSL</acronym>支持，那么前后端通讯就可以用<acronym>SSL</acronym>加密。
+这样就提供了一种在攻击者可能捕获会话通讯数据包的环境下保证通讯安全的方法。
+有关使用<acronym>SSL</acronym>加密<productname>PostgreSQL</>会话的更多信息，请参阅<xref linkend="ssl-tcp">。
+   </para>
+
+   <para>
+<!--
+    To initiate an <acronym>SSL</acronym>-encrypted connection, the
+    frontend initially sends an SSLRequest message rather than a
+    StartupMessage.  The server then responds with a single byte
+    containing <literal>S</> or <literal>N</>, indicating that it is
+    willing or unwilling to perform <acronym>SSL</acronym>,
+    respectively.  The frontend might close the connection at this point
+    if it is dissatisfied with the response.  To continue after
+    <literal>S</>, perform an <acronym>SSL</acronym> startup handshake
+    (not described here, part of the <acronym>SSL</acronym>
+    specification) with the server.  If this is successful, continue
+    with sending the usual StartupMessage.  In this case the
+    StartupMessage and all subsequent data will be
+    <acronym>SSL</acronym>-encrypted.  To continue after
+    <literal>N</>, send the usual StartupMessage and proceed without
+    encryption.
+-->
+要开始一次<acronym>SSL</acronym>加密连接，前端先是发送一个 SSLRequest 消息，而不是 StartupMessage 。
+然后服务器以一个包含<literal>S</>或<literal>N</>的字节响应，分别表示它愿意还是不愿意进行<acronym>SSL</acronym>。
+如果前端对响应不满意，那么它可以关闭连接。
+要在<literal>S</>之后继续，那么先进行与服务器的<acronym>SSL</acronym>启动握手(没有在这里描述，这是<acronym>SSL</acronym>规范的一部分)。
+如果这些成功了，那么继续发送普通的 StartupMessage 。
+这种情况下，StartupMessage 和所有随后的数据都将由<acronym>SSL</acronym>加密。
+要在<literal>N</>之后继续，则发送普通的 StartupMessage 然后不带加密进行处理。
+   </para>
+
+   <para>
+<!--
+    The frontend should also be prepared to handle an ErrorMessage
+    response to SSLRequest from the server.  This would only occur if
+    the server predates the addition of <acronym>SSL</acronym> support
+    to <productname>PostgreSQL</>.  (Such servers are now very ancient,
+    and likely do not exist in the wild anymore.)
+    In this case the connection must
+    be closed, but the frontend might choose to open a fresh connection
+    and proceed without requesting <acronym>SSL</acronym>.
+-->
+前端应该也准备处理一个来自服务器的给 SSLRequest 的 ErrorMessage 响应。
+这种情况只有在那些<acronym>SSL</acronym>支持被加入到<productname>PostgreSQL</>以前的服务上才会出现。
+(这样的服务器太古老了，很可能根本就不存在。)
+在这种情况下，连接必需关闭，但是前端可以选择打开一个新的连接然后不带<acronym>SSL</acronym>进行连接。
+   </para>
+
+   <para>
+<!--
+    An initial SSLRequest can also be used in a connection that is being
+    opened to send a CancelRequest message.
+-->
+一个初始化的 SSLRequest 也可以用于为了发送一条 CancelRequest 消息而打开的连接中。
+   </para>
+
+   <para>
+<!--
+    While the protocol itself does not provide a way for the server to
+    force <acronym>SSL</acronym> encryption, the administrator can
+    configure the server to reject unencrypted sessions as a byproduct
+    of authentication checking.
+-->
+如果协议本身并未提供某种方法强制<acronym>SSL</acronym>加密，那么管理员可以把服务器配置为拒绝未加密的会话，这是认证检查的一个副产品。
+   </para>
+  </sect2>
+ </sect1>
+
+<sect1 id="protocol-replication">
+<!--
+<title>Streaming Replication Protocol</title>
+-->
+<title>流复制协议</title>
+
+<para>
+<!--
+To initiate streaming replication, the frontend sends the
+<literal>replication</> parameter in the startup message. This tells the
+backend to go into walsender mode, wherein a small set of replication commands
+can be issued instead of SQL statements. Only the simple query protocol can be
+used in walsender mode.
+
+The commands accepted in walsender mode are:
+-->
+为了初始化流复制，前端需要发送带<literal>replication</>参数的startup消息。
+这告诉后端进入walsender模式，在这个模式下可以发送数量不多的复制命令集而不是通常的SQL命令。
+并且在walsender模式下，只能使用简单查询协议。
+
+walsender模式下可以接受的命令如下:
+
+<variablelist>
+  <varlistentry>
+    <term>IDENTIFY_SYSTEM</term>
+    <listitem>
+     <para>
+<!--
+      Requests the server to identify itself. Server replies with a result
+      set of a single row, containing three fields:
+-->
+请求服务端标识自己。服务端会应答一个只有一行的结果集，包含3个字段。
+     </para>
+
+     <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+       systemid
+      </term>
+      <listitem>
+      <para>
+<!--
+       The unique system identifier identifying the cluster. This
+       can be used to check that the base backup used to initialize the
+       standby came from the same cluster.
+-->
+标识数据库集群的唯一的系统标识符。
+这个可以用于检查初始化备机用的基础备份来自同一个数据库集群。
+      </para>
+      </listitem>
+      </varlistentry>
+
+      <varlistentry>
+      <term>
+       timeline
+      </term>
+      <listitem>
+      <para>
+<!--
+       Current TimelineID. Also useful to check that the standby is
+       consistent with the master.
+-->
+当前的时间线ID(TimelineID)。
+同样可用于检查备机和主机的一致性。
+      </para>
+      </listitem>
+      </varlistentry>
+
+      <varlistentry>
+      <term>
+       xlogpos
+      </term>
+      <listitem>
+      <para>
+<!--
+       Current xlog write location. Useful to get a known location in the
+       transaction log where streaming can start.
+-->
+当前的xlog的写入位置。
+可用于获得在事务日志中流从哪而开始的已知的位置信息。
+      </para>
+      </listitem>
+      </varlistentry>
+
+      </variablelist>
+     </para>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+    <term>TIMELINE_HISTORY <replaceable class="parameter">tli</replaceable></term>
+    <listitem>
+     <para>
+<!--
+      Requests the server to send over the timeline history file for timeline
+      <replaceable class="parameter">tli</replaceable>.  Server replies with a
+      result set of a single row, containing two fields:
+-->
+请求服务端为时间线<replaceable class="parameter">tli</replaceable>发送时间线历史文件。
+服务端会应答一个只有一行的结果集，包含3个字段。
+     </para>
+
+     <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+       filename
+      </term>
+      <listitem>
+      <para>
+<!--
+       Filename of the timeline history file, e.g 00000002.history.
+-->
+时间线历史文件的文件名，比如00000002.history。
+      </para>
+      </listitem>
+      </varlistentry>
+
+      <varlistentry>
+      <term>
+       content
+     </term>
+      <listitem>
+      <para>
+<!--
+       Contents of the timeline history file.
+-->
+时间线历史文件的内容。
+      </para>
+     </listitem>
+      </varlistentry>
+ 
+     </variablelist>
+     </para>
+    </listitem>
+  </varlistentry>
+
+    <varlistentry>
+    <term>START_REPLICATION <replaceable class="parameter">XXX/XXX</> TIMELINE <replaceable class="parameter">tli</></term>
+    <listitem>
+     <para>
+<!--
+      Instructs server to start streaming WAL, starting at
+      WAL position <replaceable class="parameter">XXX/XXX</> on timeline
+      <replaceable class="parameter">tli</>.
+      The server can reply with an error, e.g. if the requested section of WAL
+      has already been recycled. On success, server responds with a
+      CopyBothResponse message, and then starts to stream WAL to the frontend.
+-->
+指示服务端从时间线<replaceable class="parameter">tli</>上的WAL位置<replaceable class="parameter">XXX/XXX</>开始WAL流。
+服务端可能会回应一个错误，比如，如果在请求的WAL段已经被回收的情况下。
+如果成功，服务端响应一个CopyBothResponse消息，然后开启到前端的WAL流。
+     </para>
+
+     <para>
+<!--
+      If the client requests a timeline that's not the latest, but is part of
+      the history of the server, the server will stream all the WAL on that
+      timeline starting from the requested startpoint, up to the point where
+      the server switched to another timeline. If the client requests
+      streaming at exactly the end of an old timeline, the server responds
+      immediately with CommandComplete without entering COPY mode.
+-->
+如果客户端请求的时间线不是最新的，但是是服务端历史的一部分，服务端将会传送从请求的开始点开始直到服务端切换到另一个时间线为止这个时间线上的所有WAL。
+如果客户端请求的流正好在旧时间线的终点上，服务端会立即响应一个CommandComplete而不进入COPY模式。
+     </para>
+
+     <para>
+<!--
+      After streaming all the WAL on a timeline that is not the latest one,
+      the server will end streaming by exiting the COPY mode. When the client
+      acknowledges this by also exiting COPY mode, the server sends a result
+      set with one row and two columns, indicating the next timeline in this
+      server's history. The first column is the next timeline's ID, and the
+      second column is the XLOG position where the switch happened. Usually,
+      the switch position is the end of the WAL that was streamed, but there
+      are corner cases where the server can send some WAL from the old
+      timeline that it has not itself replayed before promoting. Finally, the
+      server sends CommandComplete message, and is ready to accept a new
+      command.
+-->
+传送完这个非最新的时间线上的所有WAL后，服务端退出COPY模式结束流。
+当客户端也以退出COPY模式作为应答，服务端发送一个只有一行的结果集，包含2的字段，指示在这个服务器上的下一个时间线。
+第一列是下一个时间线的ID，第二列是发生切换的XLOG位置。
+通常切换点是已经传送的WAL流的终点，但是在极端的情况下，服务端发送的WAL可能来自自己升级前还没有回放的旧的时间线。
+最终服务端发送CommandComplete消息并准备接收新的命令。
+      </para>
+     <para>
+<!--
+      WAL data is sent as a series of CopyData messages.  (This allows
+      other information to be intermixed; in particular the server can send
+      an ErrorResponse message if it encounters a failure after beginning
+      to stream.)  The payload of each CopyData message from server to the
+      client contains a message of one of the following formats:
+-->
+WAL数据作为一系列的CopyData消息发送。
+（这允许混合其它信息，具体而言服务端在开始流之后发生了失败可以发送ErrorResponse消息。）
+每个从服务端到客户端的CopyData消息的装载数据中包含下面的格式的消息：
+     </para>
+
+     <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+          XLogData (B)
+      </term>
+      <listitem>
+      <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+          Byte1('w')
+      </term>
+      <listitem>
+      <para>
+<!--
+          Identifies the message as WAL data.
+-->
+标识消息是一个WAL数据。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The starting point of the WAL data in this message.
+-->
+消息内的WAL数据开始点。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The current end of WAL on the server.
+-->
+当前服务端上的WAL終点。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The server's system clock at the time of transmission, as
+          microseconds since midnight on 2000-01-01.
+-->
+传送时服务端上的系统时间，是从2000-01-01午夜开始的微秒数。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Byte<replaceable>n</replaceable>
+      </term>
+      <listitem>
+      <para>
+<!--
+          A section of the WAL data stream.
+-->
+WAL数据流的片段。
+      </para>
+      <para>
+<!--
+          A single WAL record is never split across two XLogData messages.
+          When a WAL record crosses a WAL page boundary, and is therefore
+          already split using continuation records, it can be split at the page
+          boundary. In other words, the first main WAL record and its
+          continuation records can be sent in different XLogData messages.
+-->
+单个的WAL记录一定不会被分割成2个XLogData消息。
+当一个WAL记录跨越WAL页的边界，并且因此已经被连续的记录分割了，可以在页边界上分割。
+换句话说，第一个主要的WAL记录和它后续的记录可能以不同XLogData消息传送。
+      </para>
+      </listitem>
+      </varlistentry>
+      
+      </variablelist>
+     </para>
+     
+     </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term>
+<!--
+          Primary keepalive message (B)
+-->
+主keepalive消息 (B)
+      </term>
+      <listitem>
+      <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+          Byte1('k')
+      </term>
+      <listitem>
+      <para>
+<!--
+          Identifies the message as a sender keepalive.
+-->
+标识这是一个发送者的keepalive消息。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The current end of WAL on the server.
+-->
+服务端上当前的WAL终点。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The server's system clock at the time of transmission, as
+          microseconds since midnight on 2000-01-01.
+-->
+传送时服务端上的系统时间，是从2000-01-01午夜开始的微秒数。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Byte1
+      </term>
+      <listitem>
+      <para>
+      <!--
+          1 means that the client should reply to this message as soon as
+          possible, to avoid a timeout disconnect. 0 otherwise.
+       -->
+       1意味着客户端应该尽可能快的应答这个消息，以防止超时切断连接。0的意思相反。
+      </para>     
+      </listitem>
+      </varlistentry>
+      </variablelist>
+      </para>
+      </listitem>
+      </varlistentry>
+      </variablelist>
+     </para>
+
+     <para>
+     <!--
+       The receiving process can send replies back to the sender at any time,
+       using one of the following message formats (also in the payload of a
+       CopyData message):
+       -->
+       接受进程可以在任何时间使用以下消息格式(同样作为CopyData消息的装载数据)应答发送者：
+     </para>
+
+     <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+<!--
+          Standby status update (F)
+-->
+备机状态更新(F)
+      </term>
+      <listitem>
+      <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+          Byte1('r')
+      </term>
+      <listitem>
+      <para>
+<!--
+          Identifies the message as a receiver status update.
+-->
+标识这是一个接受者的状态更新消息。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The location of the last WAL byte + 1 received and written to disk
+          in the standby.
+-->
+备机上接受并写入磁盘的上次的WAL字节+1的位置。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The location of the last WAL byte + 1 flushed to disk in
+          the standby.
+-->
+备机上刷新到磁盘的上次的WAL字节+1的位置。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+      <!--
+          The location of the last WAL byte + 1 applied in the standby.
+      -->
+备机上已经应用的上次的WAL字节+1的位置。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The client's system clock at the time of transmission, as
+          microseconds since midnight on 2000-01-01.
+-->
+传送时客户端上的系统时间，是从2000-01-01午夜开始的微秒数。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Byte1
+      </term>
+      <listitem>
+      <para>
+<!--
+          If 1, the client requests the server to reply to this message
+          immediately. This can be used to ping the server, to test if
+          the connection is still healthy.          
+-->
+如果是1，客户端请求服务端立即应答这个消息。
+这用于ping服务端以测试连接是否还健康。
+      </para>
+       </listitem>
+      </varlistentry>
+      </variablelist>
+      </para>
+      </listitem>
+      </varlistentry>
+      </variablelist>
+     </para>
+
+     <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+<!--
+          Hot Standby feedback message (F)
+-->
+热备机的反馈消息(F)
+      </term>
+      <listitem>
+      <para>
+      <variablelist>
+      <varlistentry>
+      <term>
+          Byte1('h')
+      </term>
+      <listitem>
+      <para>
+<!--
+          Identifies the message as a Hot Standby feedback message.
+-->
+标识这是一个热备机的反馈消息。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int64
+      </term>
+      <listitem>
+      <para>
+<!--
+          The client's system clock at the time of transmission, as
+          microseconds since midnight on 2000-01-01.
+-->
+传送时客户端上的系统时间，是从2000-01-01午夜开始的微秒数。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int32
+      </term>
+      <listitem>
+      <para>
+<!--
+          The standby's current xmin. This may be 0, if the standby is
+          sending notification that Hot Standby feedback will no longer
+          be sent on this connection. Later non-zero messages may
+          reinitiate the feedback mechanism.
+-->
+备机上现在的xmin。如果备机正在传送热备机反馈将不再发到这个连接上的通知，这个值可能为0。之后非零的消息可能再初始化反馈机制。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int32
+      </term>
+      <listitem>
+      <para>
+<!--
+          The standby's current epoch.
+-->
+备机的当前时间戳。
+      </para>
+      </listitem>
+      </varlistentry>
+      </variablelist>
+      </para>
+      </listitem>
+      </varlistentry>
+      </variablelist>
+     </para>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+    <term>BASE_BACKUP [<literal>LABEL</literal> <replaceable>'label'</replaceable>] [<literal>PROGRESS</literal>] [<literal>FAST</literal>] [<literal>WAL</literal>] [<literal>NOWAIT</literal>]</term>
+    <listitem>
+     <para>
+<!--
+      Instructs the server to start streaming a base backup.
+      The system will automatically be put in backup mode before the backup
+      is started, and taken out of it when the backup is complete. The
+      following options are accepted:
+-->
+指示服务器开始一个基础备份的流。系统将在备份开始前自动进入备份模式，并且在备份完成后回到原来的状态。
+可以接受以下选项:
+      <variablelist>
+       <varlistentry>
+        <term><literal>LABEL</literal> <replaceable>'label'</replaceable></term>
+        <listitem>
+         <para>
+<!--
+          Sets the label of the backup. If none is specified, a backup label
+          of <literal>base backup</literal> will be used. The quoting rules
+          for the label are the same as a standard SQL string with
+          <xref linkend="guc-standard-conforming-strings"> turned on.
+-->
+设定备份的标签。
+如果没有指定，则使用<literal>base backup</literal>。
+标签的引号使用规则与<xref linkend="guc-standard-conforming-strings">开关打开时的标准SQL字符串相同。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>PROGRESS</></term>
+        <listitem>
+         <para>
+<!--
+          Request information required to generate a progress report. This will
+          send back an approximate size in the header of each tablespace, which
+          can be used to calculate how far along the stream is done. This is
+          calculated by enumerating all the file sizes once before the transfer
+          is even started, and may as such have a negative impact on the
+          performance - in particular it may take longer before the first data
+          is streamed. Since the database files can change during the backup,
+          the size is only approximate and may both grow and shrink between
+          the time of approximation and the sending of the actual files.
+-->
+请求产生进度报告时要用的信息。
+这将在每个表空间的头部发回一个近似的大小，用于计算到流结束还有多少距离。
+这个大小是在传输前通过一次性统计所有文件的大小获取的，可能会产生性能上的冲击 - 实际上在传送第一个流前可能会花比较长的时间。
+既然数据库文件可能在备份过程中改变，这个大小只是近似的，并且在估算和实际发送文件之间可能增长和收缩。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>FAST</></term>
+        <listitem>
+         <para>
+<!--
+          Request a fast checkpoint.
+-->
+请求一个快速的检查点(checkpoint)。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>WAL</literal></term>
+        <listitem>
+         <para>
+<!--
+          Include the necessary WAL segments in the backup. This will include
+          all the files between start and stop backup in the
+          <filename>pg_xlog</filename> directory of the base directory tar
+          file.
+-->
+包含这个备份所必要的WAL段。将包括在备份开始和结束期间<filename>pg_xlog</filename>目录下的所有base目录tar文件。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>NOWAIT</literal></term>
+        <listitem>
+         <para>
+<!--
+          By default, the backup will wait until the last required xlog
+          segment has been archived, or emit a warning if log archiving is
+          not enabled. Specifying <literal>NOWAIT</literal> disables both
+          the waiting and the warning, leaving the client responsible for
+          ensuring the required log is available.
+-->
+缺省时备份会等待最后一个需要的xlog段被归档，或者在没有启用归档的情况下发出一个警告。
+指定<literal>NOWAIT</literal>可以把等待和警告无效，让客户端负责确认需要的日志是否有效。
+         </para>
+         </listitem>
+       </varlistentry>
+      </variablelist>
+     </para>
+     <para>
+<!--
+      When the backup is started, the server will first send two
+      ordinary result sets, followed by one or more CopyResponse
+      results.
+-->
+备份开始时，服务端首先发送2个通常的结果集，然后是1个以上的CopyResponse结果。
+     </para>
+     <para>
+<!--
+      The first ordinary result set contains the starting position of the
+      backup, in a single row with two columns. The first column contains
+      the start position given in XLogRecPtr format, and the second column
+      contains the corresponding timeline ID.
+-->
+最初的通常的结果集里，包含由2列构成的单一行的备份位置。
+第一个列是XLogRecPtr形式的开始位置，第二列是对应的时间线ID。
+     </para>
+     <para>
+<!--
+      The second ordinary result set has one row for each tablespace.
+      The fields in this row are:
+-->
+第二个通常的结果集里各个表空间一行数据。
+每行包含的字段如下:
+      <variablelist>
+       <varlistentry>
+        <term>spcoid</term>
+        <listitem>
+         <para>
+<!--
+          The oid of the tablespace, or <literal>NULL</> if it's the base
+          directory.
+-->
+表空间的oid。
+base目录的情况下则为<literal>NULL</>。
+         </para>
+        </listitem>
+       </varlistentry>
+       <varlistentry>
+        <term>spclocation</term>
+        <listitem>
+         <para>
+<!--
+          The full path of the tablespace directory, or <literal>NULL</>
+          if it's the base directory.
+-->
+表空间目录的完全路径。base目录的情况下则为<literal>NULL</>。
+         </para>
+        </listitem>
+       </varlistentry>
+       <varlistentry>
+        <term>size</term>
+        <listitem>
+         <para>
+<!--
+          The approximate size of the tablespace, if progress report has
+          been requested; otherwise it's <literal>NULL</>.
+-->
+要求进度状况报告的情况下，表空间的估算容量。
+没有要求的情况下为<literal>NULL</>。
+         </para>
+        </listitem>
+       </varlistentry>
+      </variablelist>
+     </para>
+     <para>
+<!--
+      After the second regular result set, one or more CopyResponse results
+      will be sent, one for PGDATA and one for each additional tablespace other
+      than <literal>pg_default</> and <literal>pg_global</>. The data in
+      the CopyResponse results will be a tar format (following the
+      <quote>ustar interchange format</> specified in the POSIX 1003.1-2008
+      standard) dump of the tablespace contents, except that the two trailing
+      blocks of zeroes specified in the standard are omitted.
+      After the tar data is complete, a final ordinary result set will be sent,
+      containing the WAL end position of the backup, in the same format as
+      the start position.
+-->
+第二个通常结果集之后被送过来的是一个以上的CopyResponse结果。
+一个是PGDATA用的，其余的则是每个<literal>pg_default</>、<literal>pg_global</>以外的追加表空间都有一个。
+CopyResponse结果内的数据是表空间内容的tar形式（遵照POSIX 1003.1-2008规定的<quote>ustar交换形式</>）的转储(dump)。
+但是，标准规定的最后的2个零数据块被省掉了。
+tar数据结束后，和开始位置的形式相同，是包含备份终了位置的最终的结果集。
+     </para>
+
+     <para>
+<!--
+      The tar archive for the data directory and each tablespace will contain
+      all files in the directories, regardless of whether they are
+      <productname>PostgreSQL</> files or other files added to the same
+      directory. The only excluded files are:
+-->
+为data目录和每个表空间做的tar归档包含目录下的所有文件，不管它们是<productname>PostgreSQL</> 的文件还是相同目录下的其它在文件。
+但是以下文件被排除在外:
+      <itemizedlist spacing="compact" mark="bullet">
+       <listitem>
+        <para>
+         <filename>postmaster.pid</>
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         <filename>postmaster.opts</>
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+<!--
+         <filename>pg_xlog</>, including subdirectories. If the backup is run
+         with WAL files included, a synthesized version of <filename>pg_xlog</filename> will be
+         included, but it will only contain the files necessary for the
+         backup to work, not the rest of the contents.
+-->
+<filename>pg_xlog</>，包含子目录。如果备份是包含WAL执行的，将包含一个合成版的<filename>pg_xlog</filename>。
+它只包含对于备份工作必须的文件而没有其余的内容。
+        </para>
+       </listitem>
+      </itemizedlist>
+<!--
+      Owner, group and file mode are set if the underlying file system on
+      the server supports it.
+-->
+如果服务器的文件系统支持的话，所有者，组和文件模式会被设置。
+     </para>
+     <para>
+<!--
+      Once all tablespaces have been sent, a final regular result set will
+      be sent. This result set contains the end position of the
+      backup, given in XLogRecPtr format as a single column in a single row.
+-->
+所有的表空间被传送完后，发送最终的通常结果集。
+这个结果集里包含单一行单一列的XLogRecPtr格式的备份结束位置。
+     </para>
+    </listitem>
+  </varlistentry>
+</variablelist>
+
+</para>
+
+</sect1>
+
+<sect1 id="protocol-message-types">
+<!--
+<title>Message Data Types</title>
+-->
+<title>消息数据类型</title>
+
+<para>
+<!--
+This section describes the base data types used in messages.
+-->
+本节描述消息里用到的基本数据类型。
+
+<variablelist>
+
+<varlistentry>
+<term>
+        Int<replaceable>n</replaceable>(<replaceable>i</replaceable>)
+</term>
+<listitem>
+<para>
+<!--
+                An <replaceable>n</replaceable>-bit integer in network byte
+                order (most significant byte first).
+                If <replaceable>i</replaceable> is specified it
+                is the exact value that will appear, otherwise the value
+                is variable.  Eg. Int16, Int32(42).
+-->
+一个网络字节顺序的<replaceable>n</replaceable>位整数。
+如果声明了<replaceable>i</replaceable>，它就是将出现的确切值，否则这个数值就是一个变量。
+比如 Int16 ，Int32(42)。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Int<replaceable>n</replaceable>[<replaceable>k</replaceable>]
+</term>
+<listitem>
+<para>
+<!--
+                An array of <replaceable>k</replaceable>
+                <replaceable>n</replaceable>-bit integers, each in network
+                byte order.  The array length <replaceable>k</replaceable>
+                is always determined by an earlier field in the message.
+                Eg. Int16[M].
+-->
+一个<replaceable>k</replaceable>个<replaceable>n</replaceable>位整数元素的数组，每个都是以网络字节顺序存储的。
+数组长度<replaceable>k</replaceable>总是由消息前面的字段来判断的。比如 Int16[M]
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        String(<replaceable>s</replaceable>)
+</term>
+<listitem>
+<para>
+<!--
+                A null-terminated string (C-style string).  There is no
+                specific length limitation on strings.
+                If <replaceable>s</replaceable> is specified it is the exact
+                value that will appear, otherwise the value is variable.
+                Eg. String, String("user").
+-->
+一个(C 风格的)空结尾的字符串。对字符串没有特别的长度限制。
+如果声明了<replaceable>s</replaceable>，那么它是将出现的确切的数值，否则这个数值就是一个变量。
+比如 String, String("user")。
+</para>
+                
+<note>
+<para>
+<!--
+<emphasis>There is no predefined limit</emphasis> on the length of a string
+that can be returned by the backend.  Good coding strategy for a frontend
+is to use an expandable buffer so that anything that fits in memory can be
+accepted.  If that's not feasible, read the full string and discard trailing
+characters that don't fit into your fixed-size buffer.
+-->
+后端返回的字符串的可能长度<emphasis>没有预定义的限制</emphasis>。
+所以前端必须使用良好的编码策略，使用某种可扩展的缓冲区以便能接受任何能放进内存里的东西。
+如果那样做不可行，则读取全长的字符串然后抛弃不能放进你的定长缓冲区的尾部字符。
+</para>
+</note>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>(<replaceable>c</replaceable>)
+</term>
+<listitem>
+<para>
+<!--
+                Exactly <replaceable>n</replaceable> bytes.  If the field
+                width <replaceable>n</replaceable> is not a constant, it is
+                always determinable from an earlier field in the message.
+                If <replaceable>c</replaceable> is specified it is the exact
+                value.  Eg. Byte2, Byte1('\n').
+-->
+精确的<replaceable>n</replaceable>字节。
+如果字段宽度<replaceable>n</replaceable>不是一个常量，那么总是可以从消息中更早的字段中判断它。
+如果声明了<replaceable>c</replaceable>那么它是确切数值。例如 Byte2, Byte1('\n')
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</sect1>
+
+<sect1 id="protocol-message-formats">
+<!--
+<title>Message Formats</title>
+-->
+<title>消息格式</title>
+
+<para>
+<!--
+This section describes the detailed format of each message.  Each is marked to
+indicate that it can be sent by a frontend (F), a backend (B), or both
+(F &amp; B).
+Notice that although each message includes a byte count at the beginning,
+the message format is defined so that the message end can be found without
+reference to the byte count.  This aids validity checking.  (The CopyData
+message is an exception, because it forms part of a data stream; the contents
+of any individual CopyData message cannot be interpretable on their own.)
+-->
+本节描述各种消息的详细格式。
+每种消息都标记为它是由一个前端(F)，一个后端(B)或者两者(F &amp;B)发送的。
+请注意，尽管每条消息在开头都包含一个字节计数，消息格式也定义为可以不用参考字节计数就可以找到消息的结尾。
+这样就增加了有效性检查。CopyData 消息是一个例外，因为它形成一个数据流的一部分；任意独立的 CopyData 消息可能是无法自解释的。
+</para>
+
+<variablelist>
+
+
+<varlistentry>
+<term>
+AuthenticationOk (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识该消息是一条认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容长度，包括这个长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(0)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that the authentication was successful.
+-->
+声明该认证是成功的。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+AuthenticationKerberosV5 (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识该消息是一条认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容长度，包括长度自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(2)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that Kerberos V5 authentication is required.
+-->
+声明需要 Kerberos V5 认证。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+AuthenticationCleartextPassword (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识该消息是一条认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容长度，包括长度自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(3)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that a clear-text password is required.
+-->
+声明需要一个明文的口令。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+AuthenticationMD5Password (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识这条消息是一个认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(12)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(5)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that an MD5-encrypted password is required.
+-->
+声明需要一个 MD5 加密的口令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte4
+</term>
+<listitem>
+<para>
+<!--
+                The salt to use when encrypting the password.
+-->
+加密口令的时候使用的盐粒。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+AuthenticationSCMCredential (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识这条消息是一个认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(6)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that an SCM credentials message is required.
+-->
+声明需要一个 SCM 信任消息。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+AuthenticationGSS (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识这条消息是一个认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(7)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that GSSAPI authentication is required.
+-->
+声明需要GSSAPI认证。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+AuthenticationSSPI (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识这条消息是一个认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(9)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that SSPI authentication is required.
+-->
+声明需要SSPI认证。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+AuthenticationGSSContinue (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an authentication request.
+-->
+标识这条消息是一个认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Specifies that this message contains GSSAPI or SSPI data.
+-->
+标识本消息包含GSSAPI或SSPI数据。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+<!--
+                GSSAPI or SSPI authentication data.
+-->
+GSSAPI或者SSPI认证数据。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+BackendKeyData (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('K')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as cancellation key data.
+                The frontend must save these values if it wishes to be
+                able to issue CancelRequest messages later.
+-->
+标识该消息是一个取消键字数据。
+如果前端希望能够在稍后发出 CancelRequest 消息，那么它必须保存这个值。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(12)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The process ID of this backend.
+-->
+后端的进程号(PID)
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The secret key of this backend.
+-->
+此后端的密钥
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Bind (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('B')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Bind command.
+-->
+标识该消息是一个绑定命令
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the destination portal
+                (an empty string selects the unnamed portal).
+-->
+目标入口的名字(空字符串则选取未命名的入口)
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the source prepared statement
+                (an empty string selects the unnamed prepared statement).
+-->
+源预备语句的名字(空字符串则选取未命名的预备语句)
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of parameter format codes that follow
+                (denoted <replaceable>C</> below).
+                This can be zero to indicate that there are no parameters
+                or that the parameters all use the default format (text);
+                or one, in which case the specified format code is applied
+                to all parameters; or it can equal the actual number of
+                parameters.
+-->
+后面跟着的参数格式代码的数目(在下面的<replaceable>C</>中说明)。
+这个数值可以是0，表示没有参数，或者是参数都使用缺省格式(文本)；或者是1，这种情况下声明的格式代码应用于所有参数；或者它可以等于实际数目的参数。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16[<replaceable>C</>]
+</term>
+<listitem>
+<para>
+<!--
+                The parameter format codes.  Each must presently be
+                zero (text) or one (binary).
+-->
+参数格式代码。目前每个都必须是0(文本)或者1(二进制)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of parameter values that follow (possibly zero).
+                This must match the number of parameters needed by the query.
+-->
+后面跟着的参数值的数目(可能为零)。这些必须和查询需要的参数个数匹配。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        Next, the following pair of fields appear for each parameter:
+-->
+然后，每个参数都会出现下面的字段对：
+<variablelist>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The length of the parameter value, in bytes (this count
+                does not include itself).  Can be zero.
+                As a special case, -1 indicates a NULL parameter value.
+                No value bytes follow in the NULL case.
+-->
+参数值的长度，以字节记(这个长度并不包含长度本身)。
+可以为0。一个特殊的情况是，-1 表示一个 NULL 参数值。
+在 NULL 的情况下，后面不会跟着数值字节。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+<!--
+                The value of the parameter, in the format indicated by the
+                associated format code.
+                <replaceable>n</replaceable> is the above length.
+-->
+参数值，格式是用相关的格式代码表示的。<replaceable>n</replaceable>是上面的长度。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        After the last parameter, the following fields appear:
+-->
+在最后一个参数之后，出现下面的字段：
+<variablelist>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of result-column format codes that follow
+                (denoted <replaceable>R</> below).
+                This can be zero to indicate that there are no result columns
+                or that the result columns should all use the default format
+                (text);
+                or one, in which case the specified format code is applied
+                to all result columns (if any); or it can equal the actual
+                number of result columns of the query.
+-->
+后面跟着的结果字段格式代码数目(下面的<replaceable>R</>描述)。
+这个数目可以是0表示没有结果字段，或者结果字段都使用缺省格式(文本)；或者是1，这种情况下声明格式代码应用于所有结果字段(如果有的话)；或者它可以等于查询的结果字段的实际数目。
+
+
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16[<replaceable>R</>]
+</term>
+<listitem>
+<para>
+<!--
+                The result-column format codes.  Each must presently be
+                zero (text) or one (binary).
+-->
+结果字段格式代码。目前每个必须是0(文本)或者1(二进制)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+BindComplete (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('2')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Bind-complete indicator.
+-->
+标识消息为一个绑定结束标识符
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CancelRequest (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Int32(16)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(80877102)
+</term>
+<listitem>
+<para>
+<!--
+                The cancel request code.  The value is chosen to contain
+                <literal>1234</> in the most significant 16 bits, and <literal>5678</> in the
+                least 16 significant bits.  (To avoid confusion, this code
+                must not be the same as any protocol version number.)
+-->
+取消请求代码。选这个值是为了在高 16 位包含<literal>1234</> ，低 16 位包含<literal>5678</>。
+（为避免混乱，这个代码必须与协议版本号不同。）
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The process ID of the target backend.
+-->
+目标后端的进程号(PID)
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The secret key for the target backend.
+-->
+目标后端的密钥
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Close (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('C')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Close command.
+-->
+标识这条消息是一个 Close 命令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte1
+</term>
+<listitem>
+<para>
+<!--
+                '<literal>S</>' to close a prepared statement; or
+                '<literal>P</>' to close a portal.
+-->
+'<literal>S</>'关闭一个准备的语句；或者'<literal>P</>'关闭一个入口。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the prepared statement or portal to close
+                (an empty string selects the unnamed prepared statement
+                or portal).
+-->
+一个要关闭的预备语句或者入口的名字(一个空字符串选择未命名的预备语句或者入口)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CloseComplete (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('3')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Close-complete indicator.
+-->
+标识消息是一个 Close 完毕指示器。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CommandComplete (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('C')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a command-completed response.
+-->
+标识此消息是一个命令结束响应。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+       <para>
+<!--
+        The command tag.  This is usually a single
+        word that identifies which SQL command was completed.
+-->
+命令标记。它通常是一个单字，标识那个命令完成。
+       </para>
+
+       <para>
+<!--
+        For an <command>INSERT</command> command, the tag is
+        <literal>INSERT <replaceable>oid</replaceable>
+        <replaceable>rows</replaceable></literal>, where
+        <replaceable>rows</replaceable> is the number of rows
+        inserted. <replaceable>oid</replaceable> is the object ID
+        of the inserted row if <replaceable>rows</replaceable> is 1
+        and the target table has OIDs;
+        otherwise <replaceable>oid</replaceable> is 0.
+-->
+对于<command>INSERT</command>命令，标记是<literal>INSERT <replaceable>oid</replaceable>
+<replaceable>rows</replaceable></literal>，这里的<replaceable>rows</replaceable>是插入的行数。
+<replaceable>oid</replaceable>在<replaceable>rows</replaceable>为1并且目标表有OID的时候是插入行的对象ID；
+否则<replaceable>oid</replaceable>就是0。
+       </para>
+
+       <para>
+<!--
+        For a <command>DELETE</command> command, the tag is
+        <literal>DELETE <replaceable>rows</replaceable></literal> where
+        <replaceable>rows</replaceable> is the number of rows deleted.
+-->
+对于<command>DELETE</command>命令，标记是<literal>DELETE <replaceable>rows</replaceable></literal>，这里的<replaceable>rows</replaceable>是删除的行数。
+       </para>
+
+       <para>
+<!--
+        For an <command>UPDATE</command> command, the tag is
+        <literal>UPDATE <replaceable>rows</replaceable></literal> where
+        <replaceable>rows</replaceable> is the number of rows updated.
+-->
+对于<command>UPDATE</command>命令，标记是<literal>UPDATE <replaceable>rows</replaceable></literal> ，这里的<replaceable>rows</replaceable>是更新的行数。
+       </para>
+
+       <para>
+<!--
+        For a <command>SELECT</command> or <command>CREATE TABLE AS</command>
+        command, the tag is <literal>SELECT <replaceable>rows</replaceable></literal>
+        where <replaceable>rows</replaceable> is the number of rows retrieved.
+-->
+对于<command>SELECT</command>或<command>CREATE TABLE AS</command>命令，
+标记是<literal>SELECT <replaceable>rows</replaceable></literal>，
+这里的<replaceable>rows</replaceable>是检出的行数。
+       </para>
+
+       <para>
+<!--
+        For a <command>MOVE</command> command, the tag is
+        <literal>MOVE <replaceable>rows</replaceable></literal> where
+        <replaceable>rows</replaceable> is the number of rows the
+        cursor's position has been changed by.
+-->
+对于<command>MOVE</command>命令，标记是<literal>MOVE <replaceable>rows</replaceable></literal>，这里的<replaceable>rows</replaceable>是游标位置改变的行数。
+       </para>
+
+       <para>
+<!--
+        For a <command>FETCH</command> command, the tag is
+        <literal>FETCH <replaceable>rows</replaceable></literal> where
+        <replaceable>rows</replaceable> is the number of rows that
+        have been retrieved from the cursor.
+-->
+对于<command>FETCH</command>命令，标记是<literal>FETCH <replaceable>rows</replaceable></literal>，这里的<replaceable>rows</replaceable>是从游标中检索出来的行数。
+       </para>
+
+       <para>
+<!--
+        For a <command>COPY</command> command, the tag is
+        <literal>COPY <replaceable>rows</replaceable></literal> where
+        <replaceable>rows</replaceable> is the number of rows copied.
+        (Note: the row count appears only in
+        <productname>PostgreSQL</productname> 8.2 and later.)
+-->
+对于<command>COPY</command>命令，标记是<literal>COPY <replaceable>rows</replaceable></literal>，这里的<replaceable>rows</replaceable>是拷贝的行数。
+（注意：这个行数只出现在<productname>PostgreSQL</productname> 8.2及以后的版本中）。
+       </para>
+
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CopyData (F &amp; B)
+</term>
+<listitem>
+<para>
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('d')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as <command>COPY</command> data.
+-->
+标识这条消息是一个 COPY 数据。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+<!--
+                Data that forms part of a <command>COPY</command> data stream.  Messages sent
+                from the backend will always correspond to single data rows,
+                but messages sent by frontends might divide the data stream
+                arbitrarily.
+-->
+<command>COPY</command>数据流的一部分的数据。
+从后端发出的消息总是对应一个数据行，但是前端发出的消息可以任意分割数据流。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CopyDone (F &amp; B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('c')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a <command>COPY</command>-complete indicator.
+-->
+标识这条消息是一个 COPY 结束指示器。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CopyFail (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('f')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a <command>COPY</command>-failure indicator.
+-->
+标识这条消息是一个<command>COPY</command>失败指示器。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                An error message to report as the cause of failure.
+-->
+一个报告失败原因的错误消息。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CopyInResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('G')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Start Copy In response.
+                The frontend must now send copy-in data (if not
+                prepared to do so, send a CopyFail message).
+-->
+标识这条消息是一条 StartCopyIn(开始拷贝输入)响应消息。
+前端现在必须发送一条拷贝入数据(如果还没准备好做这些事情，那么发送一条 CopyFail 消息)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+<!--
+                0 indicates the overall <command>COPY</command> format is textual (rows
+                separated by newlines, columns separated by separator
+                characters, etc).
+                1 indicates the overall copy format is binary (similar
+                to DataRow format).
+                See <xref linkend="sql-copy">
+                for more information.
+-->
+0 表示全部的<command>COPY</command>格式都是文本的(数据行由换行符分隔，字段由分隔字符分隔等等)。
+1 表示都是二进制的(类似 DataRow 格式)。参阅<xref linkend="sql-copy">获取更多信息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of columns in the data to be copied
+                (denoted <replaceable>N</> below).
+-->
+数据中要拷贝的字段数(由下面的<replaceable>N</>解释)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16[<replaceable>N</>]
+</term>
+<listitem>
+<para>
+<!--
+                The format codes to be used for each column.
+                Each must presently be zero (text) or one (binary).
+                All must be zero if the overall copy format is textual.
+-->
+每个字段将要使用的格式代码，目前每个都必须是0(文本)或者1(二进制)。
+如果全部拷贝格式都是文本的，那么所有的都必须是0。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CopyOutResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('H')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Start Copy Out response.
+                This message will be followed by copy-out data.
+-->
+标识这条消息是一条 StartCopyOut(开始拷贝输出)响应消息。这条消息后面将跟着一条拷贝出数据消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括它自己。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+<!--
+                0 indicates the overall <command>COPY</command> format
+                is textual (rows separated by newlines, columns
+                separated by separator characters, etc). 1 indicates
+                the overall copy format is binary (similar to DataRow
+                format). See <xref linkend="sql-copy"> for more information.
+-->
+0 表示全部<command>COPY</command>格式都是文本(数据行由换行符分隔，字段由分隔字符分隔等等)。
+1 表示所有拷贝格式都是二进制的(类似于 DataRow 格式)。参阅<xref linkend="sql-copy">获取更多信息。
+
+
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of columns in the data to be copied
+                (denoted <replaceable>N</> below).
+-->
+要拷贝的数据的字段的数目(在下面的<replaceable>N</>说明)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16[<replaceable>N</>]
+</term>
+<listitem>
+<para>
+<!--
+                The format codes to be used for each column.
+                Each must presently be zero (text) or one (binary).
+                All must be zero if the overall copy format is textual.
+-->
+每个字段要使用的格式代码。目前每个都必须是0(文本)或者1(二进制)。
+如果全部的拷贝格式都是文本，那么所有的都必须是0。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+CopyBothResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('W')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Start Copy Both response.
+                This message is used only for Streaming Replication.
+-->
+标识这条消息是一条 StartCopyBoth(开始双向拷贝)响应消息。
+这个消息只会被流复制使用。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括它自己。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+<!--
+                0 indicates the overall <command>COPY</command> format
+                is textual (rows separated by newlines, columns
+                separated by separator characters, etc). 1 indicates
+                the overall copy format is binary (similar to DataRow
+                format). See <xref linkend="sql-copy"> for more information.
+-->
+0 表示全部拷贝<command>COPY</command>格式都是文本(数据行由换行符分隔，字段由分隔字符分隔等等)。
+1 表示所有拷贝格式都是二进制的(类似于 DataRow 格式)。参阅<xref linkend="sql-copy">获取更多信息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of columns in the data to be copied
+                (denoted <replaceable>N</> below).
+-->
+数据中要拷贝的字段数(由下面的<replaceable>N</>解释)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16[<replaceable>N</>]
+</term>
+<listitem>
+<para>
+<!--
+                The format codes to be used for each column.
+                Each must presently be zero (text) or one (binary).
+                All must be zero if the overall copy format is textual.
+-->
+每个字段要使用的格式代码。目前每个都必须是0(文本)或者1(二进制)。
+如果全部的拷贝格式都是文本，那么所有的都必须是0。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+DataRow (B)
+</term>
+<listitem>
+<para>
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('D')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a data row.
+-->
+标识这个消息是一个数据行。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of column values that follow (possibly zero).
+-->
+后面跟着的字段值的个数(可能是零)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        Next, the following pair of fields appear for each column:
+-->
+然后，每个字段都会出现下面的数据域对：
+<variablelist>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The length of the column value, in bytes (this count
+                does not include itself).  Can be zero.
+                As a special case, -1 indicates a NULL column value.
+                No value bytes follow in the NULL case.
+-->
+字段值的长度，以字节记(这个长度不包括它自己)。
+可以为0。一个特殊的情况是，-1 表示一个 NULL 的字段值。在 NULL 的情况下就没有跟着数据字段。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+<!--
+                The value of the column, in the format indicated by the
+                associated format code.
+                <replaceable>n</replaceable> is the above length.
+-->
+一个字段的数值，以相关的格式代码表示的格式展现。<replaceable>n</replaceable>是上面的长度。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Describe (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('D')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Describe command.
+-->
+标识消息是一个 Describe命令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括字节本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte1
+</term>
+<listitem>
+<para>
+<!--
+                '<literal>S</>' to describe a prepared statement; or
+                '<literal>P</>' to describe a portal.
+-->
+'<literal>S</>'描述一个预备语句；或者'<literal>P</>'描述一个入口。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the prepared statement or portal to describe
+                (an empty string selects the unnamed prepared statement
+                or portal).
+-->
+要描述的预备语句或者入口的名字(或者一个空字符串，就会选取未命名的预备语句或者入口)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+EmptyQueryResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('I')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a response to an empty query string.
+                (This substitutes for CommandComplete.)
+-->
+标识这条消息是对一个空查询字符串的响应。
+(这个消息替换了 CommandComplete。)
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容长度，包括它自己。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+ErrorResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('E')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an error.
+-->
+标识消息是一条错误
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        The message body consists of one or more identified fields,
+        followed by a zero byte as a terminator.  Fields can appear in
+        any order.  For each field there is the following:
+-->
+消息体由一个或多个标识出来的字段组成，后面跟着一个字节零作为终止符。字段可以以任何顺序出现。
+对于每个字段都有下面的东西：
+<variablelist>
+<varlistentry>
+<term>
+        Byte1
+</term>
+<listitem>
+<para>
+<!--
+                A code identifying the field type; if zero, this is
+                the message terminator and no string follows.
+                The presently defined field types are listed in
+                <xref linkend="protocol-error-fields">.
+                Since more field types might be added in future,
+                frontends should silently ignore fields of unrecognized
+                type.
+-->
+一个标识字段类型的代码；如果为零，这就是消息终止符并且不会跟着有字符串。
+目前定义的字段类型在<xref linkend="protocol-error-fields">列出。
+因为将来可能增加更多的字段类型，所以前端应该不声不响地忽略不认识类型的字段。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The field value.
+-->
+字段值
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Execute (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('E')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as an Execute command.
+-->
+标识消息识一个 Execute 命令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the portal to execute
+                (an empty string selects the unnamed portal).
+-->
+要执行的入口的名字(空字符串选定未命名的入口)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Maximum number of rows to return, if portal contains
+                a query that returns rows (ignored otherwise).  Zero
+                denotes <quote>no limit</>.
+-->
+要返回的最大行数，如果入口包含返回行的查询(否则忽略)。零表示<quote>没有限制</>。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Flush (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('H')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Flush command.
+-->
+标识消息识一条 Flush 命令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+FunctionCall (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('F')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a function call.
+-->
+标识消息是一个函数调用。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节记的消息内容的长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Specifies the object ID of the function to call.
+-->
+声明待调用的函数的对象标识(OID)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of argument format codes that follow
+                (denoted <replaceable>C</> below).
+                This can be zero to indicate that there are no arguments
+                or that the arguments all use the default format (text);
+                or one, in which case the specified format code is applied
+                to all arguments; or it can equal the actual number of
+                arguments.
+-->
+后面跟着的参数格式代码的数目(用下面的<replaceable>C</>表示)。
+它可以是0，表示没有参数，或者是所有参数都使用缺省格式(文本)；或者是1，这种情况下声明的格式代码应用于所有参数；或者它可以等于参数的实际个数。
+
+
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16[<replaceable>C</>]
+</term>
+<listitem>
+<para>
+<!--
+                The argument format codes.  Each must presently be
+                zero (text) or one (binary).
+-->
+参数格式代码。目前每个必须是0(文本)或者1(二进制)。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                Specifies the number of arguments being supplied to the
+                function.
+-->
+声明提供给函数的参数个数
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        Next, the following pair of fields appear for each argument:
+-->
+然后，每个参数都出现下面字段对：
+<variablelist>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The length of the argument value, in bytes (this count
+                does not include itself).  Can be zero.
+                As a special case, -1 indicates a NULL argument value.
+                No value bytes follow in the NULL case.
+-->
+以字节记的参数值的长度(不包括长度自己)。可以为零。
+一个特殊的例子是，-1 表示一个 NULL 参数值。如果是 NULL ，则没有参数字节跟在后面。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+<!--
+                The value of the argument, in the format indicated by the
+                associated format code.
+                <replaceable>n</replaceable> is the above length.
+-->
+参数的值，格式是用相关的格式代码表示的。<replaceable>n</replaceable>是上面的长度。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+ <!--
+       After the last argument, the following field appears:
+-->
+在最后一个参数之后，出现下面的字段：
+<variablelist>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The format code for the function result. Must presently be
+                zero (text) or one (binary).
+-->
+函数结果的格式代码。目前必须是0(文本)或者1(二进制)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+FunctionCallResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('V')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a function call result.
+-->
+标识这条消息是一个函数调用结果
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The length of the function result value, in bytes (this count
+                does not include itself).  Can be zero.
+                As a special case, -1 indicates a NULL function result.
+                No value bytes follow in the NULL case.
+-->
+以字节记的函数结果值的长度(不包括长度本身)。
+可以为零。一个特殊的情况是 -1 表示 NULL 函数结果。如果是 NULL 则后面没有数值字节跟随。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+<!--
+                The value of the function result, in the format indicated by
+                the associated format code.
+                <replaceable>n</replaceable> is the above length.
+-->
+函数结果的值，格式是相关联的格式代码标识的。<replaceable>n</replaceable> 是上面的长度。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+NoData (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('n')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a no-data indicator.
+-->
+标识这条消息是一个无数据指示器
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+NoticeResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('N')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a notice.
+-->
+标识这条消息是一个通知
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        The message body consists of one or more identified fields,
+        followed by a zero byte as a terminator.  Fields can appear in
+        any order.  For each field there is the following:
+-->
+消息体由一个或多个标识字段组成，后面跟着字节零作为中止符。字段可以以任何顺序出现。对于每个字段，都有下面的东西：
+<variablelist>
+<varlistentry>
+<term>
+        Byte1
+</term>
+<listitem>
+<para>
+<!--
+                A code identifying the field type; if zero, this is
+                the message terminator and no string follows.
+                The presently defined field types are listed in
+                <xref linkend="protocol-error-fields">.
+                Since more field types might be added in future,
+                frontends should silently ignore fields of unrecognized
+                type.
+-->
+一个标识字段类型的代码；如果为零，那么它就是消息终止符，并且后面不会跟着字符串。
+目前定义的字段类型在<xref linkend="protocol-error-fields">里列出。
+因为将来可能会增加更多字段类型，所以前端应该将不识别的字段安静地忽略掉。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The field value.
+-->
+字段值
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+NotificationResponse (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('A')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a notification response.
+-->
+标识这条消息是一个通知响应
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The process ID of the notifying backend process.
+-->
+通知后端进程的进程 ID
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the channel that the notify has been raised on.
+-->
+触发通知的通道(channel)的名字
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The <quote>payload</> string passed from the notifying process.
+-->
+从通知进程传递过来的<quote>装载（payload）</>字符串。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+ParameterDescription (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('t')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a parameter description.
+-->
+标识消息是一个参数描述
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of parameters used by the statement
+                (can be zero).
+-->
+语句所使用的参数的个数(可以为零)
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        Then, for each parameter, there is the following:
+-->
+然后，对每个参数，有下面的东西：
+<variablelist>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Specifies the object ID of the parameter data type.
+-->
+声明参数数据类型的对象 ID
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+ParameterStatus (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('S')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a run-time parameter status report.
+-->
+标识这条消息是一个运行时参数状态报告
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the run-time parameter being reported.
+-->
+被报告的运行时参数的名字
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The current value of the parameter.
+-->
+参数的当前值
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Parse (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('P')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Parse command.
+-->
+标识消息是一条 Parse 命令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The name of the destination prepared statement
+                (an empty string selects the unnamed prepared statement).
+-->
+目的预备语句的名字(空字符串表示选取了未命名的预备语句)
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The query string to be parsed.
+-->
+要解析的查询字符串
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The number of parameter data types specified
+                (can be zero).  Note that this is not an indication of
+                the number of parameters that might appear in the
+                query string, only the number that the frontend wants to
+                prespecify types for.
+-->
+声明的参数数据类型的数目(可以为零)。
+请注意这个参数并不意味着可能在查询字符串里出现的参数个数的意思，只是前端希望预先声明的类型的数目。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        Then, for each parameter, there is the following:
+-->
+然后，对每个参数，有下面的东西：
+<variablelist>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Specifies the object ID of the parameter data type.
+                Placing a zero here is equivalent to leaving the type
+                unspecified.
+-->
+声明参数数据类型的对象 ID 。在这里放一个零等效于不声明该类型。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+ParseComplete (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('1')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Parse-complete indicator.
+-->
+标识这条消息是一个 Parse 完成指示器。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+PasswordMessage (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a password response. Note that
+                this is also used for GSSAPI and SSPI response messages
+                (which is really a design error, since the contained data
+                is not a null-terminated string in that case, but can be
+                arbitrary binary data).
+-->
+标识这条消息是一个口令响应。
+注意这也被使用在GSSAPI和SSPI响应消息中。
+（这实际上是一个设计错误，既然这里包含的数据不是一个NULL终止的字符串，而可能是任意的二进制数据。）
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The password (encrypted, if requested).
+-->
+口令(必要的情况下，是加密后的)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+PortalSuspended (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('s')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a portal-suspended indicator.
+                Note this only appears if an Execute message's row-count limit
+                was reached.
+-->
+标识这条消息是一个入口挂起指示器。
+请注意这个消息只出现在达到一条 Execute 消息的行计数限制的时候。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Query (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('Q')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a simple query.
+-->
+标识消息是一个简单查询。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The query string itself.
+-->
+查询字符串自身
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+ReadyForQuery (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('Z')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message type.  ReadyForQuery is sent
+                whenever the backend is ready for a new query cycle.
+-->
+标识消息类型。在后端为新的查询循环做好准备的时候，总会发送 ReadyForQuery
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(5)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte1
+</term>
+<listitem>
+<para>
+<!--
+                Current backend transaction status indicator.
+                Possible values are '<literal>I</>' if idle (not in
+                a transaction block); '<literal>T</>' if in a transaction
+                block; or '<literal>E</>' if in a failed transaction
+                block (queries will be rejected until block is ended).
+-->
+当前后端事务状态指示器。
+可能的值是空闲状况下的'<literal>I</>'(不在事务块里)；在事务块里是'<literal>T</>'；或者在一个失败的事务块里是'<literal>E</>'(在事务块结束之前，任何查询都将被拒绝)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+RowDescription (B)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('T')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a row description.
+-->
+标识消息是一个行描述
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                Specifies the number of fields in a row (can be zero).
+-->
+声明在一个行里面的字段数目(可以为零)
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        Then, for each field, there is the following:
+-->
+然后对于每个字段，有下面的东西：
+<variablelist>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The field name.
+-->
+字段名字
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                If the field can be identified as a column of a specific
+                table, the object ID of the table; otherwise zero.
+-->
+如果字段可以标识为一个特定表的字段，那么就是表的对象 ID ；否则就是零。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                If the field can be identified as a column of a specific
+                table, the attribute number of the column; otherwise zero.
+-->
+如果该字段可以标识为一个特定表的字段，那么就是该表字段的属性号；否则就是零。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The object ID of the field's data type.
+-->
+字段数据类型的对象 ID 
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The data type size (see <varname>pg_type.typlen</>).
+                Note that negative values denote variable-width types.
+-->
+数据类型尺寸(参阅 <varname>pg_type.typlen</>)。请注意负数表示变宽类型。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                The type modifier (see <varname>pg_attribute.atttypmod</>).
+                The meaning of the modifier is type-specific.
+-->
+类型修饰词(参阅 <varname>pg_attribute.atttypmod</>)。修饰词的含义是类型相关的。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+<!--
+                The format code being used for the field.  Currently will
+                be zero (text) or one (binary).  In a RowDescription
+                returned from the statement variant of Describe, the
+                format code is not yet known and will always be zero.
+-->
+用于该字段的格式码。目前会是0(文本)或者1(二进制)。
+从语句的Describe 返回的 RowDescription 里，格式码还是未知的，因此总是零。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+SSLRequest (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(80877103)
+</term>
+<listitem>
+<para>
+<!--
+                The <acronym>SSL</acronym> request code.  The value is chosen to contain
+                <literal>1234</> in the most significant 16 bits, and <literal>5679</> in the
+                least 16 significant bits.  (To avoid confusion, this code
+                must not be the same as any protocol version number.)
+-->
+<acronym>SSL</acronym>请求码。
+选取的数值在高 16 位里包含<literal>1234</>，在低 16 位里包含<literal>5679</>。为了避免混淆，这个编码必须和任何协议版本号不同。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+StartupMessage (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(196608)
+</term>
+<listitem>
+<para>
+<!--
+                The protocol version number.  The most significant 16 bits are
+                the major version number (3 for the protocol described here).
+                The least significant 16 bits are the minor version number
+                (0 for the protocol described here).
+-->
+协议版本号。高 16 位是主版本号(对这里描述的协议而言是 3)。低 16 位是次版本号(对于这里描述的协议而言是 0)。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+<!--
+        The protocol version number is followed by one or more pairs of
+        parameter name and value strings.  A zero byte is required as a
+        terminator after the last name/value pair.
+        Parameters can appear in any
+        order.  <literal>user</> is required, others are optional.
+        Each parameter is specified as:
+-->
+协议版本号后面跟着一个或多个参数名和值字符串的配对。
+要求在最后一个名字/数值对后面有个字节零。参数可以以任意顺序出现。<literal>user</>是必须的，其它都是可选的。每个参数都是这样声明的：
+<variablelist>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The parameter name.  Currently recognized names are:
+-->
+参数名。目前可以识别的名字是：
+
+<variablelist>
+<varlistentry>
+<term>
+                <literal>user</>
+</term>
+<listitem>
+<para>
+<!--
+                        The database user name to connect as.  Required;
+                        there is no default.
+-->
+用于连接的数据库用户名。必须；无缺省。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+                <literal>database</>
+</term>
+<listitem>
+<para>
+<!--
+                        The database to connect to.  Defaults to the user name.
+-->
+要连接的数据库。缺省是用户名。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+                <literal>options</>
+</term>
+<listitem>
+<para>
+<!--
+                        Command-line arguments for the backend.  (This is
+                        deprecated in favor of setting individual run-time
+                        parameters.)
+-->
+给后端的命令行参数。(这个特性已经废弃，更好的方法是设置单独的运行时参数。)
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+<!--
+                In addition to the above, any run-time parameter that can be
+                set at backend start time might be listed.  Such settings
+                will be applied during backend start (after parsing the
+                command-line options if any).  The values will act as
+                session defaults.
+-->
+除了上面的外，在后端启动的时候可以设置的任何运行时参数都可以列出来。
+这样的设置将在后端启动的时候附加(在分析了命令行参数之后，如果有的话)。这些值将成为会话缺省。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+<!--
+                The parameter value.
+-->
+参数值
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Sync (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('S')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a Sync command.
+-->
+表示该消息为一条 Sync 命令。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>
+Terminate (F)
+</term>
+<listitem>
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('X')
+</term>
+<listitem>
+<para>
+<!--
+                Identifies the message as a termination.
+-->
+标识消息是一个终止消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(4)
+</term>
+<listitem>
+<para>
+<!--
+                Length of message contents in bytes, including self.
+-->
+以字节计的消息内容长度，包括长度本身。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+</variablelist>
+
+</sect1>
+
+
+<sect1 id="protocol-error-fields">
+<!--
+<title>Error and Notice Message Fields</title>
+-->
+<title>错误和通知消息字段</title>
+
+<para>
+<!--
+This section describes the fields that can appear in ErrorResponse and
+NoticeResponse messages.  Each field type has a single-byte identification
+token.  Note that any given field type should appear at most once per
+message.
+-->
+本节描述那些可能出现在 ErrorResponse 和 NoticeResponse 消息里的字段。
+每个字段类型有一个单字节标识记号。请注意，任意给定的字段类型在每条消息里都应该最多出现一次。
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>
+<literal>S</>
+</term>
+<listitem>
+<para>
+<!--
+        Severity: the field contents are
+        <literal>ERROR</>, <literal>FATAL</>, or
+        <literal>PANIC</> (in an error message), or
+        <literal>WARNING</>, <literal>NOTICE</>, <literal>DEBUG</>,
+        <literal>INFO</>, or <literal>LOG</> (in a notice message),
+        or a localized translation of one of these.  Always present.
+-->
+严重性：该字段的内容是 <literal>ERROR</>, <literal>FATAL</>, <literal>PANIC</>(在一个错误消息里),
+ <literal>WARNING</>, <literal>NOTICE</>, <literal>DEBUG</>, <literal>INFO</>, <literal>LOG</>(在一条通知消息里)之一，或者是这些的某种本地化翻译的字符串。总是会出现。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>C</>
+</term>
+<listitem>
+<para>
+<!--
+        Code: the SQLSTATE code for the error (see <xref
+        linkend="errcodes-appendix">).  Not localizable.  Always present.
+-->
+代码：错误的 SQLSTATE 代码(参阅<xref linkend="errcodes-appendix">)。不能本地化。总是出现。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>M</>
+</term>
+<listitem>
+<para>
+<!--
+        Message: the primary human-readable error message.
+        This should be accurate but terse (typically one line).
+        Always present.
+-->
+消息：人类可读的错误消息的主体。这些消息应该准确并且简洁(通常是一行)。总是出现。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>D</>
+</term>
+<listitem>
+<para>
+<!--
+        Detail: an optional secondary error message carrying more
+        detail about the problem.  Might run to multiple lines.
+-->
+细节：一个可选的从属错误消息，承载有关问题的更多错误消息。可以是多行。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>H</>
+</term>
+<listitem>
+<para>
+<!--
+        Hint: an optional suggestion what to do about the problem.
+        This is intended to differ from Detail in that it offers advice
+        (potentially inappropriate) rather than hard facts.
+        Might run to multiple lines.
+-->
+提示：一个可选的有关如何处理问题的建议。它和细节不同的地方是它提出了建议(可能并不合适)而不仅仅是事实。可以是多行。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>P</>
+</term>
+<listitem>
+<para>
+<!--
+        Position: the field value is a decimal ASCII integer, indicating
+        an error cursor position as an index into the original query string.
+        The first character has index 1, and positions are measured in
+        characters not bytes.
+-->
+位置：这个字段值是一个十进制 ASCII 整数，表示一个错误游标的位置，它是一个指向原始查询字符串的索引。
+第一个字符的索引是 1 ，位置是以字符计算而非字节计算的。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>p</>
+</term>
+<listitem>
+<para>
+<!--
+        Internal position: this is defined the same as the <literal>P</>
+        field, but it is used when the cursor position refers to an internally
+        generated command rather than the one submitted by the client.
+        The <literal>q</> field will always appear when this field appears.
+-->
+内部位置：这个域和<literal>P</>域定义相同，但是它用于游标的位置指向一个内部生成的命令，而不是用于客户端提交的命令。这个字段出现的时候，总是会出现<literal>q</>字段。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>q</>
+</term>
+<listitem>
+<para>
+<!--
+        Internal query: the text of a failed internally-generated command.
+        This could be, for example, a SQL query issued by a PL/pgSQL function.
+-->
+内部查询：失败的内部生成的命令的文本。比如，它可能是一个 PL/pgSQL 函数发出的 SQL 查询。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>W</>
+</term>
+<listitem>
+<para>
+<!--
+        Where: an indication of the context in which the error occurred.
+        Presently this includes a call stack traceback of active
+        procedural language functions and internally-generated queries.
+        The trace is one entry per line, most recent first.
+-->
+哪里：一个指示错误发生的环境的指示器。目前，这个参数包含一个活跃的过程语言函数的调用堆栈的追溯和内部生成的查询。这个追溯每条记录一行，最新的在最上面。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>s</>
+</term>
+<listitem>
+<para>
+<!--
+        Schema name: if the error was associated with a specific database
+        object, the name of the schema containing that object, if any.
+-->
+模式名：如果错误和一个特定的数据库对象相关，则是包含该对象的模式的名字。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>t</>
+</term>
+<listitem>
+<para>
+<!--
+        Table name: if the error was associated with a specific table, the
+        name of the table.  (Refer to the schema name field for the name of the table's schema.)
+-->
+表名：如果错误和一个特定的表相关，则是这个表的名字。
+（表的模式名参考模式名字段）
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>c</>
+</term>
+<listitem>
+<para>
+<!--
+        Column name: if the error was associated with a specific table column,
+        the name of the column.  (Refer to the schema table name fields to
+        identify the table.)
+-->
+列名:如果错误和一个特定的列相关，则是这个列的名字。
+（特定的表参考模式名和表名字段）
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>d</>
+</term>
+<listitem>
+<para>
+<!--
+        Data type name: if the error was associated with a specific data type,
+        the name of the data type.  (Refer to the schema name field for the
+        name of the data type's schema.)
+-->
+数据类型名:如果错误和一个特定的数据类型相关，则是这个数据类型的名字。
+(数据类型的模式名参考模式名字段)
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>n</>
+</term>
+<listitem>
+<para>
+<!--
+        Constraint name: if the error was associated with a specific
+        constraint, the name of the constraint.  Refer to fields listed above
+        for the associated table or domain.  (For this purpose, indexes are
+        treated as constraints, even if they weren't created with constraint
+        syntax.)
+-->
+约束名:如果错误和一个特定的约束相关，则是这个约束的名字。
+相关的表或者域参考上面列出的字段。
+（因为这个目的，索引被当作约束对待，即使它们不是通过约束语法创建的）
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>F</>
+</term>
+<listitem>
+<para>
+<!--
+        File: the file name of the source-code location where the error
+        was reported.
+-->
+文件：报告错误的源代码位置的文件名。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>L</>
+</term>
+<listitem>
+<para>
+<!--
+        Line: the line number of the source-code location where the error
+        was reported.
+-->
+行：报告错误的源代码位置的行号。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+<literal>R</>
+</term>
+<listitem>
+<para>
+<!--
+        Routine: the name of the source-code routine reporting the error.
+-->
+过程：报告错误的源代码过程名。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+
+<note>
+ <para>
+ <!--
+  The fields for schema name, table name, column name, data type name, and
+  constraint name are supplied only for a limited number of error types;
+  see <xref linkend="errcodes-appendix">.  Frontends should not assume that
+  the presence of any of these fields guarantees the presence of another
+  field.  Core error sources observe the interrelationships noted above, but
+  user-defined functions may use these fields in other ways.  In the same
+  vein, clients should not assume that these fields denote contemporary
+  objects in the current database.
+  -->
+  模式名、表名、列名、数据类型名以及约束名相关的字段只是提供给有限的错误类型。
+  参考<xref linkend="errcodes-appendix">。前端不应该假设只要出现了其中一个字段就一定会有其它字段。
+  核心的错误源遵守上面提到的相互关系，但是用户自定义函数可能以不同的方式使用这些字段。
+  同样，客户端不应该假设这些字段指示了在当前数据库中同时存在的对象。
+ </para>
+</note>
+
+<para>
+<!--
+The client is responsible for formatting displayed information to meet its
+needs; in particular it should break long lines as needed.  Newline characters
+appearing in the error message fields should be treated as paragraph breaks,
+not line breaks.
+-->
+客户端负责对显示信息进行格式化输出以符合需要；特别是它应该根据需要断开长的行。
+在错误消息字段里出现的换行符应该当作一个分段的符号，而不是换行。
+</para>
+
+</sect1>
+
+<sect1 id="protocol-changes">
+<!--
+<title>Summary of Changes since Protocol 2.0</title>
+-->
+<title>自协议 2.0 以来的变化的概述</title>
+
+<para>
+<!--
+This section provides a quick checklist of changes, for the benefit of
+developers trying to update existing client libraries to protocol 3.0.
+-->
+本节提供一个快速的变化检查列表，以便于那些试图将现有的客户端库更新到 3.0 协议的开发人员。
+</para>
+
+<para>
+<!--
+The initial startup packet uses a flexible list-of-strings format
+instead of a fixed format.  Notice that session default values for run-time
+parameters can now be specified directly in the startup packet.  (Actually,
+you could do that before using the <literal>options</> field, but given the
+limited width of <literal>options</> and the lack of any way to quote
+whitespace in the values, it wasn't a very safe technique.)
+-->
+初始化的启动包用了一个灵活的字符串列表格式取代了固定的格式。
+请注意，运行时参数的会话缺省值现在可以直接在启动包中声明。
+(实际上，你可以在使用<literal>options</>字段之前干这件事情，但是因为<literal>options</>的宽度限制以及缺乏引用值中的空白的方法，这并不是很安全的技巧。)
+</para>
+
+<para>
+<!--
+All messages now have a length count immediately following the message type
+byte (except for startup packets, which have no type byte).  Also note that
+PasswordMessage now has a type byte.
+-->
+现在所有的消息在消息类型字节后面都有一个长度计数(除了启动包之外，它没有类型字节)。同时还要注意现在 PasswordMessage 有一个类型字节。
+</para>
+
+<para>
+<!--
+ErrorResponse and NoticeResponse ('<literal>E</>' and '<literal>N</>')
+messages now contain multiple fields, from which the client code can
+assemble an error message of the desired level of verbosity.  Note that
+individual fields will typically not end with a newline, whereas the single
+string sent in the older protocol always did.
+-->
+ErrorResponse 和 NoticeResponse('<literal>E</>'和'<literal>N</>')消息现在包含多个字段，从这些字段里客户端代码可以组合出自己所希望的详细程度的错误消息。
+请注意独立的字段通常不是用换行符终止的，虽然在老协议里发送的单个字符串总是会用换行符终止。
+</para>
+
+<para>
+<!--
+The ReadyForQuery ('<literal>Z</>') message includes a transaction status
+indicator.
+-->
+The ReadyForQuery('<literal>Z</>')消息包括一个事务状态指示符。
+</para>
+
+<para>
+<!--
+The distinction between BinaryRow and DataRow message types is gone; the
+single DataRow message type serves for returning data in all formats.
+Note that the layout of DataRow has changed to make it easier to parse.
+Also, the representation of binary values has changed: it is no longer
+directly tied to the server's internal representation.
+-->
+BinaryRow 和 DataRow 消息类型之间的区别不再存在了；单个 DataRow 消息类型用于返回所有格式的数据。
+请注意 DataRow 的布局已经改变成比较容易分析了。同样，二进制数值的表现形式已经改变了：它不再是直接和服务器的内部表现形式绑定。
+</para>
+
+<para>
+<!--
+There is a new <quote>extended query</> sub-protocol, which adds the frontend
+message types Parse, Bind, Execute, Describe, Close, Flush, and Sync, and the
+backend message types ParseComplete, BindComplete, PortalSuspended,
+ParameterDescription, NoData, and CloseComplete.  Existing clients do not
+have to concern themselves with this sub-protocol, but making use of it
+might allow improvements in performance or functionality.
+-->
+有了一种新的<quote>扩展查询</>的子协议，它增加了前端消息类型 Parse, Bind, Execute, Describe, Close, Flush, Sync ，以及后端消息类型 ParseComplete, BindComplete, PortalSuspended, ParameterDescription, NoData, CloseComplete 。
+现有的客户端不用关心这个子协议，但是利用这个子协议将可能改进性能或者功能。
+</para>
+
+<para>
+<!--
+<command>COPY</command> data is now encapsulated into CopyData and CopyDone messages.  There
+is a well-defined way to recover from errors during <command>COPY</command>.  The special
+<quote><literal>\.</></quote> last line is not needed anymore, and is not sent
+during <command>COPY OUT</command>.
+(It is still recognized as a terminator during <command>COPY IN</command>, but its use is
+deprecated and will eventually be removed.)  Binary <command>COPY</command> is supported.
+The CopyInResponse and CopyOutResponse messages include fields indicating
+the number of columns and the format of each column.
+-->
+<command>COPY</command>数据现在封装到了 CopyData 和 CopyDone 消息里。
+现在有种很好的方法从正在进行的<command>COPY</command>动作中恢复错误。
+最后一行的特殊的<quote><literal>\.</></quote>不再必须了，并且在<command>COPY OUT</command>的过程中不再发送。
+（在<command>COPY IN</command>的时候它仍然被认为是一个终止符，但是它的使用已经废弃了并且最终将被删除。）
+现在支持二进制<command>COPY</command>。CopyInResponse 和 CopyOutResponse 消息包括指示字段数目和每个字段格式的信息域。
+</para>
+
+<para>
+<!--
+The layout of FunctionCall and FunctionCallResponse messages has changed.
+FunctionCall can now support passing NULL arguments to functions.  It also
+can handle passing parameters and retrieving results in either text or
+binary format.  There is no longer any reason to consider FunctionCall a
+potential security hole, since it does not offer direct access to internal
+server data representations.
+-->
+FunctionCall 和 FunctionCallResponse 消息的布局变化了。
+FunctionCall 现在支持给函数传递 NULL 参数。
+它同样可以处理以文本或者二进制格式传递参数和检索结果。
+不用再认为 FunctionCall 有潜在的安全性漏洞，因为它并不提供对内部服务器数据表现形式的直接访问。
+</para>
+
+<para>
+<!--
+The backend sends ParameterStatus ('<literal>S</>') messages during connection
+startup for all parameters it considers interesting to the client library.
+Subsequently, a ParameterStatus message is sent whenever the active value
+changes for any of these parameters.
+-->
+后端在启动的时候为它认为客户端库感兴趣的所有参数发送 ParameterStatus('<literal>S</>')消息。
+随后，如果这些参数的活跃值发生变化，那么发送一条 ParameterStatus 消息。
+</para>
+
+<para>
+<!--
+The RowDescription ('<literal>T</>') message carries new table OID and column
+number fields for each column of the described row.  It also shows the format
+code for each column.
+-->
+RowDescription('<literal>T</>')消息为所描述的行的每个字段装载新表的 OID 和字段号数据域。它同样还为每个字段显示了格式代码。 
+</para>
+
+<para>
+<!--
+The CursorResponse ('<literal>P</>') message is no longer generated by
+the backend.
+-->
+后端不再生成 CursorResponse('<literal>P</>')消息。
+</para>
+
+<para>
+<!--
+The NotificationResponse ('<literal>A</>') message has an additional string
+field, which can carry a <quote>payload</> string passed
+from the <command>NOTIFY</command> event sender.
+-->
+NotificationResponse('<literal>A</>')消息有一个额外的字符串域，它可以携带来自<command>NOTIFY</command>事件发送者的<quote>装载（payload）</>数据。
+</para>
+
+<para>
+<!--
+The EmptyQueryResponse ('<literal>I</>') message used to include an empty
+string parameter; this has been removed.
+-->
+EmptyQueryResponse('<literal>I</>')以前包含一个空字符串参数；这个已经被删除了。
+</para>
+</sect1>
+
+
+</chapter>

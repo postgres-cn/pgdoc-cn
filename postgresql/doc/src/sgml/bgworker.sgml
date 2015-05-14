@@ -1,0 +1,253 @@
+<!-- doc/src/sgml/bgworker.sgml -->
+
+<chapter id="bgworker">
+ <!--
+ <title>Background Worker Processes</title>
+ -->
+ <title>后台工作进程</title>
+
+ <indexterm zone="bgworker">
+  <!--
+  <primary>Background workers</primary>
+  -->
+  <primary>后台工作程序</primary>
+ </indexterm>
+
+ <!--
+ <para>
+  PostgreSQL can be extended to run user-supplied code in separate processes.
+  Such processes are started, stopped and monitored by <command>postgres</command>,
+  which permits them to have a lifetime closely linked to the server's status.
+  These processes have the option to attach to <productname>PostgreSQL</>'s
+  shared memory area and to connect to databases internally; they can also run
+  multiple transactions serially, just like a regular client-connected server
+  process.  Also, by linking to <application>libpq</> they can connect to the
+  server and behave like a regular client application.
+ </para>
+ -->
+ <para>
+  PostgreSQL可以扩展在分立的进程中运行用户提供的代码。 命令<command>postgres</command>启动，
+  停止和监控这些进程，允许它们的生命周期与服务器状态紧密关联。这些进程可以选择连接
+  <productname>PostgreSQL</>的共享内存并与数据库内部连接；它们也可以串行地运行多个事务，就像
+  常规的客户端连接的服务器进程。另外，通过链接到<application>libpq</>，它们可以连接到服务器并
+  且和常规的客户端应用表现一样。
+ </para>
+
+ <warning>
+  <!--
+  <para>
+   There are considerable robustness and security risks in using background
+   worker processes because, being written in the <literal>C</> language,
+   they have unrestricted access to data.  Administrators wishing to enable
+   modules that include background worker process should exercise extreme
+   caution.  Only carefully audited modules should be permitted to run
+   background worker processes.
+  </para>
+  -->
+  <para>
+   使用后台工作进程有着相当大的牢固和安全风险。这是因为它们是用C语言写的，有着不受限制的数据
+   访问方式。乐于使用包含后台工作进程的模块的管理员们应当极度地当心。只有仔细审计过的模块才
+   应该被允许运行后台工作进程。
+  </para>
+ </warning>
+
+ <!--
+ <para>
+  Only modules listed in <varname>shared_preload_libraries</> can run
+  background workers.  A module wishing to run a background worker needs
+  to register it by calling
+  <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function>
+  from its <function>_PG_init()</>.
+  The structure <structname>BackgroundWorker</structname> is defined thus:
+<programlisting>
+typedef void (*bgworker_main_type)(void *main_arg);
+typedef struct BackgroundWorker
+{
+    char        bgw_name[BGW_MAXLEN];
+    int         bgw_flags;
+    BgWorkerStartTime bgw_start_time;
+    int         bgw_restart_time;       /* in seconds, or BGW_NEVER_RESTART */
+    bgworker_main_type bgw_main;
+    Datum       bgw_main_arg;
+} BackgroundWorker;
+</programlisting>
+  </para>
+  -->
+  <para>
+  只有<varname>shared_preload_libraries</>里列出的模块能够运行后台工作进程。想要运行后台工作
+  程序的模块需要通过从它的<function>_PG_init()</>调用
+  <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function>来注册
+  这个程序。<structname>BackgroundWorker</structname>结构是这样定义的：
+<programlisting>
+typedef void (*bgworker_main_type)(void *main_arg);
+typedef struct BackgroundWorker
+{
+    char        bgw_name[BGW_MAXLEN];
+    int         bgw_flags;
+    BgWorkerStartTime bgw_start_time;
+    int         bgw_restart_time;       /* in seconds, or BGW_NEVER_RESTART */
+    bgworker_main_type bgw_main;
+    Datum       bgw_main_arg;
+} BackgroundWorker;
+</programlisting>
+  </para>
+
+  <!--
+  <para>
+   <structfield>bgw_name</> is a string to be used in log messages, process
+   listings and similar contexts.
+  </para>
+  -->
+  <para>
+   <structfield>bgw_name</>是用于日志消息，进程列表和类似环境的一个字符串。 
+  </para>
+
+  <!--
+  <para>
+   <structfield>bgw_flags</> is a bitwise-or'd bitmask indicating the
+   capabilities that the module wants.  Possible values are
+   <literal>BGWORKER_SHMEM_ACCESS</literal> (requesting shared memory access)
+   and <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal> (requesting the
+   ability to establish a database connection, through which it can later run
+   transactions and queries). A background worker using
+   <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal> to connect to
+   a database must also attach shared memory using
+   <literal>BGWORKER_SHMEM_ACCESS</literal>, or worker start-up will fail.
+  </para>
+  -->
+  <para>
+   <structfield>bgw_flags</>是一个按位与的比特掩码，显示模块想要的容量。 可能的值有
+   <literal>BGWORKER_SHMEM_ACCESS</literal> （要求访问共享内存）和
+   <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal>（要求能够建立一个数据库连接，通
+   过这个连接伺候可以运行事务和查询）。一个使用
+   <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal>连接数据库的后台工作程序还必须用
+   <literal>BGWORKER_SHMEM_ACCESS</literal>联接共享内存，否则程序的启动会失败。
+  </para>
+
+  <!--
+  <para>
+   <structfield>bgw_start_time</structfield> is the server state during which
+   <command>postgres</> should start the process; it can be one of
+   <literal>BgWorkerStart_PostmasterStart</> (start as soon as
+   <command>postgres</> itself has finished its own initialization; processes
+   requesting this are not eligible for database connections),
+   <literal>BgWorkerStart_ConsistentState</> (start as soon as a consistent state
+   has been reached in a hot standby, allowing processes to connect to
+   databases and run read-only queries), and
+   <literal>BgWorkerStart_RecoveryFinished</> (start as soon as the system has
+   entered normal read-write state).  Note the last two values are equivalent
+   in a server that's not a hot standby.  Note that this setting only indicates
+   when the processes are to be started; they do not stop when a different state
+   is reached.
+  </para>
+  -->
+  <para>
+   <structfield>bgw_start_time</structfield>是某种服务器状态，在此期间应当由
+   <command>postgres</>启动进程；它可以是下面几个值之一：
+   <literal>BgWorkerStart_PostmasterStart</>（<command>postgres</>完成自身初始化后就立即启动；
+   请求此种启动方式的进程不能进行数据库连接），<literal>BgWorkerStart_ConsistentState</>（只
+   要在一个热备份系统中达到了一致状态就启动，允许进程连接到数据库并运行只读查询），以及
+   <literal>BgWorkerStart_RecoveryFinished</>（只要系统进入普通读写状态就启动）。注意在非热备
+   份系统的服务器中后两个值是作用相当的。注意此设置只在进程将启动时显示；进入不同状态时进程不
+   停。
+  </para>
+
+  <!--
+  <para>
+   <structfield>bgw_restart_time</structfield> is the interval, in seconds, that
+   <command>postgres</command> should wait before restarting the process, in
+   case it crashes.  It can be any positive value,
+   or <literal>BGW_NEVER_RESTART</literal>, indicating not to restart the
+   process in case of a crash.
+  </para>
+  -->
+  <para>
+   <structfield>bgw_restart_time</structfield>是以秒记的时间间隔。一旦进程崩溃，
+   <command>postgres</command>应当在重启进程前等待这一段时间。它可以是任何的正值，或者
+   是<literal>BGW_NEVER_RESTART</literal>以表明在进程崩溃时不重启进程。
+  </para>
+
+  <!--
+  <para>
+   <structfield>bgw_main</structfield> is a pointer to the function to run when
+   the process is started.  This function must take a single argument of type
+   <type>void *</> and return <type>void</>.
+   <structfield>bgw_main_arg</structfield> will be passed to it as its only
+   argument.  Note that the global variable <literal>MyBgworkerEntry</literal>
+   points to a copy of the <structname>BackgroundWorker</structname> structure
+   passed at registration time.
+  </para>
+  -->
+  <para>
+   <structfield>bgw_main</structfield>是当进程被启动时指向所运行函数的一个指针。该函数必须使
+   用<type>void *</>类型的单一参数并返回<type>void</>类型的值。
+   <structfield>bgw_main_arg</structfield>将作为唯一参数被传递给此函数。注意全局变量
+   <literal>MyBgworkerEntry</literal>指向进程注册时传递的
+   <structname>BackgroundWorker</structname>结构的一份拷贝。
+  </para>
+
+  <!--
+  <para>Once running, the process can connect to a database by calling
+   <function>BackgroundWorkerInitializeConnection(<parameter>char *dbname</parameter>, <parameter>char *username</parameter>)</function>.
+   This allows the process to run transactions and queries using the
+   <literal>SPI</literal> interface.  If <varname>dbname</> is NULL,
+   the session is not connected to any particular database, but shared catalogs
+   can be accessed.  If <varname>username</> is NULL, the process will run as
+   the superuser created during <command>initdb</>.
+   BackgroundWorkerInitializeConnection can only be called once per background
+   process, it is not possible to switch databases.
+  </para>
+  -->
+  <para>进程一旦运行，就可以通过调用
+  <function>BackgroundWorkerInitializeConnection(<parameter>char *dbname</parameter>, <parameter>char *username</parameter>)</function>
+  连接到一个数据库。这样进程可以使用<literal>SPI</literal>接口运行事务和查询。如果
+  <varname>dbname</>值为NULL，会话不被连接到任何特定数据库，但是可以获取共享的目录。如果
+  <varname>username</>值为NULL，进程会以<command>initdb</>运行时创建的超级用户身份来运行。
+  每个后台进程只能调用一次BackgroundWorkerInitializeConnection，它不能切换数据库。
+  </para>
+
+  <!--
+  <para>
+   Signals are initially blocked when control reaches the
+   <structfield>bgw_main</> function, and must be unblocked by it; this is to
+   allow the process to customize its signal handlers, if necessary.
+   Signals can be unblocked in the new process by calling
+   <function>BackgroundWorkerUnblockSignals</> and blocked by calling
+   <function>BackgroundWorkerBlockSignals</>.
+  </para>
+  -->
+  <para>
+   Signals are initially blocked when control reaches the
+   控制<structfield>bgw_main</>函数开始锁定信号，并且必须由此函数解锁；这样在必要时可以允许
+   进程定制它的信号处理程序。通过调用<function>BackgroundWorkerUnblockSignals</>可以在新进程
+   中为信号解锁，通过调用<function>BackgroundWorkerBlockSignals</>可以加锁。
+  </para>
+
+  <!--
+  <para>
+   Background workers are expected to be continuously running; if they exit
+   cleanly, <command>postgres</> will restart them immediately.  Consider doing
+   interruptible sleep when they have nothing to do; this can be achieved by
+   calling <function>WaitLatch()</function>.  Make sure the
+   <literal>WL_POSTMASTER_DEATH</> flag is set when calling that function, and
+   verify the return code for a prompt exit in the emergency case that
+   <command>postgres</> itself has terminated.
+  </para>
+  -->
+  <para>
+   后台工作程序是被预期连续运行的；如果它们干净的退出了，<command>postgres</>会立即重启它们。
+   当它们无事可做时，考虑进入可中断的睡眠；通过调用<function>WaitLatch()</function>可以实现这
+   一点。调用该函数时确定<literal>WL_POSTMASTER_DEATH</>标志被设置，并且在<command>postgres</>
+   自身终止的紧急情况下为提示的退出验证返回码。 
+  </para>
+
+  <!--
+  <para>
+   The <filename>worker_spi</> contrib module contains a working example,
+   which demonstrates some useful techniques.
+  </para>
+  -->
+  <para>
+   <filename>worker_spi</> contrib模块包含一个展示一些有用技术的范例。
+  </para>
+</chapter>

@@ -1,0 +1,1512 @@
+<!-- doc/src/sgml/storage.sgml -->
+
+<chapter id="storage">
+<!--
+<title>Database Physical Storage</title>
+-->
+<title>数据库物理存储</title>
+
+<!--
+<para>
+This chapter provides an overview of the physical storage format used by
+<productname>PostgreSQL</productname> databases.
+</para>
+-->
+<para>
+   本章对<productname>PostgreSQL</productname>数据库使用的物理存储
+   格式提供一个概述。
+</para>
+
+<sect1 id="storage-file-layout">
+<!--
+<title>Database File Layout</title>
+-->
+<title>数据库文件布局</title>
+
+<!--
+<para>
+This section describes the storage format at the level of files and
+directories.
+</para>
+-->
+<para>
+本节在文件和目录的层次上描述存储格式。
+</para>
+
+<!--
+<para>
+Traditionally, the configuration and data files used by a database
+cluster are stored together within the cluster's data
+directory, commonly referred to as <varname>PGDATA</> (after the name of the
+environment variable that can be used to define it).  A common location for
+<varname>PGDATA</> is <filename>/var/lib/pgsql/data</>.  Multiple clusters,
+managed by different server instances, can exist on the same machine.
+</para>
+-->
+<para>
+   传统上，数据库集群所需要的配置和数据文件都存储在集群的数据目录里，
+   通常用环境变量<varname>PGDATA</>来引用。（用于定义它的环境变量名称之后）
+   <varname>PGDATA</>的一个常见位值<filename>/var/lib/pgsql/data</>。
+   不同服务器实例管理的多个集群，
+   可以在同一台机器上共存。
+</para>
+
+<!--
+<para>
+The <varname>PGDATA</> directory contains several subdirectories and control
+files, as shown in <xref linkend="pgdata-contents-table">.  In addition to
+these required items, the cluster configuration files
+<filename>postgresql.conf</filename>, <filename>pg_hba.conf</filename>, and
+<filename>pg_ident.conf</filename> are traditionally stored in
+<varname>PGDATA</> (although in <productname>PostgreSQL</productname> 8.0 and
+later, it is possible to place them elsewhere).
+</para>
+-->
+<para>
+<varname>PGDATA</>目录包含一些子目录和控制文件，在<xref linkend="pgdata-contents-table">中显示。
+除了这些必要的东西外，集群配置文件<filename>postgresql.conf</filename>，
+<filename>pg_hba.conf</filename>和
+<filename>pg_ident.conf</filename>通常都存储在<varname>PGDATA</>这里。
+(尽管<productname>PostgreSQL</productname> 8.0和之后版本中，有可能把它们放在其他地方）。
+
+</para>
+
+<table tocentry="1" id="pgdata-contents-table">
+<!--
+<title>Contents of <varname>PGDATA</></title>
+-->
+<title><varname>PGDATA</>内容</title>
+<tgroup cols="2">
+<thead>
+<row>
+<!--
+<entry>
+Item
+</entry>
+-->
+<entry>
+项
+</entry>
+<!--
+<entry>Description</entry>
+-->
+<entry>描述</entry>
+</row>
+</thead>
+
+<tbody>
+
+<row>
+ <entry><filename>PG_VERSION</></entry>
+ <!--
+ <entry>A file containing the major version number of <productname>PostgreSQL</productname></entry>
+ -->
+ <entry>一个包含<productname>PostgreSQL</productname>主版本号的文件</entry>
+</row>
+
+<row>
+ <entry><filename>base</></entry>
+ <!--
+ <entry>Subdirectory containing per-database subdirectories</entry>
+ -->
+ <entry>包含与每个数据库对应的子目录的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>global</></entry>
+ <!--
+ <entry>Subdirectory containing cluster-wide tables, such as
+ <structname>pg_database</></entry>
+ -->
+  <entry>包含集群范围的表的子目录，比如<structname>pg_database</></entry>
+</row>
+
+<row>
+ <entry><filename>pg_clog</></entry>
+ <!--
+ <entry>Subdirectory containing transaction commit status data</entry>
+ -->
+ <entry>包含事务提交状态数据的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_multixact</></entry>
+ <!--
+ <entry>Subdirectory containing multitransaction status data
+  (used for shared row locks)</entry>
+ -->
+ <entry>包含多重事务状态数据的子目录(使用共享的行锁)</entry>
+</row>
+
+<row>
+ <entry><filename>pg_notify</></entry>
+ <!--
+ <entry>Subdirectory containing LISTEN/NOTIFY status data</entry>
+ -->
+ <entry>包含LISTEN/NOTIFY状态数据的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_serial</></entry>
+ <!--
+ <entry>Subdirectory containing information about committed serializable transactions</entry>
+ -->
+ <entry>包含已提交可串行化事务信息的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_snapshots</></entry>
+ <!--
+ <entry>Subdirectory containing exported snapshots</entry>
+ -->
+ <entry>包含输出快照的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_stat_tmp</></entry>
+ <!--
+ <entry>Subdirectory containing temporary files for the statistics
+  subsystem</entry>
+  -->
+  <entry>包含临时文件的统计子系统的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_subtrans</></entry>
+ <!--
+ <entry>Subdirectory containing subtransaction status data</entry>
+ -->
+ <entry>包含子事务状态数据的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_tblspc</></entry>
+ <!--
+ <entry>Subdirectory containing symbolic links to tablespaces</entry>
+ -->
+ <entry>包含指向表空间的符号链接的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_twophase</></entry>
+ <!--
+ <entry>Subdirectory containing state files for prepared transactions</entry>
+ -->
+ <entry>包含用于预备事务的状态文件的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>pg_xlog</></entry>
+ <!--
+ <entry>Subdirectory containing WAL (Write Ahead Log) files</entry>
+ -->
+  <entry>包含WAL(预写日志)文件的子目录</entry>
+</row>
+
+<row>
+ <entry><filename>postmaster.opts</></entry>
+ <!--
+ <entry>A file recording the command-line options the server was
+last started with</entry>
+ -->
+ <entry>一个记录服务器最后一次启动时使用的命令行参数的文件</entry>
+</row>
+
+<row>
+ <entry><filename>postmaster.pid</></entry>
+ <!--
+ <entry>A lock file recording the current postmaster process ID (PID),
+  cluster data directory path,
+  postmaster start timestamp,
+  port number,
+  Unix-domain socket directory path (empty on Windows),
+  first valid listen_address (IP address or <literal>*</>, or empty if
+  not listening on TCP),
+  and shared memory segment ID
+  (this file is not present after server shutdown)</entry>
+  -->
+  <entry>一个锁文件，
+  记录着当前服务器主进程ID(PID)，集群数据目录路径，服务器主起始时间戳，端口号，
+  Unix-域套接目录路径（Windows上空），第一个有效listen_address(IP地址或者<literal>*</>，
+  如果不监听TCP，则为空)，以及共享内存段ID，
+  （在服务器关闭之后此文件就不存在了）。</entry>
+</row>
+
+</tbody>
+</tgroup>
+</table>
+
+<!--
+<para>
+For each database in the cluster there is a subdirectory within
+<varname>PGDATA</><filename>/base</>, named after the database's OID in
+<structname>pg_database</>.  This subdirectory is the default location
+for the database's files; in particular, its system catalogs are stored
+there.
+</para>
+-->
+<para>
+   对于集群里的每个数据库，在<varname>PGDATA</><filename>/base</>里都有对应的一个子目录，
+   子目录的名字是该数据库在<structname>pg_database</>里的OID。
+   这个子目录是该数据库文件的缺省位置；特别值得一提的是，
+   该数据库的系统表存储在此。
+</para>
+
+<!--
+<para>
+Each table and index is stored in a separate file.  For ordinary relations,
+these files are named after the table or index's <firstterm>filenode</> number,
+which can be found in <structname>pg_class</>.<structfield>relfilenode</>. But
+for temporary relations, the file name is of the form
+<literal>t<replaceable>BBB</>_<replaceable>FFF</></>, where <replaceable>BBB</>
+is the backend ID of the backend which created the file, and <replaceable>FFF</>
+is the filenode number.  In either case, in addition to the main file (a/k/a
+main fork), each table and index has a <firstterm>free space map</> (see <xref
+linkend="storage-fsm">), which stores information about free space available in
+the relation.  The free space map is stored in a file named with the filenode
+number plus the suffix <literal>_fsm</>.  Tables also have a
+<firstterm>visibility map</>, stored in a fork with the suffix <literal>_vm</>,
+to track which pages are known to have no dead tuples.  The visibility map is
+described further in <xref linkend="storage-vm">.  Unlogged tables and indexes
+have a third fork, known as the initialization fork, which is stored in a fork
+with the suffix <literal>_init</literal> (see <xref linkend="storage-init">).
+</para>
+-->
+<para>
+   每个表和索引都存储在独立的文件里，对于普通关系，这些文件
+   以该表或者该索引的<firstterm>filenode</>号命名，
+   该号码可以在<structname>pg_class</>.<structfield>relfilenode</>中找到。
+   但是对于临时性关系，文件名称形式<literal>t<replaceable>BBB</>_<replaceable>FFF</></>，
+   其中<replaceable>BBB</>是创建文件的后端ID，并且<replaceable>FFF</>是filenode号。
+   在任何情况下，除了主文件（a/k/a主叉文件），
+
+   每个表和索引有个<firstterm>自由空间映射</>（参阅<xref linkend="storage-fsm">）, 
+   其用来存储关于在关系中可用的自由空间的信息。
+   自用空间映射存储在文件名为filenode编号加上后缀<literal>_fsm</>的文件里。
+   表也有<firstterm>可见映射</>，存储在一个分叉文件，后缀为<literal>_vm</>，
+   用来跟踪那些已知没有死行的页，
+   该可见映射在<xref linkend="storage-vm">进一步的描述。
+   未记录的表和索引有三分之一分支，被称之为初始化分支，使用后缀<literal>_init</literal>
+   存储在分支中（参阅<xref linkend="storage-init">）。
+</para>
+
+<caution>
+<!--
+<para>
+Note that while a table's filenode often matches its OID, this is
+<emphasis>not</> necessarily the case; some operations, like
+<command>TRUNCATE</>, <command>REINDEX</>, <command>CLUSTER</> and some forms
+of <command>ALTER TABLE</>, can change the filenode while preserving the OID.
+Avoid assuming that filenode and table OID are the same.
+Also, for certain system catalogs including <structname>pg_class</> itself,
+<structname>pg_class</>.<structfield>relfilenode</> contains zero.  The
+actual filenode number of these catalogs is stored in a lower-level data
+structure, and can be obtained using the <function>pg_relation_filenode()</>
+function.
+</para>
+-->
+<para>
+   请注意，虽然一个表的filenode通常和它的OID相同，但实际上并<emphasis>不</>必须如此；
+   有些操作，比如<command>TRUNCATE</>, <command>REINDEX</>, <command>CLUSTER</>
+   以及一些特殊的<command>ALTER TABLE</>形式，
+   都可以改变filenode而同时保留OID。避免假定filenode和表OID相同。
+   还有，对于某种系统表包括<structname>pg_class</>自身，
+   <structname>pg_class</>.<structfield>relfilenode</>包含零。
+   这些表的实际的filenode编号存储在低级别的数据结构，
+   并且可以使用<function>pg_relation_filenode()</>函数获取。
+</para>
+</caution>
+
+<!--
+<para>
+When a table or index exceeds 1 GB, it is divided into gigabyte-sized
+<firstterm>segments</>.  The first segment's file name is the same as the
+filenode; subsequent segments are named filenode.1, filenode.2, etc.
+This arrangement avoids problems on platforms that have file size limitations.
+(Actually, 1 GB is just the default segment size.  The segment size can be
+adjusted using the configuration option <option>&#045;-with-segsize</option>
+when building <productname>PostgreSQL</>.)
+In principle, free space map and visibility map forks could require multiple
+segments as well, though this is unlikely to happen in practice.
+</para>
+-->
+<para>
+  在表或者索引超过1 GB之后，将分割成1GB大小的<firstterm>段</>。
+  第一个段的文件名和filenode相同；
+  随后的段名名为filenode.1, filenode.2 ... 等等。 
+  这样的安排避免了在某些平台上的有文件大小限制的问题。
+  （实际上，1GB只是缺省的段大小。当构建<productname>PostgreSQL</>时，
+  可以使用配置选项<option>--with-segsize</option>调整段大小。） 
+  原则上，自由空间映射和可见映射叉文件可能需要多个段，
+  尽管这在实践中不可能发生。
+</para>
+
+<!--
+<para>
+A table that has columns with potentially large entries will have an
+associated <firstterm>TOAST</> table, which is used for out-of-line storage of
+field values that are too large to keep in the table rows proper.
+<structname>pg_class</>.<structfield>reltoastrelid</> links from a table to
+its <acronym>TOAST</> table, if any.
+See <xref linkend="storage-toast"> for more information.
+</para>
+-->
+<para>
+ 一个表如果有些字段里面可能存储相当大的数据，
+ 那么就会有个相关联的<firstterm>TOAST</>表，
+ 用于存储无法在表的数据行中放置的超大行外数据。
+ 如果有的话，<structname>pg_class</>.<structfield>reltoastrelid</>
+ 从一个表链接到它的<acronym>TOAST</>表。
+ 参阅<xref linkend="storage-toast">获取更多信息。
+</para>
+
+<!--
+<para>
+The contents of tables and indexes are discussed further in
+<xref linkend="storage-page-layout">.
+</para>
+-->
+<para>
+  表的内容和索引在<xref linkend="storage-page-layout">中有讨论。
+</para>
+
+<!--
+<para>
+Tablespaces make the scenario more complicated.  Each user-defined tablespace
+has a symbolic link inside the <varname>PGDATA</><filename>/pg_tblspc</>
+directory, which points to the physical tablespace directory (i.e., the
+location specified in the tablespace's <command>CREATE TABLESPACE</> command).
+This symbolic link is named after
+the tablespace's OID.  Inside the physical tablespace directory there is
+a subdirectory with a name that depends on the <productname>PostgreSQL</>
+server version, such as <literal>PG_9.0_201008051</>.  (The reason for using
+this subdirectory is so that successive versions of the database can use
+the same <command>CREATE TABLESPACE</> location value without conflicts.)
+Within the version-specific subdirectory, there is
+a subdirectory for each database that has elements in the tablespace, named
+after the database's OID.  Tables and indexes are stored within that
+directory, using the filenode naming scheme.
+The <literal>pg_default</> tablespace is not accessed through
+<filename>pg_tblspc</>, but corresponds to
+<varname>PGDATA</><filename>/base</>.  Similarly, the <literal>pg_global</>
+tablespace is not accessed through <filename>pg_tblspc</>, but corresponds to
+<varname>PGDATA</><filename>/global</>.
+</para>
+-->
+<para>
+  表空间把情况搞得更复杂些。
+  每个用户定义的表空间都在<varname>PGDATA</><filename>/pg_tblspc</>目录里面有一个符号连接，
+  它指向物理的表空间目录(就是在<command>CREATE TABLESPACE</>命令里声明的那个目录)。
+  这个符号连接是用表空间的 OID 命名的。 
+  在物理的表空间目录内部，有个依赖<productname>PostgreSQL</>服务器版本的命名的子目录，
+  如<literal>PG_9.0_201008051</>。
+  （使用这个子目录的原因是为了让后续版本的数据库不产生冲突的情况下，
+  可以使用相同的<command>CREATE TABLESPACE</>位置值。） 
+  在有指定版本的子目录里，每个在表空间中有元素的数据库有个子目录，
+  命名为数据库的OID。表和索引存储在那个目录，
+  使用filenode命名方法。<literal>pg_default</>没有通过<filename>pg_tblspc</>关联， 
+  但是对应<varname>PGDATA</><filename>/base</>。类似的还有，
+  <literal>pg_global</>没有通过<filename>pg_tblspc</>关联， 
+  而是对应<varname>PGDATA</><filename>/global</>。
+</para>
+
+<!--
+<para>
+The <function>pg_relation_filepath()</> function shows the entire path
+(relative to <varname>PGDATA</>) of any relation.  It is often useful
+as a substitute for remembering many of the above rules.  But keep in
+mind that this function just gives the name of the first segment of the
+main fork of the relation &mdash; you may need to append a segment number
+and/or <literal>_fsm</> or <literal>_vm</> to find all the files associated
+with the relation.
+</para>
+-->
+<para>
+  <function>pg_relation_filepath()</>函数用于显示任何关系的全路径。（相对于<varname>PGDATA</>） 
+  替代记住许多上述规则，它往往是有用的。但是请记住，
+  这个函数只给了关系主分叉文件的第一部分的名称&mdash;你可能还需要一段
+  数字和/或<literal>_fsm</> or <literal>_vm</>用来找到关联该关系的所有文件。
+</para>
+
+<!--
+<para>
+Temporary files (for operations such as sorting more data than can fit in
+memory) are created within <varname>PGDATA</><filename>/base/pgsql_tmp</>,
+or within a <filename>pgsql_tmp</> subdirectory of a tablespace directory
+if a tablespace other than <literal>pg_default</> is specified for them.
+The name of a temporary file has the form
+<filename>pgsql_tmp<replaceable>PPP</>.<replaceable>NNN</></filename>,
+where <replaceable>PPP</> is the PID of the owning backend and
+<replaceable>NNN</> distinguishes different temporary files of that backend.
+</para>
+-->
+<para>
+  创建临时文件（对于操作如更多数据于可适合内存的排序）
+  在<varname>PGDATA</><filename>/base/pgsql_tmp</>，或如果表空间不是指定的<literal>pg_default</>，
+  在表空间目录下的<filename>pgsql_tmp</>子目录。
+  临时文件的名表示为<filename>pgsql_tmp<replaceable>PPP</>.<replaceable>NNN</></filename>，
+  这里<replaceable>PPP</>是后台拥有的PID和<replaceable>NNN</>是后台来区分不同的临时文件。
+</para>
+
+</sect1>
+
+<sect1 id="storage-toast">
+
+<title>TOAST</title>
+
+    <indexterm>
+     <primary>TOAST</primary>
+    </indexterm>
+    <indexterm><primary>sliced bread</><see>TOAST</></indexterm>
+
+<!--
+<para>
+This section provides an overview of <acronym>TOAST</> (The
+Oversized-Attribute Storage Technique).
+</para>
+-->
+<para>
+  本节提供一个<acronym>TOAST</>的概述。（超大字段存储技术）
+</para>
+
+<!--
+<para>
+<productname>PostgreSQL</productname> uses a fixed page size (commonly
+8 kB), and does not allow tuples to span multiple pages.  Therefore,  it is
+not possible to store very large field values directly.  To overcome
+this limitation, large  field values are compressed and/or broken up into
+multiple physical rows. This happens transparently to the user, with only
+small impact on most of the backend code.  The technique is affectionately
+known as <acronym>TOAST</>  (or <quote>the best thing since sliced bread</>).
+</para>
+-->
+<para>
+  因为<productname>PostgreSQL</productname>的页面大小是固定的(通常是8Kb)，
+  并且不允许行跨越多个页面，因此不可能直接存储非常大的字段值。
+  为了突破这个限制，大的字段值被压缩和/或打碎成多个物理行。
+  这些事情对用户都是透明的，只是在后端代码上有一些小的影响。
+  这个技术称为<acronym>TOAST</>。（<quote>切片面包之后最好的东西</>)）
+</para>
+
+<!--
+<para>
+Only certain data types support <acronym>TOAST</> &mdash; there is no need to
+impose the overhead on data types that cannot produce large field values.
+To support <acronym>TOAST</>, a data type must have a variable-length
+(<firstterm>varlena</>) representation, in which the first 32-bit word of any
+stored value contains the total length of the value in bytes (including
+itself).  <acronym>TOAST</> does not constrain the rest of the representation.
+All the C-level functions supporting a <acronym>TOAST</>-able data type must
+be careful to handle <acronym>TOAST</>ed input values.  (This is normally done
+by invoking <function>PG_DETOAST_DATUM</> before doing anything with an input
+value, but in some cases more efficient approaches are possible.)
+</para>
+-->
+<para>
+  只有一部分数据类型支持<acronym>TOAST</> &mdash;(没必要在那些不可能生成大的字段值
+  的数据类型强制这种额外开销)。要支持<acronym>TOAST</>，数据类型必须有变长 
+  (<firstterm>varlena</>)表现形式，这个时候，任何存储的数值的头
+  32 位都是存储着以字节记的数值的总长度(包括长度本身)。
+  <acronym>TOAST</>并不约束剩下的表现形式。所有支持<acronym>TOAST</>的数据类型之
+  C级别的函数都必须仔细处理<acronym>TOAST</>的输入值。
+  也就是通常是在对一个输入值做任何事情之前调用<function>PG_DETOAST_DATUM</>；
+  但是在某些情况下也存在更高效的方法。
+</para>
+
+<!--
+<para>
+<acronym>TOAST</> usurps two bits of the varlena length word (the high-order
+bits on big-endian machines, the low-order bits on little-endian machines),
+thereby limiting the logical size of any value of a <acronym>TOAST</>-able
+data type to 1 GB (2<superscript>30</> - 1 bytes).  When both bits are zero,
+the value is an ordinary un-<acronym>TOAST</>ed value of the data type, and
+the remaining bits of the length word give the total datum size (including
+length word) in bytes.  When the highest-order or lowest-order bit is set,
+the value has only a single-byte header instead of the normal four-byte
+header, and the remaining bits give the total datum size (including length
+byte) in bytes.  As a special case, if the remaining bits are all zero
+(which would be impossible for a self-inclusive length), the value is a
+pointer to out-of-line data stored in a separate TOAST table.  (The size of
+a TOAST pointer is given in the second byte of the datum.)
+Values with single-byte headers aren't aligned on any particular
+boundary, either.  Lastly, when the highest-order or lowest-order bit is
+clear but the adjacent bit is set, the content of the datum has been
+compressed and must be decompressed before use.  In this case the remaining
+bits of the length word give the total size of the compressed datum, not the
+original data.  Note that compression is also possible for out-of-line data
+but the varlena header does not tell whether it has occurred &mdash;
+the content of the TOAST pointer tells that, instead.
+</para>
+-->
+<para>
+ <acronym>TOAST</>占用变长的长度字的两位（在大型机器上高位序，在小型机器上低位序），
+  因此限制<acronym>TOAST</>数据类型任何值的逻辑大小为1 GB（2<superscript>30</> - 1字节）。 
+  当两位都是零时，该值是一个普通的非<acronym>TOAST</>数据类型的值，
+  长度字的剩下位给总数据大小以字节计（包括长度字）。当设置最高或最低位，
+  该值仅有一个字节头替代通常的4字节头，而剩余的位给总数据大小以字节计（包括长度字）。
+  作为一个特殊的情况下，如果剩余位都是零（其将不可能包含自身的长度），
+  该值为一个指向存储在TOAST表的行外数据。
+  （一个TOAST指针的大小是给定的在第二个字节的数据。）
+  单字节头的值没有对齐任何特定的边界。最后当清除最高或最低位时，
+  但是设置了临近的位，压缩了数据内容，在使用前必须解压缩。
+  在这种情况下长度字剩余位给压缩数据的总大小，而不是原数据的。
+  请注意压缩也可能是行外数据，
+  但是变长的头不会告诉这是否发生&mdash;反而TOAST指针的内容告诉这些。
+</para>
+
+<!--
+<para>
+If any of the columns of a table are <acronym>TOAST</>-able, the table will
+have an associated <acronym>TOAST</> table, whose OID is stored in the table's
+<structname>pg_class</>.<structfield>reltoastrelid</> entry.  Out-of-line
+<acronym>TOAST</>ed values are kept in the <acronym>TOAST</> table, as
+described in more detail below.
+</para>
+-->
+<para>
+  如果一个表中有任何一个字段是可以<acronym>TOAST</>的，
+  那么该表将有一个关联的<acronym>TOAST</>表，其OID存储在表的<structname>pg_class</>.<structfield>reltoastrelid</>记录里，
+  行外<acronym>TOAST</>过的数值保存在<acronym>TOAST</>表里，下面有更详细的描述。
+</para>
+
+<!--
+<para>
+The compression technique used is a fairly simple and very fast member
+of the LZ family of compression techniques.  See
+<filename>src/backend/utils/adt/pg_lzcompress.c</> for the details.
+</para>
+-->
+<para>
+  这里使用的压缩技术是非常简单并且非常快速的 LZ 族压缩技术。
+  参阅<filename>src/backend/utils/adt/pg_lzcompress.c</>获取细节。
+</para>
+
+<!--
+<para>
+Out-of-line values are divided (after compression if used) into chunks of at
+most <symbol>TOAST_MAX_CHUNK_SIZE</> bytes (by default this value is chosen
+so that four chunk rows will fit on a page, making it about 2000 bytes).
+Each chunk is stored
+as a separate row in the <acronym>TOAST</> table for the owning table.  Every
+<acronym>TOAST</> table has the columns <structfield>chunk_id</> (an OID
+identifying the particular <acronym>TOAST</>ed value),
+<structfield>chunk_seq</> (a sequence number for the chunk within its value),
+and <structfield>chunk_data</> (the actual data of the chunk).  A unique index
+on <structfield>chunk_id</> and <structfield>chunk_seq</> provides fast
+retrieval of the values.  A pointer datum representing an out-of-line
+<acronym>TOAST</>ed value therefore needs to store the OID of the
+<acronym>TOAST</> table in which to look and the OID of the specific value
+(its <structfield>chunk_id</>).  For convenience, pointer datums also store the
+logical datum size (original uncompressed data length) and actual stored size
+(different if compression was applied).  Allowing for the varlena header bytes,
+the total size of a <acronym>TOAST</> pointer datum is therefore 18 bytes
+regardless of the actual size of the represented value.
+</para>
+-->
+<para>
+  将外数据分割成(如果压缩过，在压缩之后)最多<symbol>TOAST_MAX_CHUNK_SIZE</>
+  (缺省选择这个值，2000字节，使4块行将适合一内存页，约2000个字节)字节，
+  每个块都作为独立的行 在<acronym>TOAST</>表里为所属表存储。
+  每个<acronym>TOAST</>表都有<structfield>chunk_id</>字段(一个表示特定<acronym>TOAST</>值的OID)、
+  <structfield>chunk_seq</>(一个序列号，存储该块在数值中的位置)、<structfield>chunk_data</>(该块实际的数据)。 
+  在<structfield>chunk_id</>和<structfield>chunk_seq</>上有一个唯一索引，提供对数值的快速检索。
+  因此，一个表示行外<acronym>TOAST</>值的指针数据需要存储要查阅的<acronym>TOAST</>的OID 
+  和特定数值的OID(它的<structfield>chunk_id</>)。为了方便，指针数据还存储逻辑数据的尺寸
+  (原始的未压缩的数据长度)以及实际存储的尺寸 (如果使用了压缩，则两者不同)。
+  加上头部的长度字，一个<acronym>TOAST</>指针数据的总尺寸是18字节，
+  不管它代表的数值的实际长度是多大。
+</para>
+
+<!--
+<para>
+The <acronym>TOAST</> code is triggered only
+when a row value to be stored in a table is wider than
+<symbol>TOAST_TUPLE_THRESHOLD</> bytes (normally 2 kB).
+The <acronym>TOAST</> code will compress and/or move
+field values out-of-line until the row value is shorter than
+<symbol>TOAST_TUPLE_TARGET</> bytes (also normally 2 kB)
+or no more gains can be had.  During an UPDATE
+operation, values of unchanged fields are normally preserved as-is; so an
+UPDATE of a row with out-of-line values incurs no <acronym>TOAST</> costs if
+none of the out-of-line values change.
+</para>
+-->
+<para>
+<acronym>TOAST</>代码只有在准备向某表中存储超过<symbol>TOAST_TUPLE_THRESHOLD</>
+字节(通常是2KB)的行的时候才会触发。
+<acronym>TOAST</>代码将压缩和/或行外存储字段值，
+直到数值比<symbol>TOAST_TUPLE_TARGET</>字节（通常是2KB）短，
+或者无法得到更好的结果的时候才停止。
+在一个UPDATE操作过程中，未改变的字段值通常原样保存；
+所以，如果UPDATE一个带有行外数据的行时，如果行外数据值没有变化，
+那么将不会有<acronym>TOAST</>开销存在。
+</para>
+
+
+<para>
+<!--
+The <acronym>TOAST</> code recognizes four different strategies for storing
+<acronym>TOAST</>-able columns:
+-->
+<acronym>TOAST</>代码识别四种不同的存储<acronym>TOAST</>字段的策略：
+
+   <itemizedlist>
+    <listitem>
+     <para>
+ <!--
+      <literal>PLAIN</literal> prevents either compression or
+      out-of-line storage; furthermore it disables use of single-byte headers
+      for varlena types.
+      This is the only possible strategy for
+      columns of non-<acronym>TOAST</>-able data types.
+  -->
+  <literal>PLAIN</literal>避免压缩或者行外的存储;此外，它禁止使用单字节的头变长类型。
+  这只是对那些不能<acronym>TOAST</>的数据类型才有可能。
+     </para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      <literal>EXTENDED</literal> allows both compression and out-of-line
+      storage.  This is the default for most <acronym>TOAST</>-able data types.
+      Compression will be attempted first, then out-of-line storage if
+      the row is still too big.
+     </para>
+-->
+<para>
+   <literal>EXTENDED</literal>允许压缩和行外存储。
+   这是大多数<acronym>TOAST</>的数据类型的缺省。首先将企图进行压缩，
+   如果行仍然太大，那么则进行行外存储。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      <literal>EXTERNAL</literal> allows out-of-line storage but not
+      compression.  Use of <literal>EXTERNAL</literal> will
+      make substring operations on wide <type>text</type> and
+      <type>bytea</type> columns faster (at the penalty of increased storage
+      space) because these operations are optimized to fetch only the
+      required parts of the out-of-line value when it is not compressed.
+     </para>
+-->
+<para>
+<literal>EXTERNAL</literal>允许行外存储，但是不许压缩。
+使用<literal>EXTERNAL</literal>，将令那些在<type>text</type>和<type>bytea</type>字段上的子字符串操作更快
+ (代价是增加了存储空间)，因为这些操作是经过优化的：如果行外数据没有压缩，
+ 那么它们只会去抓取需要的部分。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      <literal>MAIN</literal> allows compression but not out-of-line
+      storage.  (Actually, out-of-line storage will still be performed
+      for such columns, but only as a last resort when there is no other
+      way to make the row small enough to fit on a page.)
+     </para>
+-->
+<para>
+    <literal>MAIN</literal>允许压缩，但不允许行外存储。
+实际上，在这样的字段上仍然会进行行外存储，
+但只是作为没有办法把数据行变得更小的情况下使之足以容纳一个页面的最后的手段。
+</para>
+    </listitem>
+   </itemizedlist>
+<!--
+Each <acronym>TOAST</>-able data type specifies a default strategy for columns
+of that data type, but the strategy for a given table column can be altered
+with <command>ALTER TABLE SET STORAGE</>.
+-->
+每个<acronym>TOAST</>的数据类型都为该数据类型的字段指定一个缺省策略，
+但是特定表的字段的存储策略可以用<command>ALTER TABLE SET STORAGE</>修改。
+</para>
+
+<!--
+<para>
+This scheme has a number of advantages compared to a more straightforward
+approach such as allowing row values to span pages.  Assuming that queries are
+usually qualified by comparisons against relatively small key values, most of
+the work of the executor will be done using the main row entry. The big values
+of <acronym>TOAST</>ed attributes will only be pulled out (if selected at all)
+at the time the result set is sent to the client. Thus, the main table is much
+smaller and more of its rows fit in the shared buffer cache than would be the
+case without any out-of-line storage. Sort sets shrink also, and sorts will
+more often be done entirely in memory. A little test showed that a table
+containing typical HTML pages and their URLs was stored in about half of the
+raw data size including the <acronym>TOAST</> table, and that the main table
+contained only about 10% of the entire data (the URLs and some small HTML
+pages). There was no run time difference compared to an un-<acronym>TOAST</>ed
+comparison table, in which all the HTML pages were cut down to 7 kB to fit.
+</para>
+-->
+<para>
+  这个方法比那些更直接的方法，比如允许行值直接跨越多个页面，
+  有更多优点。假设查询通常是用相对比较短的键值进行匹配的，
+  那么大多数执行器的工作都将使用主行记录完成。<acronym>TOAST</>属性的大值，
+  只是在把结果集发送给客户端的时候才抽出来(如果选择了它的话)。因此，
+  主表要小得多，并且它的大部分行都存储在共享缓冲区里，因此就可以不需要任何行外存储。
+  排序集也缩小了，并且排序将更多地在内存里完成。一个小测试表明，
+  一个用于保存HTML页面以及它们的URL的表，包括<acronym>TOAST</>表在内，
+  存储将近一半大小的裸数据，而主表只包含全部数据的10%(URL和一些小的HTML页面)。
+  与在一个非<acronym>TOAST</>的对比表里面存储(把全部HTML页面裁剪成7KB以匹配页面大小)，
+  没有任何运行时的区别。
+</para>
+
+</sect1>
+
+<sect1 id="storage-fsm">
+<!--
+<title>Free Space Map</title>
+-->
+<title>自由空间映射</title>
+
+<indexterm>
+ <primary>Free Space Map</primary>
+</indexterm>
+<indexterm><primary>FSM</><see>Free Space Map</></indexterm>
+
+<!--
+<para>
+Each heap and index relation, except for hash indexes, has a Free Space Map
+(FSM) to keep track of available space in the relation. It's stored
+alongside the main relation data in a separate relation fork, named after the
+filenode number of the relation, plus a <literal>_fsm</> suffix. For example,
+if the filenode of a relation is 12345, the FSM is stored in a file called
+<filename>12345_fsm</>, in the same directory as the main relation file.
+</para>
+-->
+<para>
+ 每个堆和索引关系，除了哈希索引，
+ 有个自由空间映射(FSM) 来保持跟踪关系中可用的空间。
+ 将同时在独立的关系叉文件存储主关系数据，
+ 以关系的filenode 编号命名，加上一个<literal>_fsm</>后缀。
+ 例如，如果一个关系的filenode是12345，
+ 存储FSM在一个叫<filename>12345_fsm</>的文件里，
+ 在与主关系文件相同目录里。
+</para>
+
+<!--
+<para>
+The Free Space Map is organized as a tree of <acronym>FSM</> pages. The
+bottom level <acronym>FSM</> pages store the free space available on each
+heap (or index) page, using one byte to represent each such page. The upper
+levels aggregate information from the lower levels.
+</para>
+-->
+<para>
+ 自由空间映射组织为一个<acronym>FSM</>页树。
+ <acronym>FSM</>页底层存储每个堆（或索引）页上可用的自由空间，
+ 使用一个字节来代表每一个如页。
+ 高级别的从低级别聚合信息。
+</para>
+
+<!--
+<para>
+Within each <acronym>FSM</> page is a binary tree, stored in an array with
+one byte per node. Each leaf node represents a heap page, or a lower level
+<acronym>FSM</> page. In each non-leaf node, the higher of its children's
+values is stored. The maximum value in the leaf nodes is therefore stored
+at the root.
+</para>
+-->
+<para>
+  每个<acronym>FSM</>页是一个二叉树，存储在一个数组，
+  每个节点一个字节。每个叶节点代表一个堆页，或低级别的<acronym>FSM</>页。
+  在每个非叶节点，存储其子节点值的高级别的值。
+  因此在根节点存储叶节点的最大值。
+</para>
+
+<!--
+<para>
+See <filename>src/backend/storage/freespace/README</> for more details on
+how the <acronym>FSM</> is structured, and how it's updated and searched.
+The <xref linkend="pgfreespacemap"> module
+can be used to examine the information stored in free space maps.
+</para>
+-->
+<para>
+  参阅<filename>src/backend/storage/freespace/README</>关于更详细的<acronym>FSM</>是怎样的结构，
+  怎样更新和搜索它。<xref linkend="pgfreespacemap">模块可以用来审查存储在自由空间映射的信息。
+</para>
+
+</sect1>
+
+<sect1 id="storage-vm">
+<!--
+<title>Visibility Map</title>
+-->
+<title>可见映射</title>
+
+<indexterm>
+ <primary>Visibility Map</primary>
+</indexterm>
+<indexterm><primary>VM</><see>Visibility Map</></indexterm>
+
+<!--
+<para>
+Each heap relation has a Visibility Map
+(VM) to keep track of which pages contain only tuples that are known to be
+visible to all active transactions. It's stored
+alongside the main relation data in a separate relation fork, named after the
+filenode number of the relation, plus a <literal>_vm</> suffix. For example,
+if the filenode of a relation is 12345, the VM is stored in a file called
+<filename>12345_vm</>, in the same directory as the main relation file.
+Note that indexes do not have VMs.
+</para>
+-->
+<para>
+  每个堆关系有个可见映射（VM）来保持跟踪那些包含行的页，
+  对于所有活动的事务可见。同时在独立的关系叉文件存储主关系数据，
+  以关系的filenode号，加上一个<literal>_vm</>后缀命名。例如，
+  如果一个关系的filenode是12345，存储VM在一个叫<filename>12345_vm</>文件里，
+  与主关系文件在同一目录。请注意索引没有VM。
+</para>
+
+<!--
+<para>
+The visibility map simply stores one bit per heap page. A set bit means
+that all tuples on the page are known to be visible to all transactions.
+This means that the page does not contain any tuples that need to be vacuumed.
+This information can also be used by <firstterm>index-only scans</> to answer
+queries using only the index tuple.
+</para>
+-->
+<para>
+  可见映射在简单的在每个堆页存储1位。
+  一个设置位意味着在页上所有的行对于所有事务可见的。
+  这意味着不包含任何行的页，需要清理；使用<firstterm>index-only scans</>
+  回答仅仅使用索引元的查询也可以使用这些信息。
+</para>
+
+<!--
+<para>
+The map is conservative in the sense that we make sure that whenever a bit is
+set, we know the condition is true, but if a bit is not set, it might or
+might not be true. Visibility map bits are only set by vacuum, but are
+cleared by any data-modifying operations on a page.
+</para>
+-->
+<para>
+  这个意义上的映射是保守的，我们要确定每当设置位，
+  我们知道条件是真，但是如果没有设置位，它可能是真，也可能不是真。
+  通过清理设置可见映射位，但是通过页上的任何数据修改操作进行清理。
+</para>
+
+</sect1>
+
+<sect1 id="storage-init">
+
+<!--
+<title>The Initialization Fork</title>
+-->
+<title>初始化分支</title>
+
+<indexterm>
+ <primary>Initialization Fork</primary>
+</indexterm>
+
+<!--
+<para>
+Each unlogged table, and each index on an unlogged table, has an initialization
+fork.  The initialization fork is an empty table or index of the appropriate
+type.  When an unlogged table must be reset to empty due to a crash, the
+initialization fork is copied over the main fork, and any other forks are
+erased (they will be recreated automatically as needed).
+</para>
+--> 
+<para>
+  每个未记录的表，以及未记录表的每一个索引，有一个初始化
+分支。初始化分支是一个空表或相应类型的索引。当一个未记录的表由于崩溃必须重置为空，
+初始化分支被拷贝给主分支，并且擦除任何其他的分支（根据需要他们会自动重建）。
+</para>
+
+</sect1>
+
+<sect1 id="storage-page-layout">
+<!--
+<title>Database Page Layout</title>
+-->
+<title>数据库分页文件</title>
+
+
+<para>
+<!--
+This section provides an overview of the page format used within
+<productname>PostgreSQL</productname> tables and indexes.<footnote>
+-->
+本节提供一个在<productname>PostgreSQL</productname>表和索引使用的页格式的概述。<footnote>
+  <para>
+    <!--
+    Actually, index access methods need not use this page format.
+    All the existing index methods do use this basic format,
+    but the data kept on index metapages usually doesn't follow
+    the item layout rules.
+-->
+实际上，索引访问方法不需要使用这个页格式。所有已经存在的索引方法
+需要使用基本格式，但是保持在索引元页上的数据通常不遵循项布局规则。
+  </para>
+
+</footnote>
+<!--
+Sequences and <acronym>TOAST</> tables are formatted just like a regular table.
+-->
+序列和<acronym>TOAST</>表的格式就像一个普通表的。
+</para>
+
+<!--
+<para>
+In the following explanation, a
+<firstterm>byte</firstterm>
+is assumed to contain 8 bits.  In addition, the term
+<firstterm>item</firstterm>
+refers to an individual data value that is stored on a page.  In a table,
+an item is a row; in an index, an item is an index entry.
+</para>
+-->
+<para>
+  下面说明一下，一个<firstterm>字节</firstterm>假定为包含8位。另外，
+  术语<firstterm>项</firstterm>为存储在页上的一个独立数据值。 
+  在表中，一项是一行；在索引中，一项为一个索引条目。 
+</para>
+
+<!--
+<para>
+Every table and index is stored as an array of <firstterm>pages</> of a
+fixed size (usually 8 kB, although a different page size can be selected
+when compiling the server).  In a table, all the pages are logically
+equivalent, so a particular item (row) can be stored in any page.  In
+indexes, the first page is generally reserved as a <firstterm>metapage</>
+holding control information, and there can be different types of pages
+within the index, depending on the index access method.
+</para>
+-->
+<para>
+每个表和索引存储为固定大小的<firstterm>页</>数组。
+（通常 8 kB，不过当编译服务器的时候，可以选择不同的页大小） 
+在表中，所有的页是逻辑等价的，所以一个特殊项（行）
+可以存储在任意页。在索引，第一页通常保留为持有控制信息的<firstterm>元页</>， 
+这里可以有不同类型的索引页，依赖于索引访问方法。
+</para>
+
+<!--
+<para>
+<xref linkend="page-table"> shows the overall layout of a page.
+There are five parts to each page.
+</para>
+-->
+<para>
+ <xref linkend="page-table">显示一个页的整体布局，这里每页有5部分。
+</para>
+
+<table tocentry="1" id="page-table">
+<!--
+<title>Overall Page Layout</title>
+-->
+<title>页整体布局</title>
+<titleabbrev>Page Layout</titleabbrev>
+<tgroup cols="2">
+<thead>
+<row>
+<!--
+<entry>
+Item
+</entry>
+-->
+<entry>
+项
+</entry>
+<!--
+<entry>Description</entry>
+-->
+<entry>描述</entry>
+</row>
+</thead>
+
+<tbody>
+
+<row>
+ <entry>PageHeaderData</entry>
+ <!--
+ <entry>24 bytes long. Contains general information about the page, including
+free space pointers.</entry>
+-->
+  <entry>24字节长整型。包含关于页的一般信息，包含自由空间指针。</entry>
+</row>
+
+<row>
+<entry>ItemIdData</entry>
+<!--
+<entry>Array of (offset,length) pairs pointing to the actual items.
+4 bytes per item.</entry>
+-->
+<entry>指向实际项的（偏移量，长度）数组对。每项4字节。</entry>
+</row>
+
+<row>
+<entry>Free space</entry>
+<!--
+<entry>The unallocated space. New item pointers are allocated from the start
+of this area, new items from the end.</entry>
+-->
+<entry>未分配空间。从这个区域开始分配新项指针，或从结尾分配新项指针</entry>
+</row>
+
+<row>
+<entry>Items</entry>
+<!--
+<entry>The actual items themselves.</entry>
+-->
+<entry>实际项本身</entry>
+</row>
+
+<row>
+<entry>Special space</entry>
+<!--
+<entry>Index access method specific data. Different methods store different
+data. Empty in ordinary tables.</entry>
+-->
+<entry>索引访问方法专用数据。不同方法存储不同的数据。普通表里为空。</entry>
+</row>
+
+</tbody>
+</tgroup>
+</table>
+
+ <!--
+<para>
+
+  The first 24 bytes of each page consists of a page header
+  (PageHeaderData). Its format is detailed in <xref
+  linkend="pageheaderdata-table">. The first two fields track the most
+  recent WAL entry related to this page. Next is a 2-byte field
+  containing flag bits. This is followed by three 2-byte integer fields
+  (<structfield>pd_lower</structfield>, <structfield>pd_upper</structfield>,
+  and <structfield>pd_special</structfield>). These contain byte offsets
+  from the page start to the start
+  of unallocated space, to the end of unallocated space, and to the start of
+  the special space.
+  The next 2 bytes of the page header,
+  <structfield>pd_pagesize_version</structfield>, store both the page size
+  and a version indicator.  Beginning with
+  <productname>PostgreSQL</productname> 8.3 the version number is 4;
+  <productname>PostgreSQL</productname> 8.1 and 8.2 used version number 3;
+  <productname>PostgreSQL</productname> 8.0 used version number 2;
+  <productname>PostgreSQL</productname> 7.3 and 7.4 used version number 1;
+  prior releases used version number 0.
+  (The basic page layout and header format has not changed in most of these
+  versions, but the layout of heap row headers has.)  The page size
+  is basically only present as a cross-check; there is no support for having
+  more than one page size in an installation.
+  The last field is a hint that shows whether pruning the page is likely
+  to be profitable: it tracks the oldest un-pruned XMAX on the page.
+
+ </para>
+-->
+<para>
+   每页的前24个字节构成一个页头（PageHeaderData）。
+   在<xref linkend="pageheaderdata-table">有它的详细格式。
+   前两个字段跟踪相关页的最近的WAL条目。
+   下边的一个2字节的字段是包含标志位。
+   随后由3个2字节整数字段（<structfield>pd_lower</structfield>, <structfield>pd_upper</structfield>,
+   和<structfield>pd_special</structfield>）。
+   这些包含分别为从页开始到未分配空间的开始，到未分配空间的结束，
+   专用空间的开始的偏移字节数。下边页头的2字节，pd_pagesize_version，
+   存储页大小和版本指示符。 从<productname>PostgreSQL</productname> 8.3开始版本编号是4； 
+   <productname>PostgreSQL</productname> 8.1和8.2使用版本编号3；
+   <productname>PostgreSQL</productname> 8.0使用版本编号2；
+   <productname>PostgreSQL</productname> 7.3和7.4使用版本编号1；
+   先前发布版本使用版本编号0。（在大多数这些版本中，基本的页布局和头格式没有变化，但是堆布局有行头.）
+   页面大小是基本上只存在一个交叉检查；在安装的版本中，
+   这里不支持多于一页大小的。最后一个字段是个提示，显示是否整理页，
+   可能是有利的。它跟踪在页上最旧的未修整的XMAX。
+</para>
+
+ <table tocentry="1" id="pageheaderdata-table">
+ <!--
+ <title>PageHeaderData Layout</title>
+ -->
+ <title>PageHeaderData布局</title>
+ <titleabbrev>PageHeaderData Layout</titleabbrev>
+ <tgroup cols="4">
+ <thead>
+  <row>
+  <!--
+   <entry>Field</entry>
+   <entry>Type</entry>
+   <entry>Length</entry>
+   <entry>Description</entry>
+   -->
+    <entry>字段</entry>
+   <entry>类型</entry>
+   <entry>长度</entry>
+   <entry>描述</entry>
+  </row>
+ </thead>
+ <tbody>
+  <row>
+   <entry>pd_lsn</entry>
+   <entry>XLogRecPtr</entry>
+   <!--
+   <entry>8 bytes</entry>
+   <entry>LSN: next byte after last byte of xlog record for last change
+   to this page</entry>
+   -->
+   <entry>8字节</entry>
+   <entry>LSN: 该页上xlog日志记录变化的最后字节的下一字节</entry>
+  </row>
+  <row>
+   <entry>pd_tli</entry>
+   <entry>uint16</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>TimeLineID of last change (only its lowest 16 bits)</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>最后变化的时间线ID（仅其最低16位）</entry>
+  </row>
+  <row>
+   <entry>pd_flags</entry>
+   <entry>uint16</entry>
+   <entry>2字节</entry>
+   <entry>标志位</entry>
+  </row>
+  <row>
+   <entry>pd_lower</entry>
+   <entry>LocationIndex</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>Offset to start of free space</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>到自由空间开始的偏移量</entry>
+  </row>
+  <row>
+   <entry>pd_upper</entry>
+   <entry>LocationIndex</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>Offset to end of free space</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>到自由空间结尾的偏移量</entry>
+  </row>
+  <row>
+   <entry>pd_special</entry>
+   <entry>LocationIndex</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>Offset to start of special space</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>到专用空间开始的偏移量</entry>
+  </row>
+  <row>
+   <entry>pd_pagesize_version</entry>
+   <entry>uint16</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>Page size and layout version number information</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>页大小和版本编号布局信息</entry>
+  </row>
+  <row>
+   <entry>pd_prune_xid</entry>
+   <entry>TransactionId</entry>
+   <!--
+   <entry>4 bytes</entry>
+   <entry>Oldest unpruned XMAX on page, or zero if none</entry>
+   -->
+   <entry>4字节</entry>
+   <entry>页上最旧的未修整的XMAX，如果没有则为零。</entry>
+  </row>
+ </tbody>
+ </tgroup>
+ </table>
+
+ <!--
+<para>
+  All the details can be found in
+  <filename>src/include/storage/bufpage.h</filename>.
+ </para>
+-->
+<para>
+  在<filename>src/include/storage/bufpage.h</filename>可以找到所有的详细信息。
+</para>
+
+ <!--
+<para>
+
+  Following the page header are item identifiers
+  (<type>ItemIdData</type>), each requiring four bytes.
+  An item identifier contains a byte-offset to
+  the start of an item, its length in bytes, and a few attribute bits
+  which affect its interpretation.
+  New item identifiers are allocated
+  as needed from the beginning of the unallocated space.
+  The number of item identifiers present can be determined by looking at
+  <structfield>pd_lower</>, which is increased to allocate a new identifier.
+  Because an item
+  identifier is never moved until it is freed, its index can be used on a
+  long-term basis to reference an item, even when the item itself is moved
+  around on the page to compact free space.  In fact, every pointer to an
+  item (<type>ItemPointer</type>, also known as
+  <type>CTID</type>) created by
+  <productname>PostgreSQL</productname> consists of a page number and the
+  index of an item identifier.
+
+ </para>
+-->
+<para>
+  下面的页头是项标识符（<type>ItemIdData</type>），每个需要4字节。
+  一个项标识符包含一个到项开始的字节偏移，
+  以字节计的长度，和一些影响它解释的属性位。
+  新项标识符需要从未分配空间的开始分配。
+  可以通过查看<structfield>pd_lower</>来确定项标识符的数量，分配新的标示符，
+  其会增加。因为一个项标示符从来不移动直到释放了它，实际上，
+  每个指针为<productname>PostgreSQL</productname>所创建的一项由页号和项标识符的索引构成。
+  （<type>ItemPointer</type>，还可以称为<type>CTID</type>）。
+</para>
+
+ <!--
+<para>
+
+  The items themselves are stored in space allocated backwards from the end
+  of unallocated space.  The exact structure varies depending on what the
+  table is to contain. Tables and sequences both use a structure named
+  <type>HeapTupleHeaderData</type>, described below.
+
+ </para>
+-->
+<para>
+  项本身存储在从未分配的空间的结尾向后分配的空间。确切的结构取决于包含什么表。
+  表和序列两都使用一个名为<type>HeapTupleHeaderData</type>的结构，下面描述。
+</para>
+
+ <!--
+<para>
+
+  The final section is the <quote>special section</quote> which can
+ contain anything the access method wishes to store.  For example,
+  b-tree indexes store links to the page's left and right siblings,
+  as well as some other data relevant to the index structure.
+  Ordinary tables do not use a special section at all (indicated by setting
+  <structfield>pd_special</> to equal the page size).
+
+ </para>
+-->
+<para>
+最后这段是<quote>特殊段</quote>其包含想存放的任何访问方法。
+例如，b-tree索引存储连接页左右的兄弟，以及相应的索引结构的一些其它数据。
+普通的表根本没有使用特殊段。
+（通过设置<structfield>pd_special</>等于页大小来表示）
+</para>
+
+ <!--
+<para>
+
+  All table rows are structured in the same way. There is a fixed-size
+  header (occupying 23 bytes on most machines), followed by an optional null
+  bitmap, an optional object ID field, and the user data. The header is
+  detailed
+  in <xref linkend="heaptupleheaderdata-table">.  The actual user data
+  (columns of the row) begins at the offset indicated by
+  <structfield>t_hoff</>, which must always be a multiple of the MAXALIGN
+  distance for the platform.
+  The null bitmap is
+  only present if the <firstterm>HEAP_HASNULL</firstterm> bit is set in
+  <structfield>t_infomask</structfield>. If it is present it begins just after
+  the fixed header and occupies enough bytes to have one bit per data column
+  (that is, <structfield>t_natts</> bits altogether). In this list of bits, a
+  1 bit indicates not-null, a 0 bit is a null.  When the bitmap is not
+  present, all columns are assumed not-null.
+  The object ID is only present if the <firstterm>HEAP_HASOID</firstterm> bit
+  is set in <structfield>t_infomask</structfield>.  If present, it appears just
+  before the <structfield>t_hoff</> boundary.  Any padding needed to make
+  <structfield>t_hoff</> a MAXALIGN multiple will appear between the null
+  bitmap and the object ID.  (This in turn ensures that the object ID is
+  suitably aligned.)
+
+ </para>
+-->
+<para>
+  所有表行结构方式相同。有个固定大小的头（在大多数机器占用23字节），
+  随后一个NULL位图的可选项，对象ID字段，和用户数据。
+  该头的详细信息在<xref linkend="heaptupleheaderdata-table">。
+  实际的用户数据（行中列）由<structfield>t_hoff</>表示的偏移量开始，
+  它必须始终是为平台的MAXALIGN间距的倍数。
+  NULL位图仅存在，如果在<structfield>t_infomask</structfield>设置了<firstterm>HEAP_HASNULL</firstterm>位。
+  如果它存在，它就开始于固定头的后面，占用足够的字节，每数据列一位。
+  （那是，<structfield>t_natts</>位一块） 在这个位列表中，一个1位 标识非空，一个 0 位是空。
+  对象ID 仅存在，如果在<structfield>t_infomask</structfield>设置了<firstterm>HEAP_HASOID</firstterm>位。
+  如果存在，它将出现在t_hoff边界前。任何需要做 t_hoff 的MAXALIGN倍数的填充，
+  出现在NULL位图和对象ID之间。（反过来又保证对象ID得到恰当的对齐）
+</para>
+
+ <table tocentry="1" id="heaptupleheaderdata-table">
+ <!--
+ <title>HeapTupleHeaderData Layout</title>
+ -->
+ <title>HeapTupleHeaderData布局</title>
+ <titleabbrev>HeapTupleHeaderData Layout</titleabbrev>
+ <tgroup cols="4">
+ <thead>
+  <row>
+   <!--
+   <entry>Field</entry>
+   <entry>Type</entry>
+   <entry>Length</entry>
+   <entry>Description</entry>
+   -->
+   <entry>字段</entry>
+   <entry>类型</entry>
+   <entry>长度</entry>
+   <entry>描述</entry>
+  </row>
+ </thead>
+ <tbody>
+  <row>
+   <entry>t_xmin</entry>
+   <entry>TransactionId</entry>
+   <!--
+   <entry>4 bytes</entry>
+   <entry>insert XID stamp</entry>
+   -->  
+   <entry>4字节</entry>
+   <entry>插入XID戳</entry>
+  </row>
+  <row>
+   <entry>t_xmax</entry>
+   <entry>TransactionId</entry>
+   <!--
+   <entry>4 bytes</entry>
+   <entry>delete XID stamp</entry>
+   -->
+   <entry>4字节</entry>
+   <entry>删除XID戳</entry>
+  </row>
+  <row>
+   <entry>t_cid</entry>
+   <entry>CommandId</entry>
+   <!--
+   <entry>4 bytes</entry>
+   <entry>insert and/or delete CID stamp (overlays with t_xvac)</entry>
+   -->
+   <entry>4字节</entry>
+   <entry>插入和/或 删除 CID戳(使用t_xvac覆盖)</entry>
+  </row>
+  <row>
+   <entry>t_xvac</entry>
+   <entry>TransactionId</entry>
+   <!--
+   <entry>4 bytes</entry>
+   <entry>XID for VACUUM operation moving a row version</entry>
+   -->
+   <entry>4字节</entry>
+   <entry>VACUUM操作移动一行版本的XID</entry>
+  </row>
+  <row>
+   <entry>t_ctid</entry>
+   <entry>ItemPointerData</entry>
+   <!--
+   <entry>6 bytes</entry>
+   <entry>current TID of this or newer row version</entry>
+   -->
+   <entry>6字节</entry>
+   <entry>这个当前的或新行版本的TID</entry>
+  </row>
+  <row>
+   <entry>t_infomask2</entry>
+   <entry>uint16</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>number of attributes, plus various flag bits</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>字段个数，加上各种标志位</entry>
+  </row>
+  <row>
+   <entry>t_infomask</entry>
+   <entry>uint16</entry>
+   <!--
+   <entry>2 bytes</entry>
+   <entry>various flag bits</entry>
+   -->
+   <entry>2字节</entry>
+   <entry>各种标志位数</entry>
+  </row>
+  <row>
+   <entry>t_hoff</entry>
+   <entry>uint8</entry>
+   <!--
+   <entry>1 byte</entry>
+   <entry>offset to user data</entry>
+   -->
+   <entry>1字节</entry>
+   <entry>用户数据偏移量</entry>
+  </row>
+ </tbody>
+ </tgroup>
+ </table>
+
+ <!--
+<para>
+   All the details can be found in
+   <filename>src/include/access/htup.h</filename>.
+ </para>
+-->
+<para>
+  在<filename>src/include/access/htup.h</filename>可以找到所有的详细信息。
+</para>
+
+ <!--
+<para>
+
+  Interpreting the actual data can only be done with information obtained
+  from other tables, mostly <structname>pg_attribute</structname>. The
+  key values needed to identify field locations are
+  <structfield>attlen</structfield> and <structfield>attalign</structfield>.
+  There is no way to directly get a
+  particular attribute, except when there are only fixed width fields and no
+  null values. All this trickery is wrapped up in the functions
+  <firstterm>heap_getattr</firstterm>, <firstterm>fastgetattr</firstterm>
+  and <firstterm>heap_getsysattr</firstterm>.
+
+ </para>
+-->
+<para>
+   解释实际数据只能从其它表获取信息来做，大多<structname>pg_attribute</structname>。
+   需要来表示字段位置的键值是<structfield>attlen</structfield>和<structfield>attalign</structfield>。
+   没有直接获取特定字段的方法，除仅当有固定宽度字段并且没有空值的情况外。
+   所有这些策略封装在函数<firstterm>heap_getattr</firstterm>，<firstterm>fastgetattr</firstterm>
+   和<firstterm>heap_getsysattr</firstterm>。
+</para>
+ <!--
+<para>
+
+  To read the data you need to examine each attribute in turn. First check
+  whether the field is NULL according to the null bitmap. If it is, go to
+  the next. Then make sure you have the right alignment.  If the field is a
+  fixed width field, then all the bytes are simply placed. If it's a
+  variable length field (attlen = -1) then it's a bit more complicated.
+  All variable-length data types share the common header structure
+  <type>struct varlena</type>, which includes the total length of the stored
+  value and some flag bits.  Depending on the flags, the data can be either
+  inline or in a <acronym>TOAST</> table;
+  it might be compressed, too (see <xref linkend="storage-toast">).
+
+ </para> 
+-->
+<para>
+  要读取数据你需要逐次检查每个属性。首先检查字段是否为NULL依据NULL位图。
+  如果是，跳到下一个。然后确定你已经右对齐。如果字段是固定宽度的字段，
+  那么所有的字节简单的放置。如果它是变长的字段（attlen = -1） 
+  那么它是一个更复杂的位。所有变长数据类型共享通用的头结构<type>struct varlena</type>，
+  其包括存储值的总长度和一些标志位。
+  依赖这些标志，数据可能是行内或在一个<acronym>TOAST</>表；它也可能是压缩的。
+  （参阅<xref linkend="storage-toast">）
+</para>
+</sect1>
+
+</chapter>

@@ -1,0 +1,497 @@
+<!--
+doc/src/sgml/ref/create_aggregate.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="SQL-CREATEAGGREGATE">
+ <refmeta>
+  <refentrytitle>CREATE AGGREGATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <!--
+<refmiscinfo>SQL - Language Statements</refmiscinfo>
+-->
+<refmiscinfo>SQL - 语句</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE AGGREGATE</refname>
+  <!--
+<refpurpose>define a new aggregate function</refpurpose>
+-->
+<refpurpose>
+定义一个新的聚集函数
+</refpurpose>
+ </refnamediv>
+
+ <indexterm zone="sql-createaggregate">
+  <primary>CREATE AGGREGATE</primary>
+ </indexterm>
+
+ <refsynopsisdiv>
+<synopsis>
+CREATE AGGREGATE <replaceable class="PARAMETER">name</replaceable> ( <replaceable class="PARAMETER">input_data_type</replaceable> [ , ... ] ) (
+    SFUNC = <replaceable class="PARAMETER">sfunc</replaceable>,
+    STYPE = <replaceable class="PARAMETER">state_data_type</replaceable>
+    [ , FINALFUNC = <replaceable class="PARAMETER">ffunc</replaceable> ]
+    [ , INITCOND = <replaceable class="PARAMETER">initial_condition</replaceable> ]
+    [ , SORTOP = <replaceable class="PARAMETER">sort_operator</replaceable> ]
+)
+
+<phrase>or the old syntax</phrase>
+
+CREATE AGGREGATE <replaceable class="PARAMETER">name</replaceable> (
+    BASETYPE = <replaceable class="PARAMETER">base_type</replaceable>,
+    SFUNC = <replaceable class="PARAMETER">sfunc</replaceable>,
+    STYPE = <replaceable class="PARAMETER">state_data_type</replaceable>
+    [ , FINALFUNC = <replaceable class="PARAMETER">ffunc</replaceable> ]
+    [ , INITCOND = <replaceable class="PARAMETER">initial_condition</replaceable> ]
+    [ , SORTOP = <replaceable class="PARAMETER">sort_operator</replaceable> ]
+)
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <!--
+<title>Description</title>
+-->
+<title>描述</title>
+
+  <!--
+<para>
+   <command>CREATE AGGREGATE</command> defines a new aggregate
+   function. Some basic and commonly-used aggregate functions are
+   included with the distribution; they are documented in <xref
+   linkend="functions-aggregate">. If one defines new types or needs
+   an aggregate function not already provided, then <command>CREATE
+   AGGREGATE</command> can be used to provide the desired features.
+  </para>
+-->
+<para>
+<command>CREATE AGGREGATE</command>定义一个新的聚集函数。
+一些常用的聚集函数已经包含在基础软件包里了；在<xref linkend="functions-aggregate">里有文档说明。
+如果你需要定义一个新类型或需要一个还没有提供的聚集函数，这时<command>CREATE AGGREGATE</command>便可派上用场。 
+</para>
+
+  <!--
+<para>
+   If a schema name is given (for example, <literal>CREATE AGGREGATE
+   myschema.myagg ...</>) then the aggregate function is created in the
+   specified schema.  Otherwise it is created in the current schema.
+  </para>
+-->
+<para>
+如果给出了一个模式的名字(比如<literal>CREATE AGGREGATE myschema.myagg ...</>)，那么该聚集函数是在指定模式中创建的。
+否则它是在当前模式中创建的。 
+</para>
+
+  <!--
+<para>
+   An aggregate function is identified by its name and input data type(s).
+   Two aggregates in the same schema can have the same name if they operate on
+   different input types.  The
+   name and input data type(s) of an aggregate must also be distinct from
+   the name and input data type(s) of every ordinary function in the same
+   schema.
+  </para>
+-->
+<para>
+一个聚集函数是用它的名字和输入数据类型来标识的。
+同一模式中如果两个聚集处理的输入数据不同，它们可以有相同的名字。
+一个聚集函数的输入数据类型必须和所有同一模式中的普通函数的名字和输入 类型不同。 
+</para>
+
+  <!--
+<para>
+   An aggregate function is made from one or two ordinary
+   functions:
+   a state transition function
+   <replaceable class="PARAMETER">sfunc</replaceable>,
+   and an optional final calculation function
+   <replaceable class="PARAMETER">ffunc</replaceable>.
+   These are used as follows:
+<programlisting>
+<replaceable class="PARAMETER">sfunc</replaceable>( internal-state, next-data-values ) &#45;&#45;&#45;> next-internal-state
+<replaceable class="PARAMETER">ffunc</replaceable>( internal-state ) &#45;&#45;&#45;> aggregate-value
+</programlisting>
+  </para>
+-->
+<para>
+一个聚集函数是用一个或两个普通函数组成的：一个状态转换函数<replaceable class="PARAMETER">sfunc</replaceable>和一个可选的最终计算函数<replaceable class="PARAMETER">ffunc</replaceable>。
+它们是这样使用的： 
+<programlisting>
+<replaceable class="PARAMETER">sfunc</replaceable>( internal-state, next-data-values ) &#45;&#45;&#45;> next-internal-state
+<replaceable class="PARAMETER">ffunc</replaceable>( internal-state ) &#45;&#45;&#45;> aggregate-value
+</programlisting>
+</para>
+
+  <!--
+<para>
+   <productname>PostgreSQL</productname> creates a temporary variable
+   of data type <replaceable class="PARAMETER">stype</replaceable>
+   to hold the current internal state of the aggregate.  At each input row,
+   the aggregate argument value(s) are calculated and
+   the state transition function is invoked with the current state value
+   and the new argument value(s) to calculate a new
+   internal state value.  After all the rows have been processed,
+   the final function is invoked once to calculate the aggregate's return
+   value.  If there is no final function then the ending state value
+   is returned as-is.
+  </para>
+-->
+<para>
+<productname>PostgreSQL</productname>创建一个类型为<replaceable class="PARAMETER">stype</replaceable>的临时变量。
+它保存这个聚集的当前内部状态。对于每个输入数据条目，都调用状态转换函数计算内部状态值的新数值。 
+在处理完所有数据后，调用一次最终处理函数以计算聚集的返回值。如果没有最终处理函数， 则将最后的状态值当做返回值。 
+</para>
+
+  <!--
+<para>
+   An aggregate function can provide an initial condition,
+   that is, an initial value for the internal state value.
+   This is specified and stored in the database as a value of type
+   <type>text</type>, but it must be a valid external representation
+   of a constant of the state value data type.  If it is not supplied
+   then the state value starts out null.
+  </para>
+-->
+<para>
+一个聚集函数还可能提供一个初始条件，也就是内部状态值的初始值。
+这个值是作为一个类型为<type>text</type>的字段存储在数据库里的，不过它们必须是状态值数据类型的合法的外部 表现形式的常量。
+如果没有提供状态，那么状态值初始化为 NULL 。 
+</para>
+
+<!--
+<para>
+   If the state transition function is declared <quote>strict</quote>,
+   then it cannot be called with null inputs.  With such a transition
+   function, aggregate execution behaves as follows.  Rows with any null input
+   values are ignored (the function is not called and the previous state value
+   is retained).  If the initial state value is null, then at the first row
+   with all-nonnull input values, the first argument value replaces the state
+   value, and the transition function is invoked at subsequent rows with
+   all-nonnull input values.
+   This is handy for implementing aggregates like <function>max</function>.
+   Note that this behavior is only available when
+   <replaceable class="PARAMETER">state_data_type</replaceable>
+   is the same as the first
+   <replaceable class="PARAMETER">input_data_type</replaceable>.
+   When these types are different, you must supply a nonnull initial
+   condition or use a nonstrict transition function.
+  </para>
+-->
+<para>
+如果该状态转换函数被定义为<quote>strict</quote>，那么就不能用 NULL 输入调用它。
+此时， 聚集的执行如下所述。带有任何 NULL 输入值的行将被忽略(不调用此函数并且保留前一个状态值)。 
+如果初始状态值是 NULL ，那么在第一个含有非 NULL 值的行上，使用第一个参数值替换状态值， 然后状态转换函数在随后所有的含有非 NULL 值的行上调用。
+这样做让比较容易实现像<function>max</function>这样的聚集。
+请注意这种行为只是当<replaceable class="PARAMETER">state_data_type</replaceable>与<replaceable class="PARAMETER">input_data_type</replaceable>相同的时候才表现出来。 
+如果这些类型不同，你必须提供一个非 NULL 的初始条件或者使用一个非"strict"的状态转换函数。 
+</para>
+
+  <!--
+<para>
+   If the state transition function is not strict, then it will be called
+   unconditionally at each input row, and must deal with null inputs
+   and null transition values for itself.  This allows the aggregate
+   author to have full control over the aggregate's handling of null values.
+  </para>
+-->
+<para>
+如果状态转换函数不是严格(strict)的，那么它将无条件地在每个输入行上调用，并且必须自行处理 NULL 输入和NULL 转换值，这样就允许聚集的作者对聚集中的 NULL 有完全的控制。 
+</para>
+
+  <!--
+<para>
+   If the final function is declared <quote>strict</quote>, then it will not
+   be called when the ending state value is null; instead a null result
+   will be returned automatically.  (Of course this is just the normal
+   behavior of strict functions.)  In any case the final function has
+   the option of returning a null value.  For example, the final function for
+   <function>avg</function> returns null when it sees there were zero
+   input rows.
+  </para>
+-->
+<para>
+如果最终转换函数定义为<quote>strict</quote>，那么如果最终状态值是NULL 时就不会调用它； 
+而是自动输出一个 NULL 结果。(这才是 strict 函数的正常特征。)
+不管是那种情况，最终处理函数 可以自由选择是否返回 NULL 。
+比如，<function>avg</function>的最终处理函数在零输入记录时 就会返回 NULL 。 
+</para>
+
+  <!--
+<para>
+   Aggregates that behave like <function>MIN</> or <function>MAX</> can
+   sometimes be optimized by looking into an index instead of scanning every
+   input row.  If this aggregate can be so optimized, indicate it by
+   specifying a <firstterm>sort operator</>.  The basic requirement is that
+   the aggregate must yield the first element in the sort ordering induced by
+   the operator; in other words:
+<programlisting>
+SELECT agg(col) FROM tab;
+</programlisting>
+   must be equivalent to:
+<programlisting>
+SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;
+</programlisting>
+   Further assumptions are that the aggregate ignores null inputs, and that
+   it delivers a null result if and only if there were no non-null inputs.
+   Ordinarily, a data type's <literal>&lt;</> operator is the proper sort
+   operator for <function>MIN</>, and <literal>&gt;</> is the proper sort
+   operator for <function>MAX</>.  Note that the optimization will never
+   actually take effect unless the specified operator is the <quote>less
+   than</quote> or <quote>greater than</quote> strategy member of a B-tree
+   index operator class.
+  </para>
+-->
+<para>
+行为类似<function>MIN</>或<function>MAX</>的聚集有时候可以优化为使用索引，而不用扫描 每个输入行。
+如果这个聚集可以如此优化，则用一个<firstterm>排序操作符</>标识它。
+这里基本的要求是聚集 必须以操作符归纳出来的排序顺序生成第一个元素；换句话说：
+<programlisting>
+SELECT agg(col) FROM tab;
+</programlisting>
+必须等于： 
+<programlisting>
+SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;
+</programlisting>
+更多的假设是聚集忽略 NULL 输入，并且只有在输入没有非空数值的时候，它才生成NULL结果。 
+通常，数据类型的 <literal>&lt;</> 操作符是<function>MIN</>的适用排序操作符，而 <literal>&gt;</> 是<function>MAX</> 的适用操作符。
+请注意，除非声明的操作符是 B-tree 索引操作符类的<quote>小于</quote>或者<quote>大于</quote>策略号， 否则这种优化将不会生效。 
+</para>
+
+  <!--
+<para>
+   To be able to create an aggregate function, you must
+   have <literal>USAGE</literal> privilege on the argument types, the state
+   type, and the return type, as well as <literal>EXECUTE</literal> privilege
+   on the transition and final functions.
+  </para>
+-->
+<para>
+要创建聚集函数，你必须具有相关参数类型、状态类型和返回类型的<literal>使用</literal>权限，也必须具有转换函数和最终函数的<literal>执行</literal>权限。
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Parameters</title>
+-->
+<title>参数</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="PARAMETER">name</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The name (optionally schema-qualified) of the aggregate function
+      to create.
+     </para>
+-->
+<para>
+要创建的聚集函数名(可以有模式修饰) 。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">input_data_type</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      An input data type on which this aggregate function operates.
+      To create a zero-argument aggregate function, write <literal>*</>
+      in place of the list of input data types.  (An example of such an
+      aggregate is <function>count(*)</function>.)
+     </para>
+-->
+<para>
+该聚集函数要处理的输入数据类型。要创建一个零参数聚集函数，可以使用<literal>*</>代替输入数据类型列表。
+（<function>count(*)</function>就是这种聚集函数的一个实例。 ）
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">base_type</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      In the old syntax for <command>CREATE AGGREGATE</>, the input data type
+      is specified by a <literal>basetype</> parameter rather than being
+      written next to the aggregate name.  Note that this syntax allows
+      only one input parameter.  To define a zero-argument aggregate function,
+      specify the <literal>basetype</> as
+      <literal>"ANY"</> (not <literal>*</>).
+     </para>
+-->
+<para>
+在以前的<command>CREATE AGGREGATE</>语法中，输入数据类型是通过<literal>basetype</>参数指定的，而不是写在聚集的名称之后。
+需要注意的是这种以前语法仅允许一个输入参数。 要创建一个零参数聚集函数，可以将<literal>basetype</>指定为<literal>"ANY"</>(而不是<literal>*</>)。 
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">sfunc</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The name of the state transition function to be called for each
+      input row.  For an <replaceable class="PARAMETER">N</>-argument
+      aggregate function, the <replaceable class="PARAMETER">sfunc</>
+      must take <replaceable class="PARAMETER">N</>+1 arguments,
+      the first being of type <replaceable
+      class="PARAMETER">state_data_type</replaceable> and the rest
+      matching the declared input data type(s) of the aggregate.
+      The function must return a value of type <replaceable
+      class="PARAMETER">state_data_type</replaceable>.  This function
+      takes the current state value and the current input data value(s),
+      and returns the next state value.
+     </para>
+-->
+<para>
+将在每一个输入行上调用的状态转换函数的名称。
+对于有<replaceable class="PARAMETER">N</>个参数的聚集函数，<replaceable class="PARAMETER">sfunc</>必须有 <replaceable class="PARAMETER">+1 </>个参数，其中的第一个参数类型为<replaceable class="PARAMETER">state_data_type</replaceable>，其余的匹配已声明的输入数据类型。
+函数必须返回一个<replaceable class="PARAMETER">state_data_type</replaceable>类型的值。
+这个函数接受当前状态值和当前输入数据，并返回下个状态值。 
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">state_data_type</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The data type for the aggregate's state value.
+     </para>
+-->
+<para>
+聚集的状态值的数据类型。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">ffunc</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The name of the final function called to compute the aggregate's
+      result after all input rows have been traversed.  The function
+      must take a single argument of type <replaceable
+      class="PARAMETER">state_data_type</replaceable>.  The return
+      data type of the aggregate is defined as the return type of this
+      function.  If <replaceable class="PARAMETER">ffunc</replaceable>
+      is not specified, then the ending state value is used as the
+      aggregate's result, and the return type is <replaceable
+      class="PARAMETER">state_data_type</replaceable>.
+     </para>
+-->
+<para>
+在转换完所有输入行后调用的最终处理函数，它计算聚集的结果。
+此函数必须接受一个类型为<replaceable class="PARAMETER">state_data_type</replaceable>的参数。
+聚集的输出数据 类型被定义为此函数的返回类型。
+如果没有声明<replaceable class="PARAMETER">ffunc</replaceable>则使用聚集结果的状态值作为聚集的结果，且输出类型为<replaceable class="PARAMETER">state_data_type</replaceable>。 
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">initial_condition</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The initial setting for the state value.  This must be a string
+      constant in the form accepted for the data type <replaceable
+      class="PARAMETER">state_data_type</replaceable>.  If not
+      specified, the state value starts out null.
+     </para>
+-->
+<para>
+状态值的初始设置(值)。
+它必须是一个<replaceable class="PARAMETER">state_data_type</replaceable>类型可以接受的文本常量值。
+如果没有声明，状态值初始为 NULL 。 
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="PARAMETER">sort_operator</replaceable></term>
+    <listitem>
+     <!--
+<para>
+      The associated sort operator for a <function>MIN</>- or
+      <function>MAX</>-like aggregate.
+      This is just an operator name (possibly schema-qualified).
+      The operator is assumed to have the same input data types as
+      the aggregate (which must be a single-argument aggregate).
+     </para>
+-->
+<para>
+用于<function>MIN</>或<function>MAX</>类型聚集的排序操作符。
+这个只是一个操作符名 (可以有模式修饰)。这个操作符假设接受和聚集一样的输入数据类型。 
+</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <!--
+<para>
+   The parameters of <command>CREATE AGGREGATE</command> can be
+   written in any order, not just the order illustrated above.
+  </para>
+-->
+<para>
+<command>CREATE AGGREGATE</command>的参数可以以任何顺序书写，而不只是上面显示的顺序。 
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Examples</title>
+-->
+<title>例子</title>
+
+  <!--
+<para>
+   See <xref linkend="xaggr">.
+  </para>
+-->
+<para>
+参见<xref linkend="xaggr">。
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Compatibility</title>
+-->
+<title>兼容性</title>
+
+  <!--
+<para>
+   <command>CREATE AGGREGATE</command> is a
+   <productname>PostgreSQL</productname> language extension.  The SQL
+   standard does not provide for user-defined aggregate functions.
+  </para>
+-->
+<para>
+<command>CREATE AGGREGATE</command>是<productname>PostgreSQL</productname>语言的扩展。
+SQL标准没有提供用户自定义聚集函数的功能。 
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>See Also</title>
+-->
+<title>参见</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteraggregate"></member>
+   <member><xref linkend="sql-dropaggregate"></member>
+  </simplelist>
+ </refsect1>
+</refentry>

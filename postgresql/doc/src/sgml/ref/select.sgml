@@ -1,0 +1,3055 @@
+<!--
+doc/src/sgml/ref/select.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="SQL-SELECT">
+ <refmeta>
+  <refentrytitle>SELECT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <!--
+<refmiscinfo>SQL - Language Statements</refmiscinfo>
+-->
+<refmiscinfo>SQL - 语句</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SELECT</refname>
+  <refname>TABLE</refname>
+  <refname>WITH</refname>
+  <!-- 
+  <refpurpose>retrieve rows from a table or view</refpurpose> 
+  -->
+  <refpurpose>从表或视图中取出若干行</refpurpose>
+ </refnamediv>
+
+ <indexterm zone="sql-select">
+  <primary>SELECT</primary>
+ </indexterm>
+
+ <indexterm zone="sql-select">
+  <primary>TABLE command</primary>
+ </indexterm>
+
+ <indexterm zone="sql-select">
+  <primary>WITH</primary>
+  <secondary>in SELECT</secondary>
+ </indexterm>
+
+ <refsynopsisdiv>
+<synopsis>
+[ WITH [ RECURSIVE ] <replaceable class="parameter">with_query</replaceable> [, ...] ]
+SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replaceable> [, ...] ) ] ]
+    * | <replaceable class="parameter">expression</replaceable> [ [ AS ] <replaceable class="parameter">output_name</replaceable> ] [, ...]
+    [ FROM <replaceable class="parameter">from_item</replaceable> [, ...] ]
+    [ WHERE <replaceable class="parameter">condition</replaceable> ]
+    [ GROUP BY <replaceable class="parameter">expression</replaceable> [, ...] ]
+    [ HAVING <replaceable class="parameter">condition</replaceable> [, ...] ]
+    [ WINDOW <replaceable class="parameter">window_name</replaceable> AS ( <replaceable class="parameter">window_definition</replaceable> ) [, ...] ]
+    [ { UNION | INTERSECT | EXCEPT } [ ALL | DISTINCT ] <replaceable class="parameter">select</replaceable> ]
+    [ ORDER BY <replaceable class="parameter">expression</replaceable> [ ASC | DESC | USING <replaceable class="parameter">operator</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+    [ LIMIT { <replaceable class="parameter">count</replaceable> | ALL } ]
+    [ OFFSET <replaceable class="parameter">start</replaceable> [ ROW | ROWS ] ]
+    [ FETCH { FIRST | NEXT } [ <replaceable class="parameter">count</replaceable> ] { ROW | ROWS } ONLY ]
+    [ FOR { UPDATE | NO KEY UPDATE | SHARE | KEY SHARE } [ OF <replaceable class="parameter">table_name</replaceable> [, ...] ] [ NOWAIT ] [...] ]
+
+<!-- 
+<phrase>where <replaceable class="parameter">from_item</replaceable> can be one of:</phrase> 
+-->
+<phrase>这里的<replaceable class="parameter">from_item</replaceable> 可以是:</phrase>
+
+    [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
+    [ LATERAL ] ( <replaceable class="parameter">select</replaceable> ) [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ]
+    <replaceable class="parameter">with_query_name</replaceable> [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
+    [ LATERAL ] <replaceable class="parameter">function_name</replaceable> ( [ <replaceable class="parameter">argument</replaceable> [, ...] ] ) [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] | <replaceable class="parameter">column_definition</replaceable> [, ...] ) ]
+    [ LATERAL ] <replaceable class="parameter">function_name</replaceable> ( [ <replaceable class="parameter">argument</replaceable> [, ...] ] ) AS ( <replaceable class="parameter">column_definition</replaceable> [, ...] )
+    <replaceable class="parameter">from_item</replaceable> [ NATURAL ] <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable> [ ON <replaceable class="parameter">join_condition</replaceable> | USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) ]
+
+<!-- 
+<phrase>and <replaceable class="parameter">with_query</replaceable> is:</phrase> 
+-->
+<phrase><replaceable class="parameter">with_query</replaceable>是:</phrase>
+
+    <replaceable class="parameter">with_query_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] AS ( <replaceable class="parameter">select</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
+
+TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
+</synopsis>
+
+ </refsynopsisdiv>
+
+ <refsect1>
+  <!--
+<title>Description</title>
+-->
+<title>描述</title>
+
+  
+<para>
+<!-- 
+   <command>SELECT</command> retrieves rows from zero or more tables.
+   The general processing of <command>SELECT</command> is as follows:
+-->
+<command>SELECT</command>将从零个或更多表中返回记录行。<command>SELECT</command>通常的处理如下：
+   <orderedlist>
+    <listitem>
+<!--
+     <para>
+      All queries in the <literal>WITH</literal> list are computed.
+      These effectively serve as temporary tables that can be referenced
+      in the <literal>FROM</literal> list.  A <literal>WITH</literal> query
+      that is referenced more than once in <literal>FROM</literal> is
+      computed only once.
+      (See <xref linkend="sql-with" endterm="sql-with-title"> below.)
+     </para>
+-->
+<para>
+计算列出在<literal>WITH</literal>中的所有查询。这些有效的充当可以在
+<literal>FROM</literal>列表中引用的临时表。一个在<literal>FROM</literal>
+中多次引用的<literal>WITH</literal>查询只计算一次。（参阅下面的
+<xref linkend="sql-with" endterm="sql-with-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      All elements in the <literal>FROM</literal> list are computed.
+      (Each element in the <literal>FROM</literal> list is a real or
+      virtual table.)  If more than one element is specified in the
+      <literal>FROM</literal> list, they are cross-joined together.
+      (See <xref linkend="sql-from" endterm="sql-from-title"> below.)
+     </para>
+-->
+<para>
+计算列出在<literal>FROM</literal>中的所有元素(<literal>FROM</literal>
+列表中的每个元素都是一个实际的或虚拟的表)。如果在<literal>FROM</literal>
+列表里声明了多个元素，那么他们就交叉连接在一起(参见下面的
+<xref linkend="sql-from" endterm="sql-from-title">)。
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      If the <literal>WHERE</literal> clause is specified, all rows
+      that do not satisfy the condition are eliminated from the
+      output.  (See <xref linkend="sql-where"
+      endterm="sql-where-title"> below.)
+     </para>
+-->
+<para>
+如果声明了<literal>WHERE</literal>子句，那么在输出中消除所有不满足条件的行。
+（参见下面的<xref linkend="sql-where" endterm="sql-where-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      If the <literal>GROUP BY</literal> clause is specified, the
+      output is combined into groups of rows that match on one or more
+      values.  If the <literal>HAVING</literal> clause is present, it
+      eliminates groups that do not satisfy the given condition.  (See
+      <xref linkend="sql-groupby" endterm="sql-groupby-title"> and
+      <xref linkend="sql-having" endterm="sql-having-title"> below.)
+     </para>
+-->
+<para>
+如果声明了<literal>GROUP BY</literal>子句，输出就组合成匹配一个或多个数值的不同组里。
+如果出现了<literal>HAVING</literal>子句，那么它消除那些不满足给出条件的组。
+（参见下面的<xref linkend="sql-groupby" endterm="sql-groupby-title"> 和
+<xref linkend="sql-having" endterm="sql-having-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      The actual output rows are computed using the
+      <command>SELECT</command> output expressions for each selected
+      row or row group.  (See
+      <xref linkend="sql-select-list" endterm="sql-select-list-title">
+      below.)
+     </para>
+-->
+<para>
+实际输出行将使用<command>SELECT</command>输出表达式针对每一个选中的行或行组进行计算。
+（参见下面的<xref linkend="sql-select-list" endterm="sql-select-list-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para><literal>SELECT DISTINCT</literal> eliminates duplicate rows from the
+      result.  <literal>SELECT DISTINCT ON</literal> eliminates rows that
+      match on all the specified expressions.  <literal>SELECT ALL</literal>
+      (the default) will return all candidate rows, including
+      duplicates.  (See <xref linkend="sql-distinct"
+      endterm="sql-distinct-title"> below.)
+     </para>
+-->
+<para>
+<literal>SELECT DISTINCT</literal>从结果中消除重复的行。<literal>SELECT DISTINCT ON</literal>
+消除匹配所有指定表达式的行。<literal>SELECT ALL</literal>（缺省）返回所有的行，
+包括重复的行。（参阅下面的<xref linkend="sql-distinct" endterm="sql-distinct-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      Using the operators <literal>UNION</literal>,
+      <literal>INTERSECT</literal>, and <literal>EXCEPT</literal>, the
+      output of more than one <command>SELECT</command> statement can
+      be combined to form a single result set.  The
+      <literal>UNION</literal> operator returns all rows that are in
+      one or both of the result sets.  The
+      <literal>INTERSECT</literal> operator returns all rows that are
+      strictly in both result sets.  The <literal>EXCEPT</literal>
+      operator returns the rows that are in the first result set but
+      not in the second.  In all three cases, duplicate rows are
+      eliminated unless <literal>ALL</literal> is specified.  The noise
+      word <literal>DISTINCT</> can be added to explicitly specify
+      eliminating duplicate rows.  Notice that <literal>DISTINCT</> is
+      the default behavior here, even though <literal>ALL</literal> is
+      the default for <command>SELECT</> itself.  (See
+      <xref linkend="sql-union" endterm="sql-union-title">, <xref
+      linkend="sql-intersect" endterm="sql-intersect-title">, and
+      <xref linkend="sql-except" endterm="sql-except-title"> below.)
+     </para>
+-->
+<para>
+使用<literal>UNION</literal>, <literal>INTERSECT</literal>, <literal>EXCEPT</literal>
+可以把多个<command>SELECT</command>语句的输出合并成一个结果集。<literal>UNION</literal>
+操作符返回两个结果集的并集。<literal>INTERSECT</literal>操作符返回两个结果集的交集。
+<literal>EXCEPT</literal>操作符返回在第一个结果集对第二个结果集的差集。不管哪种情况，
+重复的行都被删除，除非声明了<literal>ALL</literal>。噪声字<literal>DISTINCT</>
+可以用来明确的声明消除重复的行。请注意，<literal>DISTINCT</>在这里是缺省的行为，
+即使<literal>ALL</literal>是<command>SELECT</>本身的缺省。
+（参阅下面的<xref linkend="sql-union" endterm="sql-union-title">、<xref
+      linkend="sql-intersect" endterm="sql-intersect-title">、
+  <xref linkend="sql-except" endterm="sql-except-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      If the <literal>ORDER BY</literal> clause is specified, the
+      returned rows are sorted in the specified order.  If
+      <literal>ORDER BY</literal> is not given, the rows are returned
+      in whatever order the system finds fastest to produce.  (See
+      <xref linkend="sql-orderby" endterm="sql-orderby-title"> below.)
+     </para>
+-->
+<para>
+如果声明了<literal>ORDER BY</literal>子句，那么返回的行将按照指定的顺序排序。
+如果没有给出<literal>ORDER BY</literal>，那么数据行是按照系统认为可以最快生成的顺序给出的。
+（参阅下面的<xref linkend="sql-orderby" endterm="sql-orderby-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      If the <literal>LIMIT</literal> (or <literal>FETCH FIRST</literal>) or <literal>OFFSET</literal>
+      clause is specified, the <command>SELECT</command> statement
+      only returns a subset of the result rows. (See <xref
+      linkend="sql-limit" endterm="sql-limit-title"> below.)
+     </para>
+-->
+<para>
+如果给出了<literal>LIMIT</literal>(或 <literal>FETCH FIRST</literal>)或
+<literal>OFFSET</literal>子句，那么<command>SELECT</command>语句只返回结果行的一个子集。
+（参阅下面的<xref linkend="sql-limit" endterm="sql-limit-title">。）
+</para>
+    </listitem>
+
+    <listitem>
+     <!--
+<para>
+      If <literal>FOR UPDATE</>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR SHARE</literal>
+      or <literal>FOR KEY SHARE</literal>
+      is specified, the
+      <command>SELECT</command> statement locks the selected rows
+      against concurrent updates.  (See <xref linkend="sql-for-update-share"
+      endterm="sql-for-update-share-title"> below.)
+     </para>
+-->
+<para>
+如果声明了<literal>FOR UPDATE</>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR SHARE</literal>
+或<literal>FOR KEY SHARE</literal>子句，那么<command>SELECT</command>语句对并发的更新锁住选定的行。
+（参阅下面的<xref linkend="sql-for-update-share" endterm="sql-for-update-share-title">子句。）
+</para>
+    </listitem>
+   </orderedlist>
+  </para>
+
+  <!--
+<para>
+   You must have <literal>SELECT</literal> privilege on each column used
+   in a <command>SELECT</> command.  The use of <literal>FOR NO KEY UPDATE</>,
+   <literal>FOR UPDATE</literal>,
+   <literal>FOR SHARE</literal> or <literal>FOR KEY SHARE</literal> requires
+   <literal>UPDATE</literal> privilege as well (for at least one column
+   of each table so selected).
+  </para>
+-->
+<para>
+你必须对每个在<literal>SELECT</literal>命令中使用的字段有<literal>SELECT</literal>权限。
+使用<literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal>
+或<literal>FOR KEY SHARE</literal>还要求<literal>UPDATE</literal>权限
+（至少选择每个表的一列）。
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Parameters</title>
+-->
+<title>参数</title>
+
+  <refsect2 id="SQL-WITH">
+   <!-- 
+   <title id="sql-with-title"><literal>WITH</literal> Clause</title> 
+   -->
+   <title id="sql-with-title"><literal>WITH</literal> 子句</title>
+
+   <!--
+<para>
+    The <literal>WITH</literal> clause allows you to specify one or more
+    subqueries that can be referenced by name in the primary query.
+    The subqueries effectively act as temporary tables or views
+    for the duration of the primary query.
+    Each subquery can be a <command>SELECT</command>, <command>VALUES</command>,
+    <command>INSERT</command>, <command>UPDATE</command> or
+    <command>DELETE</command> statement.
+    When writing a data-modifying statement (<command>INSERT</command>,
+    <command>UPDATE</command> or <command>DELETE</command>) in
+    <literal>WITH</>, it is usual to include a <literal>RETURNING</> clause.
+    It is the output of <literal>RETURNING</>, <emphasis>not</> the underlying
+    table that the statement modifies, that forms the temporary table that is
+    read by the primary query.  If <literal>RETURNING</> is omitted, the
+    statement is still executed, but it produces no output so it cannot be
+    referenced as a table by the primary query.
+   </para>
+-->
+<para>
+<literal>WITH</literal>子句允许声明一个或多个可以在主查询中通过名字引用的子查询。
+子查询在主查询期间有效的充当临时表或视图。每个子查询可以是<command>SELECT</command>, 
+<command>VALUES</command>, <command>INSERT</command>, <command>UPDATE</command> 或
+<command>DELETE</command>语句。当在<literal>WITH</>中写一个数据修改语句时
+（<command>INSERT</command>, <command>UPDATE</command> 或 <command>DELETE</command>），
+通常包含一个<literal>RETURNING</>子句。<literal>RETURNING</>的输出而<emphasis>不是</>
+语句修改的底层表的输出形成被主查询读取的临时表。如果省略了<literal>RETURNING</>，
+该语句仍然执行，但是不会产生输出，所以不能作为一个表被主查询引用。
+</para>
+
+   <!--
+<para>
+    A name (without schema qualification) must be specified for each
+    <literal>WITH</literal> query.  Optionally, a list of column names
+    can be specified; if this is omitted,
+    the column names are inferred from the subquery.
+   </para>
+-->
+<para>
+必须为每个<literal>WITH</literal>查询声明一个名字（没有模式修饰）。
+可选的，可以指定字段名的列表；如果省略了，那么字段名从子查询中推断出。
+</para>
+
+   <!--
+<para>
+    If <literal>RECURSIVE</literal> is specified, it allows a
+    <command>SELECT</command> subquery to reference itself by name.  Such a
+    subquery must have the form
+<synopsis>
+<replaceable class="parameter">non_recursive_term</replaceable> UNION [ ALL | DISTINCT ] <replaceable class="parameter">recursive_term</replaceable>
+</synopsis>
+    where the recursive self-reference must appear on the right-hand
+    side of the <literal>UNION</>.  Only one recursive self-reference
+    is permitted per query.  Recursive data-modifying statements are not
+    supported, but you can use the results of a recursive
+    <command>SELECT</command> query in
+    a data-modifying statement.  See <xref linkend="queries-with"> for
+    an example.
+   </para>
+-->
+<para>
+如果声明了<literal>RECURSIVE</literal>，那么允许<command>SELECT</command>子查询通过名字引用它自己。
+比如一个有下面形式的子查询
+<synopsis>
+<replaceable class="parameter">non_recursive_term</replaceable> UNION [ ALL | DISTINCT ] <replaceable class="parameter">recursive_term</replaceable>
+</synopsis>
+递归的自我引用必须在<literal>UNION</>的右边出现。每个查询只允许一个递归的自我引用。
+不支持递归的数据修改语句，但是可以在数据修改语句中使用递归的<command>SELECT</command>
+查询的结果。参阅<xref linkend="queries-with">获取一个例子。
+</para>
+
+   <!--
+<para>
+    Another effect of <literal>RECURSIVE</literal> is that
+    <literal>WITH</literal> queries need not be ordered: a query
+    can reference another one that is later in the list.  (However,
+    circular references, or mutual recursion, are not implemented.)
+    Without <literal>RECURSIVE</literal>, <literal>WITH</literal> queries
+    can only reference sibling <literal>WITH</literal> queries
+    that are earlier in the <literal>WITH</literal> list.
+   </para>
+-->
+<para>
+<literal>RECURSIVE</literal>的另外一个作用是<literal>WITH</literal>查询不需要排序：
+一个查询可以引用另外一个稍后出现在列表中的查询。（但是，循环引用或相互递归没有实现。）
+没有<literal>RECURSIVE</literal>，<literal>WITH</literal>查询只能引用
+更早出现在<literal>WITH</literal>列表中的同层级的<literal>WITH</literal>查询。
+</para>
+
+   <!--
+<para>
+    A key property of <literal>WITH</literal> queries is that they
+    are evaluated only once per execution of the primary query,
+    even if the primary query refers to them more than once.
+    In particular, data-modifying statements are guaranteed to be
+    executed once and only once, regardless of whether the primary query
+    reads all or any of their output.
+   </para>
+-->
+<para>
+<literal>WITH</literal>查询的主要特性是他们只在主查询的每次执行中评估一次，
+即使主查询引用了他们多次也是如此。特别的，保证数据修改语句只被执行一次，
+不管主查询读取他们的所有或任意的输出。
+</para>
+
+   <!--
+<para>
+    The primary query and the <literal>WITH</literal> queries are all
+    (notionally) executed at the same time.  This implies that the effects of
+    a data-modifying statement in <literal>WITH</literal> cannot be seen from
+    other parts of the query, other than by reading its <literal>RETURNING</>
+    output.  If two such data-modifying statements attempt to modify the same
+    row, the results are unspecified.
+   </para>
+-->
+<para>
+主查询和<literal>WITH</literal>查询（理论上）同时执行。这意味着<literal>WITH</literal>
+中的数据修改语句的影响不能从查询的其他部分看到，除非读取它的<literal>RETURNING</>
+输出。如果两个这样的数据修改语句尝试修改相同的行，那么结果是未知的。
+</para>
+
+   <!--
+<para>
+    See <xref linkend="queries-with"> for additional information.
+   </para>
+-->
+<para>
+参阅<xref linkend="queries-with">获取额外的信息。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-FROM">
+   <!-- 
+   <title id="sql-from-title"><literal>FROM</literal> Clause</title> 
+   -->
+   <title id="sql-from-title"><literal>FROM</literal> 子句</title>
+
+   <!--
+<para>
+    The <literal>FROM</literal> clause specifies one or more source
+    tables for the <command>SELECT</command>.  If multiple sources are
+    specified, the result is the Cartesian product (cross join) of all
+    the sources.  But usually qualification conditions are added (via
+    <literal>WHERE</>) to restrict the returned rows to a small subset of the
+    Cartesian product.
+   </para>
+-->
+<para>
+<literal>FROM</literal>子句为<command>SELECT</command>声明一个或者多个源表。如果声明了多个源表，
+那么结果就是所有源表的笛卡儿积(交叉连接)。但是通常会添加一些条件（通过<literal>WHERE</>），
+把返回行限制成笛卡儿积的一个小的子集。
+</para>
+
+   
+<para>
+    <!-- 
+The <literal>FROM</literal> clause can contain the following
+    elements: 
+-->
+<literal>FROM</literal>子句可以包括下列元素：
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">table_name</replaceable></term>
+      <listitem>
+<!--
+       <para>
+        The name (optionally schema-qualified) of an existing table or view.
+        If <literal>ONLY</> is specified before the table name, only that
+        table is scanned.  If <literal>ONLY</> is not specified, the table
+        and all its descendant tables (if any) are scanned.  Optionally,
+        <literal>*</> can be specified after the table name to explicitly
+        indicate that descendant tables are included.
+       </para>
+-->
+<para>
+一个现存的表或视图的名字(可以有模式修饰)。如果声明了<literal>ONLY</>，则只扫描该表；
+否则，该表和所有其派生表(如果有的话)都被扫描。可以在表名后面跟一个<literal>*</>
+表示扫描所有其后代表。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">alias</replaceable></term>
+      <listitem>
+       <!--
+<para>
+        A substitute name for the <literal>FROM</> item containing the
+        alias.  An alias is used for brevity or to eliminate ambiguity
+        for self-joins (where the same table is scanned multiple
+        times).  When an alias is provided, it completely hides the
+        actual name of the table or function; for example given
+        <literal>FROM foo AS f</>, the remainder of the
+        <command>SELECT</command> must refer to this <literal>FROM</>
+        item as <literal>f</> not <literal>foo</>.  If an alias is
+        written, a column alias list can also be written to provide
+        substitute names for one or more columns of the table.
+       </para>
+-->
+<para>
+为那些包含别名的<literal>FROM</>项目取的别名。别名用于缩写或者在自连接中消除歧义
+(自连接中同一个表将扫描多次)。如果提供了别名，那么它就会完全隐藏表或者函数的实际名字；
+比如，如果给出<literal>FROM foo AS f</>，那么<command>SELECT</command>
+剩下的东西必须把这个<literal>FROM</>项按照<literal>f</>而不是<literal>foo</>引用。
+如果写了别名，也可以提供一个字段别名列表，这样可以替换表中一个或者多个字段的名字。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">select</replaceable></term>
+      <listitem>
+       <!--
+<para>
+        A sub-<command>SELECT</command> can appear in the
+        <literal>FROM</literal> clause.  This acts as though its
+        output were created as a temporary table for the duration of
+        this single <command>SELECT</command> command.  Note that the
+        sub-<command>SELECT</command> must be surrounded by
+        parentheses, and an alias <emphasis>must</emphasis> be
+        provided for it.  A
+        <xref linkend="sql-values"> command
+        can also be used here.
+       </para>
+-->
+<para>
+可以在<literal>FROM</literal>子句里出现一个子<command>SELECT</command>。
+它的输出作用好像是为这条<command>SELECT</command>命令在其生存期里创建一个临时表。
+请注意这个子<command>SELECT</command>必须用园括弧包围。并且<emphasis>必须</emphasis>给它一个别名。
+当然，<xref linkend="sql-values">同样也可以在这里使用。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">with_query_name</replaceable></term>
+      <listitem>
+       <!--
+<para>
+        A <literal>WITH</> query is referenced by writing its name,
+        just as though the query's name were a table name.  (In fact,
+        the <literal>WITH</> query hides any real table of the same name
+        for the purposes of the primary query.  If necessary, you can
+        refer to a real table of the same name by schema-qualifying
+        the table's name.)
+        An alias can be provided in the same way as for a table.
+       </para>
+-->
+<para>
+<literal>WITH</>查询通过写它自己的名字来引用，就像查询的名字就是一个表的名字。
+（实际上，<literal>WITH</>查询为主查询隐藏了相同名字的任意实际表。
+如果需要，可以通过模式限定表的名字来引用相同名字的实际表。）别名可以用相同的方式提供给表。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">function_name</replaceable></term>
+      <listitem>
+       <!--
+<para>
+        Function calls can appear in the <literal>FROM</literal>
+        clause.  (This is especially useful for functions that return
+        result sets, but any function can be used.)  This acts as
+        though its output were created as a temporary table for the
+        duration of this single <command>SELECT</command> command. An
+        alias can also be used. If an alias is written, a column alias
+        list can also be written to provide substitute names for one
+        or more attributes of the function's composite return type. If
+        the function has been defined as returning the <type>record</>
+        data type, then an alias or the key word <literal>AS</> must
+        be present, followed by a column definition list in the form
+        <literal>( <replaceable
+        class="parameter">column_name</replaceable> <replaceable
+        class="parameter">data_type</replaceable> <optional>, ... </>
+        )</literal>.  The column definition list must match the actual
+        number and types of columns returned by the function.
+       </para>
+-->
+<para>
+函数(特别是那些返回结果集的函数)调用可以出现在<literal>FROM</literal>子句里。
+这么做就好像在这个<command>SELECT</command>命令的生命期中，把函数的输出创建为一个临时表一样。
+当然也可以使用别名。如果写了别名，还可以写一个字段别名列表，
+为函数返回的复合类型的一个或多个属性提供名字替换。如果函数定义为返回<type>record</>类型，
+那么必须出现一个<literal>AS</>关键字或者别名，后面跟着一个形如 
+<literal>( <replaceable class="parameter">column_name</replaceable> <replaceable
+        class="parameter">data_type</replaceable> <optional>, ... </>
+        )</literal>的字段定义列表。这个字段定义列表必须匹配函数返回的字段的实际数目和类型。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">join_type</replaceable></term>
+      <listitem>
+  
+<para>
+        <!-- One of -->
+下列之一：
+        <itemizedlist>
+         <listitem>
+          <para><literal>[ INNER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+ <para><literal>LEFT [ OUTER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+ <para><literal>RIGHT [ OUTER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+ <para><literal>FULL [ OUTER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+ <para><literal>CROSS JOIN</literal></para>
+         </listitem>
+        </itemizedlist>
+
+        <!-- 
+For the <literal>INNER</> and <literal>OUTER</> join types, a
+        join condition must be specified, namely exactly one of
+        <literal>NATURAL</>, <literal>ON <replaceable
+        class="parameter">join_condition</replaceable></literal>, or
+        <literal>USING (<replaceable
+        class="parameter">join_column</replaceable> [, ...])</literal>.
+        See below for the meaning.  For <literal>CROSS JOIN</literal>,
+        none of these clauses can appear. 
+-->
+必须为<literal>INNER</>和<literal>OUTER</>连接类型声明一个连接条件，
+也就是<literal>NATURAL</>, <literal>ON <replaceable
+        class="parameter">join_condition</replaceable></literal>, or
+        <literal>USING (<replaceable
+        class="parameter">join_column</replaceable> [, ...])</literal> 之一。
+它们的含义见下文，对于<literal>CROSS JOIN</literal>而言，这些子句都不能出现。
+       </para>
+
+       <!--
+<para>
+        A <literal>JOIN</literal> clause combines two <literal>FROM</>
+        items, which for convenience we will refer to as <quote>tables</>,
+        though in reality they can be any type of <literal>FROM</> item.
+        Use parentheses if necessary to determine the order of nesting.
+        In the absence of parentheses, <literal>JOIN</literal>s nest
+        left-to-right.  In any case <literal>JOIN</literal> binds more
+        tightly than the commas separating <literal>FROM</>-list items.
+       </para>
+-->
+<para>
+一个<literal>JOIN</literal>子句组合两个<literal>FROM</>项，为了方便我们将其作为<quote>tables</>
+引用，尽管实际上他们可以是任意<literal>FROM</>条目的类型。必要时使用圆括弧以决定嵌套的顺序。
+如果没有圆括弧，<literal>JOIN</literal>从左向右嵌套。在任何情况下，<literal>JOIN</literal>
+都比逗号分隔的<literal>FROM</>列表绑定得更紧。
+</para>
+
+       <!--
+<para><literal>CROSS JOIN</> and <literal>INNER JOIN</literal>
+        produce a simple Cartesian product, the same result as you get from
+        listing the two tables at the top level of <literal>FROM</>,
+        but restricted by the join condition (if any).
+        <literal>CROSS JOIN</> is equivalent to <literal>INNER JOIN ON
+        (TRUE)</>, that is, no rows are removed by qualification.
+        These join types are just a notational convenience, since they
+        do nothing you couldn't do with plain <literal>FROM</> and
+        <literal>WHERE</>.
+       </para>
+-->
+<para>
+<literal>CROSS JOIN</>和<literal>INNER JOIN</literal>生成一个简单的笛卡儿积，
+和你在<literal>FROM</>的顶层列出两个表的结果相同，但是受到连接条件（如果有）的限制。
+<literal>CROSS JOIN</>等效于<literal>INNER JOIN ON (TRUE)</>，也就是说，
+没有被条件删除的行。这种连接类型只是符号上的方便，因为它们和你用简单的
+<literal>FROM</>和<literal>WHERE</>的效果一样。
+</para>
+
+       <!--
+<para><literal>LEFT OUTER JOIN</> returns all rows in the qualified
+        Cartesian product (i.e., all combined rows that pass its join
+        condition), plus one copy of each row in the left-hand table
+        for which there was no right-hand row that passed the join
+        condition.  This left-hand row is extended to the full width
+        of the joined table by inserting null values for the
+        right-hand columns.  Note that only the <literal>JOIN</>
+        clause's own condition is considered while deciding which rows
+        have matches.  Outer conditions are applied afterwards.
+       </para>
+-->
+<para>
+<literal>LEFT OUTER JOIN</>返回笛卡儿积中所有符合连接条件的行，
+再加上左表中通过连接条件没有匹配右表行的那些行。这样，左边的行将扩展成生成表的全长，
+方法是在那些右表对应的字段位置填上 NULL 。请注意，只在计算匹配的时候，
+才使用<literal>JOIN</>子句的条件，外层的条件是在计算完毕之后施加的。
+</para>
+
+       <!--
+<para>
+        Conversely, <literal>RIGHT OUTER JOIN</> returns all the
+        joined rows, plus one row for each unmatched right-hand row
+        (extended with nulls on the left).  This is just a notational
+        convenience, since you could convert it to a <literal>LEFT
+        OUTER JOIN</> by switching the left and right tables.
+       </para>
+-->
+<para>
+相应的，<literal>RIGHT OUTER JOIN</>返回所有内连接的结果行，
+加上每个不匹配的右边行(左边用 NULL 扩展)。这只是一个符号上的便利，
+因为总是可以把它转换成一个<literal>LEFT OUTER JOIN</>，只要把左边和右边的输入对掉一下即可。
+</para>
+
+       <!--
+<para><literal>FULL OUTER JOIN</> returns all the joined rows, plus
+        one row for each unmatched left-hand row (extended with nulls
+        on the right), plus one row for each unmatched right-hand row
+        (extended with nulls on the left).
+       </para>
+-->
+<para>
+<literal>FULL OUTER JOIN</>返回所有内连接的结果行，加上每个不匹配的左边行(右边用 NULL 扩展)，
+再加上每个不匹配的右边行(左边用 NULL 扩展)。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ON <replaceable class="parameter">join_condition</replaceable></literal></term>
+      <listitem>
+       <!--
+<para><replaceable class="parameter">join_condition</replaceable> is
+        an expression resulting in a value of type
+        <type>boolean</type> (similar to a <literal>WHERE</literal>
+        clause) that specifies which rows in a join are considered to
+        match.
+       </para>
+-->
+<para>
+一个生成<type>boolean</type>类型结果的表达式(类似<literal>WHERE</literal>子句)，
+限定连接中那些行是匹配的。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>USING ( <replaceable class="parameter">join_column</replaceable> [, ...] )</literal></term>
+      <listitem>
+       <!--
+<para>
+        A clause of the form <literal>USING ( a, b, ... )</literal> is
+        shorthand for <literal>ON left_table.a = right_table.a AND
+        left_table.b = right_table.b ...</literal>.  Also,
+        <literal>USING</> implies that only one of each pair of
+        equivalent columns will be included in the join output, not
+        both.
+       </para>
+-->
+<para>
+一个形如<literal>USING ( a, b, ... )</literal> 的子句，是<literal>ON left_table.a = right_table.a AND
+        left_table.b = right_table.b ...</literal>的缩写。
+同样，<literal>USING</>蕴涵着每对等效字段中只有一个包含在连接输出中，而不是两个都输出的意思。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NATURAL</literal></term>
+      <listitem>
+       <!--
+<para><literal>NATURAL</literal> is shorthand for a
+        <literal>USING</> list that mentions all columns in the two
+        tables that have the same names.
+       </para>
+-->
+<para>
+<literal>NATURAL</literal>是一个<literal>USING</>列表的缩写，这个列表说的是两个表中同名的字段。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>LATERAL</literal></term>
+      <listitem>
+       <!--
+<para>
+        The <literal>LATERAL</literal> key word can precede a
+        sub-<command>SELECT</command> <literal>FROM</> item.  This allows the
+        sub-<command>SELECT</command> to refer to columns of <literal>FROM</>
+        items that appear before it in the <literal>FROM</> list.  (Without
+        <literal>LATERAL</literal>, each sub-<command>SELECT</command> is
+        evaluated independently and so cannot cross-reference any other
+        <literal>FROM</> item.)
+       </para>
+-->
+<para>
+<literal>LATERAL</literal>关键字可以放在一个子<command>SELECT</command> <literal>FROM</>项目的前面。
+这允许子<command>SELECT</command>引用出现在<literal>FROM</>列表之前的<literal>FROM</>条目中的字段。
+（没有<literal>LATERAL</literal>，每个子<command>SELECT</command>独立评估并且以此不能交叉引用任何其他
+<literal>FROM</>条目。）
+</para>
+
+       <!--
+<para><literal>LATERAL</literal> can also precede a function-call
+        <literal>FROM</> item, but in this case it is a noise word, because
+        the function expression can refer to earlier <literal>FROM</> items
+        in any case.
+       </para>
+-->
+<para>
+<literal>LATERAL</literal>也可以放在一个函数调用<literal>FROM</>条目的前面，
+但是这种情况下它是一个噪声字，因为函数表达式可以在任何情况下引用前面的<literal>FROM</>条目。
+</para>
+
+       <!--
+<para>
+        A <literal>LATERAL</literal> item can appear at top level in the
+        <literal>FROM</> list, or within a <literal>JOIN</> tree.  In the
+        latter case it can also refer to any items that are on the left-hand
+        side of a <literal>JOIN</> that it is on the right-hand side of.
+       </para>
+-->
+<para>
+<literal>LATERAL</literal>可以出现在<literal>FROM</>列表的顶层，或出现在<literal>JOIN</>树中。
+在后面当前情况下，它也可以引用<literal>JOIN</>左侧和右侧的任意条目。
+</para>
+
+       <!--
+<para>
+        When a <literal>FROM</> item contains <literal>LATERAL</literal>
+        cross-references, evaluation proceeds as follows: for each row of the
+        <literal>FROM</> item providing the cross-referenced column(s), or
+        set of rows of multiple <literal>FROM</> items providing the
+        columns, the <literal>LATERAL</literal> item is evaluated using that
+        row or row set's values of the columns.  The resulting row(s) are
+        joined as usual with the rows they were computed from.  This is
+        repeated for each row or set of rows from the column source table(s).
+       </para>
+-->
+<para>
+当<literal>FROM</>条目包含<literal>LATERAL</literal>交叉引用时，评估收益如下：
+对于提供交叉引用字段的<literal>FROM</>条目的每一行，或提供字段的多个<literal>FROM</>
+条目的行集，使用该字段的行或行集值评估<literal>LATERAL</literal>条目。
+结果行像往常一样和计算他们的行连接。这是从字段源表重复每行或行集。
+</para>
+
+       <!--
+<para>
+        The column source table(s) must be <literal>INNER</> or
+        <literal>LEFT</> joined to the <literal>LATERAL</literal> item, else
+        there would not be a well-defined set of rows from which to compute
+        each set of rows for the <literal>LATERAL</literal> item.  Thus,
+        although a construct such as <literal><replaceable>X</> RIGHT JOIN
+        LATERAL <replaceable>Y</></literal> is syntactically valid, it is
+        not actually allowed for <replaceable>Y</> to reference
+        <replaceable>X</>.
+       </para>
+-->
+<para>
+字段源表必须<literal>INNER</>或<literal>LEFT</>连接<literal>LATERAL</literal>条目，
+其他为<literal>LATERAL</literal>条目计算每个行集的行集将不会是明确定义的行集。
+因此，尽管一个构造（如<literal><replaceable>X</> RIGHT JOIN LATERAL <replaceable>Y</></literal>）
+在语法结构上合法，并不实际上允许<replaceable>Y</>引用<replaceable>X</>。
+</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+  </refsect2>
+
+  <refsect2 id="SQL-WHERE">
+   <!-- 
+   <title id="sql-where-title"><literal>WHERE</literal> Clause</title> 
+   -->
+   <title id="sql-where-title"><literal>WHERE</literal> 子句</title>
+
+   <!--
+<para>
+    The optional <literal>WHERE</literal> clause has the general form
+<synopsis>
+WHERE <replaceable class="parameter">condition</replaceable>
+</synopsis>
+    where <replaceable class="parameter">condition</replaceable> is
+    any expression that evaluates to a result of type
+    <type>boolean</type>.  Any row that does not satisfy this
+    condition will be eliminated from the output.  A row satisfies the
+    condition if it returns true when the actual row values are
+    substituted for any variable references.
+   </para>
+-->
+<para>
+可选的<literal>WHERE</literal>条件有如下常见的形式：
+<synopsis>
+WHERE <replaceable class="parameter">condition</replaceable>
+</synopsis>
+这里<replaceable class="parameter">condition</replaceable>可以是任意生成类型为
+<type>boolean</type>的表达式。任何不满足这个条件的行都会从输出中删除。
+如果一个行的数值代入到条件中计算出来的结果为真，那么该行就算满足条件。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-GROUPBY">
+   <!-- 
+   <title id="sql-groupby-title"><literal>GROUP BY</literal> Clause</title> 
+   -->
+   <title id="sql-groupby-title"><literal>GROUP BY</literal> 子句</title>
+
+   <!--
+<para>
+    The optional <literal>GROUP BY</literal> clause has the general form
+<synopsis>
+GROUP BY <replaceable class="parameter">expression</replaceable> [, ...]
+</synopsis>
+   </para>
+-->
+<para>
+可选的<literal>GROUP BY</literal>子句的一般形式
+<synopsis>
+GROUP BY <replaceable class="parameter">expression</replaceable> [, ...]
+</synopsis>
+</para>
+
+   <!--
+<para>
+    <literal>GROUP BY</literal> will condense into a single row all
+    selected rows that share the same values for the grouped
+    expressions.  <replaceable
+    class="parameter">expression</replaceable> can be an input column
+    name, or the name or ordinal number of an output column
+    (<command>SELECT</command> list item), or an arbitrary
+    expression formed from input-column values.  In case of ambiguity,
+    a <literal>GROUP BY</literal> name will be interpreted as an
+    input-column name rather than an output column name.
+   </para>
+-->
+<para>
+它将把所有在组合表达式上拥有相同值的行压缩成一行。
+<replaceable class="parameter">expression</replaceable>可以是一个输入字段名字，
+或者是一个输出字段(<command>SELECT</command>列表项)的名字或序号，
+或者也可以是任意输入字段组成的表达式。在有歧义的情况下，
+一个<literal>GROUP BY</literal>的名字将被解释成输入字段的名字，而不是输出字段的名字。
+</para>
+
+   <!--
+<para>
+    Aggregate functions, if any are used, are computed across all rows
+    making up each group, producing a separate value for each group
+    (whereas without <literal>GROUP BY</literal>, an aggregate
+    produces a single value computed across all the selected rows).
+    When <literal>GROUP BY</literal> is present, it is not valid for
+    the <command>SELECT</command> list expressions to refer to
+    ungrouped columns except within aggregate functions or if the
+    ungrouped column is functionally dependent on the grouped columns,
+    since there would otherwise be more than one possible value to
+    return for an ungrouped column.  A functional dependency exists if
+    the grouped columns (or a subset thereof) are the primary key of
+    the table containing the ungrouped column.
+   </para>
+-->
+<para>
+如果使用了聚集函数，那么就会对每组中的所有行进行计算并生成一个单独的值
+(而如果没有<literal>GROUP BY</literal>，那么聚集将对选出来的所有行计算出一个单独的值)。
+如果出现了<literal>GROUP BY</literal>，那么<command>SELECT</command>
+列表表达式中再引用那些没有分组的字段就是非法的，除非放在聚集函数里，
+或未分组的字段函数上依赖于分组的字段，因为对于未分组的字段，可能会返回多个数值。
+如果分组的字段（或它们的一个子集）是包含未分组字段的表的主键，那么存在一个函数依赖。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-HAVING">
+   <!-- 
+   <title id="sql-having-title"><literal>HAVING</literal> Clause</title> 
+   -->
+   <title id="sql-having-title"><literal>HAVING</literal> 子句</title>
+
+   <!--
+<para>
+    The optional <literal>HAVING</literal> clause has the general form
+<synopsis>
+HAVING <replaceable class="parameter">condition</replaceable>
+</synopsis>
+    where <replaceable class="parameter">condition</replaceable> is
+    the same as specified for the <literal>WHERE</literal> clause.
+   </para>
+-->
+<para>
+可选的<literal>HAVING</literal>子句有如下形式：
+<synopsis>
+HAVING <replaceable class="parameter">condition</replaceable>
+</synopsis>
+这里<replaceable class="parameter">condition</replaceable>与为
+<literal>WHERE</literal>子句里声明的相同。
+</para>
+
+   <!--
+<para>
+    <literal>HAVING</literal> eliminates group rows that do not
+    satisfy the condition.  <literal>HAVING</literal> is different
+    from <literal>WHERE</literal>: <literal>WHERE</literal> filters
+    individual rows before the application of <literal>GROUP
+    BY</literal>, while <literal>HAVING</literal> filters group rows
+    created by <literal>GROUP BY</literal>.  Each column referenced in
+    <replaceable class="parameter">condition</replaceable> must
+    unambiguously reference a grouping column, unless the reference
+    appears within an aggregate function.
+   </para>
+-->
+<para>
+<literal>HAVING</literal>去除了一些不满足条件的组行。它与<literal>WHERE</literal>
+不同：<literal>WHERE</literal>在使用<literal>GROUP BY</literal>之前过滤出单独的行，
+而<literal>HAVING</literal>过滤由<literal>GROUP BY</literal>创建的行。
+在<replaceable class="parameter">condition</replaceable>
+里引用的每个字段都必须无歧义地引用一个分组的行，除非引用出现在一个聚集函数里。
+</para>
+
+   <!--
+<para>
+    The presence of <literal>HAVING</literal> turns a query into a grouped
+    query even if there is no <literal>GROUP BY</> clause.  This is the
+    same as what happens when the query contains aggregate functions but
+    no <literal>GROUP BY</> clause.  All the selected rows are considered to
+    form a single group, and the <command>SELECT</command> list and
+    <literal>HAVING</literal> clause can only reference table columns from
+    within aggregate functions.  Such a query will emit a single row if the
+    <literal>HAVING</literal> condition is true, zero rows if it is not true.
+   </para>
+-->
+<para>
+<literal>HAVING</literal>的出现把查询变成一个分组的查询，即使没有<literal>GROUP BY</>
+子句也这样。这一点和那些包含聚集函数但没有<literal>GROUP BY</>子句的查询里发生的事情是一样的。
+所有选取的行都被认为会形成一个单一的组，而<command>SELECT</command>
+列表和<literal>HAVING</literal>子句只能从聚集函数里面引用表的字段。
+这样的查询在<literal>HAVING</literal>条件为真的时候将发出一个行，如果为非真，则返回零行。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-WINDOW">
+   <!-- 
+   <title id="sql-window-title"><literal>WINDOW</literal> Clause</title> 
+   -->
+   <title id="sql-window-title"><literal>WINDOW</literal> 子句</title>
+
+   <!--
+<para>
+    The optional <literal>WINDOW</literal> clause has the general form
+<synopsis>
+WINDOW <replaceable class="parameter">window_name</replaceable> AS ( <replaceable class="parameter">window_definition</replaceable> ) [, ...]
+</synopsis>
+    where <replaceable class="parameter">window_name</replaceable> is
+    a name that can be referenced from <literal>OVER</> clauses or
+    subsequent window definitions, and
+    <replaceable class="parameter">window_definition</replaceable> is
+<synopsis>
+[ <replaceable class="parameter">existing_window_name</replaceable> ]
+[ PARTITION BY <replaceable class="parameter">expression</replaceable> [, ...] ]
+[ ORDER BY <replaceable class="parameter">expression</replaceable> [ ASC | DESC | USING <replaceable class="parameter">operator</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+[ <replaceable class="parameter">frame_clause</replaceable> ]
+</synopsis>
+   </para>
+-->
+<para>
+<literal>WINDOW</literal>子句的一般形式是
+<synopsis>
+WINDOW <replaceable class="parameter">window_name</replaceable> AS ( <replaceable class="parameter">window_definition</replaceable> ) [, ...]
+</synopsis>
+这里的<replaceable class="parameter">window_name</replaceable>是可以在<literal>OVER</>
+子句中引用的名字或随后的窗口定义，这里的<replaceable class="parameter">window_definition</replaceable>是
+<synopsis>
+[ <replaceable class="parameter">existing_window_name</replaceable> ]
+[ PARTITION BY <replaceable class="parameter">expression</replaceable> [, ...] ]
+[ ORDER BY <replaceable class="parameter">expression</replaceable> [ ASC | DESC | USING <replaceable class="parameter">operator</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+[ <replaceable class="parameter">frame_clause</replaceable> ]
+</synopsis>
+</para>
+
+   <!--
+<para>
+    If an <replaceable class="parameter">existing_window_name</replaceable>
+    is specified it must refer to an earlier entry in the <literal>WINDOW</>
+    list; the new window copies its partitioning clause from that entry,
+    as well as its ordering clause if any.  In this case the new window cannot
+    specify its own <literal>PARTITION BY</> clause, and it can specify
+    <literal>ORDER BY</> only if the copied window does not have one.
+    The new window always uses its own frame clause; the copied window
+    must not specify a frame clause.
+   </para>
+-->
+<para>
+如果声明了<replaceable class="parameter">existing_window_name</replaceable>，
+那么必须引用一个在<literal>WINDOW</>列表中出现的更早的项；新的窗口从这个项中拷贝分区子句，
+和排序子句（如果有）。在这种情况下，这个新的窗口不能声明他自己的<literal>PARTITION BY</>子句，
+但是如果拷贝的窗口没有排序子句的话他可以声明<literal>ORDER BY</>子句。
+新窗口总是使用他自己的框架子句；拷贝的窗口必须不能声明框架子句。
+</para>
+
+   <!--
+<para>
+    The elements of the <literal>PARTITION BY</> list are interpreted in
+    much the same fashion as elements of a
+    <xref linkend="sql-groupby" endterm="sql-groupby-title">, except that
+    they are always simple expressions and never the name or number of an
+    output column.
+    Another difference is that these expressions can contain aggregate
+    function calls, which are not allowed in a regular <literal>GROUP BY</>
+    clause.  They are allowed here because windowing occurs after grouping
+    and aggregation.
+   </para>
+-->
+<para>
+<literal>PARTITION BY</>列表的元素的以与<xref linkend="sql-groupby" endterm="sql-groupby-title">
+的元素相同的方式来解释，除了他们总是简单的表达式并且从不是一个输出列的名称或者编号。
+另外一个差异是这些表达式可以包含聚集函数调用，而在常规的<literal>GROUP BY</>子句中这是不允许的。
+在这里允许是因为开窗在分组和聚集之后发生。
+</para>
+
+   <!--
+<para>
+    Similarly, the elements of the <literal>ORDER BY</> list are interpreted
+    in much the same fashion as elements of an
+    <xref linkend="sql-orderby" endterm="sql-orderby-title">, except that
+    the expressions are always taken as simple expressions and never the name
+    or number of an output column.
+   </para>
+-->
+<para>
+同样的，<literal>ORDER BY</>列表的元素以与<xref linkend="sql-orderby" endterm="sql-orderby-title">
+的元素相同的方式来解释，除了这个表达式总是作为简单的表达式并且从不是一个输出列的名称或者编号。
+</para>
+
+<para>
+<!--
+    The optional <replaceable class="parameter">frame_clause</> defines
+    the <firstterm>window frame</> for window functions that depend on the
+    frame (not all do).  The window frame is a set of related rows for
+    each row of the query (called the <firstterm>current row</>).
+    The <replaceable class="parameter">frame_clause</> can be one of
+ -->
+可选的<replaceable class="parameter">frame_clause</>为依赖于框架的窗口函数（不是所有）定义
+<firstterm>窗口框架</>。窗口框架是查询中的每行（称为<firstterm>当前行</>）的一组相关行。
+<replaceable class="parameter">frame_clause</>可以是下列之一
+<synopsis>
+[ RANGE | ROWS ] <replaceable>frame_start</>
+[ RANGE | ROWS ] BETWEEN <replaceable>frame_start</> AND <replaceable>frame_end</>
+</synopsis>
+
+    <!-- 
+where <replaceable>frame_start</> and <replaceable>frame_end</> can be
+    one of 
+-->
+这里的<replaceable>frame_start</>和<replaceable>frame_end</>可以是下列之一
+
+<synopsis>
+UNBOUNDED PRECEDING
+<replaceable>value</replaceable> PRECEDING
+CURRENT ROW
+<replaceable>value</replaceable> FOLLOWING
+UNBOUNDED FOLLOWING
+</synopsis>
+
+    <!-- 
+If <replaceable>frame_end</> is omitted it defaults to <literal>CURRENT
+    ROW</>.  Restrictions are that
+    <replaceable>frame_start</> cannot be <literal>UNBOUNDED FOLLOWING</>,
+    <replaceable>frame_end</> cannot be <literal>UNBOUNDED PRECEDING</>,
+    and the <replaceable>frame_end</> choice cannot appear earlier in the
+    above list than the <replaceable>frame_start</> choice &mdash; for example
+    <literal>RANGE BETWEEN CURRENT ROW AND <replaceable>value</>
+    PRECEDING</literal> is not allowed.
+-->
+如果省略了<replaceable>frame_end</>，那么它的缺省是<literal>CURRENT ROW</>。
+限制是<replaceable>frame_start</>不能是<literal>UNBOUNDED FOLLOWING</>，
+<replaceable>frame_end</>不能是<literal>UNBOUNDED PRECEDING</>，
+<replaceable>frame_end</>选项在上面的列表中不能比<replaceable>frame_start</>
+选项出现的早，例如<literal>RANGE BETWEEN CURRENT ROW AND <replaceable>value</>
+    PRECEDING</literal>是不允许的。
+   </para>
+
+
+   <!--
+<para>
+    The default framing option is <literal>RANGE UNBOUNDED PRECEDING</>,
+    which is the same as <literal>RANGE BETWEEN UNBOUNDED PRECEDING AND
+    CURRENT ROW</>; it sets the frame to be all rows from the partition start
+    up through the current row's last peer in the <literal>ORDER BY</>
+    ordering (which means all rows if there is no <literal>ORDER BY</>).
+    In general, <literal>UNBOUNDED PRECEDING</> means that the frame
+    starts with the first row of the partition, and similarly
+    <literal>UNBOUNDED FOLLOWING</> means that the frame ends with the last
+    row of the partition (regardless of <literal>RANGE</> or <literal>ROWS</>
+    mode).  In <literal>ROWS</> mode, <literal>CURRENT ROW</>
+    means that the frame starts or ends with the current row; but in
+    <literal>RANGE</> mode it means that the frame starts or ends with
+    the current row's first or last peer in the <literal>ORDER BY</> ordering.
+    The <replaceable>value</> <literal>PRECEDING</> and
+    <replaceable>value</> <literal>FOLLOWING</> cases are currently only
+    allowed in <literal>ROWS</> mode.  They indicate that the frame starts
+    or ends with the row that many rows before or after the current row.
+    <replaceable>value</replaceable> must be an integer expression not
+    containing any variables, aggregate functions, or window functions.
+    The value must not be null or negative; but it can be zero, which
+    selects the current row itself.
+   </para>
+-->
+<para>
+缺省框架选项是<literal>RANGE UNBOUNDED PRECEDING</>，这与<literal>RANGE BETWEEN UNBOUNDED PRECEDING AND
+CURRENT ROW</>相同；它将框架设置为分区中的所有行，在<literal>ORDER BY</>
+序列中是从当前行的最后一个元素开始（这意味着若无<literal>ORDER BY</>则是所有行）。
+通常，<literal>UNBOUNDED PRECEDING</>表示框架从分区的第一行开始，类似的
+<literal>UNBOUNDED FOLLOWING</>表示框架以分区的最后一行结束（不管是<literal>RANGE</>
+还是<literal>ROWS</>模式）。在<literal>ROWS</>模式，<literal>CURRENT ROW</>
+意味着框架以当前行开始或结束；但是在<literal>RANGE</>模式，意味着框架以当前行在
+<literal>ORDER BY</>序列中的第一个或最后一个元素开始或结束。<replaceable>value</> <literal>PRECEDING</>
+和<replaceable>value</> <literal>FOLLOWING</>子句目前只允许在<literal>ROWS</>模式。
+他们表明框架以当前行之前或者之后许多行开始或者结束。<replaceable>value</replaceable>
+必须是一个不包含任何变量、聚集函数或者窗口函数的整型表达式。该值不能为空或者负值；
+但可以为0，并且这时选择当前行本身。
+</para>
+
+   <!--
+<para>
+    Beware that the <literal>ROWS</> options can produce unpredictable
+    results if the <literal>ORDER BY</> ordering does not order the rows
+    uniquely.  The <literal>RANGE</> options are designed to ensure that
+    rows that are peers in the <literal>ORDER BY</> ordering are treated
+    alike; any two peer rows will be both in or both not in the frame.
+   </para>
+-->
+<para>
+注意如果<literal>ORDER BY</>排序不能唯一地排列行，那么<literal>ROWS</>
+选项可能产生不可预测的结果。<literal>RANGE</>选项是为了确保<literal>ORDER BY</>
+序列中的对等的行能得到同等对待；任何两个对等行将会都在或者都不在框架中。
+</para>
+
+   <!--
+<para>
+    The purpose of a <literal>WINDOW</literal> clause is to specify the
+    behavior of <firstterm>window functions</> appearing in the query's
+    <xref linkend="sql-select-list" endterm="sql-select-list-title"> or
+    <xref linkend="sql-orderby" endterm="sql-orderby-title">.  These functions
+    can reference the <literal>WINDOW</literal> clause entries by name
+    in their <literal>OVER</> clauses.  A <literal>WINDOW</literal> clause
+    entry does not have to be referenced anywhere, however; if it is not
+    used in the query it is simply ignored.  It is possible to use window
+    functions without any <literal>WINDOW</literal> clause at all, since
+    a window function call can specify its window definition directly in
+    its <literal>OVER</> clause.  However, the <literal>WINDOW</literal>
+    clause saves typing when the same window definition is needed for more
+    than one window function.
+   </para>
+-->
+<para>
+一个<literal>WINDOW</literal>语句的目的是指定出现在查询的<xref linkend="sql-select-list" endterm="sql-select-list-title">
+或者<xref linkend="sql-orderby" endterm="sql-orderby-title">中的<firstterm>window 函数</>的行为。
+这些函数可以在其<literal>OVER</>子句中通过名称引用<literal>WINDOW</literal>子句条目。
+一个<literal>WINDOW</literal>子句条目不需要在任何地方都引用；若它不在查询中使用，它将被忽略。
+可以使用窗口程序而根本不需要任何<literal>WINDOW</literal>子句，
+因为一个窗口函数调用可以直接在其<literal>OVER</>子句中指定其窗口定义。然而，
+<literal>WINDOW</literal>子句会在多个窗口函数需要相同窗口定义时保存输入。
+</para>
+
+   <!--
+<para>
+    Window functions are described in detail in
+    <xref linkend="tutorial-window">,
+    <xref linkend="syntax-window-functions">, and
+    <xref linkend="queries-window">.
+   </para>
+-->
+<para>
+窗口函数在<xref linkend="tutorial-window">, <xref linkend="syntax-window-functions">, 和
+    <xref linkend="queries-window">中有详细描述。
+</para>
+  </refsect2>
+
+  <refsect2 id="sql-select-list">
+   <!-- 
+   <title id="sql-select-list-title"><command>SELECT</command> List</title> 
+   -->
+   <title id="sql-select-list-title"><command>SELECT</command> 列表</title>
+
+   <!--
+<para>
+    The <command>SELECT</command> list (between the key words
+    <literal>SELECT</> and <literal>FROM</>) specifies expressions
+    that form the output rows of the <command>SELECT</command>
+    statement.  The expressions can (and usually do) refer to columns
+    computed in the <literal>FROM</> clause.
+   </para>
+-->
+<para>
+<command>SELECT</command>列表(在<literal>SELECT</>和<literal>FROM</>关键字之间的部分)
+声明组成<command>SELECT</command>语句的输出行的表达式。这些表达式可以
+(并且通常也会)引用在<literal>FROM</>子句里面计算出来的字段。
+</para>
+
+   <!--
+<para>
+    Just as in a table, every output column of a <command>SELECT</command>
+    has a name.  In a simple <command>SELECT</command> this name is just
+    used to label the column for display, but when the <command>SELECT</>
+    is a sub-query of a larger query, the name is seen by the larger query
+    as the column name of the virtual table produced by the sub-query.
+    To specify the name to use for an output column, write
+    <literal>AS</> <replaceable class="parameter">output_name</replaceable>
+    after the column's expression.  (You can omit <literal>AS</literal>,
+    but only if the desired output name does not match any
+    <productname>PostgreSQL</productname> keyword (see <xref
+    linkend="sql-keywords-appendix">).  For protection against possible
+    future keyword additions, it is recommended that you always either
+    write <literal>AS</literal> or double-quote the output name.)
+    If you do not specify a column name, a name is chosen automatically
+    by <productname>PostgreSQL</productname>.  If the column's expression
+    is a simple column reference then the chosen name is the same as that
+    column's name.  In more complex cases a function or type name may be
+    used, or the system may fall back on a generated name such as
+    <literal>?column?</literal>.
+   </para>
+-->
+<para>
+就像在一个表中，一个<command>SELECT</command>的每个输出列都有一个名称。
+在一个简单的<command>SELECT</command>中，该名称仅用于标记显示的列，
+但当<command>SELECT</>是一个较大查询的子查询时，名称被较大查询视为子查询产生的虚表的字段名。
+为了指定用于输出列的名称，要在列表达式后写<literal>AS</> 
+<replaceable class="parameter">output_name</replaceable>。（您可以省略<literal>AS</literal>，
+但只有当所需的输出名称不匹配任何<productname>PostgreSQL</productname>关键字时
+(请参阅<xref linkend="sql-keywords-appendix">)。为了防止将来可能的关键字添加，
+建议您要么写<literal>AS</literal>要么用双引号引起输出名称。）如果你不指定一个字段名，
+<productname>PostgreSQL</productname>会自动选择一个名称。如果字段的表达式是一个简单的列引用，
+那么选择的名称与字段名相同；在更复杂的情况下，可能会使用一个函数或类型名，
+或系统会依赖于一个类似<literal>?column?</literal>的生成名。
+</para>
+
+   <!--
+<para>
+    An output column's name can be used to refer to the column's value in
+    <literal>ORDER BY</> and <literal>GROUP BY</> clauses, but not in the
+    <literal>WHERE</> or <literal>HAVING</> clauses; there you must write
+    out the expression instead.
+   </para>
+-->
+<para>
+一个输出列的名称可以用来参考<literal>ORDER BY</>和<literal>GROUP BY</>子句中的字段的值，
+而不是在<literal>WHERE</>或者<literal>HAVING</>子句中的；反而您必须在那里写出表达式。
+</para>
+
+   <!--
+<para>
+    Instead of an expression, <literal>*</literal> can be written in
+    the output list as a shorthand for all the columns of the selected
+    rows.  Also, you can write <literal><replaceable
+    class="parameter">table_name</replaceable>.*</literal> as a
+    shorthand for the columns coming from just that table.  In these
+    cases it is not possible to specify new names with <literal>AS</>;
+    the output column names will be the same as the table columns' names.
+   </para>
+-->
+<para>
+除了表达式，也可以在输出列表中使用<literal>*</literal>表示所有字段。
+还可以用<literal><replaceable class="parameter">table_name</replaceable>.*</literal>
+作为来自该表的所有字段的缩写。这些情况下用<literal>AS</>指定新名称是不可能的；
+输出列的名称将会与表列的名称相同。
+</para>
+  </refsect2>
+
+  <refsect2 id="sql-distinct">
+   <!-- 
+   <title id="sql-distinct-title"><literal>DISTINCT</literal> Clause</title> 
+   -->
+   <title id="sql-distinct-title"><literal>DISTINCT</literal> 子句</title>
+
+   <!--
+<para>
+    If <literal>SELECT DISTINCT</> is specified, all duplicate rows are
+    removed from the result set (one row is kept from each group of
+    duplicates).  <literal>SELECT ALL</> specifies the opposite: all rows are
+    kept; that is the default.
+   </para>
+-->
+<para>
+如果声明了<literal>SELECT DISTINCT</>，那么就从结果集中删除所有重复的行
+(每个有重复的组都保留一行)。<literal>SELECT ALL</>声明相反的作用：所有行都被保留(这是缺省)。
+</para>
+
+   <!--
+<para>
+    <literal>SELECT DISTINCT ON ( <replaceable
+    class="parameter">expression</replaceable> [, ...] )</literal>
+    keeps only the first row of each set of rows where the given
+    expressions evaluate to equal.  The <literal>DISTINCT ON</literal>
+    expressions are interpreted using the same rules as for
+    <literal>ORDER BY</> (see above).  Note that the <quote>first
+    row</quote> of each set is unpredictable unless <literal>ORDER
+    BY</> is used to ensure that the desired row appears first.  For
+    example:
+<programlisting>
+SELECT DISTINCT ON (location) location, time, report
+    FROM weather_reports
+    ORDER BY location, time DESC;
+</programlisting>
+    retrieves the most recent weather report for each location.  But
+    if we had not used <literal>ORDER BY</> to force descending order
+    of time values for each location, we'd have gotten a report from
+    an unpredictable time for each location.
+   </para>
+-->
+<para>
+<literal>SELECT DISTINCT ON ( <replaceable class="parameter">expression</replaceable> [, ...] )</literal>
+只保留那些在给出的表达式上运算出相同结果的行集合中的第一行。<literal>DISTINCT ON</literal>
+表达式是使用与<literal>ORDER BY</>相同的规则进行解释的（见上文）。请注意，
+除非使用了<literal>ORDER BY</>来保证需要的行首先出现，否则，<quote>第一行</quote>
+是不可预测的。比如：
+<programlisting>
+SELECT DISTINCT ON (location) location, time, report
+    FROM weather_reports
+    ORDER BY location, time DESC;
+</programlisting>
+为每个地点检索最近的天气报告。但是如果没有使用<literal>ORDER BY</>
+来强制对每个地点的时间值进行降序排序，那么就会得到每个地点的不知道什么时候的报告。
+</para>
+
+   <!--
+<para>
+    The <literal>DISTINCT ON</> expression(s) must match the leftmost
+    <literal>ORDER BY</> expression(s).  The <literal>ORDER BY</> clause
+    will normally contain additional expression(s) that determine the
+    desired precedence of rows within each <literal>DISTINCT ON</> group.
+   </para>
+-->
+<para>
+<literal>DISTINCT ON</>表达式必须匹配最左边的<literal>ORDER BY</>表达式。
+<literal>ORDER BY</>子句将通常包含额外的表达式来判断每个<literal>DISTINCT ON</>
+组里面需要的行的优先级。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-UNION">
+   <!-- 
+   <title id="sql-union-title"><literal>UNION</literal> Clause</title> 
+   -->
+   <title id="sql-union-title"><literal>UNION</literal> 子句</title>
+
+   <!--
+<para>
+    The <literal>UNION</literal> clause has this general form:
+<synopsis>
+<replaceable class="parameter">select_statement</replaceable> UNION [ ALL | DISTINCT ] <replaceable class="parameter">select_statement</replaceable>
+</synopsis><replaceable class="parameter">select_statement</replaceable> is
+    any <command>SELECT</command> statement without an <literal>ORDER
+    BY</>, <literal>LIMIT</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>,
+    <literal>FOR SHARE</literal>, or <literal>FOR KEY SHARE</literal> clause.
+    (<literal>ORDER BY</> and <literal>LIMIT</> can be attached to a
+    subexpression if it is enclosed in parentheses.  Without
+    parentheses, these clauses will be taken to apply to the result of
+    the <literal>UNION</literal>, not to its right-hand input
+    expression.)
+   </para>
+-->
+<para>
+<literal>UNION</literal>子句的一般形式是：
+<synopsis>
+<replaceable class="parameter">select_statement</replaceable> UNION [ ALL | DISTINCT ] <replaceable class="parameter">select_statement</replaceable>
+</synopsis>
+这里的<replaceable class="parameter">select_statement</replaceable>是任意没有
+<literal>ORDER BY</>, <literal>LIMIT</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>,
+<literal>FOR SHARE</literal>, 或 <literal>FOR KEY SHARE</literal>子句的<command>SELECT</command>语句。
+如果用圆括弧包围，<literal>ORDER BY</>和<literal>LIMIT</>可以附着在子表达式里。
+如果没有圆括弧，这些子句将交给<literal>UNION</literal>的结果使用，而不是给它们右边的输入表达式。
+</para>
+
+   <!--
+<para>
+    The <literal>UNION</literal> operator computes the set union of
+    the rows returned by the involved <command>SELECT</command>
+    statements.  A row is in the set union of two result sets if it
+    appears in at least one of the result sets.  The two
+    <command>SELECT</command> statements that represent the direct
+    operands of the <literal>UNION</literal> must produce the same
+    number of columns, and corresponding columns must be of compatible
+    data types.
+   </para>
+-->
+<para>
+<literal>UNION</literal>操作符计算那些涉及到的所有<command>SELECT</command>
+语句返回的行的结果联合。一个行如果至少在两个结果集中的一个里面出现，
+那么它就会在这两个结果集的集合联合中。两个作为<literal>UNION</literal>
+直接操作数的<command>SELECT</command>必须生成相同数目的字段，
+并且对应的字段必须有兼容的数据类型。
+</para>
+
+   <!--
+<para>
+    The result of <literal>UNION</> does not contain any duplicate
+    rows unless the <literal>ALL</> option is specified.
+    <literal>ALL</> prevents elimination of duplicates.  (Therefore,
+    <literal>UNION ALL</> is usually significantly quicker than
+    <literal>UNION</>; use <literal>ALL</> when you can.)
+    <literal>DISTINCT</> can be written to explicitly specify the
+    default behavior of eliminating duplicate rows.
+   </para>
+-->
+<para>
+缺省的<literal>UNION</>结果不包含任何重复的行，除非声明了<literal>ALL</>选项。
+<literal>ALL</>制止了消除重复的动作。因此，<literal>UNION ALL</>通常比
+<literal>UNION</>明显要快，可能的情况下尽量使用<literal>ALL</>。
+<literal>DISTINCT</>可以明确的指定消除重复行的缺省行为。
+</para>
+
+   <!--
+<para>
+    Multiple <literal>UNION</> operators in the same
+    <command>SELECT</command> statement are evaluated left to right,
+    unless otherwise indicated by parentheses.
+   </para>
+-->
+<para>
+同一个<command>SELECT</command>语句中的多个<literal>UNION</>操作符是从左向右计算的，
+除非用圆括弧进行了标识。
+</para>
+
+   <!--
+<para>
+    Currently, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</> and
+    <literal>FOR KEY SHARE</> cannot be
+    specified either for a <literal>UNION</> result or for any input of a
+    <literal>UNION</>.
+   </para>
+-->
+<para>
+目前，<literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</> 和
+<literal>FOR KEY SHARE</>不能在<literal>UNION</>的结果或输入中声明。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-INTERSECT">
+   <!-- 
+   <title id="sql-intersect-title"><literal>INTERSECT</literal> Clause</title> 
+   -->
+   <title id="sql-intersect-title"><literal>INTERSECT</literal> 子句</title>
+
+   <!--
+<para>
+    The <literal>INTERSECT</literal> clause has this general form:
+<synopsis>
+<replaceable class="parameter">select_statement</replaceable> INTERSECT [ ALL | DISTINCT ] <replaceable class="parameter">select_statement</replaceable>
+</synopsis><replaceable class="parameter">select_statement</replaceable> is
+    any <command>SELECT</command> statement without an <literal>ORDER
+    BY</>, <literal>LIMIT</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>,
+    <literal>FOR SHARE</literal>, or <literal>FOR KEY SHARE</> clause.
+   </para>
+-->
+<para>
+<literal>INTERSECT</literal>子句的一般形式是：
+<synopsis>
+<replaceable class="parameter">select_statement</replaceable> INTERSECT [ ALL | DISTINCT ] <replaceable class="parameter">select_statement</replaceable>
+</synopsis>
+<replaceable class="parameter">select_statement</replaceable>是任何不带
+<literal>ORDER BY</>, <literal>LIMIT</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>,
+ <literal>FOR SHARE</literal>, 或 <literal>FOR KEY SHARE</>子句的<command>SELECT</command>语句。
+</para>
+
+   <!--
+<para>
+    The <literal>INTERSECT</literal> operator computes the set
+    intersection of the rows returned by the involved
+    <command>SELECT</command> statements.  A row is in the
+    intersection of two result sets if it appears in both result sets.
+   </para>
+-->
+<para>
+<literal>INTERSECT</literal>计算涉及的<command>SELECT</command>语句返回的行集合的交集。
+如果一个行在两个结果集中都出现，那么它就在两个结果集的交集中。
+</para>
+
+   <!--
+<para>
+    The result of <literal>INTERSECT</literal> does not contain any
+    duplicate rows unless the <literal>ALL</> option is specified.
+    With <literal>ALL</>, a row that has <replaceable>m</> duplicates in the
+    left table and <replaceable>n</> duplicates in the right table will appear
+    min(<replaceable>m</>,<replaceable>n</>) times in the result set.
+    <literal>DISTINCT</> can be written to explicitly specify the
+    default behavior of eliminating duplicate rows.
+   </para>
+-->
+<para>
+<literal>INTERSECT</literal>的结果不包含任何重复行，除非你声明了<literal>ALL</>选项。
+用了<literal>ALL</>以后，一个在左边的表里有<replaceable>m</>个重复而在右边表里有
+<replaceable>n</>个重复的行将在结果集中出现min(<replaceable>m</>,<replaceable>n</>)次。
+<literal>DISTINCT</>可以明确的指定消除重复行的缺省行为。
+</para>
+
+   <!--
+<para>
+    Multiple <literal>INTERSECT</literal> operators in the same
+    <command>SELECT</command> statement are evaluated left to right,
+    unless parentheses dictate otherwise.
+    <literal>INTERSECT</literal> binds more tightly than
+    <literal>UNION</literal>.  That is, <literal>A UNION B INTERSECT
+    C</literal> will be read as <literal>A UNION (B INTERSECT
+    C)</literal>.
+   </para>
+-->
+<para>
+除非用圆括号指明顺序，同一个<command>SELECT</command>语句中的多个
+<literal>INTERSECT</literal>操作符是从左向右计算的。<literal>INTERSECT</literal>
+比<literal>UNION</literal>绑定得更紧，也就是说<literal>A UNION B INTERSECT C</literal>
+将理解成 <literal>A UNION (B INTERSECT C)</literal>。
+</para>
+
+   <!--
+<para>
+    Currently, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</> and
+    <literal>FOR KEY SHARE</> cannot be
+    specified either for an <literal>INTERSECT</> result or for any input of
+    an <literal>INTERSECT</>.
+   </para>
+-->
+<para>
+目前，不能给<literal>INTERSECT</>的结果或者任何<literal>INTERSECT</>的输入声明
+<literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</> 和
+<literal>FOR KEY SHARE</>。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-EXCEPT">
+   <!-- 
+   <title id="sql-except-title"><literal>EXCEPT</literal> Clause</title> 
+   -->
+   <title id="sql-except-title"><literal>EXCEPT</literal> 子句</title>
+
+   <!--
+<para>
+    The <literal>EXCEPT</literal> clause has this general form:
+<synopsis>
+<replaceable class="parameter">select_statement</replaceable> EXCEPT [ ALL | DISTINCT ] <replaceable class="parameter">select_statement</replaceable>
+</synopsis><replaceable class="parameter">select_statement</replaceable> is
+    any <command>SELECT</command> statement without an <literal>ORDER
+    BY</>, <literal>LIMIT</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>,
+    <literal>FOR SHARE</literal>, or <literal>FOR KEY SHARE</> clause.
+   </para>
+-->
+<para>
+<literal>EXCEPT</literal>子句有如下的通用形式：
+<synopsis>
+<replaceable class="parameter">select_statement</replaceable> EXCEPT [ ALL | DISTINCT ] <replaceable class="parameter">select_statement</replaceable>
+</synopsis>
+<replaceable class="parameter">select_statement</replaceable>是任何没有
+<literal>ORDER BY</>, <literal>LIMIT</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</literal>,
+ <literal>FOR SHARE</literal>, 或 <literal>FOR KEY SHARE</>子句的<command>SELECT</command>表达式。
+</para>
+
+   <!--
+<para>
+    The <literal>EXCEPT</literal> operator computes the set of rows
+    that are in the result of the left <command>SELECT</command>
+    statement but not in the result of the right one.
+   </para>
+-->
+<para>
+<literal>EXCEPT</literal>操作符计算存在于左边<command>SELECT</command>
+语句的输出而不存在于右边<command>SELECT</command>语句输出的行。
+</para>
+
+   <!--
+<para>
+    The result of <literal>EXCEPT</literal> does not contain any
+    duplicate rows unless the <literal>ALL</> option is specified.
+    With <literal>ALL</>, a row that has <replaceable>m</> duplicates in the
+    left table and <replaceable>n</> duplicates in the right table will appear
+    max(<replaceable>m</>-<replaceable>n</>,0) times in the result set.
+    <literal>DISTINCT</> can be written to explicitly specify the
+    default behavior of eliminating duplicate rows.
+   </para>
+-->
+<para>
+<literal>EXCEPT</literal>的结果不包含任何重复的行，除非声明了<literal>ALL</>选项。
+使用<literal>ALL</>时，一个在左边表中有<replaceable>m</>个重复而在右边表中有
+<replaceable>n</>个重复的行将在结果中出现max(<replaceable>m</>-<replaceable>n</>,0)次。
+<literal>DISTINCT</>可以明确的指定消除重复行的缺省行为。
+</para>
+
+   <!--
+<para>
+    Multiple <literal>EXCEPT</literal> operators in the same
+    <command>SELECT</command> statement are evaluated left to right,
+    unless parentheses dictate otherwise.  <literal>EXCEPT</> binds at
+    the same level as <literal>UNION</>.
+   </para>
+-->
+<para>
+除非用圆括弧指明顺序，否则同一个<command>SELECT</command>语句中的多个
+<literal>EXCEPT</literal>操作符是从左向右计算的。<literal>EXCEPT</>
+和<literal>UNION</>的绑定级别相同。
+</para>
+
+   <!--
+<para>
+    Currently, <literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</> and
+    <literal>FOR KEY SHARE</> cannot be
+    specified either for an <literal>EXCEPT</> result or for any input of
+    an <literal>EXCEPT</>.
+   </para>
+-->
+<para>
+目前，不能给<literal>EXCEPT</>的结果或者任何<literal>EXCEPT</>的输入声明
+<literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</> 和
+ <literal>FOR KEY SHARE</>子句。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-ORDERBY">
+   <!-- 
+   <title id="sql-orderby-title"><literal>ORDER BY</literal> Clause</title> 
+   -->
+   <title id="sql-orderby-title"><literal>ORDER BY</literal> 子句</title>
+
+   <!--
+<para>
+    The optional <literal>ORDER BY</literal> clause has this general form:
+<synopsis>
+ORDER BY <replaceable class="parameter">expression</replaceable> [ ASC | DESC | USING <replaceable class="parameter">operator</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...]
+</synopsis>
+    The <literal>ORDER BY</literal> clause causes the result rows to
+    be sorted according to the specified expression(s).  If two rows are
+    equal according to the leftmost expression, they are compared
+    according to the next expression and so on.  If they are equal
+    according to all specified expressions, they are returned in
+    an implementation-dependent order.
+   </para>
+-->
+<para>
+可选的<literal>ORDER BY</literal>子句有下面的一般形式：
+<synopsis>
+ORDER BY <replaceable class="parameter">expression</replaceable> [ ASC | DESC | USING <replaceable class="parameter">operator</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...]
+</synopsis>
+<literal>ORDER BY</literal>子句导致结果行根据指定的表达式进行排序。
+如果根据最左边的表达式，两行的结果相同，那么就根据下一个表达式进行比较，
+依此类推。如果对于所有声明的表达式他们都相同，那么按随机顺序返回。
+</para>
+
+   <!--
+<para>
+    Each <replaceable class="parameter">expression</replaceable> can be the
+    name or ordinal number of an output column
+    (<command>SELECT</command> list item), or it can be an arbitrary
+    expression formed from input-column values.
+   </para>
+-->
+<para>
+每个<replaceable class="parameter">expression</replaceable>可以是一个输出字段
+(<command>SELECT</command>列表项)的名字或者序号，或者也可以是用输入字段的数值组成的任意表达式。
+</para>
+
+   <!--
+<para>
+    The ordinal number refers to the ordinal (left-to-right) position
+    of the output column. This feature makes it possible to define an
+    ordering on the basis of a column that does not have a unique
+    name.  This is never absolutely necessary because it is always
+    possible to assign a name to an output column using the
+    <literal>AS</> clause.
+   </para>
+-->
+<para>
+序数指的是输出字段按顺序(从左到右)的位置。这个特性可以对没有唯一名称的字段进行排序。
+这不是必须的，因为总是可以通过<literal>AS</>子句给一个要输出的字段赋予一个名称。
+</para>
+
+   <!--
+<para>
+    It is also possible to use arbitrary expressions in the
+    <literal>ORDER BY</literal> clause, including columns that do not
+    appear in the <command>SELECT</command> output list.  Thus the
+    following statement is valid:
+<programlisting>
+SELECT name FROM distributors ORDER BY code;
+</programlisting>
+    A limitation of this feature is that an <literal>ORDER BY</>
+    clause applying to the result of a <literal>UNION</>,
+    <literal>INTERSECT</>, or <literal>EXCEPT</> clause can only
+    specify an output column name or number, not an expression.
+   </para>
+-->
+<para>
+在<literal>ORDER BY</literal>里还可以使用任意表达式，包括那些没有出现在
+<command>SELECT</command>输出列表里面的字段。因此下面的语句现在是合法的：
+<programlisting>
+SELECT name FROM distributors ORDER BY code;
+</programlisting>
+这个特性的一个局限就是应用于<literal>UNION</>,<literal>INTERSECT</>,<literal>EXCEPT</>
+子句的结果的<literal>ORDER BY</>子句只能在一个输出字段名或者数字上声明，
+而不能在一个表达式上声明。
+</para>
+
+   <!--
+<para>
+    If an <literal>ORDER BY</> expression is a simple name that
+    matches both an output column name and an input column name,
+    <literal>ORDER BY</> will interpret it as the output column name.
+    This is the opposite of the choice that <literal>GROUP BY</> will
+    make in the same situation.  This inconsistency is made to be
+    compatible with the SQL standard.
+   </para>
+-->
+<para>
+如果一个<literal>ORDER BY</>表达式是一个简单名称，同时匹配结果字段和输入字段，
+<literal>ORDER BY</>将把它解释成结果字段名称。这和<literal>GROUP BY</>
+在同样情况下做的选择正相反。这样的不一致是用来和 SQL 标准兼容的。
+</para>
+
+   <!--
+<para>
+    Optionally one can add the key word <literal>ASC</> (ascending) or
+    <literal>DESC</> (descending) after any expression in the
+    <literal>ORDER BY</> clause.  If not specified, <literal>ASC</> is
+    assumed by default.  Alternatively, a specific ordering operator
+    name can be specified in the <literal>USING</> clause.
+    An ordering operator must be a less-than or greater-than
+    member of some B-tree operator family.
+    <literal>ASC</> is usually equivalent to <literal>USING &lt;</> and
+    <literal>DESC</> is usually equivalent to <literal>USING &gt;</>.
+    (But the creator of a user-defined data type can define exactly what the
+    default sort ordering is, and it might correspond to operators with other
+    names.)
+   </para>
+-->
+<para>
+可以给<literal>ORDER BY</>子句里每个字段加一个可选的<literal>ASC</>(升序，缺省)
+或<literal>DESC</>(降序)关键字。还可以在<literal>USING</>
+子句里声明一个排序操作符来实现排序。排序操作符必须小于或大于某些B-tree操作符族的成员。
+<literal>ASC</>等效于使用<literal>USING &lt;</>而<literal>DESC</>等效于使用<literal>USING &gt;</>。
+但是一个用户定义类型的创建者可以明确定义缺省的排序顺序，并且可以使用其他名称的操作符。
+</para>
+
+   <!--
+<para>
+    If <literal>NULLS LAST</> is specified, null values sort after all
+    non-null values; if <literal>NULLS FIRST</> is specified, null values
+    sort before all non-null values.  If neither is specified, the default
+    behavior is <literal>NULLS LAST</> when <literal>ASC</> is specified
+    or implied, and <literal>NULLS FIRST</> when <literal>DESC</> is specified
+    (thus, the default is to act as though nulls are larger than non-nulls).
+    When <literal>USING</> is specified, the default nulls ordering depends
+    on whether the operator is a less-than or greater-than operator.
+   </para>
+-->
+<para>
+如果指定<literal>NULLS LAST</>，空值会在所有非空值之后排序；如果指定
+<literal>NULLS FIRST</>，空值会在所有非空值之前排序。如果两者均未指定，
+当指定<literal>ASC</>或缺省时，默认反应时是<literal>NULLS LAST</>，
+并且当指定<literal>DESC</>时，默认反应时是<literal>NULLS FIRST</>（因此，
+默认地认为空是大于非空的）。当指定<literal>USING</>时，
+默认空排序依赖于操作符是小于还是大于操作符。
+</para>
+
+   <!--
+<para>
+    Note that ordering options apply only to the expression they follow;
+    for example <literal>ORDER BY x, y DESC</> does not mean
+    the same thing as <literal>ORDER BY x DESC, y DESC</>.
+   </para>
+-->
+<para>
+请注意排序选项仅适用于他们遵循的表达式；例如<literal>ORDER BY x, y DESC</>
+不意味着与<literal>ORDER BY x DESC, y DESC</>相同。
+</para>
+
+   <!--
+<para>
+    Character-string data is sorted according to the collation that applies
+    to the column being sorted.  That can be overridden at need by including
+    a <literal>COLLATE</> clause in the
+    <replaceable class="parameter">expression</replaceable>, for example
+    <literal>ORDER BY mycolumn COLLATE "en_US"</>.
+    For more information see <xref linkend="sql-syntax-collate-exprs"> and
+    <xref linkend="collation">.
+   </para>
+-->
+<para>
+字符类型的数据是按照应用于被排序的字段的排序规则排序的。可以在需要时通过在
+<replaceable class="parameter">expression</replaceable>中包含<literal>COLLATE</>
+子句覆盖，例如<literal>ORDER BY mycolumn COLLATE "en_US"</>。更多信息请参阅
+<xref linkend="sql-syntax-collate-exprs">和<xref linkend="collation">。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-LIMIT">
+   <!-- 
+   <title id="sql-limit-title"><literal>LIMIT</literal> Clause</title> 
+   -->
+   <title id="sql-limit-title"><literal>LIMIT</literal> 子句</title>
+
+   <!--
+<para>
+    The <literal>LIMIT</literal> clause consists of two independent
+    sub-clauses:
+<synopsis>
+LIMIT { <replaceable class="parameter">count</replaceable> | ALL }
+OFFSET <replaceable class="parameter">start</replaceable>
+</synopsis>
+    <replaceable class="parameter">count</replaceable> specifies the
+    maximum number of rows to return, while <replaceable
+    class="parameter">start</replaceable> specifies the number of rows
+    to skip before starting to return rows.  When both are specified,
+    <replaceable class="parameter">start</replaceable> rows are skipped
+    before starting to count the <replaceable
+    class="parameter">count</replaceable> rows to be returned.
+   </para>
+-->
+<para>
+<literal>LIMIT</literal>子句由两个独立的子句组成：
+<synopsis>
+LIMIT { <replaceable class="parameter">count</replaceable> | ALL }
+OFFSET <replaceable class="parameter">start</replaceable>
+</synopsis>
+<replaceable class="parameter">count</replaceable>声明返回的最大行数，
+而<replaceable class="parameter">start</replaceable>声明开始返回行之前忽略的行数。
+如果两个都指定了，那么在开始计算<replaceable class="parameter">count</replaceable>
+个返回行之前将先跳过<replaceable class="parameter">start</replaceable>行。
+</para>
+
+   <!--
+<para>
+    If the <replaceable class="parameter">count</replaceable> expression
+    evaluates to NULL, it is treated as <literal>LIMIT ALL</>, i.e., no
+    limit.  If <replaceable class="parameter">start</replaceable> evaluates
+    to NULL, it is treated the same as <literal>OFFSET 0</>.
+   </para>
+-->
+<para>
+如果<replaceable class="parameter">count</replaceable>表达式评估为NULL，
+它被当做<literal>LIMIT ALL</>，也就是，没有限制。如果
+<replaceable class="parameter">start</replaceable>评估为NULL，他与
+<literal>OFFSET 0</>相同对待。
+</para>
+
+   <!--
+<para>
+    SQL:2008 introduced a different syntax to achieve the same result,
+    which <productname>PostgreSQL</> also supports.  It is:
+<synopsis>
+OFFSET <replaceable class="parameter">start</replaceable> { ROW | ROWS }
+FETCH { FIRST | NEXT } [ <replaceable class="parameter">count</replaceable> ] { ROW | ROWS } ONLY
+</synopsis>
+    In this syntax, to write anything except a simple integer constant for
+    <replaceable class="parameter">start</> or <replaceable
+    class="parameter">count</replaceable>, you must write parentheses
+    around it.
+    If <replaceable class="parameter">count</> is
+    omitted in a <literal>FETCH</> clause, it defaults to 1.
+    <literal>ROW</literal>
+    and <literal>ROWS</literal> as well as <literal>FIRST</literal>
+    and <literal>NEXT</literal> are noise words that don't influence
+    the effects of these clauses.
+    According to the standard, the <literal>OFFSET</literal> clause must come
+    before the <literal>FETCH</literal> clause if both are present; but
+    <productname>PostgreSQL</> is laxer and allows either order.
+   </para>
+-->
+<para>
+SQL:2008引入了一个不同的语法来达到相同的效果，这也是<productname>PostgreSQL</>支持的。这是：
+<synopsis>
+OFFSET <replaceable class="parameter">start</replaceable> { ROW | ROWS }
+FETCH { FIRST | NEXT } [ <replaceable class="parameter">count</replaceable> ] { ROW | ROWS } ONLY
+</synopsis>
+在该语法中，为<replaceable class="parameter">start</>或<replaceable class="parameter">count</replaceable>
+提供除简单整型常量之外的东西时，你必须写圆括号。如果<replaceable class="parameter">count</>
+在<literal>FETCH</>子句中省略了，它默认为1。<literal>ROW</literal>和<literal>ROWS</literal>
+以及<literal>FIRST</literal>和<literal>NEXT</literal>是不影响这些子句的效果的干扰词。
+根据该标准，若两个都存在则<literal>OFFSET</literal>子句必须在<literal>FETCH</literal>子句之前出现；
+但是<productname>PostgreSQL</>的要求更为宽松并且允许任意一种顺序。
+</para>
+
+   <!--
+<para>
+    When using <literal>LIMIT</>, it is a good idea to use an
+    <literal>ORDER BY</> clause that constrains the result rows into a
+    unique order.  Otherwise you will get an unpredictable subset of
+    the query's rows &mdash; you might be asking for the tenth through
+    twentieth rows, but tenth through twentieth in what ordering?  You
+    don't know what ordering unless you specify <literal>ORDER BY</>.
+   </para>
+-->
+<para>
+使用<literal>LIMIT</>的一个好习惯是使用一个<literal>ORDER BY</>子句把结果行限制成一个唯一的顺序。
+否则你会得到无法预料的结果子集，你可能想要第十行到第二十行，但是是以什么顺序的第十行到第二十行？
+除非你声明<literal>ORDER BY</> ，否则你不知道什么顺序。
+</para>
+
+   <!--
+<para>
+    The query planner takes <literal>LIMIT</> into account when
+    generating a query plan, so you are very likely to get different
+    plans (yielding different row orders) depending on what you use
+    for <literal>LIMIT</> and <literal>OFFSET</>.  Thus, using
+    different <literal>LIMIT</>/<literal>OFFSET</> values to select
+    different subsets of a query result <emphasis>will give
+    inconsistent results</emphasis> unless you enforce a predictable
+    result ordering with <literal>ORDER BY</>.  This is not a bug; it
+    is an inherent consequence of the fact that SQL does not promise
+    to deliver the results of a query in any particular order unless
+    <literal>ORDER BY</> is used to constrain the order.
+   </para>
+-->
+<para>
+查询优化器在生成查询规划时会把<literal>LIMIT</>考虑进去，所以你很有可能因给出的
+<literal>LIMIT</>和<literal>OFFSET</>值不同而得到不同的规划(生成不同的行序)。
+因此用不同的<literal>LIMIT</>/<literal>OFFSET</>值选择不同的查询结果的子集
+<emphasis>将不会产生一致的结果</emphasis>，除非你用<literal>ORDER BY</>
+强制生成一个可预计的结果顺序。这可不是 bug ；这是 SQL 生来的特点，
+因为除非用了<literal>ORDER BY</>约束顺序，SQL 不保证查询生成的结果有任何特定的顺序。
+</para>
+
+   <!--
+<para>
+    It is even possible for repeated executions of the same <literal>LIMIT</>
+    query to return different subsets of the rows of a table, if there
+    is not an <literal>ORDER BY</> to enforce selection of a deterministic
+    subset.  Again, this is not a bug; determinism of the results is
+    simply not guaranteed in such a case.
+   </para>
+-->
+<para>
+如果没有一个<literal>ORDER BY</>来强制选择一个确定性子集，那么重复执行相同的
+<literal>LIMIT</>查询返回不同的表行的子集甚至都是可能的。同样，
+这不是一个漏洞；结果的确定在这种情况下没法保证。
+</para>
+  </refsect2>
+
+  <refsect2 id="SQL-FOR-UPDATE-SHARE">
+   <!-- 
+   <title id="sql-for-update-share-title">The Locking Clause</title>
+   -->
+   <title id="sql-for-update-share-title">锁定子句</title>
+
+   <!--
+<para>
+    <literal>FOR UPDATE</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR SHARE</>
+    and <literal>FOR KEY SHARE</>
+    are <firstterm>locking clauses</>; they affect how <literal>SELECT</>
+    locks rows as they are obtained from the table.
+   </para>
+-->
+<para>
+<literal>FOR UPDATE</>, <literal>FOR NO KEY UPDATE</>, <literal>FOR SHARE</>
+ 和 <literal>FOR KEY SHARE</> 是 <firstterm>锁定子句</>;他们影响
+<literal>SELECT</>如何从表中锁定行作为获得的行。
+</para>
+
+   <!--
+<para>
+    The locking clause has the general form
+
+<synopsis>
+FOR <replaceable>lock_strength</> [ OF <replaceable class="parameter">table_name</replaceable> [, ...] ] [ NOWAIT ]
+</synopsis>
+
+    where <replaceable>lock_strength</> can be one of
+
+<synopsis>
+UPDATE
+NO KEY UPDATE
+SHARE
+KEY SHARE
+</synopsis>
+   </para>
+-->
+<para>
+锁定子句的一般形式：
+<synopsis>
+FOR <replaceable>lock_strength</> [ OF <replaceable class="parameter">table_name</replaceable> [, ...] ] [ NOWAIT ]
+</synopsis>
+这里的<replaceable>lock_strength</>可以是下列之一：
+<synopsis>
+
+UPDATE
+NO KEY UPDATE
+SHARE
+KEY SHARE
+</synopsis>
+</para>
+
+   <!--
+<para>
+    <literal>FOR UPDATE</literal> causes the rows retrieved by the
+    <command>SELECT</command> statement to be locked as though for
+    update.  This prevents them from being modified or deleted by
+    other transactions until the current transaction ends.  That is,
+    other transactions that attempt <command>UPDATE</command>,
+    <command>DELETE</command>,
+    <command>SELECT FOR UPDATE</command>,
+    <command>SELECT FOR NO KEY UPDATE</command>,
+    <command>SELECT FOR SHARE</command> or
+    <command>SELECT FOR KEY SHARE</command>
+    of these rows will be blocked until the current transaction ends.
+    The <literal>FOR UPDATE</> lock mode
+    is also acquired by any <command>DELETE</> on a row, and also by an
+    <command>UPDATE</> that modifies the values on certain columns.  Currently,
+    the set of columns considered for the <command>UPDATE</> case are those that
+    have an unique index on them that can be used in a foreign key (so partial
+    indexes and expressional indexes are not considered), but this may change
+    in the future.
+    Also, if an <command>UPDATE</command>, <command>DELETE</command>,
+    or <command>SELECT FOR UPDATE</command> from another transaction
+    has already locked a selected row or rows, <command>SELECT FOR
+    UPDATE</command> will wait for the other transaction to complete,
+    and will then lock and return the updated row (or no row, if the
+    row was deleted).  Within a <literal>REPEATABLE READ</> or <literal>SERIALIZABLE</> transaction,
+    however, an error will be thrown if a row to be locked has changed
+    since the transaction started.  For further discussion see <xref
+    linkend="mvcc">.
+   </para>
+-->
+<para>
+<literal>FOR UPDATE</literal>令那些被<command>SELECT</command>检索出来的行被锁住，
+就像要更新一样。这样就避免它们在当前事务结束前被其它事务修改或者删除；也就是说，
+其它企图<command>UPDATE</command>, <command>DELETE</command>, <command>SELECT FOR UPDATE</command>, 
+<command>SELECT FOR NO KEY UPDATE</command>, <command>SELECT FOR SHARE</command> 或 
+<command>SELECT FOR KEY SHARE</command>这些行的事务将被阻塞，直到当前事务结束。
+<literal>FOR UPDATE</>锁模式也可以通过在一个行上<command>DELETE</>或在特定的字段上修改值的
+<command>UPDATE</>获得。目前，为<command>UPDATE</>情况考虑的字段设置是那些有唯一索引并且可以用于外键的
+（所以不考虑局部索引和表达式索引），但是这个可能会在将来改变。同样，
+如果一个来自其它事务的<command>UPDATE</command>, <command>DELETE</command>, 
+<command>SELECT FOR UPDATE</command>已经锁住了某个或某些选定的行，<command>SELECT FOR UPDATE</command>
+将等到那些事务结束，并且将随后锁住并返回更新的行(或者不返回行，如果行已经被删除)。
+但是，在<literal>REPEATABLE READ</>或<literal>SERIALIZABLE</>事务内部，
+如果在事务开始时要被锁定的行已经改变了，那么将抛出一个错误。更多的讨论参阅<xref linkend="mvcc">。
+</para>
+
+   <!--
+<para>
+    <literal>FOR NO KEY UPDATE</> behaves similarly, except that the lock
+    acquired is weaker: this lock will not block
+    <literal>SELECT FOR KEY SHARE</> commands that attempt to acquire
+    a lock on the same rows. This lock mode is also acquired by any
+    <command>UPDATE</> that does not acquire a <literal>FOR UPDATE</> lock.
+   </para>
+-->
+<para>
+<literal>FOR NO KEY UPDATE</>的行为类似，只是获得的锁比较弱：这个锁将不锁定
+尝试在相同的行上获得锁的<literal>SELECT FOR KEY SHARE</>命令。
+这个锁模式也可以通过任何不争取<literal>FOR UPDATE</>锁的<command>UPDATE</>获得。
+</para>
+
+   <!--
+<para>
+    <literal>FOR SHARE</literal> behaves similarly, except that it
+    acquires a shared rather than exclusive lock on each retrieved
+    row.  A shared lock blocks other transactions from performing
+    <command>UPDATE</command>, <command>DELETE</command>, <command>SELECT
+    FOR UPDATE</command> or <command>SELECT FOR NO KEY UPDATE</>
+    on these rows, but it does not prevent them
+    from performing <command>SELECT FOR SHARE</command> or
+    <command>SELECT FOR KEY SHARE</command>.
+   </para>
+-->
+<para>
+<literal>FOR SHARE</literal>的行为类似，只是它在每个检索出来的行上要求一个共享锁，
+而不是一个排它锁。一个共享锁阻塞其它事务在这些行上执行<command>UPDATE</command>, 
+<command>DELETE</command>, <command>SELECT FOR UPDATE</command> 或 
+<command>SELECT FOR NO KEY UPDATE</>，却不阻止他们执行<command>SELECT FOR SHARE</command> 或
+ <command>SELECT FOR KEY SHARE</command>。
+</para>
+
+   <!--
+<para>
+    <literal>FOR KEY SHARE</> behaves similarly to <literal>FOR SHARE</literal>,
+    except that the lock
+    is weaker: <literal>SELECT FOR UPDATE</> is blocked, but
+    not <literal>SELECT FOR NO KEY UPDATE</>.  A key-shared
+    lock blocks other transactions from performing <command>DELETE</command>
+    or any <command>UPDATE</command> that changes the key values, but not
+    other <command>UPDATE</>, and neither does it prevent
+    <command>SELECT FOR NO KEY UPDATE</>, <command>SELECT FOR SHARE</>, or
+    <command>SELECT FOR KEY SHARE</>.
+   </para>
+-->
+<para>
+<literal>FOR KEY SHARE</>的行为类似于<literal>FOR SHARE</literal>，只是锁比较弱：
+阻塞<literal>SELECT FOR UPDATE</>但不阻塞<literal>SELECT FOR NO KEY UPDATE</>。
+一个共享键块阻塞其他事务执行<command>DELETE</command>或任意改变键值的<command>UPDATE</command>，
+但是不阻塞其他<command>UPDATE</>，也不阻止<command>SELECT FOR NO KEY UPDATE</>, 
+<command>SELECT FOR SHARE</>, 或 <command>SELECT FOR KEY SHARE</>。
+</para>
+
+   <!--
+<para>
+    To prevent the operation from waiting for other transactions to commit,
+    use the <literal>NOWAIT</> option.  With <literal>NOWAIT</>, the statement
+    reports an error, rather than waiting, if a selected row
+    cannot be locked immediately.  Note that <literal>NOWAIT</> applies only
+    to the row-level lock(s) &mdash; the required <literal>ROW SHARE</literal>
+    table-level lock is still taken in the ordinary way (see
+    <xref linkend="mvcc">).  You can use
+    <xref linkend="sql-lock">
+    with the <literal>NOWAIT</> option first,
+    if you need to acquire the table-level lock without waiting.
+   </para>
+-->
+<para>
+为了避免操作等待其它事务提交，使用<literal>NOWAIT</>选项。如果被选择的行不能立即被锁住，
+那么语句将会立即汇报一个错误，而不是等待。请注意，<literal>NOWAIT</>只适用于行级别的锁，
+要求的表级锁<literal>ROW SHARE</literal>仍然以通常的方法进行(参阅<xref linkend="mvcc">)。
+如果需要申请表级别的锁同时又不等待，那么你可以使用<xref linkend="sql-lock">的
+<literal>NOWAIT</>选项。
+</para>
+
+   <!--
+<para>
+    If specific tables are named in a locking clause,
+    then only rows coming from those tables are locked; any other
+    tables used in the <command>SELECT</command> are simply read as
+    usual.  A locking
+    clause without a table list affects all tables used in the statement.
+    If a locking clause is
+    applied to a view or sub-query, it affects all tables used in
+    the view or sub-query.
+    However, these clauses
+    do not apply to <literal>WITH</> queries referenced by the primary query.
+    If you want row locking to occur within a <literal>WITH</> query, specify
+    a locking clause within the <literal>WITH</> query.
+   </para>
+-->
+<para>
+如果在锁定子句中明确指定了表名字，那么将只有这些指定的表被锁定，其他在
+<command>SELECT</command>中使用的表将不会被锁定。
+一个其后不带表列表的锁定子句将锁定该声明中所有使用的表。
+如果锁定子句应用于一个视图或者子查询，它同样将锁定所有该视图或子查询中使用到的表。
+但是这些子句不适用于被主查询引用的<literal>WITH</>查询。
+如果你想要行锁定发生在<literal>WITH</>查询中，那么在<literal>WITH</>查询中指定锁定子句。
+</para>
+
+   <!--
+<para>
+    Multiple locking
+    clauses can be written if it is necessary to specify different locking
+    behavior for different tables.  If the same table is mentioned (or
+    implicitly affected) by more than one locking clause,
+    then it is processed as if it was only specified by the strongest one.
+    Similarly, a table is processed
+    as <literal>NOWAIT</> if that is specified in any of the clauses
+    affecting it.
+   </para>
+-->
+<para>
+多个锁定子句可以用于为不同的表指定不同的锁定模式。如果一个表出同时出现
+(或隐含同时出现)在多个锁定子句中，那么将看做只被最强的那个声明了处理。
+类似的，如果影响一个表的任意子句中出现了<literal>NOWAIT</>，
+那么该表将按照<literal>NOWAIT</>处理。
+</para>
+
+   <!--
+<para>
+    The locking clauses cannot be
+    used in contexts where returned rows cannot be clearly identified with
+    individual table rows; for example they cannot be used with aggregation.
+   </para>
+-->
+<para>
+锁定子句不能在那些无法使用独立的表行清晰标识返回行的环境里使用；比如，它不能和聚集一起使用。
+</para>
+
+   <!--
+<para>
+    When a locking clause
+    appears at the top level of a <command>SELECT</> query, the rows that
+    are locked are exactly those that are returned by the query; in the
+    case of a join query, the rows locked are those that contribute to
+    returned join rows.  In addition, rows that satisfied the query
+    conditions as of the query snapshot will be locked, although they
+    will not be returned if they were updated after the snapshot
+    and no longer satisfy the query conditions.  If a
+    <literal>LIMIT</> is used, locking stops
+    once enough rows have been returned to satisfy the limit (but note that
+    rows skipped over by <literal>OFFSET</> will get locked).  Similarly,
+    if a locking clause
+    is used in a cursor's query, only rows actually fetched or stepped past
+    by the cursor will be locked.
+   </para>
+-->
+<para>
+当锁定子句出现在<command>SELECT</>查询的顶层时，锁定的行恰好是被查询返回的行；
+在连接查询的情况下，锁定的行是那些有助于返回连接的行。另外，
+满足查询条件的行作为查询快照将被锁定，尽管如果在快照后他们被更新不再满足查询条件
+就不再被返回。如果使用了<literal>LIMIT</>，那么一旦返回足够的行满足限制锁定将停止
+（但是请注意，通过<literal>OFFSET</>跳过的行将被锁定）。相似的，如果锁定子句用于游标查询，
+只有实际抓取到的行或通过游标跳过的行将被锁定。
+</para>
+
+   <!--
+<para>
+    When a locking clause
+    appears in a sub-<command>SELECT</>, the rows locked are those
+    returned to the outer query by the sub-query.  This might involve
+    fewer rows than inspection of the sub-query alone would suggest,
+    since conditions from the outer query might be used to optimize
+    execution of the sub-query.  For example,
+<programlisting>
+SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss WHERE col1 = 5;
+</programlisting>
+    will lock only rows having <literal>col1 = 5</>, even though that
+    condition is not textually within the sub-query.
+   </para>
+-->
+<para>
+当锁定子句出现在子<command>SELECT</>中时，锁定的行是那些通过子查询返回到外查询的行。
+这些包含的行可能比单独检查子查询时给出的行更少，因为外查询的条件可能会用来优化子查询的执行。
+例如：
+<programlisting>
+SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss WHERE col1 = 5;
+</programlisting>
+将只锁定<literal>col1 = 5</>的行，即使那个条件不是子查询中的原文。
+</para>
+
+  <!--
+<para>
+   Previous releases failed to preserve a lock which is upgraded by a later
+   savepoint.  For example, this code:
+<programlisting>
+BEGIN;
+SELECT * FROM mytable WHERE key = 1 FOR UPDATE;
+SAVEPOINT s;
+UPDATE mytable SET ... WHERE key = 1;
+ROLLBACK TO s;
+</programlisting>
+   would fail to preserve the <literal>FOR UPDATE</> lock after the
+   <command>ROLLBACK TO</>.  This has been fixed in release 9.3.
+  </para>
+-->
+<para>
+以前的版本未能保持锁，通过一个稍后的保存点来改善。例如，这段代码：
+<programlisting>
+BEGIN;
+SELECT * FROM mytable WHERE key = 1 FOR UPDATE;
+SAVEPOINT s;
+UPDATE mytable SET ... WHERE key = 1;
+ROLLBACK TO s;
+</programlisting>
+<literal>FOR UPDATE</>锁将会在<command>ROLLBACK TO</>之后无法保持。这在版本9.3中已经修复了。
+</para>
+
+  <caution>
+   <!--
+<para>
+    It is possible for a <command>SELECT</> command running at the <literal>READ
+    COMMITTED</literal> transaction isolation level and using <literal>ORDER
+    BY</literal> and a locking clause to return rows out of
+    order.  This is because <literal>ORDER BY</> is applied first.
+    The command sorts the result, but might then block trying to obtain a lock
+    on one or more of the rows.  Once the <literal>SELECT</> unblocks, some
+    of the ordering column values might have been modified, leading to those
+    rows appearing to be out of order (though they are in order in terms
+    of the original column values).  This can be worked around at need by
+    placing the <literal>FOR UPDATE/SHARE</literal> clause in a sub-query,
+    for example
+<programlisting>
+SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss ORDER BY column1;
+</programlisting>
+    Note that this will result in locking all rows of <structname>mytable</>,
+    whereas <literal>FOR UPDATE</> at the top level would lock only the
+    actually returned rows.  This can make for a significant performance
+    difference, particularly if the <literal>ORDER BY</> is combined with
+    <literal>LIMIT</> or other restrictions.  So this technique is recommended
+    only if concurrent updates of the ordering columns are expected and a
+    strictly sorted result is required.
+   </para>
+-->
+<para>
+一个<command>SELECT</>命令运行在<literal>READ COMMITTED</literal>事务隔离级别和使用
+<literal>ORDER BY</literal>和一个锁定子句返回顺序混乱的行是可能的。这是因为<literal>ORDER BY</>
+先生效。命令排序结果，但是可能会在其中一行或多行上获取锁的时候被阻塞。一旦<literal>SELECT</>
+的阻塞被解除后，某些顺序字段值可能被修改，导致这些行混乱了（尽管他们还是原先字段值的顺序）。
+可以在需要的时候通过在子查询中放置<literal>FOR UPDATE/SHARE</literal>子句来避开，例如
+<programlisting>
+SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss ORDER BY column1;
+</programlisting>
+请注意这将导致锁定<structname>mytable</>的所有行，而顶层的<literal>FOR UPDATE</>
+将会实际上仅锁住返回行。这可能会产生一个显著的性能差异，尤其是如果<literal>ORDER BY</>
+与<literal>LIMIT</>或者其他限制结合。仅当顺序列的并发更新是预期的并且需要一个严格的排序结果时，
+该技术才是建议使用的。
+</para>
+
+   <!--
+<para>
+    At the <literal>REPEATABLE READ</literal> or <literal>SERIALIZABLE</literal>
+    transaction isolation level this would cause a serialization failure (with
+    a <literal>SQLSTATE</literal> of <literal>'40001'</literal>), so there is
+    no possibility of receiving rows out of order under these isolation levels.
+   </para>
+-->
+<para>
+在<literal>REPEATABLE READ</literal>或<literal>SERIALIZABLE</literal>事务隔离级别，
+这可能会导致一个序列化失败（<literal>SQLSTATE</literal>为<literal>'40001'</literal>），
+所以在这些隔离级别下接收次序混乱的行是不可能的。
+</para>
+  </caution>
+  </refsect2>
+
+  <refsect2 id="SQL-TABLE">
+   <!-- 
+   <title><literal>TABLE</literal> Command</title> 
+   -->
+   <title><literal>TABLE</literal> 命令</title>
+
+   <!--
+<para>
+    The command
+<programlisting>
+TABLE <replaceable class="parameter">name</replaceable>
+</programlisting>
+    is completely equivalent to
+<programlisting>
+SELECT * FROM <replaceable class="parameter">name</replaceable>
+</programlisting>
+    It can be used as a top-level command or as a space-saving syntax
+    variant in parts of complex queries.
+   </para>
+-->
+<para>
+命令：
+<programlisting>
+TABLE <replaceable class="parameter">name</replaceable>
+</programlisting>
+完全等价于：
+<programlisting>
+SELECT * FROM <replaceable class="parameter">name</replaceable>
+</programlisting>
+它可以用作复杂查询中的一部分的一个顶级的命令或者一个节省空间的语法变体。
+</para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Examples</title>
+-->
+<title>例子</title>
+
+<para>
+<!-- 
+   To join the table <literal>films</literal> with the table
+   <literal>distributors</literal>:
+ -->
+ 将表<literal>films</literal>和表<literal>distributors</literal>连接在一起：
+<programlisting>
+SELECT f.title, f.did, d.name, f.date_prod, f.kind
+    FROM distributors d, films f
+    WHERE f.did = d.did
+
+       title       | did |     name     | date_prod  |   kind
+-------------------+-----+--------------+------------+----------
+ The Third Man     | 101 | British Lion | 1949-12-23 | Drama
+ The African Queen | 101 | British Lion | 1951-08-11 | Romantic
+ ...
+</programlisting>
+  </para>
+<para>
+<!-- 
+   To sum the column <literal>len</literal> of all films and group
+   the results by <literal>kind</literal>:
+ -->
+统计用<literal>kind</literal>分组的每组电影的长度<literal>len</literal>总和：
+ <programlisting>
+SELECT kind, sum(len) AS total FROM films GROUP BY kind;
+
+   kind   | total
+----------+-------
+ Action   | 07:34
+ Comedy   | 02:58
+ Drama    | 14:28
+ Musical  | 06:42
+ Romantic | 04:38
+</programlisting>
+  </para>
+<para>
+<!-- 
+   To sum the column <literal>len</literal> of all films, group
+   the results by <literal>kind</literal> and show those group totals
+   that are less than 5 hours:
+-->
+统计用<literal>kind</literal>分组的每组电影的长度<literal>len</literal>总和不足五小时的组：
+<programlisting>
+SELECT kind, sum(len) AS total
+    FROM films
+    GROUP BY kind
+    HAVING sum(len) &lt; interval '5 hours';
+
+   kind   | total
+----------+-------
+ Comedy   | 02:58
+ Romantic | 04:38
+</programlisting>
+  </para>
+<para>
+<!-- 
+   The following two examples are identical ways of sorting the individual
+   results according to the contents of the second column
+   (<literal>name</literal>):
+ -->
+ 下面两个例子是根据第二列(<literal>name</literal>)的内容对单独的结果排序的相同的方法：
+<programlisting>
+SELECT * FROM distributors ORDER BY name;
+SELECT * FROM distributors ORDER BY 2;
+
+ did |       name
+-----+------------------
+ 109 | 20th Century Fox
+ 110 | Bavaria Atelier
+ 101 | British Lion
+ 107 | Columbia
+ 102 | Jean Luc Godard
+ 113 | Luso films
+ 104 | Mosfilm
+ 103 | Paramount
+ 106 | Toho
+ 105 | United Artists
+ 111 | Walt Disney
+ 112 | Warner Bros.
+ 108 | Westward
+</programlisting>
+  </para>
+
+<para>
+<!-- 
+   The next example shows how to obtain the union of the tables
+   <literal>distributors</literal> and
+   <literal>actors</literal>, restricting the results to those that begin
+   with the letter W in each table.  Only distinct rows are wanted, so the
+   key word <literal>ALL</literal> is omitted.
+ -->
+下面这个例子演示如何获得表<literal>distributors</literal>和<literal>actors</literal>的连接，
+只将每个表中以字母 W 开头的取出来。因为只取了不重复的行，所以关键字<literal>ALL</literal>被省略了：
+<programlisting>
+distributors:               actors:
+ did |     name              id |     name
+-----+--------------        ----+----------------
+ 108 | Westward               1 | Woody Allen
+ 111 | Walt Disney            2 | Warren Beatty
+ 112 | Warner Bros.           3 | Walter Matthau
+ ...                         ...
+
+SELECT distributors.name
+    FROM distributors
+    WHERE distributors.name LIKE 'W%'
+UNION
+SELECT actors.name
+    FROM actors
+    WHERE actors.name LIKE 'W%';
+
+      name
+----------------
+ Walt Disney
+ Walter Matthau
+ Warner Bros.
+ Warren Beatty
+ Westward
+ Woody Allen
+</programlisting>
+  </para>
+
+<para>
+<!-- 
+   This example shows how to use a function in the <literal>FROM</>
+   clause, both with and without a column definition list:
+ -->
+ 这个例子显示了如何在<literal>FROM</>子句中使用函数，包括带有和不带字段定义列表的。
+<programlisting>
+CREATE FUNCTION distributors(int) RETURNS SETOF distributors AS $$
+    SELECT * FROM distributors WHERE did = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM distributors(111);
+ did |    name
+-----+-------------
+ 111 | Walt Disney
+
+CREATE FUNCTION distributors_2(int) RETURNS SETOF record AS $$
+    SELECT * FROM distributors WHERE did = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM distributors_2(111) AS (f1 int, f2 text);
+ f1  |     f2
+-----+-------------
+ 111 | Walt Disney
+</programlisting>
+  </para>
+
+<para>
+<!-- 
+   This example shows how to use a simple <literal>WITH</> clause:
+ -->
+ 这个例子显示了如何使用一个简单的<literal>WITH</>子句：
+<programlisting>
+WITH t AS (
+    SELECT random() as x FROM generate_series(1, 3)
+  )
+SELECT * FROM t
+UNION ALL
+SELECT * FROM t
+
+         x          
+--------------------
+  0.534150459803641
+  0.520092216785997
+ 0.0735620250925422
+  0.534150459803641
+  0.520092216785997
+ 0.0735620250925422
+</programlisting>
+
+ <!-- 
+ Notice that the <literal>WITH</> query was evaluated only once,
+   so that we got two sets of the same three random values. 
+ -->
+ 请注意<literal>WITH</>查询只评估一次，所以我们获得两组相同的三个随机值。
+  </para>
+
+<para>
+<!-- 
+   This example uses <literal>WITH RECURSIVE</literal> to find all
+   subordinates (direct or indirect) of the employee Mary, and their
+   level of indirectness, from a table that shows only direct
+   subordinates:
+ -->
+ 这个例子使用<literal>WITH RECURSIVE</literal>
+ 从一个只显示直接属下的表中找到所有职员Mary的属下（直接或间接），和他们的间接级别，
+<programlisting>
+WITH RECURSIVE employee_recursive(distance, employee_name, manager_name) AS (
+    SELECT 1, employee_name, manager_name
+    FROM employee
+    WHERE manager_name = 'Mary'
+  UNION ALL
+    SELECT er.distance + 1, e.employee_name, e.manager_name
+    FROM employee_recursive er, employee e
+    WHERE er.employee_name = e.manager_name
+  )
+SELECT distance, employee_name FROM employee_recursive;
+</programlisting>
+
+<!-- 
+   Notice the typical form of recursive queries:
+   an initial condition, followed by <literal>UNION</literal>,
+   followed by the recursive part of the query. Be sure that the
+   recursive part of the query will eventually return no tuples, or
+   else the query will loop indefinitely.  (See <xref linkend="queries-with">
+   for more examples.) 
+-->
+请注意递归查询的典型形式：一个初始条件，紧接着是<literal>UNION</literal>，
+然后是查询的递归部分。确定查询的递归部分最终将不会返回元组，否则查询将无限循环下去。
+（请参阅<xref linkend="queries-with">获取更多示例。）
+  </para>
+
+<para>
+<!-- 
+   This example uses <literal>LATERAL</> to apply a set-returning function
+   <function>get_product_names()</> for each row of the
+   <structname>manufacturers</> table:
+ -->
+这个例子使用<literal>LATERAL</>为<structname>manufacturers</>表的每行应用一个设置返回函数
+<function>get_product_names()</>：
+<programlisting>
+SELECT m.name AS mname, pname
+FROM manufacturers m, LATERAL get_product_names(m.id) pname;
+</programlisting>
+
+<!-- 
+    Manufacturers not currently having any products would not appear in the
+    result, since it is an inner join.  If we wished to include the names of
+    such manufacturers in the result, we could do:
+-->
+当前没有任何产品的制造商将不会出现在结果中，因为这是一个内连接。
+如果我们希望在结果中包括这种制造商的名字，我们可以这样做：
+<programlisting>
+SELECT m.name AS mname, pname
+FROM manufacturers m LEFT JOIN LATERAL get_product_names(m.id) pname ON true;
+</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Compatibility</title>
+-->
+<title>兼容性</title>
+
+  <!--
+<para>
+   Of course, the <command>SELECT</command> statement is compatible
+   with the SQL standard.  But there are some extensions and some
+   missing features.
+  </para>
+-->
+<para>
+<command>SELECT</command>语句和 SQL 标准兼容。但是还有一些扩展和一些缺少的特性。
+</para>
+
+  <refsect2>
+   <!-- 
+   <title>Omitted <literal>FROM</literal> Clauses</title> 
+   -->
+   <title>省略 <literal>FROM</literal> 子句</title>
+<para>
+<!-- 
+    <productname>PostgreSQL</productname> allows one to omit the
+    <literal>FROM</literal> clause.  It has a straightforward use to
+    compute the results of simple expressions:
+-->
+<productname>PostgreSQL</productname>允许在一个查询里省略<literal>FROM</literal>子句。
+它的最直接用途就是计算简单的常量表达式的结果：
+<programlisting>
+SELECT 2+2;
+
+ ?column?
+----------
+        4
+</programlisting>
+<!-- 
+    Some other <acronym>SQL</acronym> databases cannot do this except
+    by introducing a dummy one-row table from which to do the
+    <command>SELECT</command>. 
+-->
+其它有些<acronym>SQL</acronym>数据库不能这么做，除非引入一个单行的伪表做为
+<command>SELECT</command>的数据源。
+   </para>
+   <!--
+<para>
+    Note that if a <literal>FROM</literal> clause is not specified,
+    the query cannot reference any database tables. For example, the
+    following query is invalid:
+<programlisting>
+SELECT distributors.* WHERE distributors.name = 'Westward';
+</programlisting><productname>PostgreSQL</productname> releases prior to
+    8.1 would accept queries of this form, and add an implicit entry
+    to the query's <literal>FROM</literal> clause for each table
+    referenced by the query. This is no longer allowed.
+   </para>
+-->
+<para>
+请注意，如果没有声明<literal>FROM</literal>子句，那么查询不能引用任何数据库表。
+比如，下面的查询是非法的：
+<programlisting>
+SELECT distributors.* WHERE distributors.name = 'Westward';
+</programlisting>
+<productname>PostgreSQL</productname> 8.1 之前的版本支持这种形式的查询，
+为查询里引用的每个表都增加一个隐含的条目到<literal>FROM</literal>子句中。
+现在这个不再是允许的了。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title>Omitting the <literal>AS</literal> Key Word</title> 
+   -->
+   <title>省略 <literal>AS</literal> 关键字</title>
+
+   <!--
+<para>
+    In the SQL standard, the optional key word <literal>AS</> can be
+    omitted before an output column name whenever the new column name
+    is a valid column name (that is, not the same as any reserved
+    keyword).  <productname>PostgreSQL</productname> is slightly more
+    restrictive: <literal>AS</> is required if the new column name
+    matches any keyword at all, reserved or not.  Recommended practice is
+    to use <literal>AS</> or double-quote output column names, to prevent
+    any possible conflict against future keyword additions.
+   </para>
+-->
+<para>
+在SQL标准中，每当新列名称是一个有效的列名时（也就是，与任意保留关键字都不同），
+可选的关键字<literal>AS</>可以在输出列名之前省略。<productname>PostgreSQL</productname>
+限制略多一些：不管是保留还是不保留，如果新列名匹配任何关键字，<literal>AS</>是必要的。
+建议的做法是使用<literal>AS</>或者双括号括起输出列名称，以阻止与将来补充的关键字有任何可能的冲突。
+</para>
+
+   <!--
+<para>
+    In <literal>FROM</literal> items, both the standard and
+    <productname>PostgreSQL</productname> allow <literal>AS</> to
+    be omitted before an alias that is an unreserved keyword.  But
+    this is impractical for output column names, because of syntactic
+    ambiguities.
+   </para>
+-->
+<para>
+在<literal>FROM</literal>项中，标准和<productname>PostgreSQL</productname>都允许<literal>AS</>
+在一个无限制关键字别名之前省略。但是这对输出列名是不切实际的，因为语法的歧义。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title><literal>ONLY</literal> and Inheritance</title> 
+   -->
+   <title><literal>ONLY</literal>和继承</title>
+
+   <!--
+<para>
+    The SQL standard requires parentheses around the table name when
+    writing <literal>ONLY</literal>, for example <literal>SELECT * FROM ONLY
+    (tab1), ONLY (tab2) WHERE ...</literal>.  <productname>PostgreSQL</>
+    considers these parentheses to be optional.
+   </para>
+-->
+<para>
+SQL标准需要在写<literal>ONLY</literal>时括号括起表名，例如
+<literal>SELECT * FROM ONLY (tab1), ONLY (tab2) WHERE ...</literal>。
+<productname>PostgreSQL</>认为括号是可选的。
+</para>
+
+   <!--
+<para>
+    <productname>PostgreSQL</> allows a trailing <literal>*</> to be written to
+    explicitly specify the non-<literal>ONLY</literal> behavior of including
+    child tables.  The standard does not allow this.
+   </para>
+-->
+<para>
+<productname>PostgreSQL</>允许写一个尾随的<literal>*</>以明确指定包括子表的非
+<literal>ONLY</literal>行为。标准不允许这样。
+</para>
+
+   <!--
+<para>
+    (These points apply equally to all SQL commands supporting the
+    <literal>ONLY</literal> option.)
+   </para>
+-->
+<para>
+（该点同样适用于所有支持<literal>ONLY</literal>选项的SQL命令。）
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title>Function Calls in <literal>FROM</literal></title> 
+   -->
+   <title><literal>FROM</literal>中的函数调用</title>
+
+   <!--
+<para>
+    <productname>PostgreSQL</productname> allows a function call to be
+    written directly as a member of the <literal>FROM</> list.  In the SQL
+    standard it would be necessary to wrap such a function call in a
+    sub-<command>SELECT</command>; that is, the syntax
+    <literal>FROM <replaceable>func</>(...) <replaceable>alias</></literal>
+    is approximately equivalent to
+    <literal>FROM LATERAL (SELECT <replaceable>func</>(...)) <replaceable>alias</></literal>.
+    Note that <literal>LATERAL</> is considered to be implicit; this is
+    because the standard requires <literal>LATERAL</> semantics for an
+    <literal>UNNEST()</> item in <literal>FROM</>.
+    <productname>PostgreSQL</productname> treats <literal>UNNEST()</> the
+    same as other set-returning functions.
+   </para>
+-->
+<para>
+<productname>PostgreSQL</productname>允许把函数调用直接写作<literal>FROM</>列表的一个成员。
+在SQL标准中应该有必要在子<command>SELECT</command>中包含这样一个函数；也就是，
+该语法<literal>FROM <replaceable>func</>(...) <replaceable>alias</></literal>等价于
+<literal>FROM LATERAL (SELECT <replaceable>func</>(...)) <replaceable>alias</></literal>。
+请注意<literal>LATERAL</>被认为是隐含的；这是因为标准要求<literal>LATERAL</>语义为
+一个在<literal>FROM</>中的<literal>UNNEST()</>条目。<productname>PostgreSQL</productname>
+对待<literal>UNNEST()</>和其他设置返回函数相同。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title>Namespace Available to <literal>GROUP BY</literal> and <literal>ORDER BY</literal></title>
+   -->
+   <title><literal>GROUP BY</literal> 和 <literal>ORDER BY</literal>里可用的命名空间</title>
+
+   <!--
+<para>
+    In the SQL-92 standard, an <literal>ORDER BY</literal> clause can
+    only use output column names or numbers, while a <literal>GROUP
+    BY</literal> clause can only use expressions based on input column
+    names.  <productname>PostgreSQL</productname> extends each of
+    these clauses to allow the other choice as well (but it uses the
+    standard's interpretation if there is ambiguity).
+    <productname>PostgreSQL</productname> also allows both clauses to
+    specify arbitrary expressions.  Note that names appearing in an
+    expression will always be taken as input-column names, not as
+    output-column names.
+   </para>
+-->
+<para>
+在 SQL-92 标准里，<literal>ORDER BY</literal>子句只能使用输出字段名或者编号，
+而<literal>GROUP BY</literal>子句只能用基于输入字段名的表达式。<productname>PostgreSQL</productname>
+对这两个子句都进行了扩展，允许另外一种选择(但是如果存在歧义，则使用标准的解释)。
+<productname>PostgreSQL</productname>还允许两个子句声明任意的表达式。
+请注意在表达式中出现的名字总是被当作输入字段名，而不是输出字段名。
+</para>
+
+   <!--
+<para>
+    SQL:1999 and later use a slightly different definition which is not
+    entirely upward compatible with SQL-92.
+    In most cases, however, <productname>PostgreSQL</productname>
+    will interpret an <literal>ORDER BY</literal> or <literal>GROUP
+    BY</literal> expression the same way SQL:1999 does.
+   </para>
+-->
+<para>
+SQL:1999 以及之后的一个略微不同的定义并不能和 SQL-92 完全向前兼容。不过，
+在大多数情况下，<productname>PostgreSQL</productname>将把一个<literal>ORDER BY</literal>
+或<literal>GROUP BY</literal>表达式解析成为 SQL:1999 制定的那样。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title>Functional Dependencies</title> 
+   -->
+   <title>函数依赖</title>
+
+   <!--
+<para>
+    <productname>PostgreSQL</productname> recognizes functional dependency
+    (allowing columns to be omitted from <literal>GROUP BY</>) only when
+    a table's primary key is included in the <literal>GROUP BY</> list.
+    The SQL standard specifies additional conditions that should be
+    recognized.
+   </para>
+-->
+<para>
+<productname>PostgreSQL</productname>只在表的主键包含在<literal>GROUP BY</>
+列表中时识别函数依赖（允许在<literal>GROUP BY</>中省略字段）。
+SQL标准指定应该被识别的附加条件。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title><literal>WINDOW</literal> Clause Restrictions</title> 
+   -->
+   <title><literal>WINDOW</literal> 子句限制</title>
+
+   <!--
+<para>
+    The SQL standard provides additional options for the window
+    <replaceable class="parameter">frame_clause</>.
+    <productname>PostgreSQL</productname> currently supports only the
+    options listed above.
+   </para>
+-->
+<para>
+SQL标准为窗口<replaceable class="parameter">frame_clause</>提供了附加选项。
+<productname>PostgreSQL</productname>目前仅支持上面列出的选项。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title><literal>LIMIT</literal> and <literal>OFFSET</literal></title> 
+   -->
+   <title><literal>LIMIT</literal> 和 <literal>OFFSET</literal></title>
+
+   <!--
+<para>
+    The clauses <literal>LIMIT</literal> and <literal>OFFSET</literal>
+    are <productname>PostgreSQL</productname>-specific syntax, also
+    used by <productname>MySQL</productname>.  The SQL:2008 standard
+    has introduced the clauses <literal>OFFSET ... FETCH {FIRST|NEXT}
+    ...</literal> for the same functionality, as shown above
+    in <xref linkend="sql-limit" endterm="sql-limit-title">.  This
+    syntax is also used by <productname>IBM DB2</productname>.
+    (Applications written for <productname>Oracle</productname>
+    frequently use a workaround involving the automatically
+    generated <literal>rownum</literal> column, which is not available in
+    PostgreSQL, to implement the effects of these clauses.)
+   </para>
+-->
+<para>
+子句<literal>LIMIT</literal>和<literal>OFFSET</literal>是<productname>PostgreSQL</productname>
+特定的语法，也是<productname>MySQL</productname>使用的。SQL:2008标准引入了
+<literal>OFFSET ... FETCH {FIRST|NEXT} ...</literal>获取相同的功能，
+如上面的<xref linkend="sql-limit" endterm="sql-limit-title">子句所示。
+该语法也被<productname>IBM DB2</productname>使用。（为<productname>Oracle</productname>
+所写的应用程序通常使用一个涉及自动生成的<literal>rownum</literal>列的工作区，
+来实现这些子句的效果，这在PostgreSQL中是不可用的。）
+</para>
+  </refsect2>
+
+  <refsect2>
+   <title><literal>FOR NO KEY UPDATE</>, <literal>FOR UPDATE</>, <literal>FOR SHARE</>, <literal>FOR KEY SHARE</></title>
+
+   <!--
+<para>
+    Although <literal>FOR UPDATE</> appears in the SQL standard, the
+    standard allows it only as an option of <command>DECLARE CURSOR</>.
+    <productname>PostgreSQL</productname> allows it in any <command>SELECT</>
+    query as well as in sub-<command>SELECT</>s, but this is an extension.
+    The <literal>FOR NO KEY UPDATE</>, <literal>FOR SHARE</> and
+    <literal>FOR KEY SHARE</> variants,
+    as well as the <literal>NOWAIT</> option,
+    do not appear in the standard.
+   </para>
+-->
+<para>
+尽管<literal>FOR UPDATE</>出现在了SQL标准中，但是标准只允许它作为<command>DECLARE CURSOR</>
+的一个选项。<productname>PostgreSQL</productname>允许它出现在任意<command>SELECT</>
+查询和子<command>SELECT</>查询中，但是这是一个扩展。<literal>FOR NO KEY UPDATE</>, 
+<literal>FOR SHARE</>, <literal>FOR KEY SHARE</>变体和<literal>NOWAIT</>选项，
+没有出现在标准中。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title>Data-Modifying Statements in <literal>WITH</></title> 
+   -->
+   <title><literal>WITH</>中的数据修改语句</title>
+
+   <!--
+<para>
+    <productname>PostgreSQL</productname> allows <command>INSERT</>,
+    <command>UPDATE</>, and <command>DELETE</> to be used as <literal>WITH</>
+    queries.  This is not found in the SQL standard.
+   </para>
+-->
+<para>
+<productname>PostgreSQL</productname>允许<command>INSERT</>, <command>UPDATE</>, <command>DELETE</>
+用作<literal>WITH</>查询。这在SQL标准中是没有的。
+</para>
+  </refsect2>
+
+  <refsect2>
+   <!-- 
+   <title>Nonstandard Clauses</title>
+   -->
+   <title>非标准的子句</title>
+
+   <!--
+<para>
+    The clause <literal>DISTINCT ON</literal> is not defined in the
+    SQL standard.
+   </para>
+-->
+<para>
+子句<literal>DISTINCT ON</literal>在SQL标准中未定义。
+</para>
+  </refsect2>
+ </refsect1>
+</refentry>

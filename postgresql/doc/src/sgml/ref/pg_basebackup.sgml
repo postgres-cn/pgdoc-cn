@@ -1,0 +1,910 @@
+<!--
+doc/src/sgml/ref/pg_basebackup.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="app-pgbasebackup">
+ <refmeta>
+  <refentrytitle>pg_basebackup</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <!-- 
+  <refmiscinfo>Application</refmiscinfo> 
+  -->
+  <refmiscinfo>应用</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_basebackup</refname>
+  <!-- 
+  <refpurpose>take a base backup of a <productname>PostgreSQL</productname> cluster</refpurpose> 
+  -->
+  <refpurpose>做一个<productname>PostgreSQL</productname> 集群的基础备份</refpurpose>
+ </refnamediv>
+
+ <indexterm zone="app-pgbasebackup">
+  <primary>pg_basebackup</primary>
+ </indexterm>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_basebackup</command>
+   <!-- 
+   <arg rep="repeat"><replaceable>option</></arg> 
+   -->
+   <arg rep="repeat"><replaceable>选项</></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <!-- 
+  <title>
+   Description
+  </title> 
+  -->
+  <title>
+   描述
+  </title>
+  <!--
+<para>
+   <application>pg_basebackup</application> is used to take base backups of
+   a running <productname>PostgreSQL</productname> database cluster. These
+   are taken without affecting other clients to the database, and can be used
+   both for point-in-time recovery (see <xref linkend="continuous-archiving">)
+   and as the starting point for a log shipping or streaming replication standby
+   servers (see <xref linkend="warm-standby">).
+  </para>
+-->
+<para>
+<application>pg_basebackup</application>用来给一个运行的<productname>PostgreSQL</productname>
+数据库集群进行基础备份。进行时不会影响到连接到数据库的客户端，并且同时可以用于时间点恢复
+（参阅<xref linkend="continuous-archiving">）和日志传输或流复制备用服务器的起始点
+（参阅<xref linkend="warm-standby">）。
+</para>
+
+  <!--
+<para>
+   <application>pg_basebackup</application> makes a binary copy of the database
+   cluster files, while making sure the system is automatically put in and
+   out of backup mode automatically. Backups are always taken of the entire
+   database cluster, it is not possible to back up individual databases or
+   database objects. For individual database backups, a tool such as
+   <xref linkend="APP-PGDUMP"> must be used.
+  </para>
+-->
+<para>
+<application>pg_basebackup</application>做一个数据库集群文件的二进制拷贝，
+同时确保系统自动进出自动备份模式。备份总是使用整个的数据库集群，
+不可能只备份单个的数据库或数据库对象。对于单个数据库备份，必须使用如
+<xref linkend="APP-PGDUMP">的工具。
+</para>
+
+  <!--
+<para>
+   The backup is made over a regular <productname>PostgreSQL</productname>
+   connection, and uses the replication protocol. The connection must be made
+   with a superuser or a user having <literal>REPLICATION</literal>
+   permissions (see <xref linkend="role-attributes">),
+   and <filename>pg_hba.conf</filename> must explicitly permit the replication
+   connection. The server must also be configured
+   with <xref linkend="guc-max-wal-senders"> set high enough to leave at least
+   one session available for the backup.
+  </para>
+-->
+<para>
+备份时通过一个普通的<productname>PostgreSQL</productname>连接制作的，并且使用复制协议。
+该连接必须由超级用户或一个拥有<literal>REPLICATION</literal>权限的用户完成
+（参阅<xref linkend="role-attributes">），并且<filename>pg_hba.conf</filename>
+必须明确允许复制连接。该服务器也必须由<xref linkend="guc-max-wal-senders">配置，
+设置足够高的级别，对于备份至少有一个会话可用。
+</para>
+
+  <!--
+<para>
+   There can be multiple <command>pg_basebackup</command>s running at the same time, but it is
+   better from a performance point of view to take only one backup, and copy
+   the result.
+  </para>
+-->
+<para>
+在同一时刻可能有多个<command>pg_basebackup</command>运行，但是从性能来说最好只采取一个备份，然后复制结果。
+</para>
+
+  <!--
+<para>
+   <application>pg_basebackup</application> can make a base backup from
+   not only the master but also the standby. To take a backup from the standby,
+   set up the standby so that it can accept replication connections (that is, set
+   <varname>max_wal_senders</> and <xref linkend="guc-hot-standby">,
+   and configure <link linkend="auth-pg-hba-conf">host-based authentication</link>).
+   You will also need to enable <xref linkend="guc-full-page-writes"> on the master.
+  </para>
+-->
+<para>
+<application>pg_basebackup</application>不止可以从主机备份还可以从备机备份。要从备机备份，
+设置备机以使其可以接受复制连接（也就是，设置<varname>max_wal_senders</> 和 
+<xref linkend="guc-hot-standby">，并且配置<link linkend="auth-pg-hba-conf">host-based authentication</link>）。
+也需要在主机上启用<xref linkend="guc-full-page-writes">。
+</para>
+
+  
+<para>
+<!-- 
+   Note that there are some limitations in an online backup from the standby:
+-->
+请注意，这里有几个从备机在线备份的限制：
+   <itemizedlist>
+    <listitem>
+<!--
+     <para>
+      The backup history file is not created in the database cluster backed up.
+     </para>
+-->
+<para>
+备份历史文件不是在数据库集群备份时创建的。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      There is no guarantee that all WAL files required for the backup are archived
+      at the end of backup. If you are planning to use the backup for an archive
+      recovery and want to ensure that all required files are available at that moment,
+      you need to include them into the backup by using <literal>-x</> option.
+     </para>
+-->
+<para>
+不保证所有需要备份的WAL文件在备份的最后归档。如果你计划使用备份作为归档恢复，
+并希望保证此刻所有需要的文件都可以使用，你需要通过使用<literal>-x</>选项将他们包含到备份中。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      If the standby is promoted to the master during online backup, the backup fails.
+     </para>
+-->
+<para>
+如果备机在在线备份期间被提升为主机，则备份失败。
+</para>
+    </listitem>
+    <listitem>
+     <!--
+<para>
+      All WAL records required for the backup must contain sufficient full-page writes,
+      which requires you to enable <varname>full_page_writes</> on the master and
+      not to use a tool like <application>pg_compresslog</> as
+      <varname>archive_command</> to remove full-page writes from WAL files.
+     </para>
+-->
+<para>
+所有需要备份的WAL记录必须包含足够的全版书写，这需要你在主机上启用<varname>full_page_writes</>
+并且不使用类似<application>pg_compresslog</>这样的工具作为<varname>archive_command</>
+从WAL文件中删除全版书写。
+</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <!-- 
+  <title>Options</title> 
+  -->
+  <title>选项</title>
+
+   
+<para>
+<!-- 
+    The following command-line options control the location and format of the
+    output.
+ -->
+下列的命令行选项控制输出的位置和格式。
+    <variablelist>
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">directory</replaceable></option></term>
+      <term><option>--pgdata=<replaceable class="parameter">directory</replaceable></option></term>
+      <listitem>
+<!--
+       <para>
+        Directory to write the output to.
+        <application>pg_basebackup</application> will create the directory and
+        any parent directories if necessary.  The directory may already exist,
+        but it is an error if the directory already exists and is not empty.
+       </para>
+-->
+<para>
+写输出的目录。<application>pg_basebackup</application>将创建目录和任何父目录（如果需要）。
+该目录可能已经存在，但是如果该目录已经存在并且不为空则是一个错误。
+</para>
+       <!--
+<para>
+        When the backup is in tar mode, and the directory is specified as
+        <literal>-</literal> (dash), the tar file will be written to
+        <literal>stdout</literal>.
+       </para>
+-->
+<para>
+当备份在tar模式，并且目录以<literal>-</literal>（破折号）声明，那么tar文件将写入<literal>stdout</literal>。
+</para>
+       <!--
+<para>
+        This option is required.
+       </para>
+-->
+<para>
+这个选项是必需的。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F <replaceable class="parameter">format</replaceable></option></term>
+      <term><option>--format=<replaceable class="parameter">format</replaceable></option></term>
+      <listitem>
+       
+<para>
+<!-- 
+        Selects the format for the output. <replaceable>format</replaceable>
+        can be one of the following:
+ -->
+选择输出格式。<replaceable>format</replaceable>可以是下列之一：
+        <variablelist>
+         <varlistentry>
+          <term><literal>p</literal></term>
+          <term><literal>plain</literal></term>
+          <listitem>
+<!--
+           <para>
+            Write the output as plain files, with the same layout as the
+            current data directory and tablespaces. When the cluster has
+            no additional tablespaces, the whole database will be placed in
+            the target directory. If the cluster contains additional
+            tablespaces, the main data directory will be placed in the
+            target directory, but all other tablespaces will be placed
+            in the same absolute path as they have on the server.
+           </para>
+-->
+<para>
+将输出写作普通的文件，该文件与当前数据目录和表空间有相同的布局。当集群没有额外的表空间时，
+整个数据库将被放入目标目录中。如果集群包含额外的表空间，那么主数据目录将被放入目标目录中，
+但是所有其他表空间将被放入与它们在服务器上相同的绝对路径中。
+</para>
+           <!--
+<para>
+            This is the default format.
+           </para>
+-->
+<para>
+这是缺省的格式。
+</para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>t</literal></term>
+          <term><literal>tar</literal></term>
+          <listitem>
+           <!--
+<para>
+            Write the output as tar files in the target directory. The main
+            data directory will be written to a file named
+            <filename>base.tar</filename>, and all other tablespaces will
+            be named after the tablespace OID.
+            </para>
+-->
+<para>
+将输出写作目标目录中的tar文件。主数据目录将被写成一个命名为<filename>base.tar</filename>
+的文件，所有其他表空间将以表空间OID命名。
+</para>
+           <!--
+<para>
+            If the value <literal>-</literal> (dash) is specified as
+            target directory, the tar contents will be written to
+            standard output, suitable for piping to for example
+            <productname>gzip</productname>. This is only possible if
+            the cluster has no additional tablespaces.
+           </para>
+-->
+<para>
+如果值<literal>-</literal>（破折号）被声明为目标目录，那么tar内容将被写成标准输出，
+适合于管道如<productname>gzip</productname>。只有集群没有额外的表空间时这才是可能的。
+</para>
+           </listitem>
+         </varlistentry>
+        </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-R</option></term>
+      <term><option>--write-recovery-conf</option></term>
+      <listitem>
+
+       <!--
+<para>
+        Write a minimal <filename>recovery.conf</filename> in the output directory (or into
+        the base archive file when using tar format) to ease setting
+        up a standby server.
+       </para>
+-->
+<para>
+在输出目录（或使用tar格式时为基础归档文件）中写一个最小的<filename>recovery.conf</filename>
+以减轻设置一个备用服务器。
+</para>
+
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x</option></term>
+      <term><option>--xlog</option></term>
+      <listitem>
+       <!--
+<para>
+        Using this option is equivalent of using <literal>-X</literal> with
+        method <literal>fetch</literal>.
+       </para>
+-->
+<para>
+使用这个选项等同于使用方法<literal>fetch</literal>的<literal>-X</literal>。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-X <replaceable class="parameter">method</replaceable></option></term>
+      <term><option>--xlog-method=<replaceable class="parameter">method</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Includes the required transaction log files (WAL files) in the
+        backup. This will include all transaction logs generated during
+        the backup. If this option is specified, it is possible to start
+        a postmaster directly in the extracted directory without the need
+        to consult the log archive, thus making this a completely standalone
+        backup.
+       </para>
+-->
+<para>
+在备份中包含所需的事务日志文件（WAL文件）。这将包括所有在备份期间产生的事务日志。
+如果声明了这个选项，那么直接在提取出的目录（不需要参考日志归档）中启动一个主进程是可能的。
+因此使其成为一个完全独立的备份。
+</para>
+       
+<para>
+<!-- 
+        The following methods for collecting the transaction logs are
+        supported:
+ -->
+ 支持下列收集事务日志的方法：
+        <variablelist>
+         <varlistentry>
+          <term><literal>f</literal></term>
+          <term><literal>fetch</literal></term>
+          <listitem>
+<!--
+           <para>
+            The transaction log files are collected at the end of the backup.
+            Therefore, it is necessary for the
+            <xref linkend="guc-wal-keep-segments"> parameter to be set high
+             enough that the log is not removed before the end of the backup.
+             If the log has been rotated when it's time to transfer it, the
+             backup will fail and be unusable.
+           </para>
+-->
+<para>
+事务日志文件在备份结束时收集。因此，<xref linkend="guc-wal-keep-segments">
+参数有必要设置的足够高，使日志在备份结束之前不会被删除。如果日志在要被转移的时候已经转动了，
+那么备份将失败并且不能使用。
+</para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>s</literal></term>
+          <term><literal>stream</literal></term>
+          <listitem>
+           <!--
+<para>
+            Stream the transaction log while the backup is created. This will
+            open a second connection to the server and start streaming the
+            transaction log in parallel while running the backup. Therefore,
+            it will use up two slots configured by the
+            <xref linkend="guc-max-wal-senders"> parameter. As long as the
+             client can keep up with transaction log received, using this mode
+             requires no extra transaction logs to be saved on the master.
+           </para>
+-->
+<para>
+当备份创建时流事务日志。这将在运行备份时打开又一个到服务器的连接并并行启动流事务日志。
+因此，它将使用两个<xref linkend="guc-max-wal-senders">参数配置的插槽。
+只要客户端可以跟上接收到的事务日志，使用这个方法需要没有额外的事务日志在主机上保存。
+</para>
+          </listitem>
+         </varlistentry>
+        </variablelist>
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-z</option></term>
+      <term><option>--gzip</option></term>
+      <listitem>
+       <!--
+<para>
+        Enables gzip compression of tar file output, with the default
+        compression level. Compression is only available when using
+        the tar format.
+       </para>
+-->
+<para>
+启用tar文件输出的gzip压缩，使用缺省的压缩级别。只有使用tar模式的时候可用压缩。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-Z <replaceable class="parameter">level</replaceable></option></term>
+      <term><option>--compress=<replaceable class="parameter">level</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Enables gzip compression of tar file output, and specifies the
+        compression level (1 through 9, 9 being best
+        compression). Compression is only available when using the tar
+        format.
+       </para>
+-->
+<para>
+启用tar文件输出的gzip压缩，并声明压缩级别（1到9，9为顶级压缩）。只有使用tar模式的时候可用压缩。
+</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+  
+<para>
+<!-- 
+    The following command-line options control the generation of the
+    backup and the running of the program.
+-->
+下列的命令行选项控制备份的生成和程序的运行。
+    <variablelist>
+     <varlistentry>
+      <term><option>-c <replaceable class="parameter">fast|spread</replaceable></option></term>
+      <term><option>--checkpoint=<replaceable class="parameter">fast|spread</replaceable></option></term>
+      <listitem>
+ <!--
+ <para>
+        Sets checkpoint mode to fast or spread (default).
+       </para>
+-->
+<para>
+设置检查点模式为fast或spread（缺省）。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l <replaceable class="parameter">label</replaceable></option></term>
+      <term><option>--label=<replaceable class="parameter">label</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Sets the label for the backup. If none is specified, a default value of
+        <quote><literal>pg_basebackup base backup</literal></quote> will be used.
+       </para>
+-->
+<para>
+为备份设置标签。如果没有声明，将使用<quote><literal>pg_basebackup 基础备份</literal></quote>的默认值。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P</option></term>
+      <term><option>--progress</option></term>
+      <listitem>
+       <!--
+<para>
+        Enables progress reporting. Turning this on will deliver an approximate
+        progress report during the backup. Since the database may change during
+        the backup, this is only an approximation and may not end at exactly
+        <literal>100%</literal>. In particular, when WAL log is included in the
+        backup, the total amount of data cannot be estimated in advance, and
+        in this case the estimated target size will increase once it passes the
+        total estimate without WAL.
+       </para>
+-->
+<para>
+启用进展报告。启用这个选项将会在备份期间发送一个大概的进展报告。因为数据库可能会在备份期间改变，
+所以这只是一个大概并且可能不正好是<literal>100%</literal>结束。特别是，
+当在备份中包含WAL日志时，数据的总量不能提前估计，并且这种情况下一旦它传递的总估计不包含WAL，
+那么估计的目标大小还会增加。
+</para>
+       <!--
+<para>
+        When this is enabled, the backup will start by enumerating the size of
+        the entire database, and then go back and send the actual contents.
+        This may make the backup take slightly longer, and in particular it
+        will take longer before the first data is sent.
+       </para>
+-->
+<para>
+当启用这个选项时，备份将从枚举整个数据库的大小开始，然后返回并发送实际的内容。
+这样可能会导致备份时间稍长一些，尤其是在发送第一个数据之前的时间稍长。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <!--
+<para>
+        Enables verbose mode. Will output some extra steps during startup and
+        shutdown, as well as show the exact file name that is currently being
+        processed if progress reporting is also enabled.
+       </para>
+-->
+<para>
+启用冗长模式。将在启动和关闭时输出一些额外的步骤，如果也启用了进度报告，
+则也显示当前正在被处理的准确的文件名。
+</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+
+   
+<para>
+<!-- 
+    The following command-line options control the database connection parameters.
+ -->
+ 下列的命令行选项控制数据库连接参数。
+    <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">connstr</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">connstr</replaceable></option></term>
+      <listitem>
+<!--
+       <para>
+        Specifies parameters used to connect to the server, as a connection
+        string. See <xref linkend="libpq-connstring"> for more information.
+       </para>
+-->
+<para>
+声明用来连接到服务器的参数，作为一个连接字符串。参阅<xref linkend="libpq-connstring">获取更多信息。
+</para>
+       <!--
+<para>
+        The option is called <literal>&#045;-dbname</> for consistency with other
+        client applications, but because <application>pg_basebackup</application>
+        doesn't connect to any particular database in the cluster, database
+        name in the connection string will be ignored.
+       </para>
+-->
+<para>
+该选项被称为<literal>--dbname</>是为了与其他客户端应用的一致性，但是因为
+<application>pg_basebackup</application>不连接到集群中的任何特别的数据库，
+所以将忽略连接字符串中的数据库名字。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">host</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">host</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Specifies the host name of the machine on which the server is
+        running.  If the value begins with a slash, it is used as the
+        directory for the Unix domain socket. The default is taken
+        from the <envar>PGHOST</envar> environment variable, if set,
+        else a Unix domain socket connection is attempted.
+       </para>
+-->
+<para>
+声明服务器正在运行的机器的主机名。如果这个值以一个斜线开始，则被用作Unix域套接字的目录。
+默认从<envar>PGHOST</envar>环境变量中获取（如果设置了），否则尝试一个Unix域套接字连接。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">port</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">port</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Specifies the TCP port or local Unix domain socket file
+        extension on which the server is listening for connections.
+        Defaults to the <envar>PGPORT</envar> environment variable, if
+        set, or a compiled-in default.
+       </para>
+-->
+<para>
+声明服务器正在监听的TCP端口或本地Unix域套接字文件扩展。缺省是<envar>PGPORT</envar>
+环境变量（如果设置了），否则是内编译的缺省。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
+      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Specifies the number of seconds between status packets sent back to the
+        server. This allows for easier monitoring of the progress from server.
+        A value of zero disables the periodic status updates completely,
+        although an update will still be sent when requested by the server, to
+        avoid timeout disconnect. The default value is 10 seconds.
+       </para>
+-->
+<para>
+声明状态数据包发送回服务器的秒数。这允许对服务器进程的更简单的监视。为了避免连接超时，
+零值完全禁用定期状态更新，尽管服务器需要时仍然发送一个更新。缺省值是10秒。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>username</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">username</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        User name to connect as.
+       </para>
+-->
+<para>
+连接的用户名。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</></term>
+      <term><option>--no-password</></term>
+      <listitem>
+       <!--
+<para>
+        Never issue a password prompt.  If the server requires
+        password authentication and a password is not available by
+        other means such as a <filename>.pgpass</filename> file, the
+        connection attempt will fail.  This option can be useful in
+        batch jobs and scripts where no user is present to enter a
+        password.
+       </para>
+-->
+<para>
+从不发出密码提示问题。如果服务器要求密码认证并且密码不可用于其他意思如
+<filename>.pgpass</filename>文件，则连接尝试将会失败。
+该选项在批量工作和不存在用户输入密码的脚本中很有帮助。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <!--
+<para>
+        Force <application>pg_basebackup</application> to prompt for a
+        password before connecting to a database.
+       </para>
+-->
+<para>
+强制<application>pg_basebackup</application>在连接到数据库之前提示一个密码。
+</para>
+
+       <!--
+<para>
+        This option is never essential, since
+        <application>pg_basebackup</application> will automatically prompt
+        for a password if the server demands password authentication.
+        However, <application>pg_basebackup</application> will waste a
+        connection attempt finding out that the server wants a password.
+        In some cases it is worth typing <option>-W</> to avoid the extra
+        connection attempt.
+       </para>
+-->
+<para>
+这个选项从来不是至关重要的，因为如果服务器需求密码认证，则<application>pg_basebackup</application>
+自动提示一个密码。不过，<application>pg_basebackup</application>
+将在找出服务器想要一个密码上浪费一个连接尝试。在某些情况下，值得输入<option>-W</>
+以避免额外的连接尝试。
+</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   
+<para>
+ <!-- 
+ Other options are also available:
+ -->
+ 其他选项也可用：
+    <variablelist>
+     <varlistentry>
+       <term><option>-V</></term>
+       <term><option>--version</></term>
+       <listitem>
+<!--
+       <para>
+       Print the <application>pg_basebackup</application> version and exit.
+       </para>
+-->
+<para>
+打印<application>pg_basebackup</application>版本然后退出。
+</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</></term>
+       <term><option>--help</></term>
+       <listitem>
+       <!--
+<para>
+       Show help about <application>pg_basebackup</application> command line
+       arguments, and exit.
+       </para>
+-->
+<para>
+显示关于<application>pg_basebackup</application>命令行参数的帮助然后退出。
+</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+
+ </refsect1>
+
+ <refsect1>
+  <!-- 
+  <title>Environment</title> 
+  -->
+  <title>环境变量</title>
+
+  <!--
+<para>
+   This utility, like most other <productname>PostgreSQL</> utilities,
+   uses the environment variables supported by <application>libpq</>
+   (see <xref linkend="libpq-envars">).
+  </para>
+-->
+<para>
+这个工具，类似大多数其他<productname>PostgreSQL</>实用工具，
+也使用由<application>libpq</>支持的环境变量（参阅<xref linkend="libpq-envars">）。
+</para>
+
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Notes</title>
+-->
+<title>注意</title>
+
+  <!--
+<para>
+   The backup will include all files in the data directory and tablespaces,
+   including the configuration files and any additional files placed in the
+   directory by third parties. Only regular files and directories are allowed
+   in the data directory, no symbolic links or special device files.
+  </para>
+-->
+<para>
+备份将包含数据目录和表空间中的所有文件，包括配置文件和任何第三方放置在目录中的额外文件。
+数据目录中只允许普通的文件和目录，不允许符号链接或特殊设备文件。
+</para>
+
+  <!--
+<para>
+   The way <productname>PostgreSQL</productname> manages tablespaces, the path
+   for all additional tablespaces must be identical whenever a backup is
+   restored. The main data directory, however, is relocatable to any location.
+  </para>
+-->
+<para>
+当恢复一个备份时，<productname>PostgreSQL</productname>管理表空间的方式，
+所有额外表空间的路径必须完全相同。不过，主数据目录可以重新定位任意位置。
+</para>
+
+  <!--
+<para>
+   <application>pg_basebackup</application> works with servers of the same
+   or an older major version, down to 9.1. However, WAL streaming mode (-X
+   stream) only works with server version 9.3.
+  </para>
+-->
+<para>
+<application>pg_basebackup</application>可以作用于相同版本或更老版本的服务器（最低9.1），
+不过，WAL流模式（-X流）只能是服务器版本9.3。
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>Examples</title>
+-->
+<title>例子</title>
+
+  <!--
+<para>
+   To create a base backup of the server at <literal>mydbserver</literal>
+   and store it in the local directory
+   <filename>/usr/local/pgsql/data</filename>:
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -h mydbserver -D /usr/local/pgsql/data</userinput>
+</screen>
+  </para>
+-->
+<para>
+在<literal>mydbserver</literal>创建一个服务器的基础备份，并存储到本地目录
+<filename>/usr/local/pgsql/data</filename>中：
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -h mydbserver -D /usr/local/pgsql/data</userinput>
+</screen>
+</para>
+
+  <!--
+<para>
+   To create a backup of the local server with one compressed
+   tar file for each tablespace, and store it in the directory
+   <filename>backup</filename>, showing a progress report while running:
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D backup -Ft -z -P</userinput>
+</screen>
+  </para>
+-->
+<para>
+创建一个本地服务器的备份，用一个为每个表空间压缩的tar文件，并存储到目录<filename>backup</filename>里，
+运行时显示进度报告：
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D backup -Ft -z -P</userinput>
+</screen>
+</para>
+
+  <!--
+<para>
+   To create a backup of a single-tablespace local database and compress
+   this with <productname>bzip2</productname>:
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D - -Ft | bzip2 &gt; backup.tar.bz2</userinput>
+</screen>
+   (This command will fail if there are multiple tablespaces in the
+   database.)
+  </para>
+-->
+<para>
+创建一个单表空间本地数据库的备份并使用<productname>bzip2</productname>压缩：
+<screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D - -Ft | bzip2 &gt; backup.tar.bz2</userinput>
+</screen>
+如果数据库中有多个表空间那么这个命令将会失败。
+</para>
+ </refsect1>
+
+ <refsect1>
+  <!--
+<title>See Also</title>
+-->
+<title>又见</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="APP-PGDUMP"></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

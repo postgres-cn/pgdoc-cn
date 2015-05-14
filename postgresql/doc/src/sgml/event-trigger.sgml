@@ -1,0 +1,1010 @@
+<!-- doc/src/sgml/event-trigger.sgml -->
+
+ <chapter id="event-triggers">
+  <!--
+  <title>Event Triggers</title> 
+  -->
+  <title>事件触发器</title>
+
+  <indexterm zone="event-triggers">
+   <!--
+   <primary>event trigger</primary>
+   -->
+   <primary>事件触发器</primary>
+  </indexterm>
+
+  <!--
+<para>
+   To supplement the trigger mechanism discussed in <xref linkend="triggers">,
+   <productname>PostgreSQL</> also provides event triggers.  Unlike regular
+   triggers, which are attached to a single table and capture only DML events,
+   event triggers are global to a particular database and are capable of
+   capturing DDL events.
+  </para>
+-->
+<para>
+为了补充在<xref linkend="triggers">讨论过的触发器机制，<productname>PostgreSQL</>
+也提供了事件触发器。不同于规则触发器附加到一个表上并且只捕获DML事件，
+事件触发器对一个特定的数据库是全局的，并且可以捕获DDL事件。
+</para>
+
+  <!--
+<para>
+   Like regular triggers, event triggers can be written in any procedural
+   language that includes event trigger support, or in C, but not in plain
+   SQL.
+  </para>
+-->
+<para>
+像规则触发器一样，事件触发器可以用任何包括事件触发器支持的过程语言来写，
+或者用C，但是不能用简单的SQL。
+</para>
+
+  <sect1 id="event-trigger-definition">
+   <!--
+   <title>Overview of Event Trigger Behavior</title>
+   -->
+   <title>事件触发器行为的概述</title>
+
+   <!--
+<para>
+     An event trigger fires whenever the event with which it is associated
+     occurs in the database in which it is defined. Currently, the only
+     supported events are
+     <literal>ddl_command_start</>,
+     <literal>ddl_command_end</>
+     and <literal>sql_drop</>.
+     Support for additional events may be added in future releases.
+   </para>
+-->
+<para>
+当事件以它定义的方式在数据库中相关的出现时，事件触发器触发。当前支持的事件是
+<literal>ddl_command_start</>, <literal>ddl_command_end</> 和 <literal>sql_drop</>。
+额外事件的支持将在将来的版本中添加。
+</para>
+
+   <!--
+<para>
+     The <literal>ddl_command_start</> event occurs just before the
+     execution of a <literal>CREATE</>, <literal>ALTER</>, or <literal>DROP</>
+     command.  No check whether the affected object exists or doesn't exist is
+     performed before the event trigger fires.
+     As an exception, however, this event does not occur for
+     DDL commands targeting shared objects &mdash; databases, roles, and tablespaces
+     &mdash; or for commands targeting event triggers themselves.  The event trigger
+     mechanism does not support these object types.
+     <literal>ddl_command_start</> also occurs just before the execution of a
+     <literal>SELECT INTO</literal> command, since this is equivalent to
+     <literal>CREATE TABLE AS</literal>.
+   </para>
+-->
+<para>
+<literal>ddl_command_start</>事件只在<literal>CREATE</>, <literal>ALTER</>, 或 <literal>DROP</>
+命令执行之前发生。在事件触发器触发之前并不检查受影响的对象是否存在。然而，作为一个例外，
+DDL命令针对共享对象时这个事件并不触发 &mdash; 数据库，角色和表空间 &mdash; 或命令针对事件触发器它们自己时也不触发。
+事件触发器机制不支持这些对象类型。<literal>ddl_command_start</>也在<literal>SELECT INTO</literal>
+命令执行之前触发，因为这相当于<literal>CREATE TABLE AS</literal>。
+</para>
+
+   <!--
+<para>
+    The <literal>ddl_command_end</> event occurs just after the execution of
+    this same set of commands.
+   </para>
+-->
+<para>
+<literal>ddl_command_end</>事件只在相同的命令集的执行之后触发。
+</para>
+
+   <!--
+<para>
+    The <literal>sql_drop</> event occurs just before the
+    <literal>ddl_command_end</> event trigger for any operation that drops
+    database objects.  To list the objects that have been dropped, use the
+    set-returning function <literal>pg_event_trigger_dropped_objects()</> from the
+    <literal>sql_drop</> event trigger code (see
+    <xref linkend="functions-event-triggers">). Note that
+    the trigger is executed after the objects have been deleted from the
+    system catalogs, so it's not possible to look them up anymore.
+   </para>
+-->
+<para>
+<literal>sql_drop</>事件只在删除数据库对象的任意操作触发<literal>ddl_command_end</>事件之前发生。
+要列出被删除的对象，使用<literal>sql_drop</>事件触发器代码的设置返回函数
+<literal>pg_event_trigger_dropped_objects()</>（参阅<xref linkend="functions-event-triggers">）。
+请注意，触发器在对象已经从系统目录中删除以后执行，所以不可能在看到他们了。
+</para>
+
+   <!--
+<para>
+     Event triggers (like other functions) cannot be executed in an aborted
+     transaction.  Thus, if a DDL command fails with an error, any associated
+     <literal>ddl_command_end</> triggers will not be executed.  Conversely,
+     if a <literal>ddl_command_start</> trigger fails with an error, no
+     further event triggers will fire, and no attempt will be made to execute
+     the command itself.  Similarly, if a <literal>ddl_command_end</> trigger
+     fails with an error, the effects of the DDL statement will be rolled
+     back, just as they would be in any other case where the containing
+     transaction aborts.
+   </para>
+-->
+<para>
+事件触发器（类似其他函数）不能在一个中止的事务中执行。因此，
+如果一个DDL命令错误失败，相关的<literal>ddl_command_end</>触发器将不会执行。
+相反的，如果一个<literal>ddl_command_start</>触发器错误失败了，将不会有更多的触发器触发，
+也不会尝试执行命令本身。相似的，如果一个<literal>ddl_command_end</>触发器错误失败了，
+DDL语句的影响将会回滚，就像他们在任何其他包含事务中止的情况下一样。
+</para>
+
+   <!--
+<para>
+     For a complete list of commands supported by the event trigger mechanism,
+     see <xref linkend="event-trigger-matrix">.
+   </para>
+-->
+<para>
+事件触发器机制支持的命令的完整列表，请参阅<xref linkend="event-trigger-matrix">。
+</para>
+
+   <!--
+<para>
+     Event triggers are created using the command <xref linkend="sql-createeventtrigger">.
+     In order to create an event trigger, you must first create a function with
+     the special return type <literal>event_trigger</literal>.  This function
+     need not (and may not) return a value; the return type serves merely as
+     a signal that the function is to be invoked as an event trigger.
+   </para>
+-->
+<para>
+使用命令<xref linkend="sql-createeventtrigger">创建事件触发器。为了创建事件触发器，
+必须首先创建一个特殊返回类型为<literal>event_trigger</literal>的函数。
+这个函数不需要（或不可能）返回一个值；返回类型只是作为一个该函数被作为一个事件触发器调用的信号服务的。
+</para>
+
+   <!--
+<para>
+     If more than one event trigger is defined for a particular event, they will
+     fire in alphabetical order by trigger name.
+   </para>
+-->
+<para>
+如果为一个特别事件定义了多个事件触发器，他们将按照触发器名字的字母顺序触发。
+</para>
+
+   <!--
+<para>
+     A trigger definition can also specify a <literal>WHEN</literal>
+     condition so that, for example, a <literal>ddl_command_start</literal>
+     trigger can be fired only for particular commands which the user wishes
+     to intercept. A common use of such triggers is to restrict the range of
+     DDL operations which users may perform.
+   </para>
+-->
+<para>
+触发器定义也可以声明一个<literal>WHEN</literal>条件，例如，一个<literal>ddl_command_start</literal>
+触发器可以只为用户想要拦截的特别的命令触发。这样的触发器共同使用的是限制用户可能执行的DDL操作的范围。
+</para>
+  </sect1>
+
+  <sect1 id="event-trigger-matrix">
+   <!--
+   <title>Event Trigger Firing Matrix</title>
+   -->
+   <title>事件触发器触发矩阵</title>
+
+   <!--
+<para>
+     <xref linkend="event-trigger-by-command-tag"> lists all commands
+     for which event triggers are supported.
+   </para>
+-->
+<para>
+<xref linkend="event-trigger-by-command-tag">列出了所有支持事件触发器的命令。
+</para>
+
+   <table id="event-trigger-by-command-tag">
+     <!-- 
+ <title>Event Trigger Support by Command Tag</title>
+ -->
+ <title>命令标记支持的事件触发器</title>
+     <tgroup cols="4">
+      <thead>
+       <row>
+        <!-- 
+<entry>command tag</entry>
+-->
+<entry>命令标记</entry>
+        <entry><literal>ddl_command_start</literal></entry>
+        <entry><literal>ddl_command_end</literal></entry>
+        <entry><literal>sql_drop</literal></entry>
+       </row>
+      </thead>
+      <tbody>
+       <row>
+        <entry align="left"><literal>ALTER AGGREGATE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER COLLATION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER CONVERSION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER DOMAIN</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER EXTENSION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER FOREIGN DATA WRAPPER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER FOREIGN TABLE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER FUNCTION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER LANGUAGE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER OPERATOR</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER OPERATOR CLASS</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER OPERATOR FAMILY</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER SCHEMA</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER SEQUENCE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER SERVER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TABLE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TEXT SEARCH CONFIGURATION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TEXT SEARCH DICTIONARY</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TEXT SEARCH PARSER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TEXT SEARCH TEMPLATE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TRIGGER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER TYPE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER USER MAPPING</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>ALTER VIEW</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE AGGREGATE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE CAST</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE COLLATION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE CONVERSION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE DOMAIN</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE EXTENSION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE FOREIGN DATA WRAPPER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE FOREIGN TABLE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE FUNCTION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE INDEX</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE LANGUAGE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE OPERATOR</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE OPERATOR CLASS</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE OPERATOR FAMILY</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE RULE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE SCHEMA</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE SEQUENCE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE SERVER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TABLE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TABLE AS</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TEXT SEARCH CONFIGURATION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TEXT SEARCH DICTIONARY</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TEXT SEARCH PARSER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TEXT SEARCH TEMPLATE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TRIGGER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE TYPE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE USER MAPPING</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>CREATE VIEW</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP AGGREGATE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP CAST</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP COLLATION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP CONVERSION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP DOMAIN</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP EXTENSION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP FOREIGN DATA WRAPPER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP FOREIGN TABLE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP FUNCTION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP INDEX</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP LANGUAGE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP OPERATOR</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP OPERATOR CLASS</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP OPERATOR FAMILY</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP OWNED</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP RULE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP SCHEMA</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP SEQUENCE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP SERVER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TABLE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TEXT SEARCH CONFIGURATION</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TEXT SEARCH DICTIONARY</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TEXT SEARCH PARSER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TEXT SEARCH TEMPLATE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TRIGGER</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP TYPE</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP USER MAPPING</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>DROP VIEW</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+       </row>
+       <row>
+        <entry align="left"><literal>SELECT INTO</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>X</literal></entry>
+        <entry align="center"><literal>-</literal></entry>
+       </row>
+      </tbody>
+     </tgroup>
+   </table>
+  </sect1>
+
+  <sect1 id="event-trigger-interface">
+   <!--
+   <title>Writing Event Trigger Functions in C</title>
+   -->
+   <title>用C编写事件触发器函数</title>
+
+   <indexterm zone="event-trigger-interface">
+    <!-- 
+<primary>event trigger</primary>
+    <secondary>in C</secondary>
+-->
+<primary>事件触发器</primary>
+    <secondary>用C</secondary>
+   </indexterm>
+
+   <!--
+<para>
+    This section describes the low-level details of the interface to an
+    event trigger function. This information is only needed when writing
+    event trigger functions in C. If you are using a higher-level language
+    then these details are handled for you. In most cases you should
+    consider using a procedural language before writing your event triggers
+    in C. The documentation of each procedural language explains how to
+    write an event trigger in that language.
+   </para>
+-->
+<para>
+本节描述事件触发器函数接口的底层细节。只有在用C编写事件触发器函数的时候才会需要这些信息。
+如果你使用一种高级语言，那么这些细节已经为你处理了。在大多数情况下，
+应该在用C编写事件触发器之前考虑用过程语言。每一个过程语言的文档解释了如何用那种语言编写一个事件触发器。
+</para>
+
+   <!--
+<para>
+    Event trigger functions must use the <quote>version 1</> function
+    manager interface.
+   </para>
+-->
+<para>
+事件触发器函数必须使用<quote>version 1</>函数管理接口。
+</para>
+   
+<para>
+<!--
+    When a function is called by the event trigger manager, it is not passed
+    any normal arguments, but it is passed a <quote>context</> pointer
+    pointing to a <structname>EventTriggerData</> structure. C functions can
+    check whether they were called from the event trigger manager or not by
+    executing the macro:
+-->
+当通过事件触发器管理调用一个函数的时候，并不传递任何正规参数，而是传递一个
+<quote>context</>指针指向<structname>EventTriggerData</>结构。
+C函数可以检查它们是从事件触发器管理调用还是通过执行宏：
+<programlisting>
+CALLED_AS_EVENT_TRIGGER(fcinfo)
+</programlisting>
+    <!--
+which expands to:
+-->
+扩展到：
+<programlisting>
+((fcinfo)-&gt;context != NULL &amp;&amp; IsA((fcinfo)-&gt;context, EventTriggerData))
+</programlisting>
+<!-- 
+    If this returns true, then it is safe to cast
+    <literal>fcinfo-&gt;context</> to type <literal>EventTriggerData
+    *</literal> and make use of the pointed-to
+    <structname>EventTriggerData</> structure.  The function must
+    <emphasis>not</emphasis> alter the <structname>EventTriggerData</>
+    structure or any of the data it points to. 
+-->
+如果返回真，那么传递<literal>fcinfo-&gt;context</>到类型<literal>EventTriggerData *</literal>
+是安全的，并且利用指向的<structname>EventTriggerData</>结构。
+函数必须<emphasis>不</emphasis>改变<structname>EventTriggerData</>结构或它指向的任何数据。
+   </para>
+  
+<para>
+ <!--
+ <structname>struct EventTriggerData</structname> is defined in
+    <filename>commands/event_trigger.h</filename>:
+-->
+<structname>struct EventTriggerData</structname>是在
+<filename>commands/event_trigger.h</filename>里定义的：
+<programlisting>
+typedef struct EventTriggerData
+{
+    NodeTag     type;
+    const char *event;      /* event name */
+    Node       *parsetree;  /* parse tree */
+    const char *tag;        /* command tag */
+} EventTriggerData;
+</programlisting>
+<!-- 
+    where the members are defined as follows:
+ -->
+成员定义如下：
+    <variablelist>
+     <varlistentry>
+      <term><structfield>type</></term>
+      <listitem>
+       <para>
+        <!-- Always <literal>T_EventTriggerData</literal>. -->
+总是<literal>T_EventTriggerData</literal>。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><structfield>event</></term>
+      <listitem>
+       <!--
+<para>
+        Describes the event for which the function is called, one of
+        <literal>"ddl_command_start"</literal>, <literal>"ddl_command_end"</literal>,
+        <literal>"sql_drop"</literal>.
+        See <xref linkend="event-trigger-definition"> for the meaning of these
+        events.
+       </para>
+-->
+<para>
+描述了函数调用的事件，是<literal>"ddl_command_start"</literal>, <literal>"ddl_command_end"</literal>,
+<literal>"sql_drop"</literal>之一。参阅<xref linkend="event-trigger-definition">获得这些事件的含义。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><structfield>parsetree</></term>
+      <listitem>
+       <!--
+<para>
+        A pointer to the parse tree of the command.  Check the PostgreSQL
+        source code for details.  The parse tree structure is subject to change
+        without notice.
+       </para>
+-->
+<para>
+命令的分析树的一个指针。检查PostgreSQL源代码详情。分析树结构改变时不会有通知。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><structfield>tag</></term>
+      <listitem>
+       <!--
+<para>
+        The command tag associated with the event for which the event trigger
+        is run, for example <literal>"CREATE FUNCTION"</literal>.
+       </para>
+-->
+<para>
+命令标签和事件触发器正在运行的事件有关，例如<literal>"CREATE FUNCTION"</literal>。
+</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   <!--
+<para>
+    An event trigger function must return a <symbol>NULL</> pointer
+    (<emphasis>not</> an SQL null value, that is, do not
+    set <parameter>isNull</parameter> true).
+   </para>
+-->
+<para>
+一个事件触发器函数必须返回一个<symbol>NULL</>指针（<emphasis>不是</>
+SQL null值，也就是，不要设置<parameter>isNull</parameter>为真）。
+</para>
+  </sect1>
+
+  <sect1 id="event-trigger-example">
+   <!--
+   <title>A Complete Event Trigger Example</title>
+   -->
+   <title>一个完整的事件触发器的例子</title>
+
+   <!--
+<para>
+    Here is a very simple example of an event trigger function written in C.
+    (Examples of triggers written in procedural languages can be found in
+    the documentation of the procedural languages.)
+   </para>
+-->
+<para>
+这是用C编写的事件触发器函数的一个非常简单的例子。
+（用过程语言编写的触发器的例子可以在过程语言的文档中找到。）
+</para>
+
+   <!--
+<para>
+    The function <function>noddl</> raises an exception each time it is called.
+    The event trigger definition associated the function with
+    the <literal>ddl_command_start</literal> event.  The effect is that all DDL
+    commands (with the exceptions mentioned
+    in <xref linkend="event-trigger-definition">) are prevented from running.
+   </para>
+-->
+<para>
+函数<function>noddl</>在每次调用它时提出一个异常。事件触发器定义在<literal>ddl_command_start</literal>
+事件时联系函数。影响是阻止所有DDL命令（除了在<xref linkend="event-trigger-definition">中提到的例外）运行。
+</para>
+   
+<para>
+<!--
+    This is the source code of the trigger function:
+-->
+这是触发器函数的源代码：
+<programlisting><![CDATA[
+#include "postgres.h"
+#include "commands/event_trigger.h"
+
+
+PG_MODULE_MAGIC;
+
+Datum noddl(PG_FUNCTION_ARGS);
+
+PG_FUNCTION_INFO_V1(noddl);
+
+Datum
+noddl(PG_FUNCTION_ARGS)
+{
+    EventTriggerData *trigdata;
+
+    if (!CALLED_AS_EVENT_TRIGGER(fcinfo))  /* internal error */
+        elog(ERROR, "not fired by event trigger manager");
+
+    trigdata = (EventTriggerData *) fcinfo->context;
+
+    ereport(ERROR,
+        (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+                 errmsg("command \"%s\" denied", trigdata->tag)));
+
+    PG_RETURN_NULL();
+}
+]]></programlisting>
+   </para>
+
+   
+<para>
+<!--
+    After you have compiled the source code (see <xref linkend="dfunc">),
+    declare the function and the triggers:
+-->
+在编译源代码之后（参阅<xref linkend="dfunc">），声明函数和触发器：
+<programlisting>
+CREATE FUNCTION noddl() RETURNS event_trigger
+    AS 'noddl' LANGUAGE C;
+
+CREATE EVENT TRIGGER noddl ON ddl_command_start
+    EXECUTE PROCEDURE noddl();
+</programlisting>
+   </para>
+   
+<para>
+<!--
+    Now you can test the operation of the trigger:
+-->
+现在可以测试触发的操作：
+<screen>
+=# \dy
+                     List of event triggers
+ Name  |       Event       | Owner | Enabled | Procedure | Tags 
+-------+-------------------+-------+---------+-----------+------
+ noddl | ddl_command_start | dim   | enabled | noddl     | 
+(1 row)
+
+=# CREATE TABLE foo(id serial);
+ERROR:  command "CREATE TABLE" denied
+</screen>
+   </para>
+   
+<para>
+<!--
+    In this situation, in order to be able to run some DDL commands when you
+    need to do so, you have to either drop the event trigger or disable it.  It
+    can be convenient to disable the trigger for only the duration of a
+    transaction:
+-->
+在这种情况下，当你需要做这些的时候为了能够运行一些DDL命令，你必须终止事件触发器或禁用它。
+只在事务期间禁用触发器是方便的：
+<programlisting>
+BEGIN;
+ALTER EVENT TRIGGER noddl DISABLE;
+CREATE TABLE foo (id serial);
+ALTER EVENT TRIGGER noddl ENABLE;
+COMMIT;
+</programlisting>
+<!-- 
+    (Recall that DDL commands on event triggers themselves are not affected by
+    event triggers.)
+-->
+（回想一下，事件触发器自己的DDL命令不受事件触发器的影响。 ）
+   </para>
+  </sect1>
+</chapter>
