@@ -86,7 +86,7 @@ pgdoc-cn/postgresql/doc/src/sgml/html/index.html
 ## 在线阅读
 http://pgdoccn.gitcafe.io
 
-注2：暂定url，计划以后变更到http://www.postgres-cn/docs/9.3
+注2：暂定url，计划以后变更到http://www.postgres.cn/docs/9.3
 
 注3：通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
 
