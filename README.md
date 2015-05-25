@@ -1,7 +1,7 @@
 # PostgreSQL中文手册翻译计划
 PostgreSQL官方手册对广大PostgreSQL用户来说是非常重要的学习和参考资料。
-因此在2013年底PostgreSQL中国用户会成立了新的PG中文手册翻译小组，旨在将最新的PG手册翻译成中文。
-当前翻译中的PG手册版本是PostgreSQL9.3.1，翻译工作主要通过下面的翻译平台和QQ群进行管理，并且已完成了大部分的翻译工作。
+因此在2013年底PostgreSQL中国用户会成立了新的PG中文手册翻译小组，在第一代功勋laser所翻译的8.2.3的基础上开启了9.3.1版本的手册翻译工作。
+翻译工作主要通过下面的翻译平台和QQ群进行管理，并且目前已完成了大部分的翻译工作。
 但翻译中难免会有不准确的地方，希望读者发现问题后及时帮忙纠正，不断完善PG的中文手册。
 
 ## 翻译平台 & 文档翻译QQ群
@@ -15,38 +15,31 @@ QQ:309292849
 https://github.com/postgres-cn/pgdoc-cn
 
 本Github仓库存放已翻译好的sgml文件，通过这些sgml文件可编译成html和pdf等各种格式的文档。
-同时，本Github仓库接受读者的反馈和修正（通过Issues和Pull requests）。
+本Github仓库接受对已翻译好的文档的质量改善，欢迎读者的反馈和修正（通过Issues和Pull requests），尚未翻译的十几个sgml文件的翻译工作目前仍在“翻译平台”上管理。
+
 
 ## 文档的编译
 ### Windows上的编译
-  1 . 下载本Github仓库
+  1 . 安装Perl
+
+http://www.activestate.com/activeperl/downloads
+
+  2 . 下载本Github仓库
 ```shell
 git clone https://github.com/postgres-cn/pgdoc-cn.git
 ```
 
-  2 . 进入pgdoc-cn目录执行builddocWithoutPerl.bat或builddoc.bat
+  3 . 进入pgdoc-cn目录双击执行builddoc.bat
 ```shell
 cd pgdoc-cn
-builddocWithoutPerl.bat
+builddoc.bat
 ```
 
-注1：builddocWithoutPerl.bat和builddoc.bat的区别在于
+  4 . 查看编译效果
 
-  1) builddoc.bat需要机器上安装有perl才能执行，builddocWithoutPerl.bat不需要。
+打开以下html文件查看编译效果
 
-  2) builddocWithoutPerl.bat不会生成下面几个中间sgml，即最后生成的PG文档中没有SQL支持表，errcode，版本号和索引（如果用于预览翻译结果，没有什么影响）。
-
-- 	features-supported.sgml
-- 	features-unsupported.sgml
-- 	errcodes-table.sgml
-- 	version.sgml
-- 	bookindex.sgml
-
-  3 . 查看编译效果
-
-打开以下html看编译效果
-
-pgdoc-cn/postgresql/doc/src/sgml/html/index.html 
+pgdoc-cn/build/doc/src/sgml/html/index.html
 
 ### LINUX/UNIX上的编译
   1 . 下载本Github仓库
@@ -60,33 +53,39 @@ wget https://ftp.postgresql.org/pub/source/v9.3.1/postgresql-9.3.1.tar.gz
 tar xzf postgresql-9.3.1.tar.gz
 ```
 
-  3 . 用本Github仓库中的sgml覆盖PostgreSQL源码中的
+  3 . 对Github仓库中的sgml文件进行转码（UTF8->GBK）
 ```shell
-cp -rf pgdoc-cn/postgresql/doc/src/sgml postgresql-9.3.1/doc/src/
+cd pgdoc-cn
+perl tools/encoding_convert.pl
 ```
 
-  4 . 下载编译PG手册所必需的工具集
+  4 . 用转码后的sgml文件覆盖PostgreSQL源码中的
+```shell
+cp -rf build/doc/src/sgml ../postgresql-9.3.1/doc/src/
+```
+
+  5 . 下载编译PG手册所必需的工具集
 
 参考：http://www.postgresql.org/docs/9.3/static/docguide-toolsets.html
 
-  5 .  编译PG手册
+  6 .  编译PG手册
 ```shell
-cd postgresql-9.3.1
-cd doc/src/sgml
+cd ../postgresql-9.3.1/doc/src/sgml
 gmake html
 ```
 参考：http://www.postgresql.org/docs/9.3/static/docguide-build.html
 
-  6 . 查看编译效果
-打开以下html看编译效果
+  7 . 查看编译效果
+打开以下html查看编译效果
 
-pgdoc-cn/postgresql/doc/src/sgml/html/index.html
+pgdoc-cn/build/doc/src/sgml/html/index.html
 
 
 ## 在线阅读
 http://www.postgres.cn/docs/9.3
 
-注2：通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
+通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
+
 
 
 ## 离线文档
@@ -108,16 +107,18 @@ http://www.postgres.cn/docs/9.3
 关于html页面和sgml文件的对应关系，可通过点击“在线阅读”web页面右上角的“纠错本页面”链接跳转到Github仓库中的相应sgml文件的编辑页面。
 
 ### 3. 文档翻译
-如果要对尚未翻译的文档进行翻译，请先注册并登录到“翻译平台”上申请“翻译”，防止和其他人的工作重复。
-翻译好的文档在“翻译平台”上提交，之后由系统管理员进行从“翻译平台”到Github仓库的数据同步。
+目前仅剩余10几个sgml文件尚未翻译，其中还没有被认领的只有几个。当前这些剩余sgml的翻译工作仍在“翻译平台”上进行。
+如果要对这些尚未翻译的文档进行翻译，请先注册并登录到“翻译平台”上申请“翻译”，翻译好的文档在“翻译平台”上提交。
+系统管理员会定期将“翻译平台”上的更新同步到Github仓库（但Github仓库上发生的更新不会反馈到“翻译平台”） 。
 
-但是，建议把修改后的sgml也同时以Pull Request的方式提交到Github仓库，方便系统管理员进行同步。
+### 4. 文档校对
+文档校对工作准备通过Github + wiki的方式进行，具体待定。
 
-### 4. 文档校对(审核)
-如果要对整个的sgml文件进行校对（审核），请先注册并登录到“翻译平台”上申请“审核”，防止和其他人的工作重复。
-校对（审核）时，如果对文档进行了修改，把修改后的sgml更新到“翻译平台”上，之后由系统管理员进行从“翻译平台”到Github仓库的数据同步。
 
-但是，建议把修改后的sgml也同时以Pull Request的方式提交到Github仓库，方便系统管理员进行同步。
+## 其它
+1. Github仓库中的sgml文件编码是UTF8（“翻译平台”上的是GBK）
+2. 系统管理员会定期将最新的Github仓库修正反映到在线中文手册，这一工作目前是手动做的，以后会自动化。
+
 
 
 

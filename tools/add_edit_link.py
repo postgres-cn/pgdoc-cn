@@ -12,7 +12,7 @@ InsertHTML="""<div style="text-align:right">
 <a style="margin : 0px 0px 0px 10px;" href="https://github.com/postgres-cn/pgdoc-cn/edit/master/postgresql/doc/src/sgml/{0}" target="_blank" title="直接在Github上纠错本页面">纠错本页面</a>
 </div>"""
 
-sgmlDir="../postgresql/doc/src/sgml"
+sgmlDir="../build/doc/src/sgml"
 htmlDir=os.path.join(sgmlDir,"html")
 htmlOutputDir=os.path.join("html_out")
 html2sgmlDict=html2sgml_map.getHtml2sgmlDict(sgmlDir)
