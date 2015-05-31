@@ -2,7 +2,6 @@
 
 use strict;
 use autodie;
-use Try::Tiny;
 use File::Copy;
 use encoding "utf8";
 use encoding  "gbk";

@@ -1,3 +1,5 @@
+#!/usr/local/python34/bin/python3
+# -*- coding: UTF-8 -*-
 #功能:在html中添加在线纠错链接
 
 import sys

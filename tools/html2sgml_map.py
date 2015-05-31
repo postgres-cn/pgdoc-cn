@@ -1,3 +1,5 @@
+#!/usr/local/python34/bin/python3
+# -*- coding: UTF-8 -*-
 #功能:生成html文件到sgml文件的对应关系dict
 
 import os
