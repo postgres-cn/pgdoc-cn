@@ -41,7 +41,7 @@ builddoc.bat
 
 pgdoc-cn/build/doc/src/sgml/html/index.html
 
-### LINUX/UNIX上的编译
+### Linux/UNIX上的编译
   1 . 下载本Github仓库
 ```shell
 git clone https://github.com/postgres-cn/pgdoc-cn.git
@@ -103,7 +103,7 @@ http://www.postgres.cn/docs/9.3
 
 ### 2. 错误纠正
 发现翻译文档中的个别问题后，直接修正对应的sgml文件，并通过Pull Request向本Github仓库提交。
-之后由系统管理员接受Pull Request并讲修改同步到“翻译平台”
+之后由系统管理员接受Pull Request。
 
 关于html页面和sgml文件的对应关系，可通过点击“在线阅读”web页面右上角的“纠错本页面”链接跳转到Github仓库中的相应sgml文件的编辑页面。
 
@@ -112,7 +112,8 @@ http://www.postgres.cn/docs/9.3
 系统管理员会定期将“翻译平台”上的更新同步到Github仓库（但Github仓库上发生的更新不会反馈到“翻译平台”） 。
 
 ### 4. 文档校对
-文档校对工作通过Github + wiki的方式进行，详见[PostgreSQL 9.3.1 中文手册的翻译校对](https://github.com/postgres-cn/pgdoc-cn/wiki/check9.3)。
+文档校对工作通过Github + wiki的方式进行，详见[PostgreSQL 9.3.1 中文手册的翻译校对（志愿者募集中）](https://github.com/postgres-cn/pgdoc-cn/wiki/check9.3)。   
+目前手册的大部分章节都没有经过校对，翻译上的小问题不少，欢迎有兴趣的童靴参加校对工作。
 
 
 ## 其它
