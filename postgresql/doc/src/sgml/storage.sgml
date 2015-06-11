@@ -465,7 +465,7 @@ Oversized-Attribute Storage Technique).
 </para>
 -->
 <para>
-  本节提供一个<acronym>TOAST</>的概述。（超大字段存储技术）
+  本节对<acronym>TOAST</>进行介绍。（超大字段存储技术）
 </para>
 
 <!--
@@ -481,10 +481,10 @@ known as <acronym>TOAST</>  (or <quote>the best thing since sliced bread</>).
 -->
 <para>
   因为<productname>PostgreSQL</productname>的页面大小是固定的(通常是8Kb)，
-  并且不允许行跨越多个页面，因此不可能直接存储非常大的字段值。
-  为了突破这个限制，大的字段值被压缩和/或打碎成多个物理行。
-  这些事情对用户都是透明的，只是在后端代码上有一些小的影响。
-  这个技术称为<acronym>TOAST</>。（<quote>切片面包之后最好的东西</>)）
+  并且不允许元组跨越多个页面，因此不可能直接存储非常大的字段值。
+  为了突破这个限制，大的字段值被压缩和/或分割为多个物理行。
+  这些事情对用户都是透明的，只对多数后端代码有少许影响。
+  该技术被称之为<acronym>TOAST</>（或者<quote>切片面包之后最好的东西</>)）。
 </para>
 
 <!--
@@ -503,12 +503,12 @@ value, but in some cases more efficient approaches are possible.)
 -->
 <para>
   只有一部分数据类型支持<acronym>TOAST</> &mdash;(没必要在那些不可能生成大的字段值
-  的数据类型强制这种额外开销)。要支持<acronym>TOAST</>，数据类型必须有变长 
-  (<firstterm>varlena</>)表现形式，这个时候，任何存储的数值的头
-  32 位都是存储着以字节记的数值的总长度(包括长度本身)。
-  <acronym>TOAST</>并不约束剩下的表现形式。所有支持<acronym>TOAST</>的数据类型之
-  C级别的函数都必须仔细处理<acronym>TOAST</>的输入值。
-  也就是通常是在对一个输入值做任何事情之前调用<function>PG_DETOAST_DATUM</>；
+  的数据类型强制添加这种额外开销)。要支持<acronym>TOAST</>，数据类型必须有变长 
+  (<firstterm>varlena</>)表现形式，这个时候，存储的任何数据的头
+  32 位都存储着以字节计的数据的总长度(包括长度本身)。
+  <acronym>TOAST</>并不影响数据类型其余部分的表现形式。所有支持<acronym>TOAST</>数据类型的
+  C级别函数都必须仔细处理<acronym>TOAST</>的输入值。
+  也就是通常在对一个输入值做任何事情之前调用<function>PG_DETOAST_DATUM</>；
   但是在某些情况下也存在更高效的方法。
 </para>
 
@@ -538,19 +538,19 @@ the content of the TOAST pointer tells that, instead.
 </para>
 -->
 <para>
- <acronym>TOAST</>占用变长的长度字的两位（在大型机器上高位序，在小型机器上低位序），
+ <acronym>TOAST</>占用变长的长度字的两位（在大端（big-endian）机器上是高位序，在小端（little-endian）机器上是低位序），
   因此限制<acronym>TOAST</>数据类型任何值的逻辑大小为1 GB（2<superscript>30</> - 1字节）。 
   当两位都是零时，该值是一个普通的非<acronym>TOAST</>数据类型的值，
-  长度字的剩下位给总数据大小以字节计（包括长度字）。当设置最高或最低位，
-  该值仅有一个字节头替代通常的4字节头，而剩余的位给总数据大小以字节计（包括长度字）。
+  长度字的剩余位给出以字节计的总数据大小（包括长度字）。当最高位或最低位被设置时，
+  该值仅有一个一字节长度的头而非通常的4字节的头，剩余的位给出以字节计的总数据大小（包括长度字）。
   作为一个特殊的情况下，如果剩余位都是零（其将不可能包含自身的长度），
   该值为一个指向存储在TOAST表的行外数据。
-  （一个TOAST指针的大小是给定的在第二个字节的数据。）
-  单字节头的值没有对齐任何特定的边界。最后当清除最高或最低位时，
-  但是设置了临近的位，压缩了数据内容，在使用前必须解压缩。
-  在这种情况下长度字剩余位给压缩数据的总大小，而不是原数据的。
+  （TOAST指针的大小在数据的第二个字节给出。）
+  单字节头的值没有对齐任何特定的边界。最后，当最高或最低位被清除，
+  其临近位被设置时，数据内容已经被压缩，在使用前必须先行解压。
+  在这种情况下，长度字剩余位给出的是压缩数据的总大小，而非原始数据的大小。
   请注意压缩也可能是行外数据，
-  但是变长的头不会告诉这是否发生&mdash;反而TOAST指针的内容告诉这些。
+  但是变长的头不会告诉我们这是否发生&mdash;而是由TOAST指针的内容告诉我们的。
 </para>
 
 <!--
@@ -564,7 +564,7 @@ described in more detail below.
 -->
 <para>
   如果一个表中有任何一个字段是可以<acronym>TOAST</>的，
-  那么该表将有一个关联的<acronym>TOAST</>表，其OID存储在表的<structname>pg_class</>.<structfield>reltoastrelid</>记录里，
+  那么该表将有一个关联的<acronym>TOAST</>表，其OID存储在表的<structname>pg_class</>.<structfield>reltoastrelid</>字段中，
   行外<acronym>TOAST</>过的数值保存在<acronym>TOAST</>表里，下面有更详细的描述。
 </para>
 
@@ -603,16 +603,16 @@ regardless of the actual size of the represented value.
 </para>
 -->
 <para>
-  将外数据分割成(如果压缩过，在压缩之后)最多<symbol>TOAST_MAX_CHUNK_SIZE</>
-  (缺省选择这个值，2000字节，使4块行将适合一内存页，约2000个字节)字节，
-  每个块都作为独立的行 在<acronym>TOAST</>表里为所属表存储。
+  将行外数据分割成(如果压缩过，在压缩之后)最多<symbol>TOAST_MAX_CHUNK_SIZE</>
+  (缺省选择这个值，2000字节，使4块行将适合一内存页，约2000个字节)字节的块，
+  每个块都作为独立的行在所属表的<acronym>TOAST</>表中存储。
   每个<acronym>TOAST</>表都有<structfield>chunk_id</>字段(一个表示特定<acronym>TOAST</>值的OID)、
-  <structfield>chunk_seq</>(一个序列号，存储该块在数值中的位置)、<structfield>chunk_data</>(该块实际的数据)。 
-  在<structfield>chunk_id</>和<structfield>chunk_seq</>上有一个唯一索引，提供对数值的快速检索。
+  <structfield>chunk_seq</>(一个序列号，存储该块在数据中的位置)、<structfield>chunk_data</>(该块实际的数据)。 
+  在<structfield>chunk_id</>和<structfield>chunk_seq</>上有一个唯一索引，提供对数据的快速检索。
   因此，一个表示行外<acronym>TOAST</>值的指针数据需要存储要查阅的<acronym>TOAST</>的OID 
-  和特定数值的OID(它的<structfield>chunk_id</>)。为了方便，指针数据还存储逻辑数据的尺寸
+  和特定数据的OID(它的<structfield>chunk_id</>)。为方便考虑，指针数据还存储逻辑数据的尺寸
   (原始的未压缩的数据长度)以及实际存储的尺寸 (如果使用了压缩，则两者不同)。
-  加上头部的长度字，一个<acronym>TOAST</>指针数据的总尺寸是18字节，
+  加上头部的长度字，一个<acronym>TOAST</>指针数据的总大小是18字节，
   不管它代表的数值的实际长度是多大。
 </para>
 
@@ -631,24 +631,21 @@ none of the out-of-line values change.
 </para>
 -->
 <para>
-<acronym>TOAST</>代码只有在准备向某表中存储超过<symbol>TOAST_TUPLE_THRESHOLD</>
-字节(通常是2KB)的行的时候才会触发。
+<acronym>TOAST</>代码只有在表中一行存储的数据超过<symbol>TOAST_TUPLE_THRESHOLD</>
+字节(通常是2KB)时才会触发。
 <acronym>TOAST</>代码将压缩和/或行外存储字段值，
-直到数值比<symbol>TOAST_TUPLE_TARGET</>字节（通常是2KB）短，
-或者无法得到更好的结果的时候才停止。
+直到数据少于<symbol>TOAST_TUPLE_TARGET</>字节（通常是2KB），
+或者无法得到更好的结果时才停止。
 在一个UPDATE操作过程中，未改变的字段值通常原样保存；
-所以，如果UPDATE一个带有行外数据的行时，如果行外数据值没有变化，
+所以，如果UPDATE一个带有行外数据的行时，如果行外数据没有变化，
 那么将不会有<acronym>TOAST</>开销存在。
 </para>
-
-
 <para>
 <!--
 The <acronym>TOAST</> code recognizes four different strategies for storing
 <acronym>TOAST</>-able columns:
 -->
 <acronym>TOAST</>代码识别四种不同的存储<acronym>TOAST</>字段的策略：
-
    <itemizedlist>
     <listitem>
      <para>
@@ -659,8 +656,8 @@ The <acronym>TOAST</> code recognizes four different strategies for storing
       This is the only possible strategy for
       columns of non-<acronym>TOAST</>-able data types.
   -->
-  <literal>PLAIN</literal>避免压缩或者行外的存储;此外，它禁止使用单字节的头变长类型。
-  这只是对那些不能<acronym>TOAST</>的数据类型才有可能。
+  <literal>PLAIN</literal>避免压缩或者行外存储；此外，它禁止为变长类型使用单字节的头。
+  这只对那些不能<acronym>TOAST</>的数据类型的列才有可能。
      </para>
     </listitem>
     <listitem>
@@ -674,8 +671,8 @@ The <acronym>TOAST</> code recognizes four different strategies for storing
 -->
 <para>
    <literal>EXTENDED</literal>允许压缩和行外存储。
-   这是大多数<acronym>TOAST</>的数据类型的缺省。首先将企图进行压缩，
-   如果行仍然太大，那么则进行行外存储。
+   这是大多数<acronym>TOAST</>数据类型的缺省策略。首先会尝试对数据进行压缩，
+   如果行仍然太大，则进行行外存储。
 </para>
     </listitem>
     <listitem>
@@ -691,9 +688,8 @@ The <acronym>TOAST</> code recognizes four different strategies for storing
 -->
 <para>
 <literal>EXTERNAL</literal>允许行外存储，但是不许压缩。
-使用<literal>EXTERNAL</literal>，将令那些在<type>text</type>和<type>bytea</type>字段上的子字符串操作更快
- (代价是增加了存储空间)，因为这些操作是经过优化的：如果行外数据没有压缩，
- 那么它们只会去抓取需要的部分。
+使用<literal>EXTERNAL</literal>，将使那些数据类型为<type>text</type>和<type>bytea</type>的字段上的子字符串操作更快
+ (代价是增加了存储空间)，因为这些操作是经过优化的：如果行外数据没有压缩，那么它们只会获取需要的部分。
 </para>
     </listitem>
     <listitem>
@@ -708,7 +704,7 @@ The <acronym>TOAST</> code recognizes four different strategies for storing
 <para>
     <literal>MAIN</literal>允许压缩，但不允许行外存储。
 实际上，在这样的字段上仍然会进行行外存储，
-但只是作为没有办法把数据行变得更小的情况下使之足以容纳一个页面的最后的手段。
+但只是作为没有办法把数据行变得更小以使之足以放置在一个页面中的最后选择。
 </para>
     </listitem>
    </itemizedlist>
@@ -717,8 +713,8 @@ Each <acronym>TOAST</>-able data type specifies a default strategy for columns
 of that data type, but the strategy for a given table column can be altered
 with <command>ALTER TABLE SET STORAGE</>.
 -->
-每个<acronym>TOAST</>的数据类型都为该数据类型的字段指定一个缺省策略，
-但是特定表的字段的存储策略可以用<command>ALTER TABLE SET STORAGE</>修改。
+每个<acronym>TOAST</>的数据类型都为该数据类型所在的字段指定一个缺省策略，
+但是特定表的字段的存储策略可以用<command>ALTER TABLE SET STORAGE</>命令进行修改。
 </para>
 
 <!--
@@ -740,16 +736,15 @@ comparison table, in which all the HTML pages were cut down to 7 kB to fit.
 </para>
 -->
 <para>
-  这个方法比那些更直接的方法，比如允许行值直接跨越多个页面，
+  这个方法比那些更直接的方法，比如允许行中的数据直接跨越多个页面，
   有更多优点。假设查询通常是用相对比较短的键值进行匹配的，
   那么大多数执行器的工作都将使用主行记录完成。<acronym>TOAST</>属性的大值，
   只是在把结果集发送给客户端的时候才抽出来(如果选择了它的话)。因此，
   主表要小得多，并且它的大部分行都存储在共享缓冲区里，因此就可以不需要任何行外存储。
-  排序集也缩小了，并且排序将更多地在内存里完成。一个小测试表明，
+  排序集也缩小了，并且排序将更多地完全在内存中完成。一个小测试表明，
   一个用于保存HTML页面以及它们的URL的表，包括<acronym>TOAST</>表在内，
   存储将近一半大小的裸数据，而主表只包含全部数据的10%(URL和一些小的HTML页面)。
-  与在一个非<acronym>TOAST</>的对比表里面存储(把全部HTML页面裁剪成7KB以匹配页面大小)，
-  没有任何运行时的区别。
+与一个没有使用<acronym>TOAST</>的表(把全部HTML页面裁剪成7KB以匹配页面大小)进行对比，没有任何运行时的区别。
 </para>
 
 </sect1>
@@ -777,12 +772,12 @@ if the filenode of a relation is 12345, the FSM is stored in a file called
 -->
 <para>
  每个堆和索引关系，除了哈希索引，
- 有个自由空间映射(FSM) 来保持跟踪关系中可用的空间。
- 将同时在独立的关系叉文件存储主关系数据，
- 以关系的filenode 编号命名，加上一个<literal>_fsm</>后缀。
+ 都有一个空闲空间映射(FSM) 来跟踪关系中的可用空间。
+ FSM文件与关系的主数据文件放置在一起，有一个单独的分支与之对应，
+ 以关系的filenode 值，加一个<literal>_fsm</>后缀来命名。
  例如，如果一个关系的filenode是12345，
- 存储FSM在一个叫<filename>12345_fsm</>的文件里，
- 在与主关系文件相同目录里。
+ 其FSM将存储在一个名为<filename>12345_fsm</>的文件中，
+ 与主关系文件在相同的目录中。
 </para>
 
 <!--
@@ -794,10 +789,10 @@ levels aggregate information from the lower levels.
 </para>
 -->
 <para>
- 自由空间映射组织为一个<acronym>FSM</>页树。
- <acronym>FSM</>页底层存储每个堆（或索引）页上可用的自由空间，
- 使用一个字节来代表每一个如页。
- 高级别的从低级别聚合信息。
+ 空闲空间映射被组织为一个<acronym>FSM</>页树。
+底层的<acronym>FSM</>页存储每个堆（或索引）页上可用的空闲空间，
+ 使用一个字节来表示。
+ 高层的页从底层的页中聚合信息。
 </para>
 
 <!--
@@ -810,10 +805,10 @@ at the root.
 </para>
 -->
 <para>
-  每个<acronym>FSM</>页是一个二叉树，存储在一个数组，
-  每个节点一个字节。每个叶节点代表一个堆页，或低级别的<acronym>FSM</>页。
-  在每个非叶节点，存储其子节点值的高级别的值。
-  因此在根节点存储叶节点的最大值。
+  每个<acronym>FSM</>页是一个二叉树，存储在一个数组中，
+  数组中每个节点对应一个字节。每个叶节点代表一个堆页，或低级别的<acronym>FSM</>页。
+  在每个非叶节点中，存储其所有孩子中最大的值。
+  因此叶节点中最大的值存储在根节点中。
 </para>
 
 <!--
@@ -825,8 +820,8 @@ can be used to examine the information stored in free space maps.
 </para>
 -->
 <para>
-  参阅<filename>src/backend/storage/freespace/README</>关于更详细的<acronym>FSM</>是怎样的结构，
-  怎样更新和搜索它。<xref linkend="pgfreespacemap">模块可以用来审查存储在自由空间映射的信息。
+  参阅<filename>src/backend/storage/freespace/README</>了解<acronym>FSM</>结构的详细信息，
+  以及更新和搜索策略。<xref linkend="pgfreespacemap">模块可以用来检测存储在空闲空间映射中的信息。
 </para>
 
 </sect1>
@@ -855,11 +850,8 @@ Note that indexes do not have VMs.
 </para>
 -->
 <para>
-  每个堆关系有个可见映射（VM）来保持跟踪那些包含行的页，
-  对于所有活动的事务可见。同时在独立的关系叉文件存储主关系数据，
-  以关系的filenode号，加上一个<literal>_vm</>后缀命名。例如，
-  如果一个关系的filenode是12345，存储VM在一个叫<filename>12345_vm</>文件里，
-  与主关系文件在同一目录。请注意索引没有VM。
+ 每个堆关系有一个可见映射（VM），用于跟踪哪些页包含对所有活动事务均可见的元组。可见映射文件与关系的主数据文件放置在一起，有一个独立的分支文件与之对应，以关系的filenode值加上一个<literal>_vm</>后缀命名。例如，
+ 如果一个关系的filenode是12345，VM存储在一个叫<filename>12345_vm</>的文件中，与主关系文件在同一目录。请注意索引没有VM。
 </para>
 
 <!--
@@ -872,10 +864,10 @@ queries using only the index tuple.
 </para>
 -->
 <para>
-  可见映射在简单的在每个堆页存储1位。
-  一个设置位意味着在页上所有的行对于所有事务可见的。
-  这意味着不包含任何行的页，需要清理；使用<firstterm>index-only scans</>
-  回答仅仅使用索引元的查询也可以使用这些信息。
+  可见映射简单地为每个堆页存储1个比特位。
+  如果该位被设置，则意味着该页上所有的元组对于所有事务都是可见的。
+  这意味着该页不包含任何需要清理的行。使用<firstterm>index-only扫描</>
+  时，可以在只使用索引元组的情况下使用这些信息对查询做出回复。
 </para>
 
 <!--
@@ -887,9 +879,8 @@ cleared by any data-modifying operations on a page.
 </para>
 -->
 <para>
-  这个意义上的映射是保守的，我们要确定每当设置位，
-  我们知道条件是真，但是如果没有设置位，它可能是真，也可能不是真。
-  通过清理设置可见映射位，但是通过页上的任何数据修改操作进行清理。
+  这个意义上的映射是保守的，我们确信无论何时只要位被设置，则条件为真，但如果该位没有被设置，则条件有可能是真，也可能不是真。
+  可见映射位只能通过清理（vacuum）来设置，但页面上的任何数据修改均可以将该位清空。
 </para>
 
 </sect1>
@@ -915,9 +906,9 @@ erased (they will be recreated automatically as needed).
 </para>
 --> 
 <para>
-  每个未记录的表，以及未记录表的每一个索引，有一个初始化
-分支。初始化分支是一个空表或相应类型的索引。当一个未记录的表由于崩溃必须重置为空，
-初始化分支被拷贝给主分支，并且擦除任何其他的分支（根据需要他们会自动重建）。
+  每个不记录日志的表，以及不记录日志的表上的每一个索引，都有一个初始化
+分支。初始化分支是一个空表或相应类型的索引。当一个不记录日志的表由于崩溃必须重置为空时，
+初始化分支被拷贝为主分支，并且擦除任何其他的分支（它们会根据需要自动重建）。
 </para>
 
 </sect1>
@@ -926,9 +917,7 @@ erased (they will be recreated automatically as needed).
 <!--
 <title>Database Page Layout</title>
 -->
-<title>数据库分页文件</title>
-
-
+<title>数据库页布局</title>
 <para>
 <!--
 This section provides an overview of the page format used within
