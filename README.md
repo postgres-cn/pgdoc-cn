@@ -1,6 +1,6 @@
 # PostgreSQL中文手册翻译计划
 PostgreSQL官方手册对广大PostgreSQL用户来说是非常重要的学习和参考资料。
-因此在2013年底PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3的基础上开启了9.3.1版本的手册翻译工作。
+因此在2013年底PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3中文手册的基础上开启了9.3.1版本的手册翻译工作。
 翻译工作主要通过下面的翻译平台和QQ群进行管理，并且目前已完成了大部分的翻译工作。
 但翻译中难免会有不准确的地方，希望读者发现问题后及时帮忙纠正，不断完善PG的中文手册。
 
@@ -80,7 +80,7 @@ gmake html
   7 . 查看编译效果
 打开以下html查看编译效果
 
-pgdoc-cn/build/doc/src/sgml/html/index.html
+postgresql-9.3.1/doc/src/sgml/html/index.html
 
 
 ## 在线阅读
@@ -113,7 +113,7 @@ http://www.postgres.cn/docs/9.3
 
 ### 4. 文档校对
 文档校对工作通过Github + wiki的方式进行，详见[PostgreSQL 9.3.1 中文手册的翻译校对（志愿者募集中）](https://github.com/postgres-cn/pgdoc-cn/wiki/check9.3)。   
-目前手册的大部分章节都没有经过校对，翻译上的小问题不少，欢迎有兴趣的童靴参加校对工作。
+目前手册的大部分章节都没有经过校对，翻译上的小问题不少，欢迎有兴趣的同学参加校对工作。
 
 
 ## 其它
