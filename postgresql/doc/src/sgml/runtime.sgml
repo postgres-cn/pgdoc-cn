@@ -1971,8 +1971,8 @@ default:\
 -->
 <para>
 在Linux 2.4 以及之后的版本里，缺省的虚拟内存的行为不是对<productname>PostgreSQL</productname>最优的。
-原因在于内核实现内存过提交的方法，如果其它进程的内存请求导致系统用光虚拟内存，
-那么内核可能会终止<productname>PostgreSQL</productname>主服务器进程。
+原因在于内核实现内存过提交的方法，如果<productname>PostgreSQL</productname>或其它进程的内存请求导致系统用光虚拟内存，
+那么内核可能会终止<productname>PostgreSQL</productname>的postmaster主服务器进程。
 </para>
    
 <para>
@@ -1981,8 +1981,8 @@ default:\
     this (consult your system documentation and configuration on where
     to look for such a message):
 -->
-如果发生了这样的事情，你会看到像下面这样的内核信息(参考你的系统文档和配置，
-看看在哪里能看到这样的信息)：
+如果发生了这样的事情，你会看到像下面这样的内核消息(参考你的系统文档和配置，
+看看在哪里能看到这样的消息)：
 <programlisting>
 Out of Memory: Killed process 12345 (postgres).
 </programlisting>
@@ -1994,7 +1994,7 @@ Out of Memory: Killed process 12345 (postgres).
     <productname>PostgreSQL</productname> will need to be restarted. 
 -->
 这表明<filename>postgres</filename>因为内存压力而终止了。尽管现有的数据连接将继续正常运转，
-但是新的连接将无法接受。要想恢复，你应该重启<productname>PostgreSQL</productname>。
+但是将无法接受新的连接。要想恢复，你应该重启<productname>PostgreSQL</productname>。
    </para>
 
    <!--
@@ -2010,6 +2010,7 @@ Out of Memory: Killed process 12345 (postgres).
 -->
 <para>
 一个避免这个问题的方法是在一台你确信不会因为其它进程而耗尽内存的机器上运行<productname>PostgreSQL</productname>。
+如果内存紧张，增加操作系统的交换空间有助于避免这个问题，因为OOM(out-of-memory) killer只有在物理内存和交换空间都耗尽时才会被调用。
 </para>
 
    <!--
@@ -2027,12 +2028,12 @@ Out of Memory: Killed process 12345 (postgres).
    </para>
 -->
 <para>
-如果<productname>PostgreSQL</productname>本身是系统耗尽内存的原因，你可以通过改变你的配置来避免这个问题。
-在某些情况下，这样可能帮助降低内存相关的配置参数，尤其是<link linkend="guc-shared-buffers"><varname>shared_buffers</></link>
+如果<productname>PostgreSQL</productname>本身是系统内存耗尽的原因，你可以通过改变你的配置来避免这个问题。
+在某些情况下，调低内存相关的配置参数可能有所帮助，尤其是<link linkend="guc-shared-buffers"><varname>shared_buffers</></link>
 和<link linkend="guc-work-mem"><varname>work_mem</></link>。其他情况下，
-这个问题可能是由于允许太多的连接到数据库服务器本身引起的。在许多情况下，
-减少<link linkend="guc-max-connections"><varname>max_connections</></link>
-而不是利用外部连接池的软件会更好。
+这个问题可能是由于允许太多的连接连到数据库服务器引起的。在许多情况下，
+减小<link linkend="guc-max-connections"><varname>max_connections</></link>
+，并且作为替代，利用外部连接池软件会更好。
 </para>
 
    
@@ -2048,8 +2049,8 @@ Out of Memory: Killed process 12345 (postgres).
 -->
 在 Linux 2.6 以及以后的版本里，可以修改内存的行为，这样它就不会再<quote>过提交</>内存。
 尽管这个设置将不会完全阻止<ulink url="http://lwn.net/Articles/104179/">OOM killer</>
-被引用，然是它将显著地减少并且将因此导致更稳健的系统行为。
-这是通过用<command>sysctl</command>选取一个严格的过提交模式实现的：
+被调用，然是它将显著地减少并且将因此导致更稳健的系统行为。
+这通过用<command>sysctl</command>选取一个严格的过提交模式实现：
 <programlisting>
 sysctl -w vm.overcommit_memory=2
 </programlisting>
@@ -2072,10 +2073,10 @@ sysctl -w vm.overcommit_memory=2
     <literal>-1000</>, thereby guaranteeing it will not be targeted by the OOM
     killer.  The simplest way to do this is to execute
 -->
-另外一种方法，改变或不改变<varname>vm.overcommit_memory</>都可以使用，
-设置与进程相关的<varname>oom_score_adj</>值为主进程<literal>-1000</>，
+另外一种方法，不管改变或不改变<varname>vm.overcommit_memory</>都可以使用，
+为postmaster进程设置进程相关的<varname>oom_score_adj</>值为<literal>-1000</>，
 从而保证它不会成为OOM killer的目标。
-最简单的方法是在调用postmaster之前在postmaster的启动脚本执行：
+最简单的方法是在postmaster的启动脚本里在调用postmaster之前执行：
 <programlisting>
 echo -1000 > /proc/self/oom_score_adj
 </programlisting>
@@ -2090,9 +2091,9 @@ echo -1000 > /proc/self/oom_score_adj
     target them at need. 
 -->
 请注意，这个操作必须由root来做，否则将不会有任何作用；所以一个root所有的启动脚本是做这个最简单的地方。
-如果你这样做，你可能也希望用<literal>-DLINUX_OOM_SCORE_ADJ=0</>添加到<varname>CPPFLAGS</>
-来建立<productname>PostgreSQL</>。这将导致主子进程以标准<varname>oom_score_adj</>值0来运行，
-所以OOM killer仍然可以在需要时以它们为目标。
+如果你这样做，你可能也希望把<literal>-DLINUX_OOM_SCORE_ADJ=0</>添加到<varname>CPPFLAGS</>
+来编译<productname>PostgreSQL</>。这将导致postmaster子进程以标准<varname>oom_score_adj</>值0来运行，
+所以OOM killer仍然可以在需要时把它们作为目标。
    </para>
 
    <!--
@@ -2108,7 +2109,7 @@ echo -1000 > /proc/self/oom_score_adj
 <para>
 老版本的Linux内核不提供<filename>/proc/self/oom_score_adj</>，但是可能有相同功能的名为
 <filename>/proc/self/oom_adj</>的以前的版本。除了禁用值为<literal>-17</>而不是<literal>-1000</>
-外，它们做相同的工作。相应的<productname>PostgreSQL</>的建立标识为<literal>-DLINUX_OOM_ADJ=0</>。
+外，它们做相同的工作。相应的<productname>PostgreSQL</>的编译宏定义为<literal>-DLINUX_OOM_ADJ=0</>。
 </para>
 
    <note>
