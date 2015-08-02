@@ -102,7 +102,7 @@ html: html-stamp
 html-stamp: postgres.sgml $(ALLSGML) stylesheet.dsl
 	$(MAKE) check-tabs
 	$(MKDIR_P) html
-	$(JADE.html.call) -i include-index $<
+	$(JADE.html.call) -i include-index $< || echo "ignore openjade errors for pgdoccn building!"
 	cp $(srcdir)/stylesheet.css html/
 	touch $@
 
@@ -116,7 +116,7 @@ postgres.txt: postgres.html
 
 HTML.index: postgres.sgml $(ALMOSTALLSGML) stylesheet.dsl
 	@$(MKDIR_P) html
-	$(JADE.html.call) -V html-index $<
+	$(JADE.html.call) -V html-index $< || echo "ignore openjade errors for pgdoccn building!"
 
 bookindex.sgml: HTML.index
 ifdef COLLATEINDEX
