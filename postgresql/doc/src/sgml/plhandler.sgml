@@ -244,7 +244,10 @@ CREATE LANGUAGE plsample
     or updated a function written in the procedural language.
     The passed-in OID is the OID of the function's <classname>pg_proc</>
     row.  The validator must fetch this row in the usual way, and do
-    whatever checking is appropriate.  Typical checks include verifying
+    whatever checking is appropriate.
+    First, call <function>CheckFunctionValidatorAccess()</> to diagnose
+    explicit calls to the validator that the user could not achieve through
+    <command>CREATE FUNCTION</>.  Typical checks then include verifying
     that the function's argument and result types are supported by the
     language, and that the function's body is syntactically correct
     in the language.  If the validator finds the function to be okay,
@@ -258,6 +261,8 @@ CREATE LANGUAGE plsample
 有效性验证函数在<command>CREATE FUNCTION</>命令执行的末尾被调用，这时已经创建或者更新了一个使用这个过程语言书写的函数。
 传入的OID是这个函数在<classname>pg_proc</>中对应行的OID。
 有效性验证函数必须以通常的方式获取这一行并做一些恰当的检查。
+首先，调用<function>CheckFunctionValidatorAccess()</>
+诊断对验证函数的明确调用，看看用户是否能通过<command>CREATE FUNCTION</>实现。
 通常的检查包括：确认函数的参数和结果类型是被该语言支持的，函数体是符合该语言语法的。
 如果有效性验证函数发现函数是正确的，只需要返回就可以了。
 如果发现了错误应该通过<function>ereport()</>报告错误。
@@ -268,28 +273,30 @@ CREATE LANGUAGE plsample
 <!--
     Validator functions should typically honor the <xref
     linkend="guc-check-function-bodies"> parameter: if it is turned off then
-    any expensive or context-sensitive checking should be skipped.
-    In particular, this parameter is turned off by <application>pg_dump</>
-    so that it can load procedural language functions without worrying
-    about possible dependencies of the function bodies on other database
-    objects.  (Because of this requirement, the call handler should avoid
+    any expensive or context-sensitive checking should be skipped.  If the
+    language provides for code execution at compilation time, the validator
+    must suppress checks that would induce such execution.  In particular,
+    this parameter is turned off by <application>pg_dump</> so that it can
+    load procedural language functions without worrying about side effects or
+    dependencies of the function bodies on other database objects.
+    (Because of this requirement, the call handler should avoid
     assuming that the validator has fully checked the function.  The point
     of having a validator is not to let the call handler omit checks, but
     to notify the user immediately if there are obvious errors in a
     <command>CREATE FUNCTION</> command.)
-    
     While the choice of exactly what to check is mostly left to the
     discretion of the validator function, note that the core
     <command>CREATE FUNCTION</> code only executes <literal>SET</> clauses
     attached to a function when <varname>check_function_bodies</> is on.
-    
     Therefore, checks whose results might be affected by GUC parameters
     definitely should be skipped when <varname>check_function_bodies</> is
     off, to avoid false failures when reloading a dump.
 -->
 有效性验证函数通常应该遵循<xref linkend="guc-check-function-bodies">参数的设置。
 如果被设置为无效，任何昂贵的或依赖于上下文的检查应该被跳过。
-这个参数会被<application>pg_dump</>关闭，这样就不用担心函数体对其他数据库中的对象有依赖关系了。
+如果语言在编译时提供了代码执行，那么验证函数必须抑制将要包含这种执行的检查。特别的，
+这个参数会被<application>pg_dump</>关闭，这样它就可以加载过程语言函数，
+而不用担心副作用或者函数体对其他数据库中的对象有依赖关系了。
 （因为这个要求，调用处理器不应该假定有效性验证函数已经做过了完整的检查。
 有效性验证函数存在的目的并不是让调用处理器可以省略检查，而是为了在<command>CREATE FUNCTION</>命令中包含明显的错误时可以立即通知用户）
 精确的选择要检查哪些东西是由有效性验证函数决定的，注意当<varname>check_function_bodies</>有效时，核心的<command>CREATE FUNCTION</>代码仅执行附加在函数上<literal>SET</>子句。
