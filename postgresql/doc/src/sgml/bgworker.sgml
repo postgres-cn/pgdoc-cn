@@ -50,17 +50,38 @@
    应该被允许运行后台工作进程。
   </para>
  </warning>
-
- <!--
+<!-- 
  <para>
-  Only modules listed in <varname>shared_preload_libraries</> can run
-  background workers.  A module wishing to run a background worker needs
-  to register it by calling
+  Background workers can be initialized at the time that
+  <productname>PostgreSQL</> is started by including the module name in
+  <varname>shared_preload_libraries</>.  A module wishing to run a background
+  worker can register it by calling
   <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function>
-  from its <function>_PG_init()</>.
+  from its <function>_PG_init()</>.  Background workers can also be started
+  after the system is up and running by calling the function
+  <function>RegisterDynamicBackgroundWorker(<type>BackgroundWorker
+  *worker, BackgroundWorkerHandle **handle</type>)</function>.  Unlike
+  <function>RegisterBackgroundWorker</>, which can only be called from within
+  the postmaster, <function>RegisterDynamicBackgroundWorker</function> must be
+  called from a regular backend.
+ </para> 
+-->
+ <para>
+  通过在<varname>shared_preload_libraries</>中包含模块名，后台工作程序可以在
+  <productname>PostgreSQL</>启动时安装。想要运行后台工作程序的模块可以通过从它的
+  <function>_PG_init()</>调用
+  <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function>
+  来注册这个程序。后台工作程序也可以在系统启动之后启动，通过调用函数
+  <function>RegisterDynamicBackgroundWorker(<type>BackgroundWorker
+  *worker, BackgroundWorkerHandle **handle</type>)</function>来运行。
+  不像<function>RegisterBackgroundWorker</>，只能在主进程中调用，
+  <function>RegisterDynamicBackgroundWorker</function>必须从一个普通后端中调用。
+ </para>
+<!--
+ <para>
   The structure <structname>BackgroundWorker</structname> is defined thus:
 <programlisting>
-typedef void (*bgworker_main_type)(void *main_arg);
+typedef void (*bgworker_main_type)(Datum main_arg);
 typedef struct BackgroundWorker
 {
     char        bgw_name[BGW_MAXLEN];
@@ -68,26 +89,29 @@ typedef struct BackgroundWorker
     BgWorkerStartTime bgw_start_time;
     int         bgw_restart_time;       /* in seconds, or BGW_NEVER_RESTART */
     bgworker_main_type bgw_main;
+    char        bgw_library_name[BGW_MAXLEN];   /* only if bgw_main is NULL */
+    char        bgw_function_name[BGW_MAXLEN];  /* only if bgw_main is NULL */
     Datum       bgw_main_arg;
+    int         bgw_notify_pid;
 } BackgroundWorker;
 </programlisting>
   </para>
   -->
   <para>
-  只有在<varname>shared_preload_libraries</>中列出的模块能够运行后台工作进程。想要运行后台工作
-  程序的模块需要通过从它的<function>_PG_init()</>调用
-  <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function>来注册
-  这个程序。<structname>BackgroundWorker</structname>结构是这样定义的：
+<structname>BackgroundWorker</structname>结构是这样定义的：
 <programlisting>
-typedef void (*bgworker_main_type)(void *main_arg);
+typedef void (*bgworker_main_type)(Datum main_arg);
 typedef struct BackgroundWorker
 {
     char        bgw_name[BGW_MAXLEN];
     int         bgw_flags;
     BgWorkerStartTime bgw_start_time;
-    int         bgw_restart_time;       /* 以秒计，或者是BGW_NEVER_RESTART */
+    int         bgw_restart_time;       /* in seconds, or BGW_NEVER_RESTART */
     bgworker_main_type bgw_main;
+    char        bgw_library_name[BGW_MAXLEN];   /* only if bgw_main is NULL */
+    char        bgw_function_name[BGW_MAXLEN];  /* only if bgw_main is NULL */
     Datum       bgw_main_arg;
+    int         bgw_notify_pid;
 } BackgroundWorker;
 </programlisting>
   </para>
@@ -104,7 +128,7 @@ typedef struct BackgroundWorker
 
   <!--
   <para>
-   <structfield>bgw_flags</> is a bitwise-or'd bitmask indicating the
+   <structfield>bgw_flags</> is a bitwise-or'd bit mask indicating the
    capabilities that the module wants.  Possible values are
    <literal>BGWORKER_SHMEM_ACCESS</literal> (requesting shared memory access)
    and <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal> (requesting the
@@ -170,21 +194,80 @@ typedef struct BackgroundWorker
   <para>
    <structfield>bgw_main</structfield> is a pointer to the function to run when
    the process is started.  This function must take a single argument of type
-   <type>void *</> and return <type>void</>.
+   <type>Datum</> and return <type>void</>.
    <structfield>bgw_main_arg</structfield> will be passed to it as its only
    argument.  Note that the global variable <literal>MyBgworkerEntry</literal>
    points to a copy of the <structname>BackgroundWorker</structname> structure
-   passed at registration time.
+   passed at registration time. <structfield>bgw_main</structfield> may be
+   NULL; in that case, <structfield>bgw_library_name</structfield> and
+   <structfield>bgw_function_name</structfield> will be used to determine
+   the entry point.  This is useful for background workers launched after
+   postmaster startup, where the postmaster does not have the requisite
+   library loaded.
   </para>
   -->
   <para>
    <structfield>bgw_main</structfield>是当进程被启动时指向所运行函数的一个指针。该函数必须使
-   用<type>void *</>类型的单一参数并返回<type>void</>类型的值。
+   用<type>Datum</>类型的单一参数并返回<type>void</>类型的值。
    <structfield>bgw_main_arg</structfield>将作为唯一参数被传递给此函数。注意全局变量
    <literal>MyBgworkerEntry</literal>指向进程注册时传递的
    <structname>BackgroundWorker</structname>结构的一份拷贝。
+   <structfield>bgw_main</structfield>可能是NULL；在这种情况下，
+   <structfield>bgw_library_name</structfield>和<structfield>bgw_function_name</structfield>
+   将会用来决定入口点。这对于在主进程启动之后加载的后台工作程序来说是有用的，
+   这时主进程还没有加载必需的库。
   </para>
 
+<!-- 
+  <para>
+   <structfield>bgw_library_name</structfield> is the name of a library in
+   which the initial entry point for the background worker should be sought.
+   It is ignored unless <structfield>bgw_main</structfield> is NULL.
+   But if <structfield>bgw_main</structfield> is NULL, then the named library
+   will be dynamically loaded by the worker process and
+   <structfield>bgw_function_name</structfield> will be used to identify
+   the function to be called.
+  </para> 
+-->
+  <para>
+   <structfield>bgw_library_name</structfield>是一个库的名字，
+   是后台工作程序应该寻找的初始入口点。忽略它，除非<structfield>bgw_main</structfield>
+   是NULL。但是如果<structfield>bgw_main</structfield>是NULL，
+   那么命名的库将通过工作进程动态的加载，并且<structfield>bgw_function_name</structfield>
+   将用来辨认要被调用的函数。
+  </para>
+
+<!-- 
+  <para>
+   <structfield>bgw_function_name</structfield> is the name of a function in
+   a dynamically loaded library which should be used as the initial entry point
+   for a new background worker.  It is ignored unless
+   <structfield>bgw_main</structfield> is NULL.
+  </para> 
+-->
+  <para>
+   <structfield>bgw_function_name</structfield>是一个函数的名字，
+   在一个应该用作一个新的后台工作程序的初始入口点的动态加载库中。
+   忽略它，除非<structfield>bgw_main</structfield>是NULL。
+  </para>
+  
+<!-- 
+  <para>
+   <structfield>bgw_notify_pid</structfield> is the PID of a PostgreSQL
+   backend process to which the postmaster should send <literal>SIGUSR1</>
+   when the process is started or exits.  It should be 0 for workers registered
+   at postmaster startup time, or when the backend registering the worker does
+   not wish to wait for the worker to start up.  Otherwise, it should be
+   initialized to <literal>MyProcPid</>.
+  </para>   
+-->
+  <para>
+   <structfield>bgw_notify_pid</structfield>是一个PostgreSQL后台程序的PID，
+   在该进程启动或退出时，主进程应该发送<literal>SIGUSR1</>。
+   进程是在主进程启动时注册的，或者后端注册该进程，并不希望等待该进程启动时，
+   它应该是0。否则，它应该被初始化为<literal>MyProcPid</>。
+  </para>
+  
   <!--
   <para>Once running, the process can connect to a database by calling
    <function>BackgroundWorkerInitializeConnection(<parameter>char *dbname</parameter>, <parameter>char *username</parameter>)</function>.
@@ -223,22 +306,105 @@ typedef struct BackgroundWorker
 
   <!--
   <para>
-   Background workers are expected to be continuously running; if they exit
-   cleanly, <command>postgres</> will restart them immediately.  Consider doing
-   interruptible sleep when they have nothing to do; this can be achieved by
-   calling <function>WaitLatch()</function>.  Make sure the
+   If <structfield>bgw_restart_time</structfield> for a background worker is
+   configured as <literal>BGW_NEVER_RESTART</>, or if it exits with an exit
+   code of 0 or is terminated by <function>TerminateBackgroundWorker</>,
+   it will be automatically unregistered by the postmaster on exit.
+   Otherwise, it will be restarted after the time period configured via
+   <structfield>bgw_restart_time</>, or immediately if the postmaster
+   reinitializes the cluster due to a backend failure.  Backends which need
+   to suspend execution only temporarily should use an interruptible sleep
+   rather than exiting; this can be achieved by calling
+   <function>WaitLatch()</function>. Make sure the
    <literal>WL_POSTMASTER_DEATH</> flag is set when calling that function, and
    verify the return code for a prompt exit in the emergency case that
    <command>postgres</> itself has terminated.
   </para>
   -->
   <para>
-   后台工作程序是被预期连续运行的；如果它们干净的退出了，<command>postgres</>会立即重启它们。
-   当它们无事可做时，考虑进入可中断的睡眠；通过调用<function>WaitLatch()</function>可以实现这
-   一点。确定调用该函数时设置了<literal>WL_POSTMASTER_DEATH</>标志，并且在<command>postgres</>
-   自身终止的紧急情况下为提示的退出验证返回码。 
+   如果一个后台工作程序的<structfield>bgw_restart_time</structfield>被配置为
+   <literal>BGW_NEVER_RESTART</>，或者如果它带有退出代码0退出或被
+   <function>TerminateBackgroundWorker</>终止，那么它将在通过
+   <structfield>bgw_restart_time</>配置之后重启，
+   或者如果主进程由于后端失败重新初始化集群时立即重启。
+   需要暂停执行的后端应该只是临时使用一个可中断的睡眠，而不是退出；
+   通过调用<function>WaitLatch()</function>可以实现这
+   一点。确定调用该函数时设置了<literal>WL_POSTMASTER_DEATH</>标志，
+   并且在<command>postgres</>自身终止的紧急情况下为提示的退出验证返回码。 
   </para>
 
+<!-- 
+  <para>
+   When a background worker is registered using the
+   <function>RegisterDynamicBackgroundWorker</function> function, it is
+   possible for the backend performing the registration to obtain information
+   regarding the status of the worker.  Backends wishing to do this should
+   pass the address of a <type>BackgroundWorkerHandle *</type> as the second
+   argument to <function>RegisterDynamicBackgroundWorker</function>.  If the
+   worker is successfully registered, this pointer will be initialized with an
+   opaque handle that can subsequently be passed to
+   <function>GetBackgroundWorkerPid(<parameter>BackgroundWorkerHandle *</parameter>, <parameter>pid_t *</parameter>)</function> or
+   <function>TerminateBackgroundWorker(<parameter>BackgroundWorkerHandle *</parameter>)</function>.
+   <function>GetBackgroundWorkerPid</> can be used to poll the status of the
+   worker: a return value of <literal>BGWH_NOT_YET_STARTED</> indicates that
+   the worker has not yet been started by the postmaster;
+   <literal>BGWH_STOPPED</literal> indicates that it has been started but is
+   no longer running; and <literal>BGWH_STARTED</literal> indicates that it is
+   currently running.  In this last case, the PID will also be returned via the
+   second argument.
+   <function>TerminateBackgroundWorker</> causes the postmaster to send
+   <literal>SIGTERM</> to the worker if it is running, and to unregister it
+   as soon as it is not.
+  </para> 
+-->
+  <para>
+   当一个后台工作程序是用<function>RegisterDynamicBackgroundWorker</function>
+   函数注册的时，该后端执行注册获取信息而不管进程的状态是可能的。
+   想要这样做的后端应该传递<type>BackgroundWorkerHandle *</type>
+   的地址作为第二个参数到<function>RegisterDynamicBackgroundWorker</function>。
+   如果该进程成功的注册了，那么这个指针将被初始化为一个不透明的句柄，
+   稍后被传递到<function>GetBackgroundWorkerPid(<parameter>BackgroundWorkerHandle *</parameter>、
+   <parameter>pid_t *</parameter>)</function>或
+   <function>TerminateBackgroundWorker(<parameter>BackgroundWorkerHandle *</parameter>)</function>。
+   <function>GetBackgroundWorkerPid</>可以用来轮询该进程的状态：
+   <literal>BGWH_NOT_YET_STARTED</>的一个返回值表明该进程尚未被主进程启动；
+   <literal>BGWH_STOPPED</literal>表明它已经启动了但是不再运行了；
+   <literal>BGWH_STARTED</literal>表明它当前正在运行。在最后一种情况下，
+   PID将仍然通过第二个参数返回。<function>TerminateBackgroundWorker</>
+   导致主进程发送<literal>SIGTERM</>到该进程，如果它正在运行的话，
+   并且尽快的注销它。
+  </para>
+
+<!-- 
+  <para>
+   In some cases, a process which registers a background worker may wish to
+   wait for the worker to start up.  This can be accomplished by initializing
+   <structfield>bgw_notify_pid</structfield> to <literal>MyProcPid</> and
+   then passing the <type>BackgroundWorkerHandle *</type> obtained at
+   registration time to
+   <function>WaitForBackgroundWorkerStartup(<parameter>BackgroundWorkerHandle
+   *handle</parameter>, <parameter>pid_t *</parameter>)</function> function.
+   This function will block until the postmaster has attempted to start the
+   background worker, or until the postmaster dies.  If the background runner
+   is running, the return value will <literal>BGWH_STARTED</>, and
+   the PID will be written to the provided address.  Otherwise, the return
+   value will be <literal>BGWH_STOPPED</literal> or
+   <literal>BGWH_POSTMASTER_DIED</literal>.
+  </para> 
+-->
+  <para>
+   在某些情况下，一个注册后台工作程序的进程可能希望等待该后台工作程序启动。
+   这可以通过初始化<structfield>bgw_notify_pid</structfield>为
+   <literal>MyProcPid</>，并且然后传递在注册时获得的
+   <type>BackgroundWorkerHandle *</type>到
+   <function>WaitForBackgroundWorkerStartup(<parameter>BackgroundWorkerHandle
+   *handle</parameter>, <parameter>pid_t *</parameter>)</function>函数完成。
+   这个函数将锁定，直到主进程尝试启动该后台工作程序，或者直到主进程死亡。
+   如果该后端正在运行，那么返回值将是<literal>BGWH_STARTED</>，
+   并且PID将被写入提供的地址。否则，返回值将是<literal>BGWH_STOPPED</literal>
+   或<literal>BGWH_POSTMASTER_DIED</literal>。
+  </para>
+  
   <!--
   <para>
    The <filename>worker_spi</> contrib module contains a working example,
@@ -247,5 +413,15 @@ typedef struct BackgroundWorker
   -->
   <para>
    <filename>worker_spi</> contrib模块包含一个展示一些有用技术的范例。
+  </para>
+
+<!-- 
+  <para>
+   The maximum number of registered background workers is limited by
+   <xref linkend="guc-max-worker-processes">.
+  </para> 
+-->
+  <para>
+   注册后台工作程序的最大数量是通过<xref linkend="guc-max-worker-processes">来限制的。
   </para>
 </chapter>
