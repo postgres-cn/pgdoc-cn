@@ -60,14 +60,15 @@
      <variablelist>
 
      <varlistentry id="restore-command" xreflabel="restore_command">
-      <term><varname>restore_command</varname> (<type>string</type>)</term>
+      <term><varname>restore_command</varname> (<type>string</type>)
       <indexterm>
         <primary><varname>restore_command</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
-        The shell command to execute to retrieve an archived segment of
+        The local shell command to execute to retrieve an archived segment of
         the WAL file series. This parameter is required for archive recovery,
         but optional for streaming replication.
         Any <literal>%f</> in the string is
@@ -87,7 +88,7 @@
        </para>
 -->
 <para>
-    这个SHELL命令是获取WAL文件系列中已归档的WAL文件。对归档恢复来说这个参数是必须的，
+    这个本地SHELL命令是获取WAL文件系列中已归档的WAL文件。对归档恢复来说这个参数是必须的，
 但对流复制来说是可选的。 字符串中的任何一个<literal>%f</>是用归档检索中的文件名替换，
 并且<literal>%p</>是用服务器上的复制目的地的路径名替换。
 （路径名是相对于当前工作路径的，如客户端的data路径）
@@ -114,15 +115,25 @@
 restore_command = 'cp /mnt/server/archivedir/%f "%p"'
 restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
 </programlisting>
+<!-- 
+        An exception is that if the command was terminated by a signal (other
+        than <systemitem>SIGTERM</systemitem>, which is used as part of a
+        database server shutdown) or an error by the shell (such as command
+        not found), then recovery will abort and the server will not start up.
+-->
+一个例外是，如果该命令被一个信号（除了<systemitem>SIGTERM</systemitem>，
+它被用作数据库服务器关闭的一部分）或该shell的一个错误（比如命令没有找到）终止，
+那么恢复将退出并且服务器将不会启动。
        </para>
       </listitem>
      </varlistentry>
 
      <varlistentry id="archive-cleanup-command" xreflabel="archive_cleanup_command">
-      <term><varname>archive_cleanup_command</varname> (<type>string</type>)</term>
+      <term><varname>archive_cleanup_command</varname> (<type>string</type>)
       <indexterm>
         <primary><varname>archive_cleanup_command</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
@@ -169,21 +180,26 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
 </para>
        <!--
 <para>
-        If the command returns a non-zero exit status then a WARNING log
-        message will be written.
+        If the command returns a nonzero exit status then a warning log
+        message will be written.  An exception is that if the command was
+        terminated by a signal or an error by the shell (such as command not
+        found), a fatal error will be raised.
        </para>
 -->
 <para>
      如果命令返回一个非0的退出状态，那么将写一个警告日志消息。
+     一个例外是，如果该命令被一个信号或该shell的一个错误
+     （比如命令没有找到）终止，那么将引起一个致命错误。
 </para>
       </listitem>
      </varlistentry>
 
      <varlistentry id="recovery-end-command" xreflabel="recovery_end_command">
-      <term><varname>recovery_end_command</varname> (<type>string</type>)</term>
+      <term><varname>recovery_end_command</varname> (<type>string</type>)
       <indexterm>
         <primary><varname>recovery_end_command</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
@@ -203,15 +219,17 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
 </para>
        <!--
 <para>
-        If the command returns a non-zero exit status then a WARNING log
+        If the command returns a nonzero exit status then a warning log
         message will be written and the database will proceed to start up
         anyway.  An exception is that if the command was terminated by a
-        signal, the database will not proceed with startup.
+        signal or an error by the shell (such as command not found), the
+        database will not proceed with startup.
        </para>
 -->
 <para>
      如果命令返回一个非0的退出状态，那么将写一个警告日志消息，
- 并且数据库将会继续启动。如果命令被一个信号终止，数据库不会继续启动。
+ 并且数据库将会继续启动。一个例外是，如果命令被一个信号或该shell的一个错误终止，
+ 那么数据库不会继续启动。
 </para>
       </listitem>
      </varlistentry>
@@ -226,72 +244,106 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
     <title>Recovery Target Settings</title>
 -->
 <title>恢复目标设置</title>
-     <variablelist>
-
-     <varlistentry id="recovery-target-name" xreflabel="recovery_target_name">
-      <term><varname>recovery_target_name</varname>
-           (<type>string</type>)
-      </term>
-      <indexterm>
-        <primary><varname>recovery_target_name</> recovery parameter</primary>
-      </indexterm>
-      <listitem>
-       <!--
+<!-- 
+     <para>
+      By default, recovery will recover to the end of the WAL log. The
+      following parameters can be used to specify an earlier stopping point.
+      At most one of <varname>recovery_target</>,
+      <varname>recovery_target_name</>, <varname>recovery_target_time</>, or
+      <varname>recovery_target_xid</> can be used; if more than one of these
+      is specified in the configuration file, the last entry will be used.
+     </para>
+-->
 <para>
-        This parameter specifies the named restore point, created with
-        <function>pg_create_restore_point()</> to which recovery will proceed.
-        At most one of <varname>recovery_target_name</>,
-        <xref linkend="recovery-target-time"> or
-        <xref linkend="recovery-target-xid"> can be specified.  The default is to
-        recover to the end of the WAL log.
+缺省的，恢复将恢复到WAL日志的末尾。下列参数可以用来指定一个更早的停止点。
+<varname>recovery_target</>、<varname>recovery_target_name</>、
+<varname>recovery_target_time</>或者<varname>recovery_target_xid</>
+中最多指定其中之一；如果在配置文件中指定了多于一个，那么使用最后的那一项。
+</para>
+     <variablelist>
+     <varlistentry id="recovery-target" xreflabel="recovery_target">
+      <term><varname>recovery_target</varname><literal> = 'immediate'</literal>
+      <indexterm>
+<!--
+        <primary><varname>recovery_target</> recovery parameter</primary>
+-->
+        <primary><varname>recovery_target</>恢复参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+<!-- 
+       <para>
+        This parameter specifies that recovery should end as soon as a
+        consistent state is reached, i.e. as early as possible. When restoring
+        from an online backup, this means the point where taking the backup
+        ended.
        </para>
 -->
 <para>
-    此参数声明命名的还原点，
-使用<function>pg_create_restore_point()</>创建命名的还原点进行恢复。
-<varname>recovery_target_name</>,
-<xref linkend="recovery-target-time">或者
-<xref linkend="recovery-target-xid">中最多指定其中之一。
-默认是恢复到WAL日志的结尾。
+这个参数指定恢复一旦达到一个一致的状态就要尽快结束，也就是，尽早结束。
+当从一个在线备份中恢复时，这表示让备份结束的那个点。
+</para>
+<!-- 
+       <para>
+        Technically, this is a string parameter, but <literal>'immediate'</>
+        is currently the only allowed value.
+       </para>
+-->
+<para>
+技术上，这是一个字符串参数，但是<literal>'immediate'</>是当前唯一允许的值。
+</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry id="recovery-target-name" xreflabel="recovery_target_name">
+      <term><varname>recovery_target_name</varname> (<type>string</type>)
+
+      <indexterm>
+        <primary><varname>recovery_target_name</> recovery parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <!--
+<para>
+        This parameter specifies the named restore point (created with
+        <function>pg_create_restore_point()</>) to which recovery will proceed.
+       </para>
+-->
+<para>
+此参数声明命名的还原点，
+（使用<function>pg_create_restore_point()</>创建）在此恢复将继续进行。
 </para>
       </listitem>
      </varlistentry>
 
      <varlistentry id="recovery-target-time" xreflabel="recovery_target_time">
-      <term><varname>recovery_target_time</varname>
-           (<type>timestamp</type>)
-      </term>
+      <term><varname>recovery_target_time</varname> (<type>timestamp</type>)
+
       <indexterm>
         <primary><varname>recovery_target_time</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
         This parameter specifies the time stamp up to which recovery
         will proceed.
-        At most one of <varname>recovery_target_time</>,
-        <xref linkend="recovery-target-name"> or
-        <xref linkend="recovery-target-xid"> can be specified.
-        The default is to recover to the end of the WAL log.
         The precise stopping point is also influenced by
         <xref linkend="recovery-target-inclusive">.
        </para>
 -->
 <para>
      这个参数设置一个时间戳进行恢复。
- <varname>recovery_target_time</>,
-        <xref linkend="recovery-target-name">或者
-        <xref linkend="recovery-target-xid">中最多指定其中之一。
- 缺省是恢复到WAL日志的结尾。精确的停止点也受到<xref linkend="recovery-target-inclusive">的影响。
+精确的停止点也受到<xref linkend="recovery-target-inclusive">的影响。
 </para>
       </listitem>
      </varlistentry>
 
      <varlistentry id="recovery-target-xid" xreflabel="recovery_target_xid">
-      <term><varname>recovery_target_xid</varname> (<type>string</type>)</term>
+      <term><varname>recovery_target_xid</varname> (<type>string</type>)
       <indexterm>
         <primary><varname>recovery_target_xid</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
@@ -301,10 +353,6 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         start, transactions can complete in a different numeric order.
         The transactions that will be recovered are those that committed
         before (and optionally including) the specified one.
-        At most one of <varname>recovery_target_xid</>,
-        <xref linkend="recovery-target-name"> or
-        <xref linkend="recovery-target-time"> can be specified.
-        The default is to recover to the end of the WAL log.
         The precise stopping point is also influenced by
         <xref linkend="recovery-target-inclusive">.
        </para>
@@ -313,39 +361,48 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
     这个参数声明一个事务ID，恢复达到这个ID号。
 需要注意的是，当在事务开始时，会被顺序分配事务ID，事务会以不同数字顺序结束。
 将被恢复的事务是那些在指定的事务之前提交事务（或包含该事务）。
-<varname>recovery_target_xid</>,
-    <xref linkend="recovery-target-name">或者
-    <xref linkend="recovery-target-time">中最多指定其中之一。
-缺省是恢复到WAL日志尾。精确的停止时间也受<xref linkend="recovery-target-inclusive">的影响。
+精确的停止时间也受<xref linkend="recovery-target-inclusive">的影响。
 </para>
       </listitem>
      </varlistentry>
+     </variablelist>
 
+<!-- 
+     <para>
+       The following options further specify the recovery target, and affect
+       what happens when the target is reached:
+     </para>
+-->
+<para>
+下列的选项更进一步的指定了恢复目标，并且当达到目标时会有什么影响发生：
+</para>
+
+     <variablelist>
      <varlistentry id="recovery-target-inclusive"
                    xreflabel="recovery_target_inclusive">
-      <term><varname>recovery_target_inclusive</varname>
-        (<type>boolean</type>)
-      </term>
+      <term><varname>recovery_target_inclusive</varname> (<type>boolean</type>)
+
       <indexterm>
         <primary><varname>recovery_target_inclusive</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
-        Specifies whether we stop just after the specified recovery target
+        Specifies whether to stop just after the specified recovery target
         (<literal>true</literal>), or just before the recovery target
         (<literal>false</literal>).
-        Applies to both <xref linkend="recovery-target-time">
-        and <xref linkend="recovery-target-xid">, whichever one is
-        specified for this recovery.  This indicates whether transactions
+        Applies when either <xref linkend="recovery-target-time">
+        or <xref linkend="recovery-target-xid"> is specified.
+        This setting controls whether transactions
         having exactly the target commit time or ID, respectively, will
         be included in the recovery.  Default is <literal>true</>.
        </para>
 -->
 <para>
     声明是否在指定恢复目标(<literal>true</literal>)之后停止，或在这(<literal>false</literal>)之前停止。 
-应用于为恢复声明的<xref linkend="recovery-target-time">
-    和<xref linkend="recovery-target-xid">中。这表示事务明确的提交时间或ID是否会分别被包含在恢复中。
+在指定了<xref linkend="recovery-target-time">或<xref linkend="recovery-target-xid">
+时应用。这个设置控制事务是否有明确的提交时间或ID，是否会分别被包含在恢复中。
     缺省是<literal>true</>。
 </para>
       </listitem>
@@ -353,12 +410,12 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
 
      <varlistentry id="recovery-target-timeline"
                    xreflabel="recovery_target_timeline">
-      <term><varname>recovery_target_timeline</varname>
-        (<type>string</type>)
-      </term>
+      <term><varname>recovery_target_timeline</varname> (<type>string</type>)
+
       <indexterm>
         <primary><varname>recovery_target_timeline</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
@@ -384,12 +441,12 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
 
      <varlistentry id="pause-at-recovery-target"
                    xreflabel="pause_at_recovery_target">
-      <term><varname>pause_at_recovery_target</varname>
-        (<type>boolean</type>)
-      </term>
+      <term><varname>pause_at_recovery_target</varname> (<type>boolean</type>)
+
       <indexterm>
         <primary><varname>pause_at_recovery_target</> recovery parameter</primary>
       </indexterm>
+      </term>
       <listitem>
        <!--
 <para>
@@ -398,10 +455,10 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         This is intended to allow queries to be executed against the
         database to check if this recovery target is the most desirable
         point for recovery. The paused state can be resumed by using
-        <function>pg_xlog_replay_resume()</> (See
+        <function>pg_xlog_replay_resume()</> (see
         <xref linkend="functions-recovery-control-table">), which then
         causes recovery to end. If this recovery target is not the
-        desired stopping point, then shutdown the server, change the
+        desired stopping point, then shut down the server, change the
         recovery target settings to a later target and restart to
         continue recovery.
        </para>
@@ -439,10 +496,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
      <variablelist>
 
        <varlistentry id="standby-mode" xreflabel="standby_mode">
-        <term><varname>standby_mode</varname> (<type>boolean</type>)</term>
+        <term><varname>standby_mode</varname> (<type>boolean</type>)
         <indexterm>
           <primary><varname>standby_mode</> recovery parameter</primary>
         </indexterm>
+        </term>
         <listitem>
          <!--
 <para>
@@ -464,10 +522,11 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         </listitem>
        </varlistentry>
        <varlistentry id="primary-conninfo" xreflabel="primary_conninfo">
-        <term><varname>primary_conninfo</varname> (<type>string</type>)</term>
+        <term><varname>primary_conninfo</varname> (<type>string</type>)
         <indexterm>
           <primary><varname>primary_conninfo</> recovery parameter</primary>
         </indexterm>
+        </term>
         <listitem>
          <!--
 <para>
@@ -523,11 +582,39 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
 </para>
         </listitem>
        </varlistentry>
+       <varlistentry id="primary-slot-name" xreflabel="primary_slot_name">
+        <term><varname>primary_slot_name</varname> (<type>string</type>)
+        <indexterm>
+<!--
+          <primary><varname>primary_slot_name</> recovery parameter</primary>
+-->
+          <primary><varname>primary_slot_name</>恢复参数</primary>
+        </indexterm>
+        </term>
+        <listitem>
+<!-- 
+         <para>
+          Optionally specifies an existing replication slot to be used when
+          connecting to the primary via streaming replication to control
+          resource removal on the upstream node
+          (see <xref linkend="streaming-replication-slots">).
+          This setting has no effect if <varname>primary_conninfo</> is not
+          set.
+         </para>
+-->
+<para>
+当通过流复制连接到首选服务器以控制上游节点的资源删除时，
+可选的指定一个要被使用的现有复制槽。（参阅<xref linkend="streaming-replication-slots">）。
+如果没有设置<varname>primary_conninfo</>，则该设置没什么影响。
+</para>
+        </listitem>
+       </varlistentry>
        <varlistentry id="trigger-file" xreflabel="trigger_file">
-        <term><varname>trigger_file</varname> (<type>string</type>)</term>
+        <term><varname>trigger_file</varname> (<type>string</type>)
         <indexterm>
           <primary><varname>trigger_file</> recovery parameter</primary>
         </indexterm>
+        </term>
         <listitem>
          <!--
 <para>
@@ -545,6 +632,96 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
         </listitem>
        </varlistentry>
 
+     <varlistentry id="recovery-min-apply-delay" xreflabel="recovery_min_apply_delay">
+      <term><varname>recovery_min_apply_delay</varname> (<type>integer</type>)
+      <indexterm>
+<!--
+        <primary><varname>recovery_min_apply_delay</> recovery parameter</primary>
+-->
+        <primary><varname>recovery_min_apply_delay</>恢复参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+<!-- 
+       <para>
+        By default, a standby server restores WAL records from the
+        primary as soon as possible. It may be useful to have a time-delayed
+        copy of the data, offering opportunities to correct data loss errors.
+        This parameter allows you to delay recovery by a fixed period of time,
+        measured in milliseconds if no unit is specified.  For example, if
+        you set this parameter to <literal>5min</literal>, the standby will
+        replay each transaction commit only when the system time on the standby
+        is at least five minutes past the commit time reported by the master.
+       </para>
+-->
+<para>
+缺省的，备用服务器尽快从主服务器上恢复WAL记录。有一个时间延迟的数据拷贝可能是有用的，
+提供机会纠正数据丢失错误。这个参数允许你推迟固定周期的时间恢复，
+如果没有指定单位，那么以毫秒计。例如，如果你设置了这个参数为<literal>5min</literal>，
+那么备用服务器将至少在备用服务器上的系统时间过去主服务器报告的提交时间5分钟之后重放每个事务提交。
+</para>
+<!-- 
+       <para>
+        It is possible that the replication delay between servers exceeds the
+        value of this parameter, in which case no delay is added.
+        Note that the delay is calculated between the WAL timestamp as written
+        on master and the current time on the standby. Delays in transfer
+        because of network lag or cascading replication configurations
+        may reduce the actual wait time significantly. If the system
+        clocks on master and standby are not synchronized, this may lead to
+        recovery applying records earlier than expected; but that is not a
+        major issue because useful settings of this parameter are much larger
+        than typical time deviations between servers.
+       </para>
+-->
+<para>
+服务器之间的复制延迟超过这个参数的值也是有可能的，在这种情况下没有添加延迟。
+请注意，时间延迟是以主服务器上的WAL时间戳和备用服务器上的当前时间计算的。
+传输的延迟由于网络延迟或级联复制配置可能大大的减少实际等待时间。
+如果主备服务器上的系统时间不同步，可能会导致恢复应用记录比预期的要早；
+但这不是主要问题，因为这个参数的有用设置要比服务器间的典型时间偏差大得多。
+</para>
+<!-- 
+       <para>
+        The delay occurs only on WAL records for transaction commits.
+        Other records are replayed as quickly as possible, which
+        is not a problem because MVCC visibility rules ensure their effects
+        are not visible until the corresponding commit record is applied.
+       </para>
+-->
+<para>
+延迟只发生在事务提交的WAL记录上。其他记录尽快重放，
+这不是一个问题，因为MVCC可见性规则确保了它们的影响是不可见的，
+直到应用了相应的提交记录。
+</para>
+<!-- 
+       <para>
+        The delay occurs until the standby is promoted or triggered. After that
+        the standby will end recovery without further waiting.
+       </para>
+-->
+<para>
+直到备用服务器晋升或触发时，该延迟才发生。之后，该备用服务器将不做等待的结束恢复。
+</para>
+<!-- 
+       <para>
+        This parameter is intended for use with streaming replication deployments;
+        however, if the parameter is specified it will be honored in all cases.
+        Synchronous replication is not affected by this setting because there is
+        not yet any setting to request synchronous apply of transaction commits.
+        <varname>hot_standby_feedback</> will be delayed by use of this feature
+        which could lead to bloat on the master; use both together with care.
+       </para>
+-->
+<para>
+这个参数是打算和流复制部署一起使用的；但是，如果指定了该参数，
+那么它在所有情况下都将被遵守。
+同步复制不受该设置的影响，因为还没有任何设置请求同步应用事务提交。
+使用这个特性，<varname>hot_standby_feedback</>将被延迟，
+这将导致主服务器膨胀；要小心同时使用两者。
+</para>
+      </listitem>
+     </varlistentry>
      </variablelist>
    </sect1>
 
