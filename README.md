@@ -111,13 +111,12 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 文档校对工作通过Github + wiki的方式进行，详见[PostgreSQL 9.3.1 中文手册的翻译校对（志愿者募集中）](https://github.com/postgres-cn/pgdoc-cn/wiki/check9.3)。   
 目前手册的大部分章节都没有经过校对，翻译上的小问题不少，欢迎有兴趣的同学参加校对工作。
 
-## 9.4的翻译
-目前PostgreSQL 9.4中文手册的翻译（通过“9.4”分支）也在同步进行，详见 [PostgreSQL9.4中文手册的翻译](https://github.com/postgres-cn/pgdoc-cn/wiki/pg9.4)，但我们希望新加入的小伙伴优先投入到9.3.1的校对工作中去。
 
 ## 其它
 1. Github仓库中的sgml文件编码是UTF8。
 2. Github仓库中的修正会由后台程序每隔十分钟自动反映到在线中文手册中。
 3. 如果Github仓库中的修正迟迟未能反映到在线中文手册，可能发生了编译错误，可通过查看[编译日志](http://postgres.cn/docs/9.3/build.log)了解情况。
+4. 目前PostgreSQL 9.4中文手册的翻译（通过“9.4”分支）也在同步进行，详见 [PostgreSQL9.4中文手册的翻译](https://github.com/postgres-cn/pgdoc-cn/wiki/pg9.4)，但我们希望新加入的小伙伴优先投入到9.3.1的校对工作中去。
 
 
 
