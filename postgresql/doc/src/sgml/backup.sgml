@@ -66,14 +66,14 @@
   
 <para>
    <!--
-   The idea behind this dump method is to generate a text file with SQL
+   The idea behind this dump method is to generate a file with SQL
    commands that, when fed back to the server, will recreate the
    database in the same state as it was at the time of the dump.
    <productname>PostgreSQL</> provides the utility program
    <xref linkend="app-pgdump"> for this purpose. The basic usage of this
    command is:
    -->
-   SQL转储的方法是创建一个文本文件，里面都是SQL命令，
+   SQL转储的方法是创建一个文件，里面都是SQL命令，
    当把这个文件回馈给服务器时，将重建与转储时状态一样的数据库。
    <productname>PostgreSQL</>为这个用途提供了<xref linkend="app-pgdump">工具。
    这条命令的基本用法是：
@@ -84,9 +84,13 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
    <!--
    As you see, <application>pg_dump</> writes its result to the
    standard output. We will see below how this can be useful.
+   While the above command creates a text file, <application>pg_dump</>
+   can create files in other formats that allow for parallism and more
+   fine-grained control of object restoration.
    -->
    正如你所见，<application>pg_dump</>把结果输出到标准输出。
-   我们下面就可以看到这样做有什么好处。
+   我们下面就可以看到这样做有什么好处。当上面的命令创建了一个文本文件时，
+   <application>pg_dump</>可以创建其他格式的文件，允许并行和更细粒度的控制对象恢复。
 
   </para>
 
@@ -97,8 +101,13 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
    that you can perform this backup procedure from any remote host that has
    access to the database. But remember that <application>pg_dump</>
    does not operate with special permissions. In particular, it must
-   have read access to all tables that you want to back up, so in
-   practice you almost always have to run it as a database superuser.
+   have read access to all tables that you want to back up, so in order
+   to back up the entire database you almost always have to run it as a
+   database superuser.  (If you do not have sufficient privileges to back up
+   the entire database, you can still back up portions of the database to which
+   you do have access using options such as
+   <option>-n <replaceable>schema</replaceable></option>
+   or <option>-t <replaceable>table</replaceable></option>.)
   </para>
 -->
 <para>
@@ -107,7 +116,10 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
   这就意味着你可以从任何可以访问该数据库的远端主机上面进行备份工作。
   但是请记住<application>pg_dump</>不会以任何特殊权限运行。具体说来，
   就是它必须要有你想备份的表的读权限，因此，
-  实际上你几乎总是要成为数据库超级用户。
+  为了恢复整个数据库你几乎总是要成为数据库超级用户。
+  （如果你没有足够的权限恢复整个数据库，你仍然可以使用选项，比如
+  <option>-n <replaceable>schema</replaceable></option>或
+  <option>-t <replaceable>table</replaceable></option>，恢复你有权限的部分数据库。）
 </para>
 
   <!--
@@ -191,22 +203,6 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
 
 </para>
 
-  <important>
-   <!--
-<para>
-    If your database schema relies on OIDs (for instance, as foreign
-    keys) you must instruct <application>pg_dump</> to dump the OIDs
-    as well. To do this, use the <option>-o</option> command-line
-    option.
-   </para>
--->
-<para>
-   如果你的数据库结构依赖于OID(比如说用做外键)，
-   那么你必须告诉<application>pg_dump</>把OID也导出来。要导出OID，
-   可以使用<option>-o</option>命令行选项。
-
-</para>
-  </important>
 
   <sect2 id="backup-dump-restore">
   <!--
@@ -217,7 +213,7 @@ pg_dump <replaceable class="parameter">dbname</replaceable> &gt; <replaceable cl
    
 <para>
    <!--
-    The text files created by <application>pg_dump</> are intended to
+    Text files created by <application>pg_dump</> are intended to
     be read in by the <application>psql</application> program. The
     general command form to restore a dump is
 <application>pg_dump</>生成的文本文件可以由<application>psql</application>程序读取。
@@ -237,7 +233,9 @@ psql <replaceable class="parameter">dbname</replaceable> &lt; <replaceable class
     supports options similar to <application>pg_dump</> for specifying
     the database server to connect to and the user name to use. See
     the <xref linkend="app-psql"> reference page for more information.
--->
+    Non-text file dumps are restored using the <xref
+    linkend="app-pgrestore"> utility.
+    -->
 这里的<replaceable class="parameter">infile</replaceable>
 就是通过<application>pg_dump</>命令的文件输出。
 这条命令不会创建<replaceable class="parameter">dbname</replaceable>数据库，
@@ -245,6 +243,7 @@ psql <replaceable class="parameter">dbname</replaceable> &lt; <replaceable class
 <literal>template0</>创建(也就是用<literal>createdb -T template0 <replaceable class="parameter">dbname</></literal>命令)。
 <application>psql</>支持类似<application>pg_dump</>的选项用以控制数据库服务器位置和用户名。
 参阅<xref linkend="app-psql">的手册获取更多信息。
+非文本文件转储使用<xref linkend="app-pgrestore">工具。
    </para>
 
    <!--
@@ -422,13 +421,27 @@ psql -f <replaceable class="parameter">infile</replaceable> postgres
     roles, tablespaces, and empty databases, then invoking
     <application>pg_dump</> for each database.  This means that while
     each database will be internally consistent, the snapshots of
-    different databases might not be exactly in-sync.
+    different databases are not sychronized.
    </para>
 -->
 <para>
    <application>pg_dumpall</>的工作原理是发射命令来重新创建角色，
    表空间和空数据库，然后为每个数据库调用<application>pg_dump</>。
-   这意味着，虽然每个数据库内部一致， 但不同的数据库快照可能不是恰好同步。
+   这意味着，虽然每个数据库内部一致， 但不同的数据库快照是不同步的。
+</para>
+
+<!--
+   <para>
+    Cluster-wide data can be dumped alone using the
+    <application>pg_dumpall</> <option>&#045;-globals-only</> option.
+    This is necessary to fully backup the cluster if running the
+    <application>pg_dump</> command on individual databases.
+   </para>
+-->
+<para>
+集群范围的数据可以使用<application>pg_dumpall</> <option>--globals-only</>
+选项单独转储。如果在单独的数据库上运行<application>pg_dump</>命令，
+那么这是全部备份该集群所必需的。
 </para>
   </sect2>
 
@@ -1040,7 +1053,7 @@ tar -cf backup.tar /usr/local/pgsql/data
 <para>
     <!--
     To enable WAL archiving, set the <xref linkend="guc-wal-level">
-    configuration parameter to <literal>archive</> (or <literal>hot_standby</>),
+    configuration parameter to <literal>archive</> or higher,
     <xref linkend="guc-archive-mode"> to <literal>on</>,
     and specify the shell command to use in the <xref
     linkend="guc-archive-command"> configuration parameter.  In practice
@@ -1056,7 +1069,7 @@ tar -cf backup.tar /usr/local/pgsql/data
     like:
 -->
 为了启动WAL归档，设置<xref linkend="guc-wal-level">
-    配置参数到<literal>archive</> (或者<literal>hot_standby</>),
+    配置参数到<literal>archive</>或者更高,
     <xref linkend="guc-archive-mode">为<literal>on</>，
 并且所使用的shell命令由配置参数<xref linkend="guc-archive-command">声明，
 它实际上总是放在<filename>postgresql.conf</filename>文件里的。在<varname>archive_command</>中，
@@ -1694,6 +1707,32 @@ SELECT pg_stop_backup();
    它最终将使用这个备份。（这些文件可以混淆<application>pg_ctl</>）。
 </para>
 
+<!--
+   <para>
+    It is often a good idea to also omit from the backup dump the files
+    within the cluster's <filename>pg_replslot/</> directory, so that
+    replication slots that exist on the master do not become part of the
+    backup.  Otherwise, the subsequent use of the backup to create a standby
+    may result in indefinite retention of WAL files on the standby, and
+    possibly bloat on the master if hot standby feedback is enabled, because
+    the clients that are using those replication slots will still be connecting
+    to and updating the slots on the master, not the standby.  Even if the
+    backup is only intended for use in creating a new master, copying the
+    replication slots isn't expected to be particularly useful, since the
+    contents of those slots will likely be badly out of date by the time
+    the new master comes on line.
+   </para>
+-->
+<para>
+通常忽略集群的<filename>pg_replslot/</>目录中的备份转储文件也是一个好主意，
+所以存在于主机上的复制槽没有成为备份的一部分。否则，
+后续使用该备份创建一个备用机，可能会导致在备用机上无期限保留WAL文件，
+并且如果启用了热备份反馈，可能导致主机膨胀，
+因为使用这些复制槽的客户端仍然将连接并且在主机上升级这些复制槽，而不是在备用机上。
+即使备份只是为了用于创建一个新的主机，拷贝复制槽并没什么特别的用处，
+因为这些复制槽的内容将很有可能在新主机上线时已经非常过时了。
+</para>
+
    <!--
 <para>
     It's also worth noting that the <function>pg_start_backup</> function
@@ -1950,9 +1989,26 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
    <!--
 <para>
     It is important that the command return nonzero exit status on failure.
-    The command <emphasis>will</> be called requesting files that are not present
-    in the archive; it must return nonzero when so asked.  This is not an
-    error condition.  Not all of the requested files will be WAL segment
+    The command <emphasis>will</> be called requesting files that are not
+    present in the archive; it must return nonzero when so asked.  This is not
+    an error condition.  An exception is that if the command was terminated by
+    a signal (other than <systemitem>SIGTERM</systemitem>, which is used as
+    part of a database server shutdown) or an error by the shell (such as
+    command not found), then recovery will abort and the server will not start
+    up.
+   </para>
+-->
+<para>
+重要的一点是：该命令在失败的时候返回非零值。如果日志文件没有出现在规档中，
+那么<emphasis>将</>调用该命令请求没有在归档中出现的文件；在问到的时候，
+它必须返回非零。这个不是错误条件。一个例外是，如果该命令被一个信号
+（除了<systemitem>SIGTERM</systemitem>，它用作数据库服务器关闭的一部分）
+或者shell的一个错误（比如没有找到命令）终止，那么将退出恢复，
+并且服务器将不会启动。
+</para>
+<!--
+   <para>
+   Not all of the requested files will be WAL segment
     files; you should also expect requests for files with a suffix of
     <literal>.backup</> or <literal>.history</>. Also be aware that
     the base name of the <literal>%p</> path will be different from
@@ -1960,9 +2016,6 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
    </para>
 -->
 <para>
-    重要的一点是：该命令在失败的时候返回非零值。
-如果日志文件没有出现在规档中，
-那么该系统<emphasis>将要</>询问该命令；在问到的时候，它必须返回非零。这个不是错误条件。
 并不是所有需要的文件都是WAL分段文件；你应该希望请求<literal>.backup</>或者
 <literal>.history</>的后缀文件。
 还要注意<literal>%p</>路径的基础名将和<literal>%f</>不一样；不要认为它们是可以互换的。
@@ -2010,7 +2063,7 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
 <para>
     If you want to recover to some previous point in time (say, right before
     the junior DBA dropped your main transaction table), just specify the
-    required stopping point in <filename>recovery.conf</>.  You can specify
+    required <link linkend="recovery-target-settings">stopping point</link> in <filename>recovery.conf</>.  You can specify
     the stop point, known as the <quote>recovery target</>, either by
     date/time, named restore point or by completion of a specific transaction
     ID.  As of this writing only the date/time and named restore point options
@@ -2021,7 +2074,7 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
 <para>
     但是如果你想恢复到某些以前的时刻点(比如，
 在菜鸟DBA删除你的主要事务表之前)，
-那么只需要在<filename>recovery.conf</>里声明要求的停止点。
+那么只需要在<filename>recovery.conf</>里声明要求的<link linkend="recovery-target-settings">停止点</link>。
 你可以通过日期/时间来声明，也可以通过特定事务ID的结束来声明这个停止点，
 我们叫做<quote>恢复目标</>。目前，只有日期/时间和称为恢复点选项比较有用，
 因为我们没有工具来帮助你精确地标识应该使用哪个事务ID。
@@ -2254,13 +2307,13 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
       If more flexibility in copying the backup files is needed, a lower
       level process can be used for standalone hot backups as well.
       To prepare for low level standalone hot backups, set <varname>wal_level</> to
-      <literal>archive</> (or <literal>hot_standby</>), <varname>archive_mode</> to
+      <literal>archive</> higher, <varname>archive_mode</> to
       <literal>on</>, and set up an <varname>archive_command</> that performs
       archiving only when a <emphasis>switch file</> exists.  For example:
   -->
   如果在复制备份文件中需要更大的灵活性，较低的水平过程可更好用于单机热备份。 
   为了准备低水平单机热备份，设置<varname>wal_level</>到
-      <literal>archive</> (或者<literal>hot_standby</>), <varname>archive_mode</>为
+      <literal>archive</>或者更高, <varname>archive_mode</>为
       <literal>on</>，并且只有当<emphasis>开关文件</>存在时，
   建立<varname>archive_command</>执行存档。例如：
 
