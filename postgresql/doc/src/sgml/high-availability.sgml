@@ -1010,13 +1010,16 @@ WAL文件（16MB）可以被轻易的在任意两个地点之间传送，
     entries in <filename>pg_hba.conf</> with the database field set to
     <literal>replication</>.  Also ensure <varname>max_wal_senders</> is set
     to a sufficiently large value in the configuration file of the primary
-    server.
+    server. If replication slots will be used,
+    ensure that <varname>max_replication_slots</varname> is set sufficiently
+    high as well.
    </para>
 -->
 <para>
   如果你想使用流复制，在主服务器上设置认证，允许从备用服务器复制连接；
   在<filename>pg_hba.conf</>提供一个或多个合适项使用数据库字段设置<literal>replication</>。 
   还要在主服务器的配置文件确保设置<varname>max_wal_senders</>足够大。
+  如果要使用复制槽，也要确保<varname>max_replication_slots</varname>设置的足够高。
 </para>
 
    <!--
@@ -1203,22 +1206,23 @@ archive_cleanup_command = 'pg_archivecleanup /path/to/archive %r'
    <!--
 <para>
     If you use streaming replication without file-based continuous
-    archiving, you have to set <varname>wal_keep_segments</> in the master
-    to a value high enough to ensure that old WAL segments are not recycled
-    too early, while the standby might still need them to catch up. If the
-    standby falls behind too much, it needs to be reinitialized from a new
-    base backup. If you set up a WAL archive that's accessible from the
-    standby, <varname>wal_keep_segments</> is not required as the standby can always
-    use the archive to catch up.
+    archiving, the server might recycle old WAL segments before the standby
+    has received them.  If this occurs, the standby will need to be
+    reinitialized from a new base backup.  You can avoid this by setting
+    <varname>wal_keep_segments</> to a value large enough to ensure that
+    WAL segments are not recycled too early, or by configuring a replication
+    slot for the standby.  If you set up a WAL archive that's accessible from
+    the standby, these solutions are not required, since the standby can
+    always use the archive to catch up provided it retains enough segments.
    </para>
 -->
 <para>
-    如果使用流复制而不是基于文件连续归档，
-你要在主服务器设置<varname>wal_keep_segments</>为一个足够大的值以使不太早的回收旧WAL段，
-当备服务器可能仍需要它们赶上。如果备服务器落后太多， 
-需要用一个新基准备份重新初始化。如果你设置一个备服务器可访问的WAL归档，
-<varname>wal_keep_segments</>是不必要的， 
-作为备服务器总是使用归档来赶上。
+如果使用流复制而不是基于文件连续归档，主服务器可能在备服务器接收到它们之前回收老的WAL段。
+如果发生了这种情况，备用服务器将需要从新的基础备份中重新初始化。
+你可以通过设置<varname>wal_keep_segments</>为一个足够大的值，
+确保WAL段不那么早的回收或者通过为备用服务器配置一个复制槽来避免这种情况。
+如果你设置一个备服务器可访问的WAL归档，那么就不需要这些解决方法了，
+因为保持供给备用服务器足够的WAL段，那么它总是可以使用这些归档来赶上主服务器的变化。
 </para>
 
    <!--
@@ -1419,11 +1423,158 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
    </sect3>
   </sect2>
 
+  <sect2 id="streaming-replication-slots">
+<!--
+   <title>Replication Slots</title>
+-->
+   <title>复制槽</title>
+   <indexterm>
+<!-- 
+    <primary>replication slot</primary>
+    <secondary>streaming replication</secondary>
+-->
+    <primary>复制槽</primary>
+    <secondary>流复制</secondary>
+   </indexterm>
+
+<!-- 
+   <para>
+    Replication slots provide an automated way to ensure that the master does
+    not remove WAL segments until they have been received by all standbys,
+    and that the master does not remove rows which could cause a
+    <link linkend="hot-standby-conflict">recovery conflict</> even when the
+    standby is disconnected.
+   </para>
+-->
+<para>
+复制槽提供一种自动的方式确保主服务器不删除WAL段，直到所有备用服务器都接收到了这些WAL段，
+并且确保主服务器不删除会导致<link linkend="hot-standby-conflict">恢复冲突</>
+的行，即使备用服务器是断开连接的。
+</para>
+<!-- 
+   <para>
+    In lieu of using replication slots, it is possible to prevent the removal
+    of old WAL segments using <xref linkend="guc-wal-keep-segments">, or by
+    storing the segments in an archive using
+    <xref linkend="guc-archive-command">.
+    However, these methods often result in retaining more WAL segments than
+    required, whereas replication slots retain only the number of segments
+    known to be needed.  An advantage of these methods is that they bound
+    the space requirement for <literal>pg_xlog</>; there is currently no way
+    to do this using replication slots.
+   </para>
+-->
+<para>
+为了替代使用复制槽，通过使用<xref linkend="guc-wal-keep-segments">，
+或使用<xref linkend="guc-archive-command">存储WAL段在一个归档中都有可能阻止删除老的WAL段。
+不过，这些方法经常导致保持比需要的更多的WAL段，而复制槽仅保持那些已知需要的WAL段数量。
+这些方法的一个好处是，它们绑定<literal>pg_xlog</>所需的空间；
+这是复制槽目前无法做到的。
+</para>
+<!-- 
+   <para>
+    Similarly, <xref linkend="guc-hot-standby-feedback">
+    and <xref linkend="guc-vacuum-defer-cleanup-age"> provide protection against
+    relevant rows being removed by vacuum, but the former provides no
+    protection during any time period when the standby is not connected,
+    and the latter often needs to be set to a high value to provide adequate
+    protection.  Replication slots overcome these disadvantages.
+   </para>
+-->
+<para>
+相似的，<xref linkend="guc-hot-standby-feedback">和
+<xref linkend="guc-vacuum-defer-cleanup-age">保护那些被vacuum删除的行的相关行，
+但是前者在备用服务器没有连接之前的任意时间段都不提供保护，
+后者经常需要设置为一个高值以提供足够的保护。复制槽克服了这些缺点。
+</para>
+   <sect3 id="streaming-replication-slots-manipulation">
+<!--
+    <title>Querying and manipulating replication slots</title>
+-->
+    <title>查询和操作复制槽</title>
+<!-- 
+    <para>
+     Each replication slot has a name, which can contain lower-case letters,
+     numbers, and the underscore character.
+    </para>
+-->
+<para>
+每个复制槽都有一个名字，名字可以包含小写字母、数字和下划线。
+</para>
+<!-- 
+    <para>
+     Existing replication slots and their state can be seen in the
+     <link linkend="catalog-pg-replication-slots"><structname>pg_replication_slots</structname></link>
+     view.
+    </para>
+-->
+<para>
+现有的复制槽和它们的状态可以在
+<link linkend="catalog-pg-replication-slots"><structname>pg_replication_slots</structname></link>
+视图中看到。
+</para>
+<!-- 
+    <para>
+     Slots can be created and dropped either via the streaming replication
+     protocol (see <xref linkend="protocol-replication">) or via SQL
+     functions (see <xref linkend="functions-replication">).
+    </para>
+-->
+<para>
+可以通过流复制协议（参阅<xref linkend="protocol-replication">），
+或者通过SQL函数（参阅<xref linkend="functions-replication">）
+创建和删除复制槽。
+</para>
+   </sect3>
+   <sect3 id="streaming-replication-slots-config">
+<!--
+    <title>Configuration Example</title>
+-->
+    <title>配置示例</title>
+    <para>
+<!-- 
+     You can create a replication slot like this:
+-->
+你可以像下面这样创建一个复制槽：
+<programlisting>
+postgres=# SELECT * FROM pg_create_physical_replication_slot('node_a_slot');
+  slot_name  | xlog_position
+-------------+---------------
+ node_a_slot |
+
+postgres=# SELECT * FROM pg_replication_slots;
+  slot_name  | slot_type | datoid | database | active | xmin | restart_lsn
+-------------+-----------+--------+----------+--------+------+-------------
+ node_a_slot | physical  |        |          | f      |      |
+(1 row)
+</programlisting>
+<!-- 
+     To configure the standby to use this slot, <varname>primary_slot_name</>
+     should be configured in the standby's <filename>recovery.conf</>.
+     Here is a simple example:
+-->
+要配置备用服务器使用这个槽，应该在该备用服务器的<filename>recovery.conf</>
+中配置<varname>primary_slot_name</>。下面是一个简单的示例：
+<programlisting>
+standby_mode = 'on'
+primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
+primary_slot_name = 'node_a_slot'
+</programlisting>
+    </para>
+   </sect3>
+  </sect2>
+
   <sect2 id="cascading-replication">
+<!-- 
    <title>Cascading Replication</title>
+-->
+   <title>级联复制</title>
 
    <indexterm zone="high-availability">
+<!--
     <primary>Cascading Replication</primary>
+-->
+    <primary>级联复制</primary>
    </indexterm>
 
    <!--
@@ -1530,7 +1681,10 @@ primary_conninfo = 'host=192.168.1.50 port=5432 user=foo password=foopass'
     <title>同步复制</title>
 
    <indexterm zone="high-availability">
+<!--
     <primary>Synchronous Replication</primary>
+-->
+    <primary>同步复制</primary>
    </indexterm>
 
    <!--
@@ -3076,9 +3230,14 @@ if (!triggered)
     situation will be no worse than if the standby queries were running
     directly on the primary server, and you are still getting the benefit of
     off-loading execution onto the standby.
-    <varname>max_standby_archive_delay</> must be kept large in this case,
-    because delayed WAL files might already contain entries that conflict with
-    the desired standby queries.
+    If standby servers connect and disconnect frequently, you
+    might want to make adjustments to handle the period when
+    <varname>hot_standby_feedback</> feedback is not being provided.
+    For example, consider increasing <varname>max_standby_archive_delay</>
+    so that queries are not rapidly canceled by conflicts in WAL archive
+    files during disconnected periods.  You should also consider increasing
+    <varname>max_standby_streaming_delay</> to avoid rapid cancellations
+    by newly-arrived streaming WAL entries after reconnection.
    </para>
 -->
 <para>
@@ -3088,8 +3247,12 @@ if (!triggered)
    所以清理冲突不会发生。如果你这样做，你应该知道这将延迟主服务器清理死行，其可能不想要的表膨胀结果。
    不过这种情况清理不逊于如果备服务器查询直接运行在主服务器上，
    并且你仍然得到卸载执行在备服务器上的好处。
-   在这种情况下<varname>max_standby_archive_delay</>必须是保持大的，
-   因为延迟WAL文件可能已经包含了备服务器查询想要的记录项。
+   如果备用服务器频繁的连接和断开连接，你可能想要做出调整，
+   以处理没有提供<varname>hot_standby_feedback</>反馈的时期。
+   例如，考虑增加<varname>max_standby_archive_delay</>，
+   这样在未连接的时期内，查询不会因为WAL归档文件中的冲突而迅速取消。
+   也应该考虑增加<varname>max_standby_streaming_delay</>，
+   以避免被重新连接之后新到达的流WAL条目迅速取消。
 </para>
 
    <!--
@@ -3166,12 +3329,14 @@ LOG:  database system is ready to accept read only connections
     Consistency information is recorded once per checkpoint on the primary.
     It is not possible to enable hot standby when reading WAL
     written during a period when <varname>wal_level</> was not set to
-    <literal>hot_standby</> on the primary.  Reaching a consistent state can
-    also be delayed in the presence of both of these conditions:
+    <literal>hot_standby</> or <literal>logical</> on the primary.  Reaching
+    a consistent state can also be delayed in the presence of both of these
+    conditions:
      -->
  
      在主服务器上每个检查点都记录一次一致信息。
- 在主服务器上没有将<varname>wal_level</>设置为<literal>hot_standby</>时，当读取正在写的WAL时，
+ 在主服务器上没有将<varname>wal_level</>设置为<literal>hot_standby</>
+ 或<literal>logical</>时，当读取正在写的WAL时，
  启用热备是不可能的。存在这些条件的两者也可能延迟达到一致性状态：
  
       <itemizedlist>

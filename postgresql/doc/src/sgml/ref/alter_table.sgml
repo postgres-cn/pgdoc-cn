@@ -4,6 +4,9 @@ PostgreSQL documentation
 -->
 
 <refentry id="SQL-ALTERTABLE">
+ <indexterm zone="sql-altertable">
+  <primary>ALTER TABLE</primary>
+ </indexterm>
  <refmeta>
   <refentrytitle>ALTER TABLE</refentrytitle>
   <manvolnum>7</manvolnum>
@@ -21,9 +24,6 @@ PostgreSQL documentation
     <refpurpose>修改表的定义</refpurpose>
  </refnamediv>
 
- <indexterm zone="sql-altertable">
-  <primary>ALTER TABLE</primary>
- </indexterm>
 
  <refsynopsisdiv>
 <synopsis>
@@ -37,7 +37,8 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     RENAME TO <replaceable class="PARAMETER">new_name</replaceable>
 ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     SET SCHEMA <replaceable class="PARAMETER">new_schema</replaceable>
-
+ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> [ OWNED BY <replaceable class="PARAMETER">role_name</replaceable> [, ... ] ]
+    SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable> [ NOWAIT ]
 <!--
 <phrase>where <replaceable class="PARAMETER">action</replaceable> is one of:</phrase>
 -->
@@ -55,6 +56,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN }
     ADD <replaceable class="PARAMETER">table_constraint</replaceable> [ NOT VALID ]
     ADD <replaceable class="PARAMETER">table_constraint_using_index</replaceable>
+    ALTER CONSTRAINT <replaceable class="PARAMETER">constraint_name</replaceable> [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
     VALIDATE CONSTRAINT <replaceable class="PARAMETER">constraint_name</replaceable>
     DROP CONSTRAINT [ IF EXISTS ]  <replaceable class="PARAMETER">constraint_name</replaceable> [ RESTRICT | CASCADE ]
     DISABLE TRIGGER [ <replaceable class="PARAMETER">trigger_name</replaceable> | ALL | USER ]
@@ -77,9 +79,11 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     NOT OF
     OWNER TO <replaceable class="PARAMETER">new_owner</replaceable>
     SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
-
-<phrase>and <replaceable class="PARAMETER">table_constraint_using_index</replaceable> is:</phrase>
-
+    REPLICA IDENTITY {DEFAULT | USING INDEX <replaceable class="PARAMETER">index_name</replaceable> | FULL | NOTHING}
+<!--
+ <phrase>and <replaceable class="PARAMETER">table_constraint_using_index</replaceable> is:</phrase>
+-->
+ <phrase><replaceable class="PARAMETER">table_constraint_using_index</replaceable>是：</phrase>
     [ CONSTRAINT <replaceable class="PARAMETER">constraint_name</replaceable> ]
     { UNIQUE | PRIMARY KEY } USING INDEX <replaceable class="PARAMETER">index_name</replaceable>
     [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
@@ -95,11 +99,16 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
   <!--
 <para>
    <command>ALTER TABLE</command> changes the definition of an existing table.
-   There are several subforms:
+   There are several subforms described below. Note that the lock level required
+   may differ for each subform. An <literal>ACCESS EXCLUSIVE</literal> lock is held
+   unless explicitly noted. When multiple subcommands are listed, the lock
+   held will be the strictest one required from any subcommand.
 </para>
 -->
 <para>
-   <command>ALTER TABLE</command> 改变一个现存表的定义。它有好几种子形式：
+<command>ALTER TABLE</command> 改变一个现存表的定义。下面描述了它的好几种子形式。
+请注意，每个子形式所需的锁级别可能不同。一般是持有一个<literal>ACCESS EXCLUSIVE</literal>
+锁，除非特别注释。当列出了多个子命令时，持有的锁必须是任意子命令所需要的一个。
 </para>
 
 
@@ -241,6 +250,14 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 目标值可以设置为0至10000；相应地，设置为-1则会反向使用系统缺省的统计目标值 (<xref linkend="guc-default-statistics-target">)。
 有关<productname>PostgreSQL</productname>查询规划器使用数据统计方面的更多信息，可以参阅<xref linkend="planner-stats">。
 </para>
+<!-- 
+     <para>
+      SET STATISTICS acquires a <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
+     </para>
+-->
+<para>
+SET STATISTICS获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+</para>
     </listitem>
    </varlistentry>
 
@@ -287,16 +304,27 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 声明一个0值来正常地恢复到估计不同数值的数目。
 要获取关于使用<productname>PostgreSQL</productname>查询优化器做统计的信息，请参阅<xref linkend="planner-stats">。
 </para>
+<!-- 
+     <para>
+      Changing per-attribute options acquires a
+      <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
+     </para>
+-->
+<para>
+修改每个属性的选项获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+</para>
     </listitem>
    </varlistentry>
 
    <varlistentry>
+    <term>
+     <literal>SET STORAGE</literal>
     <indexterm>
      <primary>TOAST</primary>
      <secondary>per-column storage settings</secondary>
     </indexterm>
 
-    <term><literal>SET STORAGE</literal></term>
+    </term>
     <listitem>
      <!--
 <para>
@@ -445,6 +473,21 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
    </varlistentry>
 
    <varlistentry>
+    <term><literal>ALTER CONSTRAINT</literal></term>
+    <listitem>
+<!-- 
+     <para>
+      This form alters the attributes of a constraint that was previously
+      created. Currently only foreign key constraints may be altered.
+     </para>
+-->
+<para>
+这种形式修改了一个以前创建的约束的属性。当前只能修改外键约束。
+</para>
+    </listitem>
+   </varlistentry>
+   
+   <varlistentry>
     <term><literal>VALIDATE CONSTRAINT</literal></term>
     <listitem>
      <!--
@@ -461,16 +504,30 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 </para>
      <!--
 <para>
-      Validation can be a long process on larger tables and currently requires
-      an <literal>ACCESS EXCLUSIVE</literal> lock.  The value of separating
+      Validation can be a long process on larger tables.  The value of separating
       validation from initial creation is that you can defer validation to less
       busy times, or can be used to give additional time to correct pre-existing
-      errors while preventing new errors.
+      errors while preventing new errors. Note also that validation on its own
+      does not prevent normal write commands against the table while it runs.
      </para>
 -->
 <para>
-对大表的记录进行验证一般是一个很长的过程，并且目前这种操作还需要<literal>ACCESS EXCLUSIVE</literal>排他类锁。
+对大表的记录进行验证一般是一个很长的过程。
 初始的不同验证可以将验证工作后延至系统不忙时进行，或者通过先花一点额外的时间来纠正可能存在的错误以防止新错误的发生。
+还要注意，在其本身上的验证并不能阻止它运行时正常的写入表的命令。
+</para>
+<!-- 
+     <para>
+      Validation acquires only a <literal>SHARE UPDATE EXCLUSIVE</literal> lock
+      on the table being altered. If the constraint is a foreign key then
+      a <literal>ROW SHARE</literal> lock is also required on
+      the table referenced by the constraint.
+     </para>
+-->
+<para>
+验证仅在需要修改的表上获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+如果约束时外键约束，那么在被该约束引用的表上也获取一个
+<literal>ROW SHARE</literal>锁。
 </para>
     </listitem>
    </varlistentry>
@@ -563,6 +620,14 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 <para>
 这种形式为将来的<xref linkend="SQL-CLUSTER">操作选择默认索引。 实际上并没有重新聚簇该表。
 </para>
+<!-- 
+     <para>
+      Changing cluster options acquires a <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
+     </para>
+-->
+<para>
+修改群集选项获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+</para>
     </listitem>
    </varlistentry>
 
@@ -579,6 +644,14 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 -->
 <para>
 这种形式从表中删除最近一次用到的<xref linkend="SQL-CLUSTER">索引定义。这会影响将来不指定索引的聚簇操作。
+</para>
+<!-- 
+     <para>
+      Changing cluster options acquires a <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
+     </para>
+-->
+<para>
+修改群集选项获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
 </para>
     </listitem>
    </varlistentry>
@@ -789,12 +862,12 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     <listitem>
      <!--
 <para>
-      This form changes the owner of the table, sequence, or view to the
-      specified user.
+      This form changes the owner of the table, sequence, view, materialized view,
+      or foreign table to the specified user.
      </para>
 -->
 <para>
-这种形式改变表、序列或是视图的所有者为一个指定的用户。
+这种形式改变表、序列、视图、物化视图或是外部表的所有者为一个指定的用户。
 </para>
     </listitem>
    </varlistentry>
@@ -808,13 +881,63 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
       moves the data file(s) associated with the table to the new tablespace.
       Indexes on the table, if any, are not moved; but they can be moved
       separately with additional <literal>SET TABLESPACE</literal> commands.
+      All tables in the current database in a tablespace can be moved by using
+      the <literal>ALL IN TABLESPACE</literal> form, which will lock all tables
+      to be moved first and then move each one.  This form also supports
+      <literal>OWNED BY</literal>, which will only move tables owned by the
+      roles specified.  If the <literal>NOWAIT</literal> option is specified
+      then the command will fail if it is unable to acquire all of the locks
+      required immediately.  Note that system catalogs are not moved by this
+      command, use <command>ALTER DATABASE</command> or explicit
+      <command>ALTER TABLE</command> invocations instead if desired.  The
+      <literal>information_schema</literal> relations are not considered part
+      of the system catalogs and will be moved.
       See also
       <xref linkend="SQL-CREATETABLESPACE">.
      </para>
 -->
 <para>
 这种形式更改表的表空间为一个指定的表空间，并将与这个表相关的数据文件移至新的表空间。
-表上如果有索引，一般不会移动。不过它们也可以通过使用<literal>SET TABLESPACE</literal>命令单独移动，参见<xref linkend="SQL-CREATETABLESPACE">。
+表上如果有索引，一般不会移动。不过它们也可以通过使用<literal>SET TABLESPACE</literal>命令单独移动。
+当前数据库中一个表空间中的所有表可以通过使用<literal>ALL IN TABLESPACE</literal>
+形式移动，这将首先锁定要移动的所有表，然后移动每一个表。这个形式也支持
+<literal>OWNED BY</literal>，它将仅移动规则指定的表。如果声明了<literal>NOWAIT</literal>
+选项，并且不能立即获得所有需要的锁，那么该命令将失败。请注意，这个命令不能移动系统目录，
+如果需要的话，使用<command>ALTER DATABASE</command>或明确的<command>ALTER TABLE</command>调用。
+不认为<literal>information_schema</literal>关系是系统目录的一部分，并且将移动它。
+参见<xref linkend="SQL-CREATETABLESPACE">。
+</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="SQL-CREATETABLE-REPLICA-IDENTITY">
+    <term><literal>REPLICA IDENTITY</literal></term>
+    <listitem>
+<!-- 
+     <para>
+      This form changes the information which is written to the write-ahead log
+      to identify rows which are updated or deleted.  This option has no effect
+      except when logical replication is in use.  <literal>DEFAULT</>
+      (the default for non-system tables) records the 
+      old values of the columns of the primary key, if any.  <literal>USING INDEX</>
+      records the old values of the columns covered by the named index, which
+      must be unique, not partial, not deferrable, and include only columns marked
+      <literal>NOT NULL</>.  <literal>FULL</> records the old values of all columns
+      in the row.  <literal>NOTHING</> records no information about the old row.
+      (This is the default for system tables.)
+      In all cases, no old values are logged unless at least one of the columns
+      that would be logged differs between the old and new versions of the row.
+     </para>
+-->
+<para>
+这个形式改变了要写入预写式日志中的信息，以确定要更新或删除的行。
+这个选项没什么影响，除非正在使用逻辑复制。<literal>DEFAULT</>
+（非系统表的缺省）记录了主键字段的旧值，如果有的话。<literal>USING INDEX</>
+记录了被命名索引包含的字段的旧值，它必须是唯一的、非局部的、不可延迟的，
+并且仅包括标记为<literal>NOT NULL</>的字段。<literal>FULL</>
+记录了该行中所有字段的旧值。<literal>NOTHING</>不记录旧行的信息。
+（这是系统表的缺省。）在所有情况下，不记录旧值，
+除非至少有一个字段要记录行的新旧版本间的不同。
 </para>
     </listitem>
    </varlistentry>
@@ -825,13 +948,14 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
      <!--
 <para>
       The <literal>RENAME</literal> forms change the name of a table
-      (or an index, sequence, or view), the name of an individual column in
-      a table, or the name of a constraint of the table. There is no effect on the stored data.
+      (or an index, sequence, view, materialized view, or foreign table), the name
+      of an individual column in a table, or the name of a constraint of the table.
+      There is no effect on the stored data.
      </para>
 -->
 <para>
-<literal>RENAME</literal>形式改变一个表(或者索引、序列、视图)的名称，表中单个字段的名称，或是表中约束的名称。
-它们对存储的数据没有影响。
+<literal>RENAME</literal>形式改变一个表(或者索引、序列、视图、物化视图或外部表)的名称，
+表中单个字段的名称，或是表中约束的名称。它们对存储的数据没有影响。
 </para>
     </listitem>
    </varlistentry>
@@ -856,7 +980,8 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 
   <!--
 <para>
-   All the actions except <literal>RENAME</literal> and <literal>SET SCHEMA</>
+   All the actions except <literal>RENAME</literal>,
+   <literal>SET TABLESPACE</literal> and <literal>SET SCHEMA</literal>
    can be combined into
    a list of multiple alterations to apply in parallel.  For example, it
    is possible to add several columns and/or alter the type of several
@@ -865,7 +990,8 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
   </para>
 -->
 <para>
-除了<literal>RENAME</literal>和<literal>SET SCHEMA</>之外所有动作都可以组合在一个多次修改列表中同时使用。
+除了<literal>RENAME</literal>、<literal>SET TABLESPACE</literal>
+和<literal>SET SCHEMA</>之外所有动作都可以组合在一个多次修改列表中同时使用。
 比如，可以在一个命令里增加几个字段和/或修改几个字段的类型。
 对于大表，这么做特别有用，因为只需要对该表做一次处理。
 </para>
@@ -873,8 +999,8 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
   <!--
 <para>
    You must own the table to use <command>ALTER TABLE</>.
-   To change the schema of a table, you must also have
-   <literal>CREATE</literal> privilege on the new schema.
+   To change the schema or tablespace of a table, you must also have
+   <literal>CREATE</literal> privilege on the new schema or tablespace.
    To add the table as a new child of a parent table, you must own the
    parent table as well.
    To alter the owner, you must also be a direct or indirect member of the new
@@ -889,7 +1015,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 -->
 <para>
 要使用<command>ALTER TABLE</>，你必须是该表的所有者。
-要修改一个表的模式，你还必须在新模式上拥有<literal>CREATE</literal>权限。
+要修改一个表的模式或表空间，你还必须在新模式或表空间上拥有<literal>CREATE</literal>权限。
 要把该表添加为一个父表的新子表，你必须同时是父表的所有者。
 要修改所有者，你还必须是新的所有角色的直接或间接成员，并且该成员必须在此表的模式上有<literal>CREATE</literal>权限。
 （这些限制强制了修改该所有者不会做任何通过删除和重建表不能做的事情。不过，超级用户可以以任何方式修改任意表的所有权。）
@@ -968,7 +1094,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
      </varlistentry>
 
      <varlistentry>
-      <term><replaceable class="PARAMETER">type</replaceable></term>
+      <term><replaceable class="PARAMETER">data_type</replaceable></term>
       <listitem>
        <!--
 <para>
@@ -1001,11 +1127,11 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
       <listitem>
 <!--
 <para>
-        Name of an existing constraint to drop.
+        Name of a new or existing constraint.
        </para>
 -->
 <para>
-要删除的现有约束的名字。
+新的或现有约束的名字。
 </para>
       </listitem>
      </varlistentry>
@@ -1094,11 +1220,11 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
       <listitem>
        <!--
 <para>
-        The index name on which the table should be marked for clustering.
-       </para>
+        The name of an existing index.
+</para>
 -->
 <para>
-标记实施表的聚簇操作的索引名字。
+一个既存索引的名字。
 </para>
       </listitem>
      </varlistentry>
@@ -1210,20 +1336,27 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
 <para>
     When a column is added with <literal>ADD COLUMN</literal>, all existing
     rows in the table are initialized with the column's default value
-    (NULL if no <literal>DEFAULT</> clause is specified).
+    (NULL if no <literal>DEFAULT</> clause is specified). 
+    If there is no <literal>DEFAULT</> clause, this is merely a metadata
+    change and does not require any immediate update of the table's data;
+    the added NULL values are supplied on readout, instead.
    </para>
 -->
 <para>
-如果用<literal>ADD COLUMN</literal>增加一个字段，那么所有表中现有行都初始化为该字段的缺省值(如果没有声明<literal>DEFAULT</>子句，那么就是 NULL)。
+如果用<literal>ADD COLUMN</literal>增加一个字段，那么所有表中现有行都初始化为该字段的缺省值
+(如果没有声明<literal>DEFAULT</>子句，那么就是 NULL)。
+如果没有<literal>DEFAULT</>子句，那么这只是一个元数据修改，不需要任何表数据的立即更新；
+添加的NULL值在读出时提供。
 </para>
 
    <!--
 <para>
-    Adding a column with a non-null default or changing the type of an
-    existing column will require the entire table and indexes to be rewritten.
-    As an exception, if the <literal>USING</> clause does not change the column
+    Adding a column with a <literal>DEFAULT</> clause or changing the type of
+    an existing column will require the entire table and its indexes to be
+    rewritten. As an exception when changing the type of an existing column,
+    if the <literal>USING</> clause does not change the column
     contents and the old type is either binary coercible to the new type or
-    an unconstrained domain over the new type, a table rewrite is not needed,
+    an unconstrained domain over the new type, a table rewrite is not needed;
     but any indexes on the affected columns must still be rebuilt.  Adding or
     removing a system <literal>oid</> column also requires rewriting the entire
     table.  Table and/or index rebuilds may take a significant amount of time
@@ -1232,8 +1365,9 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
    </para>
 -->
 <para>
-添加一个非空缺省值列或者改变一个原有列的类型需要重写整个表和索引。 
-不过也有例外，如果使用<literal>USING</>选项不改变字段的内容并且字段的新旧类型是二进制兼容的，也可以不重写表。
+添加一个带有<literal>DEFAULT</>子句的列或者改变一个原有列的类型需要重写整个表和它的索引。 
+不过也有例外，当修改一个现有字段的类型的时候，如果使用<literal>USING</>
+选项不改变字段的内容并且字段的新旧类型是二进制兼容的，也可以不重写表。
 添加或者删除一个系统<literal>oid</>列同样需要重写整个表。
 大表及索引的重写可能需要非常长的时间，并且也临时需要两倍的磁盘空间。
 </para>
@@ -1639,6 +1773,17 @@ ALTER TABLE distributors ADD CONSTRAINT distfk FOREIGN KEY (address) REFERENCES 
 ALTER TABLE distributors ADD CONSTRAINT distfk FOREIGN KEY (address) REFERENCES addresses (address);
 </programlisting>
 </para>
+
+  <para>
+<!-- 
+   To add a foreign key constraint to a table with the least impact on other work:
+-->
+用最少的影响向表添加一个外键约束：
+<programlisting>
+ALTER TABLE distributors ADD CONSTRAINT distfk FOREIGN KEY (address) REFERENCES addresses (address) NOT VALID;
+ALTER TABLE distributors VALIDATE CONSTRAINT distfk;
+</programlisting>
+  </para>
 
   <!--
 <para>

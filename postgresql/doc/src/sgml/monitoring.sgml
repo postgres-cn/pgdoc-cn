@@ -305,9 +305,11 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
    <filename>pg_stat_tmp</filename> by default.
    For better performance, <varname>stats_temp_directory</> can be
    pointed at a RAM-based file system, decreasing physical I/O requirements.
-   When the server shuts down, a permanent copy of the statistics
-   data is stored in the <filename>global</filename> subdirectory, so that
-   statistics can be retained across server restarts.
+   When the server shuts down cleanly, a permanent copy of the statistics
+   data is stored in the <filename>pg_stat</filename> subdirectory, so that
+   statistics can be retained across server restarts.  When recovery is
+   performed at server start (e.g. after immediate shutdown, server crash,
+   and point-in-time recovery), all statistics counters are reset.
   </para>
 -->
 <para>
@@ -315,9 +317,10 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
    这些文件存放在<xref linkend="guc-stats-temp-directory">参数命名的目录中。
    缺省是<filename>pg_stat_tmp</filename>。 
    为了提高性能，<varname>stats_temp_directory</>参数可以指向一个基于RAM的文件系统，
-   降低物理I/O需求。当服务器关闭时，
-   统计数据的永久复本存储在<filename>global</filename>子目录中，
-   所以统计数据可以在服务器重新启动时保留。 
+   降低物理I/O需求。当服务器干净的关闭时，
+   统计数据的永久复本存储在<filename>pg_stat</filename>子目录中，
+   所以统计数据可以在服务器重新启动时保留。当在服务器启动时执行恢复时
+   （也就是，立即关闭、服务器崩溃和时间点恢复之后），重置所有状态计数器。
 </para>
 
  </sect2>
@@ -454,7 +457,20 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
    每个服务器进程一行，显示进程当前活动相关的信息，比如状态和当前查询。
   参阅<xref linkend="pg-stat-activity-view">获取更多详情。
       </entry>
- 
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_archiver</><indexterm><primary>pg_stat_archiver</primary></indexterm></entry>
+<!-- 
+      <entry>One row only, showing statistics about the
+       WAL archiver process's activity. See
+       <xref linkend="pg-stat-archiver-view"> for details.
+      </entry>
+-->
+      <entry>
+      只有一行，显示关于WAL归档进程活动的统计。
+      参阅<xref linkend="pg-stat-archiver-view">获取详细信息。
+      </entry>
      </row>
 
      <row>
@@ -1012,6 +1028,22 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
      </entry>
     </row>
     <row>
+     <entry><structfield>backend_xid</structfield></entry>
+     <entry><type>xid</type></entry>
+<!--
+      <entry>Top-level transaction identifier of this backend, if any.</entry>
+-->
+     <entry>这个后端的顶级事务标识符，如果有。</entry>
+    </row>
+    <row>
+     <entry><structfield>backend_xmin</structfield></entry>
+     <entry><type>xid</type></entry>
+<!-- 
+     <entry>The current backend's <literal>xmin</> horizon.</entry>
+-->
+     <entry>当前后端的<literal>xmin</>范围。</entry>
+    </row>
+    <row> 
      <entry><structfield>query</></entry>
      <entry><type>text</></entry>
  <!--
@@ -1059,6 +1091,98 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
 </para>
   </note>
 
+  <table id="pg-stat-archiver-view" xreflabel="pg_stat_archiver">
+<!--
+    <title><structname>pg_stat_archiver</structname> View</title>
+-->
+   <title><structname>pg_stat_archiver</structname> 视图</title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+<!-- 
+      <entry>Column</entry>
+      <entry>Type</entry>
+      <entry>Description</entry>
+-->
+      <entry>字段</entry>
+      <entry>类型</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>archived_count</></entry>
+      <entry><type>bigint</type></entry>
+      <!-- 
+      <entry>Number of WAL files that have been successfully archived</entry>
+      -->
+      <entry>已经成功归档的WAL文件的数量</entry>
+     </row>
+     <row>
+      <entry><structfield>last_archived_wal</></entry>
+      <entry><type>text</type></entry>
+      <!--
+      <entry>Name of the last WAL file successfully archived</entry>
+      -->
+      <entry>最后成功归档的WAL文件的名字</entry>
+     </row>
+     <row>
+      <entry><structfield>last_archived_time</></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <!--
+      <entry>Time of the last successful archive operation</entry>
+      -->
+      <entry>最后成功归档操作的时间</entry>
+     </row>
+     <row>
+      <entry><structfield>failed_count</></entry>
+      <entry><type>bigint</type></entry>
+      <!--
+      <entry>Number of failed attempts for archiving WAL files</entry>
+      -->
+      <entry>尝试归档WAL文件失败的次数</entry>
+     </row>
+     <row>
+      <entry><structfield>last_failed_wal</></entry>
+      <entry><type>text</type></entry>
+      <!-- 
+      <entry>Name of the WAL file of the last failed archival operation</entry>
+      -->
+      <entry>最后失败归档操作的WAL文件的名字</entry>
+     </row>
+     <row>
+      <entry><structfield>last_failed_time</></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <!-- 
+      <entry>Time of the last failed archival operation</entry>
+      -->
+      <entry>最后失败归档操作的时间</entry>
+     </row>
+     <row>
+      <entry><structfield>stats_reset</></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <!--
+      <entry>Time at which these statistics were last reset</entry>
+      -->
+      <entry>这些状态统计最后重置的时间</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+<!-- 
+  <para>
+   The <structname>pg_stat_archiver</structname> view will always have a
+   single row, containing data about the archiver process of the cluster.
+  </para>
+-->
+  <para>
+   <structname>pg_stat_archiver</structname>视图将总是只有一行，
+   包括集群归档进程的数据。
+  </para>
+  
   <table id="pg-stat-bgwriter-view" xreflabel="pg_stat_bgwriter">
   <!--
    <title><structname>pg_stat_bgwriter</structname> View</title>
@@ -1541,6 +1665,14 @@ Total amount of time that has been spent in the portion of
  <entry>估计死行数</entry>
     </row>
     <row>
+     <entry><structfield>n_mod_since_analyze</></entry>
+     <entry><type>bigint</></entry>
+     <!--
+     <entry>Estimated number of rows modified since this table was last analyzed</entry>
+     -->
+     <entry>自从这个表最后分析之后，估计的修改过的行数</entry>
+    </row>
+    <row>
      <entry><structfield>last_vacuum</></entry>
      <entry><type>timestamp with time zone</></entry>
  <!--
@@ -1881,7 +2013,7 @@ Total amount of time that has been spent in the portion of
      <entry><structfield>tidx_blks_read</></entry>
      <entry><type>bigint</></entry>
  <!--
-     <entry>Number of disk blocks read from this table's TOAST table index (if any)</entry>
+     <entry>Number of disk blocks read from this table's TOAST table indexes (if any)</entry>
  -->
  <entry>此表的TOAST表索引读取的磁盘块数（如果存在）</entry>
     </row>
@@ -1889,7 +2021,7 @@ Total amount of time that has been spent in the portion of
      <entry><structfield>tidx_blks_hit</></entry>
      <entry><type>bigint</></entry>
  <!--
-     <entry>Number of buffer hits in this table's TOAST table index (if any)</entry>
+     <entry>Number of buffer hits in this table's TOAST table indexes (if any)</entry>
  -->
  <entry>此表的TOAST表索引命中缓冲区数（如果存在）</entry>
     </row>
@@ -2277,6 +2409,16 @@ Total amount of time that has been spent in the portion of
  <entry>这个进程开始时的时间，比如当客户端连接到这个WAL发送端时。</entry>
     </row>
     <row>
+     <entry><structfield>backend_xmin</structfield></entry>
+     <entry><type>xid</type></entry>
+<!-- 
+     <entry>This standby's <literal>xmin</> horizon reported
+     by <xref linkend="guc-hot-standby-feedback">.</entry>
+-->
+     <entry><xref linkend="guc-hot-standby-feedback">
+     报告的这个备用的<literal>xmin</>范围。</entry>
+    </row>
+    <row>
      <entry><structfield>state</></entry>
      <entry><type>text</></entry>
  <!--
@@ -2286,7 +2428,7 @@ Total amount of time that has been spent in the portion of
     </row>
     <row>
      <entry><structfield>sent_location</></entry>
-     <entry><type>text</></entry>
+     <entry><type>pg_lsn</></entry>
  <!--
      <entry>Last transaction log position sent on this connection</entry>
  -->
@@ -2294,7 +2436,7 @@ Total amount of time that has been spent in the portion of
     </row>
     <row>
      <entry><structfield>write_location</></entry>
-     <entry><type>text</></entry>
+     <entry><type>pg_lsn</></entry>
  <!--
      <entry>Last transaction log position written to disk by this standby
       server</entry>
@@ -2303,7 +2445,7 @@ Total amount of time that has been spent in the portion of
     </row>
     <row>
      <entry><structfield>flush_location</></entry>
-     <entry><type>text</></entry>
+     <entry><type>pg_lsn</></entry>
  <!--
      <entry>Last transaction log position flushed to disk by this standby
       server</entry>
@@ -2312,7 +2454,7 @@ Total amount of time that has been spent in the portion of
     </row>
     <row>
      <entry><structfield>replay_location</></entry>
-     <entry><type>text</></entry>
+     <entry><type>pg_lsn</></entry>
  <!--
      <entry>Last transaction log position replayed into the database on this
       standby server</entry>
@@ -2578,9 +2720,14 @@ Total amount of time that has been spent in the portion of
        argument (requires superuser privileges).
        Calling <literal>pg_stat_reset_shared('bgwriter')</> will zero all the
        counters shown in the <structname>pg_stat_bgwriter</> view.
+       Calling <literal>pg_stat_reset_shared('archiver')</> will zero all the
+       counters shown in the <structname>pg_stat_archiver</> view.
        -->
-   重置一些集群范围统计计数为零，依赖于参数（需要超级用户权限）。   
-       所有显示在<structname>pg_stat_bgwriter</>视图中的计数器调用<literal>pg_stat_reset_shared('bgwriter')</>将归零。
+重置一些集群范围统计计数为零，依赖于参数（需要超级用户权限）。   
+所有显示在<structname>pg_stat_bgwriter</>视图中的计数器调用
+<literal>pg_stat_reset_shared('bgwriter')</>将归零。
+所有显示在<structname>pg_stat_archiver</>视图中的计数器调用
+<literal>pg_stat_reset_shared('archiver')</>将归零。
       </entry>
      </row>
 
@@ -2894,7 +3041,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
    Currently, the
    <ulink url="https://en.wikipedia.org/wiki/DTrace">DTrace</ulink>
    utility is supported, which, at the time of this writing, is available
-   on Solaris, Mac OS X, FreeBSD, NetBSD, and Oracle Linux.  The
+   on Solaris, OS X, FreeBSD, NetBSD, and Oracle Linux.  The
    <ulink url="http://sourceware.org/systemtap/">SystemTap</ulink> project
    for Linux provides a DTrace equivalent and can also be used.  Supporting other dynamic
    tracing utilities is theoretically possible by changing the definitions for
@@ -2903,7 +3050,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
 -->
 <para>
    目前，只有<ulink url="https://en.wikipedia.org/wiki/DTrace">DTrace</ulink>支持实用工具，在写这的时候，
-   它可在Solaris, Mac OS X, FreeBSD, NetBSD和Oracle Linux上使用。
+   它可在Solaris, OS X, FreeBSD, NetBSD和Oracle Linux上使用。
    <ulink url="http://sourceware.org/systemtap/">SystemTap</ulink>
    项目为Linux还提供了一个DTrace的等效并且也是可用的。
    通过改变<filename>src/include/utils/probes.h</>
@@ -3526,74 +3673,85 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
     </row>
     <row>
      <entry>lwlock-acquire</entry>
-     <entry>(LWLockId, LWLockMode)</entry>
+     <entry>(char *, int, LWLockMode)</entry>
  <!--
      <entry>Probe that fires when an LWLock has been acquired.
-      arg0 is the LWLock's ID.
-      arg1 is the requested lock mode, either exclusive or shared.</entry>
+      arg0 is the LWLock's tranche.
+      arg1 is the LWLock's offset within its tranche.
+      arg2 is the requested lock mode, either exclusive or shared.</entry>
   -->
   <entry>当成功获得一个LWLock时触发的探测器。
-  arg0是LWLock的ID号，arg1表明请求的锁模式，要么独占要么共享</entry>
+  arg0是LWLock的一部分。arg1是LWLock部分的偏差。
+  arg2表明请求的锁模式，要么独占要么共享。</entry>
     </row>
     <row>
      <entry>lwlock-release</entry>
-     <entry>(LWLockId)</entry>
+     <entry>(char *, int)</entry>
  <!--
      <entry>Probe that fires when an LWLock has been released (but note
       that any released waiters have not yet been awakened).
-      arg0 is the LWLock's ID.</entry>
+      arg0 is the LWLock's tranche.
+      arg1 is the LWLock's offset within its tranche.</entry>
   -->
   <entry>LWLock释放时触发的探测器
   (但是请注意任何发布的等待者还未觉醒)。
-  arg0表示LWLock的ID号</entry>
+  arg0是LWLock的一部分。arg1是LWLock部分的偏差。</entry>
     </row>
     <row>
      <entry>lwlock-wait-start</entry>
-     <entry>(LWLockId, LWLockMode)</entry>
+     <entry>(char *, int, LWLockMode)</entry>
  <!--
      <entry>Probe that fires when an LWLock was not immediately available and
       a server process has begun to wait for the lock to become available.
-      arg0 is the LWLock's ID.
-      arg1 is the requested lock mode, either exclusive or shared.</entry>
+      arg0 is the LWLock's tranche.
+      arg1 is the LWLock's offset within its tranche.
+      arg2 is the requested lock mode, either exclusive or shared.</entry>
   -->
   <entry>当不能立即获得LWLock锁，同时服务进程进入等待时触发的探测器。
-  arg0是LWLock的ID号，arg1表明请求的锁模式，要么独占要么共享。</entry>
+  arg0是LWLock的一部分。arg1是LWLock部分的偏差。
+  arg2表明请求的锁模式，要么独占要么共享。</entry>
     </row>
     <row>
      <entry>lwlock-wait-done</entry>
-     <entry>(LWLockId, LWLockMode)</entry>
+     <entry>(char *, int, LWLockMode)</entry>
  <!--
      <entry>Probe that fires when a server process has been released from its
       wait for an LWLock (it does not actually have the lock yet).
-      arg0 is the LWLock's ID.
-      arg1 is the requested lock mode, either exclusive or shared.</entry>
+      arg0 is the LWLock's tranche.
+      arg1 is the LWLock's offset within its tranche.
+      arg2 is the requested lock mode, either exclusive or shared.</entry>
   -->
   <entry>当从一个LWLock锁中释放服务进程时触发的探测器（实际上没有进行锁）。
-  arg0是LWLock的ID号，arg1表明请求的锁模式，要么独占要么共享。</entry>
+  arg0是LWLock的一部分。arg1是LWLock部分的偏差。
+  arg2表明请求的锁模式，要么独占要么共享。</entry>
     </row>
     <row>
      <entry>lwlock-condacquire</entry>
-     <entry>(LWLockId, LWLockMode)</entry>
+     <entry>(char *, int, LWLockMode)</entry>
  <!--
      <entry>Probe that fires when an LWLock was successfully acquired when the
       caller specified no waiting.
-      arg0 is the LWLock's ID.
-      arg1 is the requested lock mode, either exclusive or shared.</entry>
+      arg0 is the LWLock's tranche.
+      arg1 is the LWLock's offset within its tranche.
+      arg2 is the requested lock mode, either exclusive or shared.</entry>
   -->
   <entry>当成功获得一个LWLock时触发的探测器（已声明调用无需等待）。
-  arg0是LWLock的ID号，arg1表明请求的锁的模式，要么独占要么共享。</entry>
+  arg0是LWLock的一部分。arg1是LWLock部分的偏差。
+  arg2表明请求的锁模式，要么独占要么共享。</entry>
     </row>
     <row>
      <entry>lwlock-condacquire-fail</entry>
-     <entry>(LWLockId, LWLockMode)</entry>
+     <entry>(char *, int, LWLockMode)</entry>
  <!--
      <entry>Probe that fires when an LWLock was not successfully acquired when
       the caller specified no waiting.
-      arg0 is the LWLock's ID.
-      arg1 is the requested lock mode, either exclusive or shared.</entry>
+      arg0 is the LWLock's tranche.
+      arg1 is the LWLock's offset within its tranche.
+      arg2 is the requested lock mode, either exclusive or shared.</entry>
   -->
   <entry>当没有成功获得一个LWLock时触发的探测器（已声明调用无需等待）。
-  arg0是LWLock的ID号，arg1表明请求的锁的模式，要么独占要么共享。</entry>
+  arg0是LWLock的一部分。arg1是LWLock部分的偏差。
+  arg2表明请求的锁模式，要么独占要么共享。</entry>
     </row>
     <row>
      <entry>lock-wait-start</entry>
@@ -3658,10 +3816,7 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
      <entry>unsigned int</entry>
     </row>
     <row>
-     <entry>LWLockId</entry>
-     <entry>int</entry>
-    </row>
-    <row>
+
      <entry>LWLockMode</entry>
      <entry>int</entry>
     </row>
