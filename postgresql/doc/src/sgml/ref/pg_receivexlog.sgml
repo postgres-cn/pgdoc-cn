@@ -4,6 +4,9 @@ PostgreSQL documentation
 -->
 
 <refentry id="app-pgreceivexlog">
+ <indexterm zone="app-pgreceivexlog">
+  <primary>pg_receivexlog</primary>
+ </indexterm>
  <refmeta>
   <refentrytitle>pg_receivexlog</refentrytitle>
   <manvolnum>1</manvolnum>
@@ -13,14 +16,10 @@ PostgreSQL documentation
  <refnamediv>
   <refname>pg_receivexlog</refname>
   <!--
-  <refpurpose>streams transaction logs from a <productname>PostgreSQL</productname> cluster</refpurpose>
+  <refpurpose>stream transaction logs from a <productname>PostgreSQL</productname> server</refpurpose>
   -->
-  <refpurpose><productname>PostgreSQL</productname>集群中的流事务日志</refpurpose>
+  <refpurpose><productname>PostgreSQL</productname>服务器中的流事务日志</refpurpose>
  </refnamediv>
-
- <indexterm zone="app-pgreceivexlog">
-  <primary>pg_receivexlog</primary>
- </indexterm>
 
  <refsynopsisdiv>
   <cmdsynopsis>
@@ -169,6 +168,57 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
+      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
+      <listitem>
+       <!--
+<para>
+        Specifies the number of seconds between status packets sent back to the
+        server. This allows for easier monitoring of the progress from server.
+        A value of zero disables the periodic status updates completely,
+        although an update will still be sent when requested by the server, to
+        avoid timeout disconnect. The default value is 10 seconds.
+       </para>
+-->
+<para>
+声明状态数据包发送回服务器的秒数。这允许对服务器进程的更简单的监视。为了避免连接超时，
+零值完全禁用定期状态更新，尽管服务器需要时仍然发送一个更新。缺省值是10秒。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable>slotname</replaceable></option></term>
+      <term><option>--slot=<replaceable class="parameter">slotname</replaceable></option></term>
+      <listitem>
+
+<!-- 
+        <para>
+         Require <application>pg_receivexlog</application> to use an existing
+         replication slot (see <xref linkend="streaming-replication-slots">).
+         When this option is used, <application>pg_receivexlog</> will report
+         a flush position to the server, indicating when each segment has been
+         synchronized to disk so that the server can remove that segment if it
+         is not otherwise needed.  When using this parameter, it is important
+         to make sure that <application>pg_receivexlog</> cannot become the
+         synchronous standby through an incautious setting of
+         <xref linkend="guc-synchronous-standby-names">; it does not flush
+         data frequently enough for this to work correctly.
+        </para>
+-->
+<para>
+要求<application>pg_receivexlog</application>使用一个现有的复制槽
+（参阅<xref linkend="streaming-replication-slots">）。
+当使用了这个选项时，<application>pg_receivexlog</>将给服务器报告刷新位置，
+表明每个段何时同步到了磁盘上，这样如果不再需要这个段了，服务器就可以删除它。
+当使用这个参数时，确保<application>pg_receivexlog</>不能通过不小心设置
+<xref linkend="guc-synchronous-standby-names">而成为同步备用是非常重要的；
+为了正确的工作，它不会太频繁的刷新数据。
+</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-v</option></term>
       <term><option>--verbose</option></term>
       <listitem>
@@ -258,26 +308,6 @@ PostgreSQL documentation
 <para>
 声明服务器正在监听的TCP端口或本地Unix域套接字文件扩展。缺省是<envar>PGPORT</envar>
 环境变量（如果设置了），否则是内编译的缺省。
-</para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry>
-      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
-      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
-      <listitem>
-       <!--
-<para>
-        Specifies the number of seconds between status packets sent back to the
-        server. This allows for easier monitoring of the progress from server.
-        A value of zero disables the periodic status updates completely,
-        although an update will still be sent when requested by the server, to
-        avoid timeout disconnect. The default value is 10 seconds.
-       </para>
--->
-<para>
-声明状态数据包发送回服务器的秒数。这允许对服务器进程的更简单的监视。为了避免连接超时，
-零值完全禁用定期状态更新，尽管服务器需要时仍然发送一个更新。缺省值是10秒。
 </para>
       </listitem>
      </varlistentry>
@@ -427,28 +457,23 @@ PostgreSQL documentation
   <!--
 <para>
    When using <application>pg_receivexlog</application> instead of
-   <xref linkend="guc-archive-command">, the server will continue to
-   recycle transaction log files even if the backups are not properly
-   archived, since there is no command that fails. This can be worked
-   around by having an <xref linkend="guc-archive-command"> that fails
-   when the file has not been properly archived yet, for example:
-<programlisting>
-archive_command = 'sleep 5 &amp;&amp; test -f /mnt/server/archivedir/%f'
-</programlisting>
-   The initial timeout is necessary because
-   <application>pg_receivexlog</application> works using asynchronous
-   replication and can therefore be slightly behind the master.
+   <xref linkend="guc-archive-command"> as the main WAL backup method, it is
+   strongly recommended to use replication slots.  Otherwise, the server is
+   free to recycle or remove transaction log files before they are backed up,
+   because it does not have any information, either
+   from <xref linkend="guc-archive-command"> or the replication slots, about
+   how far the WAL stream has been archived.  Note, however, that a
+   replication slot will fill up the server's disk space if the receiver does
+   not keep up with fetching the WAL data.
   </para>
 -->
 <para>
-当使用<application>pg_receivexlog</application>而不是<xref linkend="guc-archive-command">时，
-服务器将持续回收事务日志文件，即使备份没有适当的归档，因为这里没有失败的命令。
-可以通过在文件还未适当的归档时有一个<xref linkend="guc-archive-command">失败来绕开：
-<programlisting>
-archive_command = 'sleep 5 &amp;&amp; test -f /mnt/server/archivedir/%f'
-</programlisting>
-最初的时限是必须的，因为<application>pg_receivexlog</application>使用异步复制工作，
-并且因此稍微落后于主机。
+当使用<application>pg_receivexlog</application>而不是
+<xref linkend="guc-archive-command">作为主WAL备份方式时，强烈建议使用复制槽。
+否则，服务器在事务日志文件被恢复之前可以自由的重利用或删除它们，
+因为它没有任何来自<xref linkend="guc-archive-command">或复制槽的信息，
+说明WAL流多长时间被归档。然而，请注意，如果接收者没有保持获取WAL数据，
+那么复制槽将填满服务器的磁盘空间。
 </para>
 
  </refsect1>

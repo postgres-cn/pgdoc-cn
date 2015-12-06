@@ -367,7 +367,7 @@ should use this new function and no longer do implicit conversion to use the old
    The specific operator that is referenced by an operator expression
    is determined using the following procedure.
    Note that this procedure is indirectly affected
-   by the precedence of the involved operators, since that will determine
+   by the precedence of the operators involved, since that will determine
    which sub-expressions are taken to be the inputs of which operators.
    See <xref linkend="sql-precedence"> for more information.
   </para>
@@ -384,7 +384,7 @@ should use this new function and no longer do implicit conversion to use the old
 -->
 <title>操作符类型解析</title>
 
-<step performance="required">
+<step id="op-resol-select" performance="required">
 <!--
 <para>
 Select the operators to be considered from the
@@ -422,7 +422,7 @@ search path position.
 </substeps>
 </step>
 
-<step performance="required">
+<step id="op-resol-exact-match" performance="required">
 <!--
 <para>
 Check for an operator accepting exactly the input argument types.
@@ -436,7 +436,7 @@ operators considered), use it.
 </para>
 
 <substeps>
-<step performance="optional">
+<step id="op-resol-exact-unknown" performance="optional">
 <!--
 <para>
 If one argument of a binary operator invocation is of the <type>unknown</type> type,
@@ -451,10 +451,23 @@ with an <type>unknown</type> input, will never find a match at this step.
 输入的调用或一个一元带有<type>unknown</type>输入的操作符，将绝不会在此处找到匹配。
 </para>
 </step>
+<step id="op-resol-exact-domain" performance="optional">
+<!--
+<para>
+If one argument of a binary operator invocation is of the <type>unknown</type>
+type and the other is of a domain type, next check to see if there is an
+operator accepting exactly the domain's base type on both sides; if so, use it.
+</para>
+-->
+<para>
+如果二进制操作符调用的一个参数是<type>unknown</type>类型的，其他参数是域类型，
+下一步检查看看是否有一个操作符正好两侧都接受域的基本类型；如果有，则使用它。
+</para>
+</step>
 </substeps>
 </step>
 
-<step performance="required">
+<step id="op-resol-best-match" performance="required">
 <!--
 <para>
 Look for the best match.
@@ -481,16 +494,28 @@ candidate remains, use it; else continue to the next step.
 </para>
 </step>
 <step performance="required">
+<!-- 
+<para>
+If any input argument is of a domain type, treat it as being of the
+domain's base type for all subsequent steps.  This ensures that domains
+act like their base types for purposes of ambiguous-operator resolution.
+</para>
+-->
+<para>
+如果任意输入参数是域类型的，那么在随后的步骤中将其看做是域的基本类型。
+这保证了域像它们的基本类型那样动作，解决了歧义的操作符。
+</para>
+</step>
+<step performance="required">
 <!--
 <para>
 Run through all candidates and keep those with the most exact matches
-on input types.  (Domains are considered the same as their base type
-for this purpose.)  Keep all candidates if none have exact matches.
+on input types.  Keep all candidates if none have exact matches.
 If only one candidate remains, use it; else continue to the next step.
 </para>
 -->
 <para>
-遍历所有候选操作符，保留那些输入类型匹配最准确的。此时，域被看作和他们的基本类型相同。
+遍历所有候选操作符，保留那些输入类型匹配最准确的。
 如果没有一个操作符能被保留，则保留所有候选。如果只剩下一个候选项，则用之，否则继续下一步。
 </para>
 </step>
@@ -539,7 +564,7 @@ If only one candidate remains, use it; else continue to the next step.
 如果没有一个操作符能被保留，则保留所有候选。如果只剩下一个候选项，则用之，否则继续下一步。
 </para>
 </step>
-<step performance="required">
+<step id="op-resol-last-unknown" performance="required">
 <!--
 <para>
 If there are both <type>unknown</type> and known-type arguments, and all
@@ -791,7 +816,8 @@ array inclusion (<type>anyarray</> <literal>&lt;@</> <type>anyarray</>)
 and range inclusion (<type>anyelement</> <literal>&lt;@</> <type>anyrange</>).
 Since none of these polymorphic pseudo-types (see <xref
 linkend="datatype-pseudo">) are considered preferred, the parser cannot
-resolve the ambiguity on that basis.  However, the last resolution rule tells
+resolve the ambiguity on that basis.
+However, <xref linkend="op-resol-last-unknown"> tells
 it to assume that the unknown-type literal is of the same type as the other
 input, that is, integer array.  Now only one of the two operators can match,
 so array inclusion is selected.  (Had range inclusion been selected, we would
@@ -802,11 +828,73 @@ a range literal.)
 但是只有两个可以在左侧接受一个整数数组的操作符是数组包含(<type>anyarray</> <literal>&lt;@</> <type>anyarray</>)
 和范围包含(<type>anyelement</> <literal>&lt;@</> <type>anyrange</>)的。
 因为没有多态的伪类型(参阅<xref linkend="datatype-pseudo">)是首选的，所以解析器不能解决这个基础上的歧义。
-然而，最后一个解析规则告诉我们，假设未知类型的文字是和另外一个输入相同的类型，也就是，整数数组。
+然而，<xref linkend="op-resol-last-unknown">告诉我们，假设未知类型的文字是和另外一个输入相同的类型，也就是，整数数组。
 现在只有两个操作符中的一个可以匹配，所以选择数组包含。（如果我们选择了范围包含，
 我们将得到一个错误，因为字符串没有正确的格式成为范围的文字。）
 </para>
+</example>
 
+<example>
+<!-- 
+<title>Custom Operator on a Domain Type</title>
+-->
+<title>在域类型上自定义操作符</title>
+
+<para>
+<!-- 
+Users sometimes try to declare operators applying just to a domain type.
+This is possible but is not nearly as useful as it might seem, because the
+operator resolution rules are designed to select operators applying to the
+domain's base type.  As an example consider
+-->
+用户有时尝试声明只作用于域类型的操作符。这是可能的，但是没看上去那么有用，
+因为操作符解析规则的设计是选择应用于域的基本类型的操作符。考虑一个例子：
+<screen>
+CREATE DOMAIN mytext AS text CHECK(...);
+CREATE FUNCTION mytext_eq_text (mytext, text) RETURNS boolean AS ...;
+CREATE OPERATOR = (procedure=mytext_eq_text, leftarg=mytext, rightarg=text);
+CREATE TABLE mytable (val mytext);
+
+SELECT * FROM mytable WHERE val = 'foo';
+</screen>
+<!-- 
+This query will not use the custom operator.  The parser will first see if
+there is a <type>mytext</> <literal>=</> <type>mytext</> operator
+(<xref linkend="op-resol-exact-unknown">), which there is not;
+then it will consider the domain's base type <type>text</>, and see if
+there is a <type>text</> <literal>=</> <type>text</> operator
+(<xref linkend="op-resol-exact-domain">), which there is;
+so it resolves the <type>unknown</>-type literal as <type>text</> and
+uses the <type>text</> <literal>=</> <type>text</> operator.
+The only way to get the custom operator to be used is to explicitly cast
+the literal:
+-->
+这个查询将不会使用自定义操作符。解析器首先查看是否有
+<type>mytext</> <literal>=</> <type>mytext</>操作符(<xref linkend="op-resol-exact-unknown">)，
+这里没有；然后它将考虑域的基本类型<type>text</>，并查看是否有
+<type>text</> <literal>=</> <type>text</>操作符(<xref linkend="op-resol-exact-domain">)，
+这里有；所以它将<type>unknown</>类型文字看做<type>text</>并使用
+<type>text</> <literal>=</> <type>text</>操作符。
+使用自定义操作符的唯一方式是明确转换文字：
+<screen>
+SELECT * FROM mytable WHERE val = text 'foo';
+</screen>
+<!-- 
+so that the <type>mytext</> <literal>=</> <type>text</> operator is found
+immediately according to the exact-match rule.  If the best-match rules
+are reached, they actively discriminate against operators on domain types.
+If they did not, such an operator would create too many ambiguous-operator
+failures, because the casting rules always consider a domain as castable
+to or from its base type, and so the domain operator would be considered
+usable in all the same cases as a similarly-named operator on the base type.
+-->
+所以，根据正好匹配的规则，立刻就找到了<type>mytext</> <literal>=</> <type>text</>
+操作符。如果达到了最佳匹配的规则，那么它们积极的排斥域类型上的操作符。
+如果没有的达到，那么这样一个操作符将会创建太多歧义操作符失败，
+因为转换规则总是认为域是可以和它的基本类型相互转换的，
+所以在所有相同的情况下，作为在基本类型上同样命名的操作符，
+域操作符将被认为是可用的。
+</para>
 </example>
 
 </sect1>
@@ -1000,17 +1088,32 @@ candidate remains, use it; else continue to the next step.
 </para>
 </step>
 <step performance="required">
+<!-- 
+<para>
+If any input argument is of a domain type, treat it as being of the
+domain's base type for all subsequent steps.  This ensures that domains
+act like their base types for purposes of ambiguous-function resolution.
+</para>
+-->
+<para>
+如果任意输入参数是域类型，那么在所有随后的步骤中都将其看做是域的基本类型。
+这保证了域像它们的基本类型那样动作，解决了歧义函数。
+If any input argument is of a domain type, treat it as being of the
+domain's base type for all subsequent steps.  This ensures that domains
+act like their base types for purposes of ambiguous-function resolution.
+</para>
+</step>
+<step performance="required">
 <!--
 <para>
 Run through all candidates and keep those with the most exact matches
-on input types.  (Domains are considered the same as their base type
-for this purpose.)  Keep all candidates if none have exact matches.
+on input types.  Keep all candidates if none have exact matches.
 If only one candidate remains, use it; else continue to the next step.
 </para>
 -->
 <para>
-遍历所有候选函数，保留那些输入类型匹配最准确的。此时，
-域被看作和他们的基本类型相同。如果没有一个函数能准确匹配，则保留所有候选。
+遍历所有候选函数，保留那些输入类型匹配最准确的。
+如果没有一个函数能准确匹配，则保留所有候选。
 如果只剩下一个候选项，则用之，否则继续下一步。
 </para>
 </step>
@@ -1468,13 +1571,36 @@ and Related Constructs</title>
 <!--
 <para>
 If all inputs are of the same type, and it is not <type>unknown</type>,
-resolve as that type.  Otherwise, replace any domain types in the list with
-their underlying base types.
+resolve as that type. 
 </para>
 -->
 <para>
 如果所有输入都是相同的类型，并且不是<type>unknown</type>类型，那么解析成这种类型。
-否则，用它们潜在的基本类型替换列表中的域类型。
+</para>
+</step>
+<step performance="required">
+<para>
+<!-- 
+If any input is of a domain type, treat it as being of the
+domain's base type for all subsequent steps.
+-->
+如果任意输入是域类型，那么在所有随后的步骤中都将其看做是域的基本类型。
+  <footnote>
+<!-- 
+   <para>
+    Somewhat like the treatment of domain inputs for operators and
+    functions, this behavior allows a domain type to be preserved through
+    a <literal>UNION</> or similar construct, so long as the user is
+    careful to ensure that all inputs are implicitly or explicitly of that
+    exact type.  Otherwise the domain's base type will be preferred.
+   </para>
+-->
+<para>
+对于操作符和函数，有点像是对待域输入，这个行为允许域类型通过
+<literal>UNION</>或相似的构造保存，只要用户小心的保证所有输入隐式或显式的转换为确切的类型。
+否则将选择域的基本类型。
+</para>
+  </footnote>
 </para>
 </step>
 

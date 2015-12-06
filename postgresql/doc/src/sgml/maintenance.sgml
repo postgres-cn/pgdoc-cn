@@ -186,9 +186,11 @@
      <listitem>
   <!--
       <simpara>To protect against loss of very old data due to
-      <firstterm>transaction ID wraparound</>.</simpara>
+      <firstterm>transaction ID wraparound</> or
+      <firstterm>multixact ID wraparound</>.</simpara>
   -->
-  <simpara>避免因为<firstterm>事务ID重叠</>造成的老数据丢失。</simpara>
+  <simpara>避免因为<firstterm>事务ID重叠</>或<firstterm>包括multixact ID</>
+  造成的老数据丢失。</simpara>
      </listitem>
     </orderedlist>
     <!--
@@ -657,6 +659,11 @@
     <secondary>wraparound</secondary>
    </indexterm>
 
+    <indexterm>
+     <primary>wraparound</primary>
+     <secondary>of transaction IDs</secondary>
+    </indexterm>
+
    <!--
 <para>
     <productname>PostgreSQL</productname>'s MVCC transaction semantics
@@ -688,11 +695,15 @@ XID计数器回到零位，然后突然间所有以前的事务就变成看上�
    <!--
 <para>
     The reason that periodic vacuuming solves the problem is that
-    <productname>PostgreSQL</productname> reserves a special XID
-    as <literal>FrozenXID</>.  This XID does not follow the normal XID
+    <command>VACUUM</> will mark rows as <emphasis>frozen</>, indicating that
+    they were inserted by a transaction which committed sufficiently far in
+    the past that the effects of the inserting transaction is certain to be
+    visible, from an MVCC perspective, to all current and future transactions.
+    <productname>PostgreSQL</> reserves a special XID,
+    <literal>FrozenTransactionId</>, which does not follow the normal XID
     comparison rules and is always considered older
     than every normal XID. Normal XIDs are
-    compared using modulo-2<superscript>31</> arithmetic. This means
+    compared using modulo-2<superscript>32</> arithmetic. This means
     that for every normal XID, there are two billion XIDs that are
     <quote>older</> and two billion that are <quote>newer</>; another
     way to say it is that the normal XID space is circular with no
@@ -701,55 +712,56 @@ XID计数器回到零位，然后突然间所有以前的事务就变成看上�
     the next two billion transactions, no matter which normal XID we are
     talking about. If the row version still exists after more than two billion
     transactions, it will suddenly appear to be in the future. To
-    prevent this, old row versions must be reassigned the XID
-    <literal>FrozenXID</> sometime before they reach the
-    two-billion-transactions-old mark. Once they are assigned this
-    special XID, they will appear to be <quote>in the past</> to all
-    normal transactions regardless of wraparound issues, and so such
-    row versions will be valid until deleted, no matter how long that is.
-    This reassignment of old XIDs is handled by <command>VACUUM</>.
+    prevent this, frozen row versions are treated as if the inserting XID were
+    <literal>FrozenTransactionId</>, so that they will appear to be
+    <quote>in the past</> to all normal transactions regardless of wraparound
+    issues, and so such row versions will be valid until deleted, no matter
+    how long that is.
    </para>
 -->
 <para>
-    周期性的运行VACUUM可以解决这个问题的原因在于<productname>PostgreSQL</productname>
-可以储存特殊的XID(<literal>FrozenXID</>)。这个XID不遵循普通XID比较规则，
+周期性的运行VACUUM可以解决这个问题的原因在于<command>VACUUM</>
+将标记行为<emphasis>frozen</>，表明它们是通过一个事务插入的，
+该事务的提交足够久远，从MVCC的角度到所有当前和未来事务的角度看，
+插入事务的影响确定可以看得到。<productname>PostgreSQL</productname>
+储存特殊的XID（<literal>FrozenTransactionId</>）它不遵循普通XID比较规则，
 总是被认为比任何普通的XID旧。
-普通的XID使用模-2<superscript>31</>算法进行比较。
+普通的XID使用模-2<superscript>32</>算法进行比较。
 这就意味着对于每个普通的XID，
 总是有二十亿个XID是<quote>更旧</>以及二十亿个XID<quote>更新</>；
 表达这个意思的另外一个方法是普通的XID
 空间是没有终点的环。因此，一旦某行带着特定的普通XID创建出来，
 那么该行将在以后的二十亿次事务中表现得是<quote>在过去</>，而不管我们说的是哪个普通XID。
 如果该行在超过二十亿次事务之后仍然存在，那么它就会突然变成在将来的行。
-为了避免数据丢失，老的行必须在到达二十亿次事务的年龄之前的某个时候赋予<literal>FrozenXID</>。
-一旦它被赋予了这个特殊的XID ，那么它们在所有普通事务面前表现为<quote>在过去</>，
-而不管事务ID是否重叠，因此这样的行不管保存多长时间，直到删除之前都会完好。
-这个XID的重新赋值是<command>VACUUM</>控制的。
+为了避免数据丢失，将冻结的行版本看做它们的插入XID是<literal>FrozenTransactionId</>，
+这样它们在所有普通事务面前表现为<quote>在过去</>，而不管重叠问题，
+并且这样的行版本不管存放多长时间都将是合法的，直到删除。
 </para>
 
    <!--
 <para>
     <xref linkend="guc-vacuum-freeze-min-age">
-    controls how old an XID value has to be before it's replaced with
-    <literal>FrozenXID</>.  Larger values of this setting
-    preserve transactional information longer, while smaller values increase
+    controls how old an XID value has to be before its row version will be
+    frozen.  Increasing this setting may avoid unnecessary work if the
+    rows that would otherwise be frozen will soon be modified again,
+    but decreasing this setting increases
     the number of transactions that can elapse before the table must be
     vacuumed again.
    </para>
 -->
 <para>
    <xref linkend="guc-vacuum-freeze-min-age">
-   控制着在它之前更旧的XID将被替换为<literal>FrozenXID</>。
-   较大的设置值防止了事务信息变长，
-   较小的值增加了在表必须被清理之前可以清理事务的数量。
+   控制着在它的行版本将被冻结之前旧的XID值会是多少。
+   如果将要被冻结的行不久之后会被再次修改，那么增加这个设置可以避免不必要的工作，
+   但是减小这个设置增加了在表必须被清理之前可以清理事务的数量。
 </para>
 
    <!--
 <para>
     <command>VACUUM</> normally skips pages that don't have any dead row
     versions, but those pages might still have row versions with old XID
-    values.  To ensure all old XIDs have been replaced by
-    <literal>FrozenXID</>, a scan of the whole table is needed.
+    values.  To ensure all old row versions have been frozen, a
+    scan of the whole table is needed.
     <xref linkend="guc-vacuum-freeze-table-age"> controls when
     <command>VACUUM</> does that: a whole table sweep is forced if
     the table hasn't been fully scanned for <varname>vacuum_freeze_table_age</>
@@ -760,7 +772,7 @@ XID计数器回到零位，然后突然间所有以前的事务就变成看上�
 -->
 <para>
     <command>VACUUM</>通常会忽略没有任何死行版本页面，
-但这些页面可能仍然有旧XID值的行版本。为了确保所有旧的XID已被<literal>FrozenXID</>替换， 
+但这些页面可能仍然有旧XID值的行版本。为了确保所有旧的行版本已经被冻结， 
 需要全表扫描。<xref linkend="guc-vacuum-freeze-table-age">控制 
 <command>VACUUM</>的执行：为了<varname>vacuum_freeze_table_age</>
     减去<varname>vacuum_freeze_min_age</>事务，如果没有完全扫描整个表，
@@ -774,8 +786,8 @@ XID计数器回到零位，然后突然间所有以前的事务就变成看上�
     the time <command>VACUUM</> last scanned the whole table.  If it were to go
     unvacuumed for longer than
     that, data loss could result.  To ensure that this does not happen,
-    autovacuum is invoked on any table that might contain XIDs older than the
-    age specified by the configuration parameter <xref
+    autovacuum is invoked on any table that might contain unfrozen rows with
+    XIDs older than the age specified by the configuration parameter <xref
     linkend="guc-autovacuum-freeze-max-age">.  (This will happen even if
     autovacuum is disabled.)
    </para>
@@ -784,7 +796,7 @@ XID计数器回到零位，然后突然间所有以前的事务就变成看上�
    表在清理之前允许执行的最大事务次数
    是20亿事务减去<command>VACUUM</>上次扫描整个表时的<varname>vacuum_freeze_min_age</>值。
    如果超过这个限制就很可能造成数据丢失。为了保证数据安全，
-   必须在任何可能包含旧于<xref linkend="guc-autovacuum-freeze-max-age">指定的XID的
+   必须在任何可能包含旧于<xref linkend="guc-autovacuum-freeze-max-age">指定的XID的未冻结行的
    表上调用autovacuum。甚至在autovacuum被禁用的情况下也可以调用。
 </para>
 
@@ -876,58 +888,49 @@ XID计数器回到零位，然后突然间所有以前的事务就变成看上�
    <!--
 <para>
     One disadvantage of decreasing <varname>vacuum_freeze_min_age</> is that
-    it might cause <command>VACUUM</> to do useless work: changing a table row's
-    XID to <literal>FrozenXID</> is a waste of time if the row is modified
+    it might cause <command>VACUUM</> to do useless work: freezing a row
+    version is a waste of time if the row is modified
     soon thereafter (causing it to acquire a new XID).  So the setting should
     be large enough that rows are not frozen until they are unlikely to change
-    any more.  Another disadvantage of decreasing this setting is
-    that details about exactly which transaction inserted or modified a
-    row will be lost sooner.  This information sometimes comes in handy,
-    particularly when trying to analyze what went wrong after a database
-    failure.  For these two reasons, decreasing this setting is not
-    recommended except for completely static tables.
+    any more.
    </para>
 -->
 <para>
     减小<varname>vacuum_freeze_min_age</>
 的不利之处是可能导致<command>VACUUM</>做无用功：
-如果行在不久之后就被修改，那么将XID修改为<literal>FrozenXID</>就是在浪费时间，
+如果行在不久之后就被修改，那么冻结一个行版本就是在浪费时间，
 因为它很快就将获得一个新的XID。
 因此这个设置应当足够大以使得行不被过早的冻结。
-减小<varname>vacuum_freeze_min_age</>的另一个不利之处
-是事务插入或修改行的准确细节将会很快丢失。
-这个信息有时迟早会派上用场，
-特别是数据库失败之后分析究竟发生了什么错误的时候。
-因为这两个原因，在完全静态的表上减小这个值是不明智的。
+
 </para>
 
    
 <para>
      <!--
-    To track the age of the oldest XIDs in a database,
+    To track the age of the oldest unfrozen XIDs in a database,
     <command>VACUUM</> stores XID
     statistics in the system tables <structname>pg_class</> and
     <structname>pg_database</>.  In particular,
     the <structfield>relfrozenxid</> column of a table's
     <structname>pg_class</> row contains the freeze cutoff XID that was used
-    by the last whole-table <command>VACUUM</> for that table.  All normal
-    XIDs older than this cutoff XID are guaranteed to have been replaced by
-    <literal>FrozenXID</> within the table.  Similarly,
+    by the last whole-table <command>VACUUM</> for that table.  All rows
+    inserted by transactions with XIDs older than this cutoff XID are
+    guaranteed to have been frozen.  Similarly,
     the <structfield>datfrozenxid</> column of a database's
-    <structname>pg_database</> row is a lower bound on the normal XIDs
+    <structname>pg_database</> row is a lower bound on the unfrozen XIDs
     appearing in that database &mdash; it is just the minimum of the
     per-table <structfield>relfrozenxid</> values within the database.
     A convenient way to
     examine this information is to execute queries such as:
     -->
-为了跟踪数据库中最老的XID寿命，
+为了跟踪数据库中最老的未冻结XID寿命，
 <command>VACUUM</>在系统表<structname>pg_class</>和<structname>pg_database</>
 里存储了XID统计。
 尤其是一个数据库的<structname>pg_class</>行中的<structfield>relfrozenxid</>字段
 包含了最后一个整表<command>VACUUM</>命令使用的冻结终止XID。
-系统保证在该表中所有比这个终止XID老的普通XID都被<literal>FrozenXID</>代替。
+系统保证在所有比这个终止XID老的事务插入的行都被冻结。
 同样，一个数据库的<structname>pg_database</>行中的<structfield>datfrozenxid</>
-字段是普通XID的下界&mdash;
+字段是未冻结XID的下界&mdash;
 它只是数据库中每个表<structfield>relfrozenxid</>的最小值。
 检查这个信息的一个便利方法是执行下面的查询：
 
@@ -1009,27 +1012,122 @@ HINT:  To avoid a database shutdown, execute a database-wide VACUUM in "mydb".
 
 <programlisting>
 ERROR:  database is not accepting commands to avoid wraparound data loss in database "mydb"
-HINT:  Stop the postmaster and use a standalone backend to VACUUM in "mydb".
+HINT:  Stop the postmaster and vacuum that database in single-user mode.
 </programlisting>
     <!--
     The 1-million-transaction safety margin exists to let the
     administrator recover without data loss, by manually executing the
     required <command>VACUUM</> commands.  However, since the system will not
     execute commands once it has gone into the safety shutdown mode,
-    the only way to do this is to stop the server and use a single-user
-    backend to execute <command>VACUUM</>.  The shutdown mode is not enforced
-    by a single-user backend.  See the <xref linkend="app-postgres"> reference
-    page for details about using a single-user backend.
+    the only way to do this is to stop the server and start the server in single-user
+    mode to execute <command>VACUUM</>.  The shutdown mode is not enforced
+    in single-user mode.  See the <xref linkend="app-postgres"> reference
+    page for details about using single-user mode.
 -->
 这个100万的事务安全边界留下来用于让管理员在不丢失数据的情况下进行恢复，
 方法是手工执行所需要的<command>VACUUM</>命令。不过，因为一旦进入了安全关闭模式，
 系统就不能再执行命令，做这件事情的唯一的方法是停止主服务器，
-使用一个单独运行的后端来执行<command>VACUUM</>。关闭模式不会强制于独立运行的后端。
-参阅<xref linkend="app-postgres">手册获取有关使用独立运行后端的细节。
-
+使用单用户模式来执行<command>VACUUM</>。关闭模式不会强制于单用户模式。
+参阅<xref linkend="app-postgres">手册获取有关使用单用户模式的细节。
    </para>
 
+   <sect3 id="vacuum-for-multixact-wraparound">
+    <!-- 
+    <title>Multixacts and Wraparound</title>
+    -->
+    <title>Multixacts 和 Wraparound</title>
 
+    <indexterm>
+     <primary>MultiXactId</primary>
+    </indexterm>
+
+    <indexterm>
+     <primary>wraparound</primary>
+     <secondary>of multixact IDs</secondary>
+    </indexterm>
+
+<!--
+    <para> 
+     <firstterm>Multixact IDs</> are used to support row locking by
+     multiple transactions.  Since there is only limited space in a tuple
+     header to store lock information, that information is encoded as
+     a <quote>multiple transaction ID</>, or multixact ID for short,
+     whenever there is more than one transaction concurrently locking a
+     row.  Information about which transaction IDs are included in any
+     particular multixact ID is stored separately in
+     the <filename>pg_multixact</> subdirectory, and only the multixact ID
+     appears in the <structfield>xmax</> field in the tuple header.
+     Like transaction IDs, multixact IDs are implemented as a
+     32-bit counter and corresponding storage, all of which requires
+     careful aging management, storage cleanup, and wraparound handling.
+     There is a separate storage area which holds the list of members in
+     each multixact, which also uses a 32-bit counter and which must also
+     be managed.
+    </para>
+-->
+<para> 
+<firstterm>Multixact IDs</>用于支持多个事务的行锁。
+因为元组头部只有有限的空间存储锁信息，为了简短，
+该信息编码为一个<quote>多事务ID</>，或multixact ID，
+每当这里有多个事务并发的锁定一行时。关于哪个事务ID包含在任何一个特定的
+multixact ID中的信息是单独存储在<filename>pg_multixact</>子目录中的，
+并且只有出现在<structfield>xmax</>字段中的multixact ID在元组头中。
+类似事务ID，multixact ID是作为32位计数器和相应的存储实现的，
+所有这些都需要小心的老化管理、存储清理和重叠处理。
+有一个单独的存储区域保存每个multixact的成员列表，
+它也使用32位的计数器，并且该计数器也需要管理。
+    </para>
+
+<!-- 
+    <para>
+     During a <command>VACUUM</> table scan, either partial or of the whole
+     table, any multixact ID older than
+     <xref linkend="guc-vacuum-multixact-freeze-min-age">
+     is replaced by a different value, which can be the zero value, a single
+     transaction ID, or a newer multixact ID.  For each table,
+     <structname>pg_class</>.<structfield>relminmxid</> stores the oldest
+     possible multixact ID still appearing in any tuple of that table.
+     If this value is older than
+     <xref linkend="guc-vacuum-multixact-freeze-table-age">, a whole-table
+     scan is forced.  Whole-table <command>VACUUM</> scans, regardless of
+     what causes them, enable advancing the value for that table.
+     Eventually, as all tables in all databases are scanned and their
+     oldest multixact values are advanced, on-disk storage for older
+     multixacts can be removed.
+    </para>
+-->
+<para>
+在<command>VACUUM</>表扫描期间，部分或全表扫描，任何比
+<xref linkend="guc-vacuum-multixact-freeze-min-age">
+老的multixact ID被一个不同的值替换，这个值可以是0、单事务ID或一个较新的multixact ID。
+对于每个表，<structname>pg_class</>.<structfield>relminmxid</>
+存储仍然出现在该表的任何元组中的最老的multixact ID。
+如果该值比<xref linkend="guc-vacuum-multixact-freeze-table-age">老，
+那么强制全表扫描。全表<command>VACUUM</>扫描，忽略原因，推进该表的值。
+最终，扫描了所有数据库中的所有表，并且它们的最老的multixact值都推进了，
+磁盘上最老的multixact可以删除了。
+</para>
+
+<!-- 
+    <para>
+     As a safety device, a whole-table vacuum scan will occur for any table
+     whose multixact-age is greater than
+     <xref linkend="guc-autovacuum-multixact-freeze-max-age">.  Whole-table
+     vacuum scans will also occur progressively for all tables, starting with
+     those that have the oldest multixact-age, if the amount of used member
+     storage space exceeds the amount 50% of the addressible storage space.
+     Both of these kinds of whole-table scans will occur even if autovacuum is
+     nominally disabled.
+    </para>
+-->
+<para>
+作为一个安全策略，multixact-age大于
+<xref linkend="guc-autovacuum-multixact-freeze-max-age">
+的表将发生全表清理扫描。全表清理扫描也将逐渐发生在所有的表中，
+从拥有最老multixact-age的表开始，如果已经使用的成员存储空间超过了地址存储空间的50%。
+这些种类的全表扫描都将发生，虽然自动清理通常是禁用的。
+</para>
+   </sect3>
   </sect2>
 
   <sect2 id="autovacuum">
@@ -1266,15 +1364,20 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
 
    <!--
 <para>
-    When multiple workers are running, the cost limit is
+    When multiple workers are running, the cost delay parameters are
     <quote>balanced</quote> among all the running workers, so that the
-    total impact on the system is the same, regardless of the number
-    of workers actually running.
+    total I/O impact on the system is the same regardless of the number
+    of workers actually running.  However, any workers processing tables whose
+    <literal>autovacuum_vacuum_cost_delay</> or
+    <literal>autovacuum_vacuum_cost_limit</> have been set are not considered
+    in the balancing algorithm.
    </para>
 -->
 <para>
-   当多个工作者正在运行，成本限制在所有正在运行的人中是<quote>balanced</quote>，
-   从而使系统上的总影响是相同的，而不管实际运行人数。
+   当多个工作者正在运行，成本延迟参数在所有正在运行的人中是<quote>balanced</quote>，
+   从而使系统上的总I/O影响是相同的，而不管实际运行工作数。
+   不过，任何已经设置了<literal>autovacuum_vacuum_cost_delay</>或
+   <literal>autovacuum_vacuum_cost_limit</>工作进程表都不考虑在平衡算法中。
 </para>
   </sect2>
  </sect1>
@@ -1293,12 +1396,13 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
   <!--
 <para>
    In some situations it is worthwhile to rebuild indexes periodically
-   with the <xref linkend="sql-reindex">
-   command.
+   with the <xref linkend="sql-reindex"> command or a series of individual
+   rebuilding steps.
   </para>
 -->
 <para>
-   有时候我们值得用<xref linkend="sql-reindex">命令周期性重建索引。
+   有时候我们值得用<xref linkend="sql-reindex">
+   命令或一系列单独的重建步骤周期性重建索引。
 </para>
 
   <!--
@@ -1345,6 +1449,36 @@ analyze threshold = analyze base threshold + analyze scale factor * number of tu
    因为在新建立的索引上，逻辑上连接的页面通常物理上也连接在一起
    (这样的考虑目前并不适用于非B-tree索引)。仅仅从提高访问速度角度出发，
    可能我们也值得周期性的重建索引。 
+</para>
+
+<!-- 
+  <para>
+   <xref linkend="sql-reindex"> can be used safely and easily in all cases.
+   But since the command requires an exclusive table lock, it is
+   often preferable to execute an index rebuild with a sequence of
+   creation and replacement steps.  Index types that support
+   <xref linkend="sql-createindex"> with the <literal>CONCURRENTLY</>
+   option can instead be recreated that way. If that is successful and the
+   resulting index is valid, the original index can then be replaced by
+   the newly built one using a combination of <xref linkend="sql-alterindex">
+   and <xref linkend="sql-dropindex">. When an index is used to enforce
+   uniqueness or other constraints, <xref linkend="sql-altertable"> might
+   be necessary to swap the existing constraint with one enforced by
+   the new index. Review this alternate multi-step rebuild approach
+   carefully before using it as there are limitations on which
+   indexes can be reindexed this way, and errors must be handled.
+  </para>
+-->
+<para>
+<xref linkend="sql-reindex">可以在所有情况下安全简单的使用。
+但是由于该命令请求了一个表上的独占锁，通常最好是用一系列创建和替换步骤执行索引重建。
+支持带有<literal>CONCURRENTLY</>选项的<xref linkend="sql-createindex">
+的索引类型可以用那种方法重建。如果成功了并且生成的索引是有效的，
+那么可以使用<xref linkend="sql-alterindex">和<xref linkend="sql-dropindex">
+的组合，用新建立的索引替换原来的索引。当一个索引用于强制唯一或其他约束时，
+<xref linkend="sql-altertable">用必要交换现有约束和新索引强制的约束。
+在使用它之前，仔细的回顾这个交替多步骤重建方法，
+因为这个方法重建索引有一些限制，并且错误必须被处理掉。
 </para>
  </sect1>
 
