@@ -588,7 +588,7 @@ arow RECORD;
  一个变量声明的一般性语法是:
  
 <synopsis>
-<replaceable>name</replaceable> <optional> CONSTANT </optional> <replaceable>type</replaceable> <optional> COLLATE <replaceable>collation_name</replaceable> </optional> <optional> NOT NULL </optional> <optional> { DEFAULT | := } <replaceable>expression</replaceable> </optional>;
+<replaceable>name</replaceable> <optional> CONSTANT </optional> <replaceable>type</replaceable> <optional> COLLATE <replaceable>collation_name</replaceable> </optional> <optional> NOT NULL </optional> <optional> { DEFAULT | := | = } <replaceable>expression</replaceable> </optional>;
 </synopsis>
      <!--
       The <literal>DEFAULT</> clause, if given, specifies the initial value assigned
@@ -604,6 +604,8 @@ arow RECORD;
       is specified, an assignment of a null value results in a run-time
       error. All variables declared as <literal>NOT NULL</>
       must have a nonnull default value specified.
+      Equal (<literal>=</>) can be used instead of PL/SQL-compliant
+      <literal>:=</>.
   -->
   如果给出了<literal>DEFAULT</>子句，那么它声明了在进入该块的时候赋予该变量的初始值。
   如果没有给出<literal>DEFAULT</>子句，那么该变量初始化为<acronym>SQL</acronym> NULL。
@@ -611,6 +613,7 @@ arow RECORD;
   <literal>COLLATE</>选项声明变量使用的排序规则（参见<xref linkend="plpgsql-declaration-collation">）。
   如果声明了<literal>NOT NULL</>，那么赋予NULL的数值将运行时导致错误。
   所以所有声明为<literal>NOT NULL</>的变量还必须声明一个非空的缺省值。
+  等号(<literal>=</>)可以用来替换PL/SQL兼容的<literal>:=</>。
      </para>
 
      <!--
@@ -681,12 +684,10 @@ END;
 $$ LANGUAGE plpgsql;
 </programlisting>
     <!--
-      The other way, which was the only way available before
-      <productname>PostgreSQL</productname> 8.0, is to explicitly
-      declare an alias, using the declaration syntax
+      The other way is to explicitly declare an alias, using the
+      declaration syntax
     -->
-另外一个方法（也是<productname>PostgreSQL</productname> 8.0以前的唯一的方法），
-是使用声明语法明确声明别名：
+另外一个方法是使用声明语法明确声明别名：
 <synopsis>
 <replaceable>name</replaceable> ALIAS FOR $<replaceable>n</replaceable>;
 </synopsis>
@@ -821,8 +822,8 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION extended_sales(p_itemno int)
 RETURNS TABLE(quantity int, total numeric) AS $$
 BEGIN
-    RETURN QUERY SELECT quantity, quantity * price FROM sales
-                 WHERE itemno = p_itemno;
+    RETURN QUERY SELECT s.quantity, s.quantity * s.price FROM sales AS s
+                 WHERE s.itemno = p_itemno;
 END;
 $$ LANGUAGE plpgsql;
 </programlisting>
@@ -1393,7 +1394,7 @@ PREPARE <replaceable>statement_name</>(integer, integer) AS SELECT $1 &lt; $2;
   给一个<application>PL/pgSQL</application>变量的赋值如下:
  
 <synopsis>
-<replaceable>variable</replaceable> := <replaceable>expression</replaceable>;
+<replaceable>variable</replaceable> { := | = } <replaceable>expression</replaceable>;
 </synopsis>
      <!--
      As explained previously, the expression in such a statement is evaluated
@@ -1402,13 +1403,15 @@ PREPARE <replaceable>statement_name</>(integer, integer) AS SELECT $1 &lt; $2;
      a row value, if the variable is a row or record variable).  The target
      variable can be a simple variable (optionally qualified with a block
      name), a field of a row or record variable, or an element of an array
-     that is a simple variable or field.
+     that is a simple variable or field.  Equal (<literal>=</>) can be
+     used instead of PL/SQL-compliant <literal>:=</>.
  -->
  如上所述，语句中的表达式是用一个发送到主数据库引擎的<command>SELECT</>命令计算的。
  该表达式必须生成单一的数值。表达式必须只能生成一个值
  （如果变量一个行或者record，那么该值可能是一个行）。
  目标变量可以是一个简单的变量（可以用一个block的名字来描述），
  行或record变量的字段，或者是一个简单变量或字段的数组元素。
+ 等号(<literal>=</>)可以用来替代PL/SQL兼容的<literal>:=</>。
     </para>
 
     <!--
@@ -1746,6 +1749,49 @@ END;
    即使没有指定<literal>STRICT</literal>，<application>PL/pgSQL</application>也会在返回多行时报错。
    这是因为没有<literal>ORDER BY</>之类的选项用于确定究竟返回那一行。
 </para>
+
+    <para>
+<!-- 
+     If <literal>print_strict_params</> is enabled for the function,
+     then when an error is thrown because the requirements
+     of <literal>STRICT</> are not met, the <literal>DETAIL</> part of
+     the error message will include information about the parameters
+     passed to the query.
+     You can change the <literal>print_strict_params</>
+     setting for all functions by setting
+     <varname>plpgsql.print_strict_params</>, though only subsequent
+     function compilations will be affected.  You can also enable it
+     on a per-function basis by using a compiler option, for example: 
+-->
+如果为该函数启用了<literal>print_strict_params</>，那么当由于不满足
+<literal>STRICT</>的要求而抛出错误时，那么该错误消息的<literal>DETAIL</>
+部分将包括传递到该查询中的参数的信息。你可以通过设置
+<varname>plpgsql.print_strict_params</>修改所有函数的
+<literal>print_strict_params</>设置，不过只影响随后编译的函数。
+也可以通过使用一个编译器选项在每个函数的底部启用它，例如：
+<programlisting>
+CREATE FUNCTION get_userid(username text) RETURNS int
+AS $$
+#print_strict_params on
+DECLARE
+userid int;
+BEGIN
+    SELECT users.userid INTO STRICT userid
+        FROM users WHERE users.username = get_userid.username;
+    RETURN userid;
+END
+$$ LANGUAGE plpgsql;
+</programlisting>
+<!--
+     On failure, this function might produce an error message such as 
+-->
+一旦失败，这个函数会产生一个下面这样的错误消息：
+<programlisting>
+ERROR:  query returned no rows
+DETAIL:  parameters: $1 = 'nosuchuser'
+CONTEXT:  PL/pgSQL function get_userid(text) line 6 at SQL statement
+</programlisting>
+    </para>
 
     <note>
      <!--
@@ -2252,7 +2298,7 @@ EXECUTE format('UPDATE tbl SET %I = $1 WHERE key = $2', colname)
 有好几种方法可以判断一条命令的效果。
 第一个方法是使用<command>GET DIAGNOSTICS</command>，它的形式如下：
 <synopsis>
-GET <optional> CURRENT </optional> DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item</replaceable> <optional> , ... </optional>;
+GET <optional> CURRENT </optional> DIAGNOSTICS <replaceable>variable</replaceable> { = | := } <replaceable>item</replaceable> <optional> , ... </optional>;
 </synopsis>
     <!--
      This command allows retrieval of system status indicators.  Each
@@ -2266,6 +2312,8 @@ GET <optional> CURRENT </optional> DIAGNOSTICS <replaceable>variable</replaceabl
      <acronym>SQL</acronym> command.  Note that <varname>RESULT_OID</>
      is only useful after an <command>INSERT</command> command into a
      table containing OIDs.
+     Colon-equal (<literal>:=</>) can be used instead of SQL-standard
+     <literal>=</> for <command>GET DIAGNOSTICS</>.
 -->
 这条命令允许检索系统状态标识符。每个<replaceable>item</replaceable>是一个关键字，
 表示一个将要赋予该特定变量的状态值(该变量应该和要接收的数值类型相同)。
@@ -2273,7 +2321,8 @@ GET <optional> CURRENT </optional> DIAGNOSTICS <replaceable>variable</replaceabl
 令发送到<acronym>SQL</acronym>引擎处理的行数量、<varname>RESULT_OID</>，
 最后一条<acronym>SQL</acronym>命令插入的最后一行的OID。
 请注意<varname>RESULT_OID</>只有在一个向包含OID的表中<command>INSERT</command>
-的命令之后才有用。
+的命令之后才有用。<command>GET DIAGNOSTICS</>中冒号等号(<literal>:=</>)
+可以用来替换SQL标准的<literal>=</>。
     </para>
 
     
@@ -4154,7 +4203,7 @@ SELECT merge_db(1, 'dennis');
 
    <sect3 id="plpgsql-exception-diagnostics">
    <!--
-    <title>Obtaining information about an error</title>
+    <title>Obtaining Information About an Error</title>
 -->
 <title>获得有关错误的信息</title>
 
@@ -4200,7 +4249,7 @@ SELECT merge_db(1, 'dennis');
     -->
  在一个异常处理程序中，也可以检索关于使用<command>GET STACKED DIAGNOSTICS</command>命令的当前异常信息，形成了：
 <synopsis>
-GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item</replaceable> <optional> , ... </optional>;
+GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> { = | := } <replaceable>item</replaceable> <optional> , ... </optional>;
 </synopsis>
      <!--
      Each <replaceable>item</replaceable> is a key word identifying a status
@@ -4215,7 +4264,7 @@ GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item<
 
      <table id="plpgsql-exception-diagnostics-values">
  <!--
-      <title>Error diagnostics values</title>
+      <title>Error Diagnostics Values</title>
   -->
   <title>错误诊断值</title>
       <tgroup cols="3">
@@ -4244,7 +4293,7 @@ GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item<
          <entry><literal>COLUMN_NAME</literal></entry>
          <entry>text</entry>
  <!--
-         <entry>the name of column related to exception</entry>
+         <entry>the name of the column related to exception</entry>
  -->
  <entry>与异常相关的列名</entry>
         </row>
@@ -4252,7 +4301,7 @@ GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item<
          <entry><literal>CONSTRAINT_NAME</literal></entry>
          <entry>text</entry>
  <!--
-         <entry>the name of constraint related to exception</entry>
+         <entry>the name of the constraint related to exception</entry>
  -->
  <entry>与异常相关的约束名</entry>
         </row>
@@ -4260,7 +4309,7 @@ GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item<
          <entry><literal>PG_DATATYPE_NAME</literal></entry>
          <entry>text</entry>
  <!--
-         <entry>the name of datatype related to exception</entry>
+         <entry>the name of the data type related to exception</entry>
  -->
  <entry>与异常相关的数据类型名</entry>
         </row>
@@ -4276,7 +4325,7 @@ GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item<
          <entry><literal>TABLE_NAME</literal></entry>
          <entry>text</entry>
  <!--
-         <entry>the name of table related to exception</entry>
+         <entry>the name of the table related to exception</entry>
  -->
  <entry>与异常相关的表名</entry>
         </row>
@@ -4284,7 +4333,7 @@ GET STACKED DIAGNOSTICS <replaceable>variable</replaceable> = <replaceable>item<
          <entry><literal>SCHEMA_NAME</literal></entry>
          <entry>text</entry>
  <!--
-         <entry>the name of schema related to exception</entry>
+         <entry>the name of the schema related to exception</entry>
  -->
  <entry>与异常相关的模式名</entry>
         </row>
@@ -4352,6 +4401,78 @@ END;
     </para>
 
    </sect3>
+  </sect2>
+  
+  <sect2 id="plpgsql-get-diagnostics-context">
+<!-- 
+   <title>Obtaining Current Execution Information</title>
+-->
+   <title>获取当前的执行信息</title>
+
+<!-- 
+   <para>
+    The <command>GET <optional> CURRENT </optional> DIAGNOSTICS</command>
+    command retrieves information about current execution state (whereas
+    the <command>GET STACKED DIAGNOSTICS</command> command discussed above
+    reports information about the execution state as of a previous error).
+    This command has the form:
+   </para>
+-->
+<para>
+<command>GET <optional> CURRENT </optional> DIAGNOSTICS</command>
+命令检索关于当前执行状态的信息（<command>GET STACKED DIAGNOSTICS</command>
+命令讨论关于自前一个错误起的执行状态的报告信息）。
+这个命令有以下形式：
+</para>
+
+<synopsis>
+GET <optional> CURRENT </optional> DIAGNOSTICS <replaceable>variable</replaceable> { = | := } <replaceable>item</replaceable> <optional> , ... </optional>;
+</synopsis>
+
+   <para>
+<!-- 
+    Currently only one information item is supported.  Status
+    item <literal>PG_CONTEXT</> will return a text string with line(s) of
+    text describing the call stack.  The first line refers to the
+    current function and currently executing <command>GET DIAGNOSTICS</command>
+    command.  The second and any subsequent lines refer to calling functions
+    further up the call stack.  For example:
+-->
+目前只支持一个信息项。状态项<literal>PG_CONTEXT</>将返回一个文本字符串，
+文本行描述调用栈。第一行指的是当前的函数和正在执行的
+<command>GET DIAGNOSTICS</command>命令。
+第二行和以后的行比调用函数更深一步的调用堆栈。例如：
+
+<programlisting>
+CREATE OR REPLACE FUNCTION outer_func() RETURNS integer AS $$
+BEGIN
+  RETURN inner_func();
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION inner_func() RETURNS integer AS $$
+DECLARE
+  stack text;
+BEGIN
+  GET DIAGNOSTICS stack = PG_CONTEXT;
+  RAISE NOTICE E'--- Call Stack ---\n%', stack;
+  RETURN 1;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT outer_func();
+
+NOTICE:  --- Call Stack ---
+PL/pgSQL function inner_func() line 5 at GET DIAGNOSTICS
+PL/pgSQL function outer_func() line 3 at RETURN
+CONTEXT:  PL/pgSQL function outer_func() line 3 at RETURN
+ outer_func
+ ------------
+           1
+(1 row)
+</programlisting>
+
+   </para>
   </sect2>
   </sect1>
 
@@ -5552,7 +5673,7 @@ RAISE unique_violation USING MESSAGE = 'Duplicate user ID: ' || user_id;
 
   <sect2 id="plpgsql-dml-trigger">
   <!--
-   <title>Triggers on data changes</title>
+   <title>Triggers on Data Changes</title>
    -->
    <title>对数据变化的触发</title>
 
@@ -6346,7 +6467,7 @@ SELECT * FROM sales_summary_bytime;
 
   <sect2 id="plpgsql-event-trigger">
   <!--
-   <title>Triggers on events</title>
+   <title>Triggers on Events</title>
    -->
    <title>事件触发器</title>
    <!--
@@ -7342,11 +7463,87 @@ a_output := a_output || $$ if v_$$ || referrer_keys.kind || $$ like '$$
   -->
   假设我们只需要在<literal>a_output</literal>里放单引号，因为在使用前它会被重新引号包围。
      </para>
-
     </listitem>
    </varlistentry>
   </variablelist>
 
+  </sect2>
+  <sect2 id="plpgsql-extra-checks">
+<!-- 
+   <title>Additional Compile-time Checks</title>
+-->
+   <title>额外的编译时检查</title>
+
+<!-- 
+   <para>
+    To aid the user in finding instances of simple but common problems before
+    they cause harm, <application>PL/PgSQL</> provides additional
+    <replaceable>checks</>. When enabled, depending on the configuration, they
+    can be used to emit either a <literal>WARNING</> or an <literal>ERROR</>
+    during the compilation of a function. A function which has received
+    a <literal>WARNING</> can be executed without producing further messages,
+    so you are advised to test in a separate development environment.
+   </para>
+-->
+<para>
+为了帮助用户在他们造成伤害之前找到简单但是常见问题的实例，
+<application>PL/PgSQL</>提供了额外的<replaceable>检查</>。
+启用时，根据配置，在函数编译期间发出一个<literal>WARNING</>或者一个<literal>ERROR</>。
+接收到<literal>WARNING</>的函数可以被执行而不产生进一步消息，
+所以建议你在一个单独的开发环境中测试。
+</para>
+
+ <para>
+<!-- 
+  These additional checks are enabled through the configuration variables
+  <varname>plpgsql.extra_warnings</> for warnings and
+  <varname>plpgsql.extra_errors</> for errors. Both can be set either to
+  a comma-separated list of checks, <literal>"none"</> or <literal>"all"</>.
+  The default is <literal>"none"</>. Currently the list of available checks
+  includes only one:
+-->
+这些额外的检查是通过配置变量<varname>plpgsql.extra_warnings</>和
+<varname>plpgsql.extra_errors</>启用警告和错误的。两者都可以设置为逗号分隔的检查列表、
+<literal>"none"</>或者<literal>"all"</>。缺省是<literal>"none"</>。
+目前变量检查列表仅包含一项：
+  <variablelist>
+   <varlistentry>
+    <term><varname>shadowed_variables</varname></term>
+    <listitem>
+<!-- 
+     <para>
+      Checks if a declaration shadows a previously defined variable.
+     </para>
+-->
+<para>
+检查一个声明是否覆盖了以前定义的变量。
+</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+<!-- 
+  The following example shows the effect of <varname>plpgsql.extra_warnings</>
+  set to <varname>shadowed_variables</>:
+-->
+下面的示例显示了<varname>plpgsql.extra_warnings</>设置为
+<varname>shadowed_variables</>时的影响：
+<programlisting>
+SET plpgsql.extra_warnings TO 'shadowed_variables';
+
+CREATE FUNCTION foo(f1 int) RETURNS int AS $$
+DECLARE
+f1 int;
+BEGIN
+RETURN f1;
+END
+$$ LANGUAGE plpgsql;
+WARNING:  variable "f1" shadows a previously defined variable
+LINE 3: f1 int;
+        ^
+CREATE FUNCTION
+</programlisting>
+ </para>
   </sect2>
  </sect1>
 
