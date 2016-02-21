@@ -1,7 +1,9 @@
 <!-- doc/src/sgml/xaggr.sgml -->
 
  <sect1 id="xaggr">
-  <!-- <title>User-defined Aggregates</title> -->
+ <!--
+  <title>User-defined Aggregates</title>
+ -->
 <title>用户定义聚合</title>
   <indexterm zone="xaggr">
    <primary>aggregate function</primary>
@@ -11,29 +13,40 @@
 <!-- 
   <para>
    Aggregate functions  in <productname>PostgreSQL</productname>
-   are expressed in terms of <firstterm>state values</firstterm>
+   are defined in terms of <firstterm>state values</firstterm>
    and <firstterm>state transition functions</firstterm>.
    That is, an aggregate operates using a state value that is updated
    as each successive input row is processed.
    To define a new aggregate
    function, one selects a data type for the state value,
    an initial value for the state, and a state transition
-   function.  The state transition function is just an
-   ordinary function that could also be used outside the
-   context of the aggregate.  A <firstterm>final function</firstterm>
+   function.  The state transition function takes the previous state
+   value and the aggregate's input value(s) for the current row, and
+   returns a new state value.
+   A <firstterm>final function</firstterm>
    can also be specified, in case the desired result of the aggregate
    is different from the data that needs to be kept in the running
-   state value.
+   state value.  The final function takes the last state value
+   and returns whatever is wanted as the aggregate result.
+   In principle, the transition and final functions are just ordinary
+   functions that could also be used outside the context of the
+   aggregate.  (In practice, it's often helpful for performance reasons
+   to create specialized transition functions that can only work when
+   called as part of an aggregate.)
   </para> 
 -->
 <para>
-在<productname>PostgreSQL</productname>里的聚合是用<firstterm>状态值</firstterm>
-和<firstterm>状态转换函数</firstterm>表达的。
+在<productname>PostgreSQL</productname>里的聚合是依据<firstterm>状态值</firstterm>
+和<firstterm>状态转换函数</firstterm>定义的。
 也就是说，聚合操作使用一个随着每个输入行被处理而变化的状态值。
 要定义一个新的聚合函数，就要选择表示状态值的数据类型、状态初始值、状态转换函数。
-该状态转换函数只是一个普通函数，也可以用于聚合的环境之外。
+该状态转换函数接受之前的状态值和聚合的输入值作为当前行，
+并返回一个新的状态值。
 还可以声明一个<firstterm>最终处理函数</firstterm>，
 用于对付期望的聚合结果不同于需要保留在状态值中数据的情况。
+该最终处理函数接受最后的状态值并返回任何想要的作为聚合的结果。
+一般而言，状态和最终函数只是普通函数，也可以用在聚合的外面
+（实际上，创建特殊的只能作为聚合的一部分调用的转换函数通常对性能有帮助）。
 </para>
 <!-- 
   <para>
@@ -62,20 +75,25 @@
 <function>sum</>(求和)是这类聚合的例子。它从零开始，
 依次向"总和"状态值追加当前的记录值。比如，如果要把<function>sum</>聚合用于复数，
 只需要该数据类型的加法函数就行了。该聚合可以这样定义：
-<screen>
+<programlisting>
 CREATE AGGREGATE sum (complex)
 (
     sfunc = complex_add,
     stype = complex,
     initcond = '(0,0)'
 );
-
+</programlisting>
+   <!-- 
+   which we might use like this:
+   -->
+   我们可能会像下面这样使用：
+<programlisting>
 SELECT sum(a) FROM test_complex;
 
    sum
 -----------
  (34,53.9)
-</screen>
+</programlisting>
 
 <!-- 
    (Notice that we are relying on function overloading: there is more than
@@ -89,31 +107,31 @@ SELECT sum(a) FROM test_complex;
 
 <!-- 
   <para>
-   The above definition of <function>sum</function> will return zero (the initial
-   state condition) if there are no nonnull input values.
+   The above definition of <function>sum</function> will return zero
+   (the initial state value) if there are no nonnull input values.
    Perhaps we want to return null in that case instead &mdash; the SQL standard
    expects <function>sum</function> to behave that way.  We can do this simply by
    omitting the <literal>initcond</literal> phrase, so that the initial state
-   condition is null.  Ordinarily this would mean that the <literal>sfunc</literal>
-   would need to check for a null state-condition input.  But for
+   value is null.  Ordinarily this would mean that the <literal>sfunc</literal>
+   would need to check for a null state-value input.  But for
    <function>sum</function> and some other simple aggregates like
    <function>max</> and <function>min</>,
    it is sufficient to insert the first nonnull input value into
    the state variable and then start applying the transition function
    at the second nonnull input value.  <productname>PostgreSQL</productname>
-   will do that automatically if the initial condition is null and
+   will do that automatically if the initial state value is null and
    the transition function is marked <quote>strict</> (i.e., not to be called
    for null inputs).
   </para> 
 -->
 <para>
-如果不存在非 NULL 输入值，上面的<function>sum</function>定义将返回零值(初始状态条件)。
+如果不存在非 NULL 输入值，上面的<function>sum</function>定义将返回零值(初始状态值)。
 要按照 SQL 标准的要求返回 NULL 只需忽略<literal>initcond</literal>
-段就可以实现(这样初始状态条件将变为 NULL)。
-通常这也意味着<literal>sfunc</literal>需要检查 NULL 状态条件输入，不过对于<function>sum</function>，
+段就可以实现(这样初始状态值将变为 NULL)。
+通常这也意味着<literal>sfunc</literal>需要检查 NULL 状态值输入，不过对于<function>sum</function>，
 <function>max</>，<function>min</>这类的简单聚合来说，把第一个非空输入插入到状态值里面，
 然后从第二个非空输入状态值开始使用转换函数就足够了。
-如果初始条件是 NULL 并且转换函数被标记为<quote>strict</>(不能对 NULL 输入调用)，
+如果初始状态值是 NULL 并且转换函数被标记为<quote>strict</>(不能对 NULL 输入调用)，
 <productname>PostgreSQL</productname>就会自动处理这些内容。
 </para>
 <!-- 
@@ -155,17 +173,260 @@ CREATE AGGREGATE avg (float8)
     initcond = '{0,0,0}'
 );
 </programlisting>
+  </para>
 
+  <note>
+   <para>
 <!-- 
-   (<function>float8_accum</> requires a three-element array, not just
+   <function>float8_accum</> requires a three-element array, not just
    two elements, because it accumulates the sum of squares as well as
    the sum and count of the inputs.  This is so that it can be used for
-   some other aggregates besides <function>avg</>.) 
+   some other aggregates as well as <function>avg</>. 
 -->
-（<function>float8_accum</>要求一个三元素数组，而不是两元素，
-因为它累积平方和和输入的总和和计数。这样它就可以在一些除了<function>avg</>
-之外的聚合中使用了。）
+<function>float8_accum</>要求一个三元素数组，而不是两元素，
+因为它累积平方和和输入的总和和计数。这样它就可以在其一些他聚合还有
+<function>avg</>中使用了。
   </para>
+  </note>
+<!-- 
+  <para>
+   Aggregate function calls in SQL allow <literal>DISTINCT</>
+   and <literal>ORDER BY</> options that control which rows are fed
+   to the aggregate's transition function and in what order.  These
+   options are implemented behind the scenes and are not the concern
+   of the aggregate's support functions.
+  </para>
+-->
+<para>
+SQL中的聚合函数调用允许<literal>DISTINCT</>和<literal>ORDER BY</>
+选项控制哪一行以什么顺序传入到聚合的转换函数。
+这些选项是在后台实施的，不是聚合的支持函数所关心的。
+</para>
+<!-- 
+  <para>
+   For further details see the
+   <xref linkend="sql-createaggregate">
+   command.
+  </para>
+-->
+<para>
+   更多信息请查看<xref linkend="sql-createaggregate">命令。
+</para>
+ <sect2 id="xaggr-moving-aggregates">
+  <!-- 
+  <title>Moving-Aggregate Mode</title>
+  -->
+  <title>Moving-Aggregate 模式</title>
+  <indexterm>
+   <!-- 
+   <primary>moving-aggregate mode</primary>
+   -->
+   <primary>moving-aggregate 模式</primary>
+  </indexterm>
+  <indexterm>
+<!-- 
+   <primary>aggregate function</primary>
+   <secondary>moving aggregate</secondary>
+-->
+   <primary>聚合函数</primary>
+   <secondary>移动聚合</secondary>
+  </indexterm>
+<!-- 
+  <para>
+   Aggregate functions can optionally support <firstterm>moving-aggregate
+   mode</>, which allows substantially faster execution of aggregate
+   functions within windows with moving frame starting points.
+   (See <xref linkend="tutorial-window">
+   and <xref linkend="syntax-window-functions"> for information about use of
+   aggregate functions as window functions.)
+   The basic idea is that in addition to a normal <quote>forward</>
+   transition function, the aggregate provides an <firstterm>inverse
+   transition function</>, which allows rows to be removed from the
+   aggregate's running state value when they exit the window frame.
+   For example a <function>sum</> aggregate, which uses addition as the
+   forward transition function, would use subtraction as the inverse
+   transition function.  Without an inverse transition function, the window
+   function mechanism must recalculate the aggregate from scratch each time
+   the frame starting point moves, resulting in run time proportional to the
+   number of input rows times the average frame length.  With an inverse
+   transition function, the run time is only proportional to the number of
+   input rows.
+  </para>
+-->
+<para>
+聚合函数可以选择性支持<firstterm>moving-aggregate模式</>，
+这允许在窗口函数中用移动帧起始点更快的执行聚合函数。
+（参阅<xref linkend="tutorial-window">和<xref linkend="syntax-window-functions">
+获取关于使用聚合函数作为窗口函数的信息。）
+基本思路是除了普通<quote>正向</>转换函数外，聚合还支持一个
+<firstterm>反向转换函数</>，这允许在行退出窗口框架时，
+将它们从聚合的运行状态值中删除。例如，一个<function>sum</>聚合，
+使用加法作为正向转换函数，将使用减法作为反向转换函数。
+没有反向转换函数，窗口函数机制必须在每次帧起始点移动时重新计算该聚合，
+导致运行时间与输入行数量和平均帧长度的乘积成正比。
+有了反向转换函数，运行时间仅与输入行数量成正比。
+</para>
+<!-- 
+  <para>
+   The inverse transition function is passed the current state value and the
+   aggregate input value(s) for the earliest row included in the current
+   state.  It must reconstruct what the state value would have been if the
+   given input row had never been aggregated, but only the rows following
+   it.  This sometimes requires that the forward transition function keep
+   more state than is needed for plain aggregation mode.  Therefore, the
+   moving-aggregate mode uses a completely separate implementation from the
+   plain mode: it has its own state data type, its own forward transition
+   function, and its own final function if needed.  These can be the same as
+   the plain mode's data type and functions, if there is no need for extra
+   state.
+  </para>
+-->
+<para>
+传递当前状态值和聚合输入值给反向转换函数作为包含在当前状态中的最早行。
+如果给定的输入行从未被聚合过，那么它必须重建该状态值，但是仅在该行跟随它的情况下。
+这有时需要正向转换函数持有的状态比纯聚合模式所需的多。因此，
+moving-aggregate模式使用一个与纯模式完全独立的实现：
+它有它自己的状态数据类型，它自己的正向转换函数，和它自己的最终函数（如果需要）。
+如果不需要额外的状态，这些可以与纯模式的数据类型和函数相同。
+</para>
+  <para>
+<!-- 
+   As an example, we could extend the <function>sum</> aggregate given above
+   to support moving-aggregate mode like this:
+-->
+作为一个示例，我们可以扩展上面给出的<function>sum</>聚合，
+支持moving-aggregate模式：
+
+<programlisting>
+CREATE AGGREGATE sum (complex)
+(
+    sfunc = complex_add,
+    stype = complex,
+    initcond = '(0,0)',
+    msfunc = complex_add,
+    minvfunc = complex_sub,
+    mstype = complex,
+    minitcond = '(0,0)'
+);
+</programlisting>
+
+<!-- 
+   The parameters whose names begin with <literal>m</> define the
+   moving-aggregate implementation.  Except for the inverse transition
+   function <literal>minvfunc</>, they correspond to the plain-aggregate
+   parameters without <literal>m</>.
+-->
+名字以<literal>m</>开头的参数定义了moving-aggregate实现。
+除了反向转换函数<literal>minvfunc</>，它们都对应纯聚合中不带<literal>m</>
+的参数。
+  </para>
+<!-- 
+  <para>
+   The forward transition function for moving-aggregate mode is not allowed
+   to return null as the new state value.  If the inverse transition
+   function returns null, this is taken as an indication that the inverse
+   function cannot reverse the state calculation for this particular input,
+   and so the aggregate calculation will be redone from scratch for the
+   current frame starting position.  This convention allows moving-aggregate
+   mode to be used in situations where there are some infrequent cases that
+   are impractical to reverse out of the running state value.  The inverse
+   transition function can <quote>punt</> on these cases, and yet still come
+   out ahead so long as it can work for most cases.  As an example, an
+   aggregate working with floating-point numbers might choose to punt when
+   a <literal>NaN</> (not a number) input has to be removed from the running
+   state value.
+  </para>
+-->
+<para>
+moving-aggregate模式下的正向转换函数是不允许返回null作为新的状态值的。
+如果反向转换函数返回了NULL，这将被当做反向函数不能为这个特殊输入解析状态计算的指示，
+并且因此聚合计算将从当前帧起始位置重做。
+这个约定允许moving-aggregate模式用在一些不常见的不切实际的逆转运行状态值的情况下。
+反向转换函数可以无视这些情况，然后仍然继续，只要它可以为大多数情况工作。
+作为一个示例，当一个<literal>NaN</> (not a number)输入从运行状态值中删除时，
+处理浮点数的聚合可以选择无视。
+</para>
+  <para>
+<!--
+   When writing moving-aggregate support functions, it is important to be
+   sure that the inverse transition function can reconstruct the correct
+   state value exactly.  Otherwise there might be user-visible differences
+   in results depending on whether the moving-aggregate mode is used.
+   An example of an aggregate for which adding an inverse transition
+   function seems easy at first, yet where this requirement cannot be met
+   is <function>sum</> over <type>float4</> or <type>float8</> inputs.  A
+   naive declaration of <function>sum(<type>float8</>)</function> could be
+-->
+在写moving-aggregate支持函数时，确定反向转换函数可以准确的重新构造正确状态值是很重要的。
+否则在结果中可能会出现用户可见的差异，取决于是否启用了moving-aggregate模式。
+添加一个反向转换函数的聚合示例最初看起来是简单的，但是还不能满足
+<type>float4</>或<type>float8</>做<function>sum</>的需求。
+<function>sum(<type>float8</>)</function>的一个天真的声明是
+
+<programlisting>
+CREATE AGGREGATE unsafe_sum (float8)
+(
+    stype = float8,
+    sfunc = float8pl,
+    mstype = float8,
+    msfunc = float8pl,
+    minvfunc = float8mi
+);
+</programlisting>
+
+<!-- 
+   This aggregate, however, can give wildly different results than it would
+   have without the inverse transition function. For example, consider
+-->
+然而，这个聚合在没有反向转换函数的情况下，会鲁莽的给出不同的结果。
+例如，考虑
+
+<programlisting>
+SELECT
+  unsafe_sum(x) OVER (ORDER BY n ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)
+FROM (VALUES (1, 1.0e20::float8),
+             (2, 1.0::float8)) AS v (n,x);
+</programlisting>
+
+<!-- 
+   This query returns <literal>0</> as its second result, rather than the
+   expected answer of <literal>1</>.  The cause is the limited precision of
+   floating-point values: adding <literal>1</> to <literal>1e20</> results
+   in <literal>1e20</> again, and so subtracting <literal>1e20</> from that
+   yields <literal>0</>, not <literal>1</>.  Note that this is a limitation
+   of floating-point arithmetic in general, not a limitation
+   of <productname>PostgreSQL</>.
+-->
+这个查询返回<literal>0</>作为它的第二个结果，而不是预期的回答<literal>1</>。
+原因是受限的浮点值精度：<literal>1</>加<literal>1e20</>结果为<literal>1e20</>，
+<literal>1e20</>减<literal>1</>为<literal>0</>，而不是<literal>1</>。
+请注意，这是通常浮点数算法的一个限制，不只是<productname>PostgreSQL</>的。
+  </para>
+ </sect2>
+
+ <sect2 id="xaggr-polymorphic-aggregates">
+  <!-- 
+  <title>Polymorphic and Variadic Aggregates</title>
+  -->
+  <title>多态和可变聚合</title>
+
+  <indexterm>
+   <!-- 
+   <primary>aggregate function</primary>
+   <secondary>polymorphic</secondary>
+   -->
+   <primary>聚合函数</primary>
+   <secondary>多态的</secondary>
+  </indexterm>
+
+  <indexterm>
+   <!-- 
+   <primary>aggregate function</primary>
+   <secondary>variadic</secondary>
+   -->
+   <primary>聚合函数</primary>
+   <secondary>可变的</secondary>
+  </indexterm>
 
   <para>
 <!-- 
@@ -193,13 +454,13 @@ CREATE AGGREGATE array_accum (anyelement)
 </programlisting>
 
 <!-- 
-   Here, the actual state type for any aggregate call is the array type
+   Here, the actual state type for any given aggregate call is the array type
    having the actual input type as elements.  The behavior of the aggregate
    is to concatenate all the inputs into an array of that type.
    (Note: the built-in aggregate <function>array_agg</> provides similar
    functionality, with better performance than this definition would have.) 
 -->
-这里，任意聚合调用的实际状态类型是和元素输入类型相同的数组类型。
+这里，任意给出的聚合调用的实际状态类型是和元素输入类型相同的数组类型。
 聚合的特征是连接所有的输入到那个类型的数组里。（注意：
 内建的聚合<function>array_agg</>支持相同的功能，并且有比这个定义更好的性能。）
   </para>
@@ -234,6 +495,287 @@ SELECT attrelid::regclass, array_accum(atttypid::regtype)
 
   <para>
 <!-- 
+   Ordinarily, an aggregate function with a polymorphic result type has a
+   polymorphic state type, as in the above example.  This is necessary
+   because otherwise the final function cannot be declared sensibly: it
+   would need to have a polymorphic result type but no polymorphic argument
+   type, which <command>CREATE FUNCTION</> will reject on the grounds that
+   the result type cannot be deduced from a call.  But sometimes it is
+   inconvenient to use a polymorphic state type.  The most common case is
+   where the aggregate support functions are to be written in C and the
+   state type should be declared as <type>internal</> because there is
+   no SQL-level equivalent for it.  To address this case, it is possible to
+   declare the final function as taking extra <quote>dummy</> arguments
+   that match the input arguments of the aggregate.  Such dummy arguments
+   are always passed as null values since no specific value is available when the
+   final function is called.  Their only use is to allow a polymorphic
+   final function's result type to be connected to the aggregate's input
+   type(s).  For example, the definition of the built-in
+   aggregate <function>array_agg</> is equivalent to
+-->
+通常，一个多态结果类型的函数有一个多态的状态类型，就像上面的示例那样。
+这是必须的，否则最终函数不能显示的声明：它必须有一个多态的结果类型，
+但是没有多态的参数类型，<command>CREATE FUNCTION</>
+将会由于结果类型不能推导出来而被拒绝。但是有时使用多态的状态类型是不方便的。
+大多数情况是聚合支持函数是用C写的，状态类型应该被声明为<type>internal</>，
+因为没有相当的SQL级别。为了解决这种情况，声明最终函数接受额外的<quote>假</>
+参数匹配聚合的输入参数是可能的。这样的假变量总是被解析为空值，
+因为在调用最终函数时，没有特定的值是可用的。
+他们唯一的使用是允许多态的最终函数的结果类型连接到聚合的输入类型。
+例如，内建聚合<function>array_agg</>的定义等价于
+
+<programlisting>
+CREATE FUNCTION array_agg_transfn(internal, anyelement)
+  RETURNS internal ...;
+CREATE FUNCTION array_agg_finalfn(internal, anyelement)
+  RETURNS anyarray ...;
+
+CREATE AGGREGATE array_agg (anyelement)
+(
+    sfunc = array_agg_transfn,
+    stype = internal,
+    finalfunc = array_agg_finalfn,
+    finalfunc_extra
+);
+</programlisting>
+
+<!-- 
+   Here, the <literal>finalfunc_extra</> option specifies that the final
+   function receives, in addition to the state value, extra dummy
+   argument(s) corresponding to the aggregate's input argument(s).
+   The extra <type>anyelement</> argument allows the declaration
+   of <function>array_agg_finalfn</> to be valid.
+-->
+这里的<literal>finalfunc_extra</>选项声明最终函数的接收，除了状态值，
+额外的假变量对应于聚合的输入参数。额外的<type>anyelement</>
+参数允许<function>array_agg_finalfn</>的声明是有效的。
+  </para>
+
+<!-- 
+  <para>
+   An aggregate function can be made to accept a varying number of arguments
+   by declaring its last argument as a <literal>VARIADIC</> array, in much
+   the same fashion as for regular functions; see
+   <xref linkend="xfunc-sql-variadic-functions">.  The aggregate's transition
+   function(s) must have the same array type as their last argument.  The
+   transition function(s) typically would also be marked <literal>VARIADIC</>,
+   but this is not strictly required.
+  </para>
+-->
+<para>
+一个聚合函数可以通过声明它的最后一个参数为<literal>VARIADIC</>数组，
+接受可变数量的参数，和常规函数的方式很相似；参阅
+<xref linkend="xfunc-sql-variadic-functions">。
+聚合的转换函数必须和它们最后的参数有相同的数组类型。
+转换函数通常也被标记为<literal>VARIADIC</>，但这不是严格要求的。
+</para>
+
+  <note>
+   <para>
+<!-- 
+    Variadic aggregates are easily misused in connection with
+    the <literal>ORDER BY</> option (see <xref linkend="syntax-aggregates">),
+    since the parser cannot tell whether the wrong number of actual arguments
+    have been given in such a combination.  Keep in mind that everything to
+    the right of <literal>ORDER BY</> is a sort key, not an argument to the
+    aggregate.  For example, in
+-->
+可变聚合很容易在有<literal>ORDER BY</>选项的连接中滥用（参阅
+<xref linkend="syntax-aggregates">），
+因为解析器在这样的结合中很难断定给出的实际参数数量是否正确。
+请记住，<literal>ORDER BY</>右侧的东西是排序键，不是聚合的一个参数。例如：
+<programlisting>
+SELECT myaggregate(a ORDER BY a, b, c) FROM ...
+</programlisting>
+<!-- 
+    the parser will see this as a single aggregate function argument and
+    three sort keys.  However, the user might have intended
+-->
+解析器将视其为一个单个的聚合函数参数和三个排序键。不过，用户可能想要
+<programlisting>
+SELECT myaggregate(a, b, c ORDER BY a) FROM ...
+</programlisting>
+<!-- 
+    If <literal>myaggregate</> is variadic, both these calls could be
+    perfectly valid.
+-->
+如果<literal>myaggregate</>是可变的，那么这些调用都可以是有效的。
+   </para>
+
+<!-- 
+   <para>
+    For the same reason, it's wise to think twice before creating aggregate
+    functions with the same names and different numbers of regular arguments.
+   </para>
+-->
+<para>
+由于相同的原因，在用相同的名字和不同数量的常规参数创建聚合函数前要再三考虑。
+</para>
+  </note>
+
+ </sect2>
+
+ <sect2 id="xaggr-ordered-set-aggregates">
+  <!-- 
+  <title>Ordered-Set Aggregates</title>
+  -->
+  <title>顺序集聚合</title>
+
+  <indexterm>
+   <!-- 
+   <primary>aggregate function</primary>
+   <secondary>ordered set</secondary>
+   -->
+   <primary>聚合函数</primary>
+   <secondary>顺序集</secondary>
+  </indexterm>
+
+  <para>
+<!-- 
+   The aggregates we have been describing so far are <quote>normal</>
+   aggregates.  <productname>PostgreSQL</> also
+   supports <firstterm>ordered-set aggregates</>, which differ from
+   normal aggregates in two key ways.  First, in addition to ordinary
+   aggregated arguments that are evaluated once per input row, an
+   ordered-set aggregate can have <quote>direct</> arguments that are
+   evaluated only once per aggregation operation.  Second, the syntax
+   for the ordinary aggregated arguments specifies a sort ordering
+   for them explicitly.  An ordered-set aggregate is usually
+   used to implement a computation that depends on a specific row
+   ordering, for instance rank or percentile, so that the sort ordering
+   is a required aspect of any call.  For example, the built-in
+   definition of <function>percentile_disc</> is equivalent to:
+-->
+目前为止已经描述过的聚合都是<quote>普通</>聚合。<productname>PostgreSQL</>
+也支持<firstterm>顺序集聚合</>，它与普通聚合主要有两点不同。
+首先，普通聚合的参数每个输入行计算一次，
+顺序集聚合可以拥有<quote>直接</>参数，每个聚合操作仅计算一次。其次，
+普通聚合参数的语法声明为它们明确的声明一个排列顺序。
+顺序集聚合通常用来实现一个依赖于特定行顺序的计算，例如等级或百分比，
+所以排列顺序是任何调用的一个必须方面。例如，内建<function>percentile_disc</>
+的定义等价于：
+
+<programlisting>
+CREATE FUNCTION ordered_set_transition(internal, anyelement)
+  RETURNS internal ...;
+CREATE FUNCTION percentile_disc_final(internal, float8, anyelement)
+  RETURNS anyelement ...;
+
+CREATE AGGREGATE percentile_disc (float8 ORDER BY anyelement)
+(
+    sfunc = ordered_set_transition,
+    stype = internal,
+    finalfunc = percentile_disc_final,
+    finalfunc_extra
+);
+</programlisting>
+
+<!-- 
+   This aggregate takes a <type>float8</> direct argument (the percentile
+   fraction) and an aggregated input that can be of any sortable data type.
+   It could be used to obtain a median household income like this:
+-->
+这个聚合接受一个<type>float8</>直接参数（百分比分数）
+和一个任意可排序数据类型的聚合的输入。它可以用来获取家庭收入中位数：
+
+<programlisting>
+SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
+ percentile_disc
+-----------------
+           50489
+</programlisting>
+
+<!-- 
+   Here, <literal>0.5</> is a direct argument; it would make no sense
+   for the percentile fraction to be a value varying across rows.
+-->
+这里的<literal>0.5</>是一个直接参数；它作为百分比分数在不同的行之间毫无意义。
+  </para>
+
+<!-- 
+  <para>
+   Unlike the case for normal aggregates, the sorting of input rows for
+   an ordered-set aggregate is <emphasis>not</> done behind the scenes,
+   but is the responsibility of the aggregate's support functions.
+   The typical implementation approach is to keep a reference to
+   a <quote>tuplesort</> object in the aggregate's state value, feed the
+   incoming rows into that object, and then complete the sorting and
+   read out the data in the final function.  This design allows the
+   final function to perform special operations such as injecting
+   additional <quote>hypothetical</> rows into the data to be sorted.
+   While normal aggregates can often be implemented with support
+   functions written in <application>PL/pgSQL</application> or another
+   PL language, ordered-set aggregates generally have to be written in
+   C, since their state values aren't definable as any SQL data type.
+   (In the above example, notice that the state value is declared as
+   type <type>internal</> &mdash; this is typical.)
+  </para>
+-->
+<para>
+不像普通聚合的情况，顺序集聚合输入行的排序<emphasis>不是</>
+在后台做的，而是聚合的支持函数的任务。
+典型的实现方法是在聚合的状态值中保持一个对<quote>tuplesort</>对象的引用，
+将进来的行传递给该对象，然后计算排序并读取最终函数中的数据。
+这个设计允许最终函数执行特殊操作，比如注入额外的<quote>假设</>
+行到要被排序的数据。普通聚合经常使用以<application>PL/pgSQL</application>
+或另外PL语言编写的支持函数实现，而顺序集聚合通常必须以C编写，
+因为它们的状态值不能确定为任意SQL数据类型。（在上面的例子中，
+请注意状态值被声明为类型<type>internal</> &mdash; 这是典型的。）
+</para>
+
+<!-- 
+  <para>
+   The state transition function for an ordered-set aggregate receives
+   the current state value plus the aggregated input values for
+   each row, and returns the updated state value.  This is the
+   same definition as for normal aggregates, but note that the direct
+   arguments (if any) are not provided.  The final function receives
+   the last state value, the values of the direct arguments if any,
+   and (if <literal>finalfunc_extra</> is specified) null values
+   corresponding to the aggregated input(s).  As with normal
+   aggregates, <literal>finalfunc_extra</> is only really useful if the
+   aggregate is polymorphic; then the extra dummy argument(s) are needed
+   to connect the final function's result type to the aggregate's input
+   type(s).
+  </para>
+-->
+<para>
+顺序集聚合的状态转换函数为每一行接收当前的状态值和聚合的输入值，
+并返回更新的状态值。这和普通聚合的定义相同，但是请注意，
+直接参数（如果有）是没有提供的。最终函数接收最后一个状态值，
+直接参数的值（如果有），和(如果声明了<literal>finalfunc_extra</>)
+空值对应于聚合的输入。对于普通聚合，<literal>finalfunc_extra</>
+只在聚合是多态的时是真正有用的；
+然后需要额外的假变量连接最终函数的结果类型到聚合的输入类型。
+</para>
+
+<!-- 
+  <para>
+   Currently, ordered-set aggregates cannot be used as window functions,
+   and therefore there is no need for them to support moving-aggregate mode.
+  </para>
+-->
+<para>
+当前，顺序集聚合不能用作窗口函数，并且因此它们不需要支持moving-aggregate模式。
+</para>
+ </sect2>
+
+ <sect2 id="xaggr-support-functions">
+  <!-- 
+  <title>Support Functions for Aggregates</title>
+  -->
+  <title>聚合的支持函数</title>
+
+  <indexterm>
+   <!-- 
+   <primary>aggregate function</primary>
+   <secondary>support functions for</secondary>
+   -->
+   <primary>聚合函数</primary>
+   <secondary>支持函数</secondary>
+  </indexterm>
+  <para>
+<!-- 
    A function written in C can detect that it is being called as an
    aggregate transition or final function by calling
    <function>AggCheckCallContext</>, for example:
@@ -246,30 +788,40 @@ if (AggCheckCallContext(fcinfo, NULL))
 <!-- 
    One reason for checking this is that when it is true for a transition
    function, the first input
-   must be a temporary transition value and can therefore safely be modified
+   must be a temporary state value and can therefore safely be modified
    in-place rather than allocating a new copy.
    See <literal>int8inc()</> for an example.
    (This is the <emphasis>only</>
    case where it is safe for a function to modify a pass-by-reference input.
-   In particular, aggregate final functions should not modify their inputs in
-   any case, because in some cases they will be re-executed on the same
-   final transition value.) 
+   In particular, final functions for normal aggregates must not
+   modify their inputs in any case, because in some cases they will be
+   re-executed on the same final state value.)
 -->
-检查这个的一个原因是，在它对于一个转换函数为真的时候，左边的输入必须是一个临时的转换值，
+检查这个的一个原因是，在它对于一个转换函数为真的时候，左边的输入必须是一个临时的状态值，
 因此可以安全地现场修改，而不用分配新的拷贝。参阅<literal>int8inc()</>的例子。
 （这是函数里<emphasis>唯一</>可以修改输入的传递引用的地方。特别的，
-聚合最终的函数不应该在任何情况下修改他们的输入，
-因为在某些情况下它们将在相同的最终转换值下重复执行。）
+普通聚合的最终函数不应该在任何情况下修改他们的输入，
+因为在某些情况下它们将在相同的最终状态值下重复执行。）
   </para>
 
 <!-- 
   <para>
-   For further details see the
-   <xref linkend="sql-createaggregate">
-   command.
+   Another support routine available to aggregate functions written in C
+   is <function>AggGetAggref</>, which returns the <literal>Aggref</>
+   parse node that defines the aggregate call.  This is mainly useful
+   for ordered-set aggregates, which can inspect the substructure of
+   the <literal>Aggref</> node to find out what sort ordering they are
+   supposed to implement.  Examples can be found
+   in <filename>orderedsetaggs.c</> in the <productname>PostgreSQL</>
+   source code.
   </para> 
 -->
 <para>
-更详细的信息请参考<xref linkend="sql-createaggregate">命令。
+另一个以C编写的聚合函数可用的支持程序是<function>AggGetAggref</>，
+它返回定义聚合调用的<literal>Aggref</>解析节点。
+这主要对顺序集聚合有用，可以检查<literal>Aggref</>节点的子构造，
+以发现它们支持实现哪种排列顺序。可以在<productname>PostgreSQL</>
+源代码的<filename>orderedsetaggs.c</>中找到示例。
 </para>
+ </sect2>
  </sect1>
