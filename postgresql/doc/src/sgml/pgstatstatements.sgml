@@ -39,11 +39,12 @@
 
   <!--
 <para>
-   The statistics gathered by the module are made available via a system view
-   named <structname>pg_stat_statements</>.  This view contains one row for
-   each distinct query, database ID, and user ID (up to the maximum
-   number of distinct statements that the module can track).  The columns
-   of the view are shown in <xref linkend="pgstatstatements-columns">.
+   The statistics gathered by the module are made available via a
+   system view named <structname>pg_stat_statements</>.  This view
+   contains one row for each distinct database ID, user ID and query
+   ID (up to the maximum number of distinct statements that the module
+   can track).  The columns of the view are shown in
+   <xref linkend="pgstatstatements-columns">.
   </para>
 -->
 <para>
@@ -94,14 +95,24 @@
   <entry>执行该语句的数据库的OID</entry>
      </row>
 
-    <row>
+     <row>
+      <entry><structfield>queryid</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry></entry>
+      <!-- 
+      <entry>Internal hash code, computed from the statement's parse tree</entry>
+      -->
+      <entry>内部哈希代码，从声明的分析树中计算而来</entry>
+     </row>
+
+     <row>
       <entry><structfield>query</structfield></entry>
       <entry><type>text</type></entry>
       <entry></entry>
       <!--
-  <entry>Text of a representative statement (up to <xref linkend="guc-track-activity-query-size"> bytes)</entry>
+  <entry>Text of a representative statement</entry>
   -->
-  <entry>有代表性的语句的文本 (多达 <xref linkend="guc-track-activity-query-size"> 字节)</entry>
+  <entry>有代表性的语句的文本</entry>
      </row>
 
      <row>
@@ -268,16 +279,18 @@ Total time the statement spent writing blocks, in milliseconds
 
   <!--
 <para>
-   This view, and the function <function>pg_stat_statements_reset</>,
-   are available only in databases they have been specifically installed into
-   by installing the <literal>pg_stat_statements</> extension.
+   This view, and the functions <function>pg_stat_statements_reset</>
+   and <function>pg_stat_statements</>, are available only in
+   databases they have been specifically installed into by installing
+   the <literal>pg_stat_statements</> extension.
    However, statistics are tracked across all databases of the server
    whenever the <filename>pg_stat_statements</filename> module is loaded
    into the server, regardless of presence of the view.
   </para>
 -->
 <para>
-这个视图和函数<function>pg_stat_statements_reset</>，只有在通过安装
+这个视图和函数<function>pg_stat_statements_reset</>和
+<function>pg_stat_statements</>，只有在通过安装
 <literal>pg_stat_statements</>扩展特别安装到的数据库中可用。
 不过，当<filename>pg_stat_statements</filename>模块加载到服务器中时，
 统计跟踪该服务器中的所有数据库，不管该视图是否存在。
@@ -285,14 +298,15 @@ Total time the statement spent writing blocks, in milliseconds
 
   <!--
 <para>
-   For security reasons, non-superusers are not allowed to see the text of
-   queries executed by other users.  They can see the statistics, however,
-   if the view has been installed in their database.
+   For security reasons, non-superusers are not allowed to see the SQL
+   text or <structfield>queryid</structfield> of queries executed by other users.  They can see
+   the statistics, however, if the view has been installed in their
+   database.
   </para>
 -->
 <para>
-为了安全起见，不允许非超级用户查看其它用户执行的查询的文本。不过，
-如果视图已经安装到他们的数据库中，那么他们可以看到统计。
+为了安全起见，不允许非超级用户查看其它用户执行的查询的SQL文本或<structfield>queryid</structfield>。
+不过，如果视图已经安装到他们的数据库中，那么他们可以看到统计。
 </para>
 
   <!--
@@ -320,14 +334,15 @@ Total time the statement spent writing blocks, in milliseconds
    When a constant's value has been ignored for purposes of matching the
    query to other queries, the constant is replaced by <literal>?</literal>
    in the <structname>pg_stat_statements</> display.  The rest of the query
-   text is that of the first query that had the particular hash value
-   associated with the <structname>pg_stat_statements</> entry.
+   text is that of the first query that had the particular
+   <structfield>queryid</> hash value associated with the
+   <structname>pg_stat_statements</> entry.
   </para>
 -->
 <para>
 当一个常量的值为了匹配其他查询而忽略时，该常量在<structname>pg_stat_statements</>
-的显示中被<literal>?</literal>替代。查询文本的剩余部分是第一个查询特定散列值与
-<structname>pg_stat_statements</>相关条目。
+的显示中被<literal>?</literal>替代。查询文本的剩余部分是第一个查询特定
+<structfield>queryid</>散列值与<structname>pg_stat_statements</>相关条目。
 </para>
 
   <!--
@@ -348,10 +363,11 @@ Total time the statement spent writing blocks, in milliseconds
 
   <!--
 <para>
-   Since the hash value is computed on the post-parse-analysis representation
-   of the queries, the opposite is also possible: queries with identical texts
-   might appear as separate entries, if they have different meanings as a
-   result of factors such as different <varname>search_path</> settings.
+   Since the <structfield>queryid</> hash value is computed on the
+   post-parse-analysis representation of the queries, the opposite is
+   also possible: queries with identical texts might appear as
+   separate entries, if they have different meanings as a result of
+   factors such as different <varname>search_path</> settings.
   </para>
 -->
 <para>
@@ -359,6 +375,63 @@ Total time the statement spent writing blocks, in milliseconds
 带有相同文本的查询可能表现为单独的条目，如果它们因为一个因素的结果有不同的含义，
 比如不同的<varname>search_path</>设置。
 </para>
+
+<!-- 
+  <para>
+   Consumers of <literal>pg_stat_statements</> may wish to use
+   <structfield>queryid</> (perhaps in combination with
+   <structfield>dbid</> and <structfield>userid</>) as a more stable
+   and reliable identifier for each entry than its query text.
+   However, it is important to understand that there are only limited
+   guarantees around the stability of the <structfield>queryid</> hash
+   value.  Since the identifier is derived from the
+   post-parse-analysis tree, its value is a function of, among other
+   things, the internal object identifiers appearing in this representation.
+   This has some counterintuitive implications.  For example,
+   <literal>pg_stat_statements</> will consider two apparently-identical
+   queries to be distinct, if they reference a table that was dropped
+   and recreated between the executions of the two queries.
+   The hashing process is also sensitive to differences in
+   machine architecture and other facets of the platform.
+   Furthermore, it is not safe to assume that <structfield>queryid</>
+   will be stable across major versions of <productname>PostgreSQL</>.
+  </para>
+-->
+<para>
+<literal>pg_stat_statements</>的消耗者可能希望将<structfield>queryid</>
+（可能和<structfield>dbid</>和<structfield>userid</>结合使用）
+用作每个条目更稳定可靠的标识符而不是它的查询文本。
+但是，重要的是要理解<structfield>queryid</>哈希值的稳定性保证是有限的。
+因为标识符来源于post-parse-analysis树，
+它的值是在其他事物之上，出现在这个表示法中的内部对象标识符的一个函数。
+这有一些违背常理。例如，如果在两个查询的执行期间它们引用的表删除之后又重新创建了，
+那么<literal>pg_stat_statements</>将认为这两个看起来相同的查询是不同的。
+哈希过程对机器架构和平台其他方面的不同也是敏感的。
+另外，对<structfield>queryid</>跨<productname>PostgreSQL</>
+的主要版本还是稳定的这种假设是不安全的。
+</para>
+<!-- 
+  <para>
+   As a rule of thumb, <structfield>queryid</> values can be assumed to be
+   stable and comparable only so long as the underlying server version and
+   catalog metadata details stay exactly the same.  Two servers
+   participating in replication based on physical WAL replay can be expected
+   to have identical <structfield>queryid</> values for the same query.
+   However, logical replication schemes do not promise to keep replicas
+   identical in all relevant details, so <structfield>queryid</> will
+   not be a useful identifier for accumulating costs across a set of logical
+   replicas.  If in doubt, direct testing is recommended.
+  </para>
+-->
+<para>
+根据经验，只要底层服务器版本和目录元数据细节保持完全相同，
+<structfield>queryid</>的值就可以假设为稳定和可比较的。
+参与到基于物理WAL重放复制中的两个服务器，对于相同的查询可以预计为有不同的
+<structfield>queryid</>值。不过，逻辑复制模式并不保证复制品在所有相关细节上都相同，
+所以<structfield>queryid</>对于累加一系列逻辑复制的消耗来说不是一个有用的标识符。
+如果有怀疑，建议直接做测试。
+</para>
+
  </sect2>
 
  <sect2>
@@ -369,12 +442,11 @@ Total time the statement spent writing blocks, in milliseconds
 
   <variablelist>
    <varlistentry>
+    <term>
+     <function>pg_stat_statements_reset() returns void</function>
    <indexterm>
     <primary>pg_stat_statements_reset</primary>
    </indexterm>
-
-    <term>
-     <function>pg_stat_statements_reset() returns void</function>
     </term>
 
     <listitem>
@@ -392,6 +464,51 @@ Total time the statement spent writing blocks, in milliseconds
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term>
+     <function>pg_stat_statements(showtext boolean) returns setof record</function>
+     <indexterm>
+      <primary>pg_stat_statements</primary>
+      <secondary>function</secondary>
+     </indexterm>
+    </term>
+
+    <listitem>
+
+<!-- 
+     <para>
+      The <structname>pg_stat_statements</structname> view is defined in
+      terms of a function also named <function>pg_stat_statements</>.
+      It is possible for clients to call
+      the <function>pg_stat_statements</function> function directly, and by
+      specifying <literal>showtext := false</literal> have query text be
+      omitted (that is, the <literal>OUT</literal> argument that corresponds
+      to the view's <structfield>query</> column will return nulls).  This
+      feature is intended to support external tools that might wish to avoid
+      the overhead of repeatedly retrieving query texts of indeterminate
+      length.  Such tools can instead cache the first query text observed
+      for each entry themselves, since that is
+      all <filename>pg_stat_statements</> itself does, and then retrieve
+      query texts only as needed.  Since the server stores query texts in a
+      file, this approach may reduce physical I/O for repeated examination
+      of the <structname>pg_stat_statements</structname> data.
+     </para>
+-->
+<para>
+<structname>pg_stat_statements</structname>视图的定义是为了一个也叫做
+<function>pg_stat_statements</>的函数。客户端可以直接调用
+<function>pg_stat_statements</>函数，并且通过声明
+<literal>showtext := false</literal>省略查询文本（也就是，对应于视图的
+<structfield>query</>字段的<literal>OUT</literal>参数将返回空）。
+这个特性是为了支持想要避免重复检索不确定查询文本长度的总开销的外部工具。
+这样的工具可以为每个条目本身缓存首先看到的查询文本，
+所有<filename>pg_stat_statements</>本身也是这样做的，
+然后只在需要时检索查询文本。因为服务器将查询文本存储在一个文件中，
+所以这个方法可以减少重复检查<structname>pg_stat_statements</structname>
+数据的物理I/O。
+</para>
+    </listitem>
+   </varlistentry>
   </variablelist>
  </sect2>
 
@@ -415,7 +532,7 @@ Total time the statement spent writing blocks, in milliseconds
       in the <structname>pg_stat_statements</> view).  If more distinct
       statements than that are observed, information about the least-executed
       statements is discarded.
-      The default value is 1000.
+      The default value is 5000.
       This parameter can only be set at server start.
      </para>
 -->
@@ -423,7 +540,7 @@ Total time the statement spent writing blocks, in milliseconds
 <varname>pg_stat_statements.max</varname>是该模块追踪语句的最大值
 （也就是，<structname>pg_stat_statements</>视图中的最大行数）。
 如果观察了比这更多的不同的语句，则会抛弃执行最少的语句的信息。
-缺省值是1000。这个参数只能在服务器启动时设置。
+缺省值是5000。这个参数只能在服务器启动时设置。
 </para>
     </listitem>
    </varlistentry>
@@ -508,17 +625,15 @@ Total time the statement spent writing blocks, in milliseconds
 
   <!--
 <para>
-   The module requires additional shared memory amounting to about
-   <varname>pg_stat_statements.max</varname> <literal>*</>
-   <xref linkend="guc-track-activity-query-size"> bytes.  Note that this
+   The module requires additional shared memory proportional to
+   <varname>pg_stat_statements.max</varname>.  Note that this
    memory is consumed whenever the module is loaded, even if
    <varname>pg_stat_statements.track</> is set to <literal>none</>.
   </para>
 -->
 <para>
-该模块需要额外的共享内存总计大约为
-<varname>pg_stat_statements.max</varname> <literal>*</>
-   <xref linkend="guc-track-activity-query-size">字节。请注意，
+该模块需要额外的共享内存与
+<varname>pg_stat_statements.max</varname>成比例。请注意，
 这个内存在该模块加载时被消耗，即使<varname>pg_stat_statements.track</>
 设置为<literal>none</>。
 </para>
