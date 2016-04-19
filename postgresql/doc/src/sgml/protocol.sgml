@@ -417,10 +417,12 @@
         authentication dialog (not described here, part of the
         Kerberos specification) with the server.  If this is
         successful, the server responds with an AuthenticationOk,
-        otherwise it responds with an ErrorResponse.
--->
+        otherwise it responds with an ErrorResponse. This is no
+        longer supported.
+        -->
 现在前端必须与服务器进行一次 KerberosV5 认证对话(是Kerberos规范的一部分，在这里没有描述)。
 如果对话成功，服务器响应一个 AuthenticationOk消息，否则它响应一个 ErrorResponse消息。
+现在已经不再支持这个了。
        </para>
       </listitem>
      </varlistentry>
@@ -1900,32 +1902,68 @@ NoticeResponse 消息有可能是因为外部的活动而生成的；比如，�
 -->
 <title>流复制协议</title>
 
-<para>
 <!--
+<para>
 To initiate streaming replication, the frontend sends the
-<literal>replication</> parameter in the startup message. This tells the
-backend to go into walsender mode, wherein a small set of replication commands
-can be issued instead of SQL statements. Only the simple query protocol can be
-used in walsender mode.
-
+<literal>replication</> parameter in the startup message. A Boolean value
+of <literal>true</> tells the backend to go into walsender mode, wherein a
+small set of replication commands can be issued instead of SQL statements. Only
+the simple query protocol can be used in walsender mode.
+Passing <literal>database</> as the value instructs walsender to connect to
+the database specified in the <literal>dbname</> parameter, which will allow
+the connection to be used for logical replication from that database.
+</para>
+-->
+<para>
+为了初始化流复制，前端需要发送带<literal>replication</>参数的startup消息。
+布尔值<literal>true</>告诉后端进入walsender模式，
+在这个模式下可以发送数量不多的复制命令集而不是通常的SQL命令。
+并且在walsender模式下，只能使用简单查询协议。传递<literal>database</>
+指导walsender连接到在<literal>dbname</>参数中指定的数据库，
+这将允许该连接从那个数据库中进行逻辑复制。
+</para>
+<!-- 
+<para>
+ For the purpose of testing replication commands, you can make a replication
+ connection via <application>psql</application> or any other <literal>libpq</literal>-using
+ tool with a connection string including the <literal>replication</literal> option,
+ e.g.:
+<programlisting>
+psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
+</programlisting>
+ However it is often more useful to use
+ <application>pg_receivexlog</application> (for physical replication) or
+ <application>pg_recvlogical</application> (for logical replication).
+</para>
+-->
+<para>
+为了测试复制命令的目的，可以通过<application>psql</application>
+或者任何其他使用<literal>libpq</literal>的工具和包含<literal>replication</literal>
+选项的连接字符串做一个复制连接，比如：
+<programlisting>
+psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
+</programlisting>
+不过，通常使用<application>pg_receivexlog</application>（用于物理复制）
+或<application>pg_recvlogical</application>（用于逻辑复制）更有用。
+</para>
+<para>
+<!-- 
 The commands accepted in walsender mode are:
 -->
-为了初始化流复制，前端需要发送带<literal>replication</>参数的startup消息。
-这告诉后端进入walsender模式，在这个模式下可以发送数量不多的复制命令集而不是通常的SQL命令。
-并且在walsender模式下，只能使用简单查询协议。
-
 walsender模式下可以接受的命令如下:
 
 <variablelist>
   <varlistentry>
-    <term>IDENTIFY_SYSTEM</term>
+    <term>IDENTIFY_SYSTEM
+     <indexterm><primary>IDENTIFY_SYSTEM</primary></indexterm>
+    </term>
     <listitem>
      <para>
 <!--
       Requests the server to identify itself. Server replies with a result
-      set of a single row, containing three fields:
+      set of a single row, containing four fields:
 -->
-请求服务端标识自己。服务端会应答一个只有一行的结果集，包含3个字段。
+请求服务端标识自己。服务端会应答一个只有一行的结果集，包含4个字段。
      </para>
 
      <para>
@@ -1970,22 +2008,37 @@ walsender模式下可以接受的命令如下:
       <listitem>
       <para>
 <!--
-       Current xlog write location. Useful to get a known location in the
+       Current xlog flush location. Useful to get a known location in the
        transaction log where streaming can start.
 -->
-当前的xlog的写入位置。
+当前的xlog的刷新位置。
 可用于获得在事务日志中流从哪而开始的已知的位置信息。
       </para>
       </listitem>
       </varlistentry>
 
+      <varlistentry>
+      <term>
+       dbname
+      </term>
+      <listitem>
+      <para>
+       <!-- 
+       Database connected to or NULL.
+       -->
+       数据库连接到或者为NULL。
+      </para>
+      </listitem>
+      </varlistentry>
       </variablelist>
      </para>
     </listitem>
   </varlistentry>
 
   <varlistentry>
-    <term>TIMELINE_HISTORY <replaceable class="parameter">tli</replaceable></term>
+    <term>TIMELINE_HISTORY <replaceable class="parameter">tli</replaceable>
+     <indexterm><primary>TIMELINE_HISTORY</primary></indexterm>
+    </term>
     <listitem>
      <para>
 <!--
@@ -2006,9 +2059,9 @@ walsender模式下可以接受的命令如下:
       <listitem>
       <para>
 <!--
-       Filename of the timeline history file, e.g 00000002.history.
+       Filename of the timeline history file, e.g <filename>00000002.history</>.
 -->
-时间线历史文件的文件名，比如00000002.history。
+时间线历史文件的文件名，比如<filename>00000002.history</>。
       </para>
       </listitem>
       </varlistentry>
@@ -2033,22 +2086,93 @@ walsender模式下可以接受的命令如下:
   </varlistentry>
 
     <varlistentry>
-    <term>START_REPLICATION <replaceable class="parameter">XXX/XXX</> TIMELINE <replaceable class="parameter">tli</></term>
+    <term>CREATE_REPLICATION_SLOT <replaceable class="parameter">slot_name</> { <literal>PHYSICAL</> | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> }
+     <indexterm><primary>CREATE_REPLICATION_SLOT</primary></indexterm>
+    </term>
+    <listitem>
+<!-- 
+     <para>
+      Create a physical or logical replication
+      slot. See <xref linkend="streaming-replication-slots"> for more about
+      replication slots.
+     </para>
+-->
+<para>
+创建一个物理或逻辑复制槽。参阅<xref linkend="streaming-replication-slots">
+获取更多关于复制槽的信息。
+</para>
+     <variablelist>
+      <varlistentry>
+       <term><replaceable class="parameter">slot_name</></term>
+       <listitem>
+<!-- 
+         <para>
+          The name of the slot to create. Must be a valid replication slot
+          name (see <xref linkend="streaming-replication-slots-manipulation">).
+         </para>
+-->
+<para>
+要创建的槽的名字。必须是有效的复制槽名称（参阅
+<xref linkend="streaming-replication-slots-manipulation">）。
+</para>
+       </listitem>
+      </varlistentry>
+      <varlistentry>
+       <term><replaceable class="parameter">output_plugin</></term>
+       <listitem>
+<!-- 
+         <para>
+          The name of the output plugin used for logical decoding
+          (see <xref linkend="logicaldecoding-output-plugin">).
+         </para>
+-->
+<para>
+用于逻辑解码的输出插件的名字（参阅
+<xref linkend="logicaldecoding-output-plugin">）。
+</para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term>START_REPLICATION [<literal>SLOT</literal> <replaceable class="parameter">slot_name</>] [<literal>PHYSICAL</literal>] <replaceable class="parameter">XXX/XXX</> [<literal>TIMELINE</literal> <replaceable class="parameter">tli</>]
+     <indexterm><primary>START_REPLICATION</primary></indexterm>
+    </term>
     <listitem>
      <para>
 <!--
       Instructs server to start streaming WAL, starting at
-      WAL position <replaceable class="parameter">XXX/XXX</> on timeline
-      <replaceable class="parameter">tli</>.
-      The server can reply with an error, e.g. if the requested section of WAL
-      has already been recycled. On success, server responds with a
-      CopyBothResponse message, and then starts to stream WAL to the frontend.
+      WAL position <replaceable class="parameter">XXX/XXX</>.
+      If <literal>TIMELINE</literal> option is specified,
+      streaming starts on timeline <replaceable class="parameter">tli</>;
+      otherwise, the server's current timeline is selected. The server can
+      reply with an error, e.g. if the requested section of WAL has already
+      been recycled. On success, server responds with a CopyBothResponse
+      message, and then starts to stream WAL to the frontend.
 -->
-指示服务端从时间线<replaceable class="parameter">tli</>上的WAL位置<replaceable class="parameter">XXX/XXX</>开始WAL流。
+指示服务端从WAL位置<replaceable class="parameter">XXX/XXX</>开始WAL流。
+如果声明了<literal>TIMELINE</literal>选项，则从时间线
+<replaceable class="parameter">tli</>开始流；否则，选择服务器的当前时间线。
 服务端可能会回应一个错误，比如，如果在请求的WAL段已经被回收的情况下。
 如果成功，服务端响应一个CopyBothResponse消息，然后开启到前端的WAL流。
      </para>
 
+<!-- 
+     <para>
+      If a slot's name is provided
+      via <replaceable class="parameter">slot_name</>, it will be updated
+      as replication progresses so that the server knows which WAL segments,
+      and if <varname>hot_standby_feedback</> is on which transactions,
+      are still needed by the standby.
+     </para>
+--> 
+<para>
+如果通过<replaceable class="parameter">slot_name</>提供了槽的名字，
+那么它将作为复制进程被更新，这样服务器就知道了是哪个WAL段，
+和<varname>hot_standby_feedback</>是否是在哪个事务上，仍然被备用服务器所需。
+</para>    
+     
      <para>
 <!--
       If the client requests a timeline that's not the latest, but is part of
@@ -2447,9 +2571,144 @@ WAL数据流的片段。
      </para>
     </listitem>
   </varlistentry>
+  <varlistentry>
+    <term>START_REPLICATION <literal>SLOT</literal> <replaceable class="parameter">slot_name</> <literal>LOGICAL</literal> <replaceable class="parameter">XXX/XXX</> [ ( <replaceable>option_name</replaceable> [<replaceable>option_value</replaceable>] [, ... ] ) ]</term>
+    <listitem>
+<!-- 
+     <para>
+      Instructs server to start streaming WAL for logical replication, starting
+      at WAL position <replaceable class="parameter">XXX/XXX</>. The server can
+      reply with an error, e.g. if the requested section of WAL has already
+      been recycled. On success, server responds with a CopyBothResponse
+      message, and then starts to stream WAL to the frontend.
+     </para>
+-->
+<para>
+指示服务端从WAL位置<replaceable class="parameter">XXX/XXX</>开始WAL流。
+服务端可能会回应一个错误，比如，如果在请求的WAL段已经被回收的情况下。
+如果成功，服务端响应一个CopyBothResponse消息，然后开启到前端的WAL流。
+</para>
+
+<!-- 
+     <para>
+      The messages inside the CopyBothResponse messages are of the same format
+      documented for <literal>START_REPLICATION ... PHYSICAL</literal>.
+     </para>
+-->
+<para>
+CopyBothResponse消息里面的信息的格式<literal>START_REPLICATION ... PHYSICAL</literal>
+所记录的格式相同。
+</para>
+
+<!-- 
+     <para>
+      The output plugin associated with the selected slot is used
+      to process the output for streaming.
+     </para>
+-->
+<para>
+与选定的槽相关的输出插件用来处理流的输出。
+</para>
+
+     <variablelist>
+      <varlistentry>
+       <term><literal>SLOT</literal> <replaceable class="parameter">slot_name</></term>
+       <listitem>
+<!-- 
+         <para>
+          The name of the slot to stream changes from. This parameter is required,
+          and must correspond to an existing logical replication slot created
+          with <literal>CREATE_REPLICATION_SLOT</literal> in
+          <literal>LOGICAL</literal> mode.
+         </para>
+-->
+<para>
+要流动变化的槽的名字。这个参数是必须的，并且必须对应于在<literal>LOGICAL</literal>
+模式下用<literal>CREATE_REPLICATION_SLOT</literal>创建的现有逻辑复制槽。
+</para>
+    </listitem>
+  </varlistentry>
+      <varlistentry>
+       <term><replaceable class="parameter">XXX/XXX</></term>
+       <listitem>
+<!-- 
+        <para>
+         The WAL position to begin streaming at.
+        </para>
+-->
+<para>
+开始流的WAL位置。
+</para>
+       </listitem>
+      </varlistentry>
+      <varlistentry>
+       <term><replaceable class="parameter">option_name</></term>
+       <listitem>
+<!-- 
+        <para>
+         The name of an option passed to the slot's logical decoding plugin.
+        </para>
+-->
+<para>
+传递到槽的逻辑解码插件的选项名。
+</para>
+       </listitem>
+      </varlistentry>
+      <varlistentry>
+       <term><replaceable class="parameter">option_value</></term>
+       <listitem>
+<!-- 
+        <para>
+         Optional value, in the form of a string constant, associated with the
+         specified option.
+        </para>
+-->
+<para>
+可选值，以字符串常量的格式，与指定的选项相关。
+</para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </listitem>
+  </varlistentry>
 
   <varlistentry>
-    <term>BASE_BACKUP [<literal>LABEL</literal> <replaceable>'label'</replaceable>] [<literal>PROGRESS</literal>] [<literal>FAST</literal>] [<literal>WAL</literal>] [<literal>NOWAIT</literal>]</term>
+    <term>DROP_REPLICATION_SLOT <replaceable class="parameter">slot_name</>
+     <indexterm><primary>DROP_REPLICATION_SLOT</primary></indexterm>
+    </term>
+    <listitem>
+<!-- 
+     <para>
+      Drops a replication slot, freeing any reserved server-side resources. If
+      the slot is currently in use by an active connection, this command fails.
+     </para>
+-->
+<para>
+删除一个复制槽，释放任意保留的服务器端资源。如果该槽被一个活动的连接并发使用，
+则该命令失败。
+</para>
+     <variablelist>
+      <varlistentry>
+       <term><replaceable class="parameter">slot_name</></term>
+       <listitem>
+<!-- 
+         <para>
+          The name of the slot to drop.
+         </para>
+-->
+<para>
+要删除的槽的名字。
+</para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+    <term>BASE_BACKUP [<literal>LABEL</literal> <replaceable>'label'</replaceable>] [<literal>PROGRESS</literal>] [<literal>FAST</literal>] [<literal>WAL</literal>] [<literal>NOWAIT</literal>] [<literal>MAX_RATE</literal> <replaceable>rate</replaceable>]
+     <indexterm><primary>BASE_BACKUP</primary></indexterm>
+    </term>
     <listitem>
      <para>
 <!--
@@ -2543,6 +2802,28 @@ WAL数据流的片段。
 指定<literal>NOWAIT</literal>可以把等待和警告无效，让客户端负责确认需要的日志是否有效。
          </para>
          </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>MAX_RATE</literal> <replaceable>rate</></term>
+        <listitem>
+<!-- 
+         <para>
+          Limit (throttle) the maximum amount of data transferred from server
+          to client per unit of time.  The expected unit is kilobytes per second.
+          If this option is specified, the value must either be equal to zero
+          or it must fall within the range from 32 kB through 1 GB (inclusive).
+          If zero is passed or the option is not specified, no restriction is
+          imposed on the transfer.
+         </para>
+-->
+<para>
+限制（节流）单位时间内从服务器传递到客户端的数据的最大数量。
+预期的单位是千字节每秒。如果声明了这个选项，那么值必须要么等于0，
+要么必须介于范围32kB到1GB（包含）之间。如果给出0或者没有声明该选项，
+则在传输上没有限制。
+</para>
+        </listitem>
        </varlistentry>
       </variablelist>
      </para>
@@ -2655,6 +2936,14 @@ tar数据结束后，和开始位置的形式相同，是包含备份终了位�
        <listitem>
         <para>
 <!--
+         various temporary files created during the operation of the PostgreSQL server
+-->
+在PostgreSQL服务器操作期间创建的各种临时文件。
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+<!--
          <filename>pg_xlog</>, including subdirectories. If the backup is run
          with WAL files included, a synthesized version of <filename>pg_xlog</filename> will be
          included, but it will only contain the files necessary for the
@@ -2663,6 +2952,29 @@ tar数据结束后，和开始位置的形式相同，是包含备份终了位�
 <filename>pg_xlog</>，包含子目录。如果备份是包含WAL执行的，将包含一个合成版的<filename>pg_xlog</filename>。
 它只包含对于备份工作必须的文件而没有其余的内容。
         </para>
+       </listitem>
+       <listitem>
+<!-- 
+        <para>
+         <filename>pg_replslot</> is copied as an empty directory.
+        </para>
+-->
+<para>
+<filename>pg_replslot</>是作为空目录拷贝的。
+</para>
+       </listitem>
+       <listitem>
+<!-- 
+        <para>
+         Files other than regular files and directories, such as symbolic
+         links and special device files, are skipped.  (Symbolic links
+         in <filename>pg_tblspc</filename> are maintained.)
+        </para>
+-->
+<para>
+跳过除了普通文件和目录之外的文件，比如符号连接和特殊驱动文件。
+（维护在<filename>pg_tblspc</filename>中的符号连接。）
+</para>
        </listitem>
       </itemizedlist>
 <!--
@@ -6290,7 +6602,8 @@ message.
 <para>
 <!--
         Table name: if the error was associated with a specific table, the
-        name of the table.  (Refer to the schema name field for the name of the table's schema.)
+        name of the table.  (Refer to the schema name field for the name of
+        the table's schema.)
 -->
 表名：如果错误和一个特定的表相关，则是这个表的名字。
 （表的模式名参考模式名字段）
@@ -6306,7 +6619,7 @@ message.
 <para>
 <!--
         Column name: if the error was associated with a specific table column,
-        the name of the column.  (Refer to the schema table name fields to
+        the name of the column.  (Refer to the schema and table name fields to
         identify the table.)
 -->
 列名:如果错误和一个特定的列相关，则是这个列的名字。
