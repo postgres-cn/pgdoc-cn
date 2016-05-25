@@ -1,228 +1,49 @@
 <!-- doc/src/sgml/indexam.sgml -->
 
 <chapter id="indexam">
-<!--
- <title>Index Access Method Interface Definition</title>
--->
  <title>索引访问方法接口定义</title>
 
   <para>
-<!--
-   This chapter defines the interface between the core
-   <productname>PostgreSQL</productname> system and <firstterm>index access
-   methods</>, which manage individual index types.  The core system
-   knows nothing about indexes beyond what is specified here, so it is
-   possible to develop entirely new index types by writing add-on code.
--->
-本章定义<productname>PostgreSQL</productname>核心系统和<firstterm>索引访问方法</>
-之间的接口，后者管理独立的索引类型。
-除了在这里声明的东西之外，核心系统对索引一无所知，因此可以通过书写累加上来的代码，开发一种完全新的索引类型。
+   本章定义核心<productname>PostgreSQL</productname>系统和管理个别索引类型的<firstterm>索引访问方法</>之间的接口。除 了在这里指定的内容之外，核心系统对索引一无所知，因此可以通过编写附加代码来开发全新的索引类型。
   </para>
 
   <para>
-<!--
-   All indexes in <productname>PostgreSQL</productname> are what are known
-   technically as <firstterm>secondary indexes</>; that is, the index is
-   physically separate from the table file that it describes.  Each index
-   is stored as its own physical <firstterm>relation</> and so is described
-   by an entry in the <structname>pg_class</> catalog.  The contents of an
-   index are entirely under the control of its index access method.  In
-   practice, all index access methods divide indexes into standard-size
-   pages so that they can use the regular storage manager and buffer manager
-   to access the index contents.  (All the existing index access methods
-   furthermore use the standard page layout described in <xref
-   linkend="storage-page-layout">, and they all use the same format for index
-   tuple headers; but these decisions are not forced on an access method.)
--->
-<productname>PostgreSQL</productname>里的所有索引技术上都叫做
-<firstterm>从属索引</>，也就是说，索引在物理上是与它描述的表文件分离的。
-每个索引是以其自己的物理<firstterm>关系</>的方式存储的，因此它们也在<structname>pg_class</>系统表里面有记录描述。
-一个索引的内容是完全在其索引访问方法的控制之下的。
-实际上，所有索引访问方法都把索引分裂成标准大小的页面，这样他们就可以使用普通的存储管理器和缓冲区管理器来访问索引的内容了。
-(所有现有的索引访问方法更是使用<xref linkend="storage-page-layout">
-里面描述的标准的页面布局，并且索引行头都使用同样的格式；但是这些东西都不是强制访问方法执行的。
-也就是说必要的话你可以不用这些标准格式。)
+   <productname>PostgreSQL</productname>中所有的索引在技术上都叫做<firstterm>二级索引</>。也就是说，索引在物理上与它描述的表文件分离。每个索引被存储为它自己的物理<firstterm>关系</>并且被<structname>pg_class</>目录中的一个项所描述。一个索引的内容完全受到其索引访问方法控制。实际上，所有索引访问方法都把索引划分成标准大小的页面， 这样它们就可以使用常规的存储管理器和缓冲区管理器来访问索引内容（所有现有的索引访问方法还使用<xref linkend="storage-page-layout">中描述的标准页面布局，并且它们都对索引元组头部使用相同的格式；但是这些决定都不是强制在访问方法上的）。
   </para>
 
   <para>
-<!--
-   An index is effectively a mapping from some data key values to
-   <firstterm>tuple identifiers</>, or <acronym>TIDs</>, of row versions
-   (tuples) in the index's parent table.  A TID consists of a
-   block number and an item number within that block (see <xref
-   linkend="storage-page-layout">).  This is sufficient
-   information to fetch a particular row version from the table.
-   Indexes are not directly aware that under MVCC, there might be multiple
-   extant versions of the same logical row; to an index, each tuple is
-   an independent object that needs its own index entry.  Thus, an
-   update of a row always creates all-new index entries for the row, even if
-   the key values did not change.  (HOT tuples are an exception to this
-   statement; but indexes do not deal with those, either.)  Index entries for
-   dead tuples are reclaimed (by vacuuming) when the dead tuples themselves
-   are reclaimed.
--->
-索引实际上是一些数据的键值与索引的父表中的行版本(元组)的<firstterm>行标识符</>或<acronym>TID</>之间的映射。
-一个 TID 由一个块号和一个该块内的项编号组成(参阅<xref linkend="storage-page-layout">)。
-这些就是从该表中抓取某个特定行版本所需的足够的信息。
-索引并不直接知道在 MVCC 下，同一个逻辑行可能有多个现存的版本；对于索引而言，每个元组都是一个独立的对象，都需要自己的索引项。
-因此，对一行的更新总是为该行创建全新的索引项，即使键值没有改变也如此（HOT元组是个例外，但索引并不处理这些）。
-已经废弃的元组的索引项是在废弃元组自己被回收的时候回收(通过vacuum)。
+   索引实际上是一些数据键值与索引父表中行版本（元组）的<firstterm>元组标识符</>或<acronym>TIDs</>之间的映射。一个 TID 由一个块号和一个块内的项编号组成（见<xref linkend="storage-page-layout">）。 这对于从表中取一个特定行就足够了。索引并不直接知道在 MVCC下，同一个逻辑行可能有多个现存的版本；对于索引而言，每个 行都是一个独立的对象，都需要自己的索引项。因此，对一行的更新总是为该行创建全新的索引项，即使键值没有改变（HOT 元组对这段陈述来说是个异常，但是索引也不会处理这些）。死亡元组的索引项将在随着死亡元组的回收而被回收（通过清理）。
   </para>
 
  <sect1 id="index-catalog">
-<!--
-  <title>Catalog Entries for Indexes</title>
--->
-  <title>索引的系统表记录</title>
+  <title>索引的目录项</title>
 
   <para>
-<!--
-   Each index access method is described by a row in the
-   <structname>pg_am</structname> system catalog (see
-   <xref linkend="catalog-pg-am">).  The principal contents of a
-   <structname>pg_am</structname> row are references to
-   <link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>
-   entries that identify the index access
-   functions supplied by the access method.  The APIs for these functions
-   are defined later in this chapter.  In addition, the
-   <structname>pg_am</structname> row specifies a few fixed properties of
-   the access method, such as whether it can support multicolumn indexes.
-   There is not currently any special support
-   for creating or deleting <structname>pg_am</structname> entries;
-   anyone able to write a new access method is expected to be competent
-   to insert an appropriate row for themselves.
--->
-每个索引访问方法都在系统表<structname>pg_am</structname>里面用一行来描述(参阅<xref linkend="catalog-pg-am">)。
-一个<structname>pg_am</structname>行的主要内容是引用<link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>
-里面的记录，用来标识索引访问方法提供的索引访问函数。
-这些函数的接口(API)在本章后面描述。另外，<structname>pg_am</structname>的数据行声明了几个索引访问方法的固定属性，比如，它是否支持多字段索引。
-目前还没有创建、删除<structname>pg_am</structname>记录的特殊支持；任何想写这么一个新的访问方法的人都需要能够自己向这个表里面插入合适的新行。
+   每个索引访问方法都在系统目录<structname>pg_am</structname>中用一行来描述（见<xref linkend="catalog-pg-am">）。一个 <structname>pg_am</structname>行的主要内容是引用<link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>中的项，它们标识索引访问方法提供的索引 访问函数。这些函数的 API 在本章稍后的部分中描述。另外，<structname>pg_am</structname>行指定了几个索引访问方法的固定属性，例如它是否 支持多列索引。目前还没有对创建或删除<structname>pg_am</structname>项提供特殊支持；任何能够编写一种新访问方法的人都需要能够为他们自己插入一个合适的行。
   </para>
 
   <para>
-<!--
-   To be useful, an index access method must also have one or more
-   <firstterm>operator families</> and
-   <firstterm>operator classes</> defined in
-   <link linkend="catalog-pg-opfamily"><structname>pg_opfamily</structname></link>,
-   <link linkend="catalog-pg-opclass"><structname>pg_opclass</structname></link>,
-   <link linkend="catalog-pg-amop"><structname>pg_amop</structname></link>, and
-   <link linkend="catalog-pg-amproc"><structname>pg_amproc</structname></link>.
-   These entries allow the planner
-   to determine what kinds of query qualifications can be used with
-   indexes of this access method.  Operator families and classes are described
-   in <xref linkend="xindex">, which is prerequisite material for reading
-   this chapter.
--->
-要想有真正用处，一个索引访问方法还必须有一个或多个<firstterm>操作符族</>和<firstterm>操作符类</>，定义在
-<link linkend="catalog-pg-opfamily"><structname>pg_opfamily</structname></link>, 
-<link linkend="catalog-pg-opclass"><structname>pg_opclass</structname></link>, 
-<link linkend="catalog-pg-amop"><structname>pg_amop</structname></link>和
-<link linkend="catalog-pg-amproc"><structname>pg_amproc</structname></link>里面。
-这些记录允许规划器判断哪些查询的条件可以适用于用这个索引访问方法创建的索引。
-操作符族和操作符类在<xref linkend="xindex">里面定义，是读取本章的前提之一。
+   要想真正有用，一个索引访问方法还必须有一个或多个定义在<link linkend="catalog-pg-opfamily"><structname>pg_opfamily</structname></link>、
+   <link linkend="catalog-pg-opclass"><structname>pg_opclass</structname></link>、
+   <link linkend="catalog-pg-amop"><structname>pg_amop</structname></link>和
+   <link linkend="catalog-pg-amproc"><structname>pg_amproc</structname></link>中的<firstterm>操作符族</>和<firstterm>操作符类</>。这些项允许规划器判断哪种查询条件适用于这个索引访问方法的索引。操作符族和类在<xref linkend="xindex">中描述，它是阅读本章所需的前导材料。
   </para>
 
   <para>
-<!--
-   An individual index is defined by a
-   <link linkend="catalog-pg-class"><structname>pg_class</structname></link>
-   entry that describes it as a physical relation, plus a
-   <link linkend="catalog-pg-index"><structname>pg_index</structname></link>
-   entry that shows the logical content of the index &mdash; that is, the set
-   of index columns it has and the semantics of those columns, as captured by
-   the associated operator classes.  The index columns (key values) can be
-   either simple columns of the underlying table or expressions over the table
-   rows.  The index access method normally has no interest in where the index
-   key values come from (it is always handed precomputed key values) but it
-   will be very interested in the operator class information in
-   <structname>pg_index</structname>.  Both of these catalog entries can be
-   accessed as part of the <structname>Relation</> data structure that is
-   passed to all operations on the index.
--->
-一个独立的索引是由一行 <link linkend="catalog-pg-class"><structname>pg_class</structname></link>
-记录以物理关系的方式描述的，加上一个<link linkend="catalog-pg-index"><structname>pg_index</structname></link>
-行，表示该索引的逻辑内容 &mdash;也就是说，它所拥有的索引字段集，以及被相关的操作符类捕获的这些字段的语义。
-索引字段(键值)可以是下层表的字段，也可以是该表的数据行上的表达式。
-索引访问方法通常不关心索引的键值来自哪里(它总是操作经过预计算的键值)，但是它会对<structname>pg_index</structname>里面的操作符类信息很感兴趣。
-所有这些系统表记录都可以当作<structname>Relation</>数据结构的一部分访问，这个数据结构会被传递到对该索引的所有操作上。
+   一个独立的索引是由一个<link linkend="catalog-pg-class"><structname>pg_class</structname></link>项定义的，该项描述索引为一个物理关系。还要加上一个<link linkend="catalog-pg-index"><structname>pg_index</structname></link>项来显示索引的逻辑内容 &mdash; 也就是说，它所拥有的索引列集以及这些列的语义是被相关操作符类刻画的。索引列（键值）可以是底层表的 简单列，也可以是该表行上的表达式。索引访问方法通常不关心索引的键值来自那里（它总是操作预计算过的键值），但是它会对<structname>pg_index</structname>中的操作符类信息很感兴趣。所有这些目录项都可以被当作<structname>关系</>数据结构的一部分访问，这个数据结构会被传递给索引上的所有操作。
   </para>
 
   <para>
-<!--
-   Some of the flag columns of <structname>pg_am</structname> have nonobvious
-   implications.  The requirements of <structfield>amcanunique</structfield>
-   are discussed in <xref linkend="index-unique-checks">.
-   The <structfield>amcanmulticol</structfield> flag asserts that the
-   access method supports multicolumn indexes, while
-   <structfield>amoptionalkey</structfield> asserts that it allows scans
-   where no indexable restriction clause is given for the first index column.
-   When <structfield>amcanmulticol</structfield> is false,
-   <structfield>amoptionalkey</structfield> essentially says whether the
-   access method supports full-index scans without any restriction clause.
-   Access methods that support multiple index columns <emphasis>must</>
-   support scans that omit restrictions on any or all of the columns after
-   the first; however they are permitted to require some restriction to
-   appear for the first index column, and this is signaled by setting
-   <structfield>amoptionalkey</structfield> false.
-   One reason that an index AM might set
-   <structfield>amoptionalkey</structfield> false is if it doesn't index
-   null values.  Since most indexable operators are
-   strict and hence cannot return true for null inputs,
-   it is at first sight attractive to not store index entries for null values:
-   they could never be returned by an index scan anyway.  However, this
-   argument fails when an index scan has no restriction clause for a given
-   index column.  In practice this means that
-   indexes that have <structfield>amoptionalkey</structfield> true must
-   index nulls, since the planner might decide to use such an index
-   with no scan keys at all.  A related restriction is that an index
-   access method that supports multiple index columns <emphasis>must</>
-   support indexing null values in columns after the first, because the planner
-   will assume the index can be used for queries that do not restrict
-   these columns.  For example, consider an index on (a,b) and a query with
-   <literal>WHERE a = 4</literal>.  The system will assume the index can be
-   used to scan for rows with <literal>a = 4</literal>, which is wrong if the
-   index omits rows where <literal>b</> is null.
-   It is, however, OK to omit rows where the first indexed column is null.
-   An index access method that does index nulls may also set
-   <structfield>amsearchnulls</structfield>, indicating that it supports
-   <literal>IS NULL</> and <literal>IS NOT NULL</> clauses as search
-   conditions.
--->
-<structname>pg_am</structname>中的有些标志字段的含义并不那么直观。
-<structfield>amcanunique</structfield>的需求在<xref linkend="index-unique-checks">里讨论，
-<structfield>amcanmulticol</structfield>标志断言该索引访问方法支持多字段索引，
-<structfield>amoptionalkey</structfield>断言它允许对那种在第一个索引字段上没有给出可索引限制子句的扫描。
-如果<structfield>amcanmulticol</structfield>为假，那么<structfield>amoptionalkey</structfield>
-实际上说的是该访问方法是否允许不带限制子句的全索引扫描。
-那些支持多字段索引的访问访法必须支持那些在省略了除第一个字段以外的其它字段的约束的扫描；
-不过，系统允许这些访问访法要求在第一个字段上出现一些限制，这一点是通过把 amoptionalkey 设置为假来实现的。
-一个访问访法可能设置<structfield>amoptionalkey</structfield>为假,如果它不索引NULL值的话。
-因为大多数可以索引的操作符都是严格的，因此不能对 NULL 输入返回 TRUE ，所以，第一眼看见会觉得不为 NULL 存储索引记录的想法很吸引人：因为他们不可能被一个索引扫描返回。
-不过，这个想法在一个给出的索引字段上没有限制子句的索引扫描的情况下就不行了；这样的扫描应该包括 NULL 行。
-实际上，这意味着设置了<structfield>amoptionalkey</structfield>为真的索引必须索引 NULL值 ，因为规划器可能会决定在根本没有扫描键字的时候使用这样的索引。
-这样的索引必须可以在完全没有扫描键字的情况下运行。
-另外一个限制是一个支持多字段索引的索引访问方法<emphasis>必须</>索引第一个字段后面的字段的 NULL值，因为规划器会认为这个索引可以用于那些没有限制这些字段的查询。
-比如，假设有个在(a,b)上的索引，而一个查询的条件是<literal>WHERE a = 4</literal>。系统会认为这个索引可以用于扫描<literal>a = 4</literal>的数据行，如果索引忽略了<literal>b</>为空的数据行，那么就是错误的。
-不过，如果第一个索引字段值是空，那么忽略它是 OK 的。
-一个索引NULL值的索引访问方法可能会设置<structfield>amsearchnulls</structfield>，
-表明它支持<literal>IS NULL</> 和 <literal>IS NOT NULL</>子句作为搜索条件。
+   <structname>pg_am</structname>中的有些标志列的含义并不那么直观。<structfield>amcanunique</structfield>的要求在<xref linkend="index-unique-checks">中讨论。<structfield>amcanmulticol</structfield>标志断言该索引访问方法支持多列索引， <structfield>amoptionalkey</structfield>断言它允许对那种在第一个索引列上没有给出可索引限制子句的扫描。如果<structfield>amcanmulticol</structfield>为假，那么<structfield>amoptionalkey</structfield>实际上说的是该访问方法是否允许不带限制子句的全索引扫描。 那些支持多索引列的访问方法<emphasis>必须</>支持那些在省略了除第一个列之外的任何或所有其它列上约束的扫描；不过，它们被允许去要求在第一个列上出现一些限制，并且这一点是以把<structfield>amoptionalkey</structfield>设置为假作为标志的。一个索引 AM 可能将<structfield>amoptionalkey</structfield>设置为假的一种原因是，如果它不索引空值。因为大多数可索引的操作符都是严格的并且因此不能对空输入返回真，所以不为空值存储索引项咋看上去很吸引人：因为它们不 可能被一个索引扫描返回。不过，当一个索引扫描对于一个给定索引列上没有约束子句时，这种讨论就不成立了。实际上，这意 味着设置了<structfield>amoptionalkey</structfield>为真的索引必须索引空值，因为规划器可能会决定在根本没有扫描键的时候使用这样的索引。一个相关的限制是一个支持 多索引列的索引访问方法<emphasis>必须</>支持索引第一列之后的列中的空值，因 为规划器会认为这个索引可以用于在那些列上没有限制的查询。例如，考虑一个在(a,b)上的索引和一个有<literal>WHERE a = 4</literal>的查询。系统会认为该索引可以用于扫描 <literal>a = 4</literal>的行， 如果索引忽略了 b 为空的行，那么就是错误的。不过，忽略那些在第一个索引列上值为空的行是 OK 的。一个索引空的索引访问方法可能也会设置<structfield>amsearchnulls</structfield>，表明它支持将<literal>IS NULL</>和<literal>IS NOT NULL</>子句作为搜索条件。
   </para>
 
  </sect1>
 
  <sect1 id="index-functions">
-<!--
-  <title>Index Access Method Functions</title>
--->
   <title>索引访问方法函数</title>
 
   <para>
-<!--
-   The index construction and maintenance functions that an index access
-   method must provide are:
--->
-索引访问方法必须提供的索引构造和维护函数有：
+   索引访问方法必须提供的索引构造和维护函数有：
   </para>
 
   <para>
@@ -232,19 +53,7 @@ ambuild (Relation heapRelation,
          Relation indexRelation,
          IndexInfo *indexInfo);
 </programlisting>
-<!--
-   Build a new index.  The index relation has been physically created,
-   but is empty.  It must be filled in with whatever fixed data the
-   access method requires, plus entries for all tuples already existing
-   in the table.  Ordinarily the <function>ambuild</> function will call
-   <function>IndexBuildHeapScan()</> to scan the table for existing tuples
-   and compute the keys that need to be inserted into the index.
-   The function must return a palloc'd struct containing statistics about
-   the new index.
--->
-创建一个新索引。索引关系已经物理上创建好了，但是是空的。
-必须用索引访问方法要求的固定数据和代表所有已经在表里的行的数据项填充它。
-通常，<function>ambuild</>函数会调用<function>IndexBuildHeapScan()</>扫描该表以获取现有行并计算需要插入索引的键字。
+   创建一个新索引。索引关系已经被物理创建，但是是空的。必须用索引访问方法要求的固定数据填充它，外加所有已经在表里的行的项。通常，<function>ambuild</>函数会调用<function>IndexBuildHeapScan()</>来扫描表以获取现有元组并计算需要被插入到索引的键。该函数必须返回一个已分配内存的结构，其中包含关于新索引的统计信息。
   </para>
 
   <para>
@@ -252,14 +61,9 @@ ambuild (Relation heapRelation,
 void
 ambuildempty (Relation indexRelation);
 </programlisting>
-<!--
-   Build an empty index, and write it to the initialization fork (INIT_FORKNUM)
-   of the given relation.  This method is called only for unlogged tables; the
-   empty index written to the initialization fork will be copied over the main
-   relation fork on each server restart.
--->
-创建一个空的索引，并写到给定关系的初始fork(INIT_FORKNUM)中。
-这个方法只会为unlogged表调用;在服务器重启动时写入到初始fork的空索引会被复制到主关系。
+   构建一个空索引，并且把它写入到给定关系的初始化分叉中（
+   <symbol>INIT_FORKNUM</symbol>）。只会为不做日志的表调用这个方法，被写入到
+   初始化分叉的空索引在每次服务器启动时将被复制到主关系分叉中。
   </para>
 
   <para>
@@ -272,46 +76,15 @@ aminsert (Relation indexRelation,
           Relation heapRelation,
           IndexUniqueCheck checkUnique);
 </programlisting>
-<!--
-   Insert a new tuple into an existing index.  The <literal>values</> and
-   <literal>isnull</> arrays give the key values to be indexed, and
-   <literal>heap_tid</> is the TID to be indexed.
-   If the access method supports unique indexes (its
-   <structname>pg_am</>.<structfield>amcanunique</> flag is true) then
-   <literal>checkUnique</> indicates the type of uniqueness check to
-   perform.  This varies depending on whether the unique constraint is
-   deferrable; see <xref linkend="index-unique-checks"> for details.
-   Normally the access method only needs the <literal>heapRelation</>
-   parameter when performing uniqueness checking (since then it will have to
-   look into the heap to verify tuple liveness).
--->
-向现有索引插入一个新行。
-<literal>values</>和<literal>isnull</>数组给出需要制作索引的键字值，而<literal>heap_tid</>是要被索引的 TID 。
-如果该访问方法支持唯一索引(它的<structname>pg_am</>.<structfield>amcanunique</>标志是真)，
-那么<literal>checkUnique</>指示需要执行这种唯一性检查。
-具体情况依赖于该唯一制约是否是可延期的（deferrable）而不同; 详细请参阅 <xref linkend="index-unique-checks">。
-通常访问方法只有在执行唯一性检查时才需要<literal>heapRelation</>参数(它将深入到heap中确认行是否是活的)。
+   向现有索引插入一个新元组。<literal>values</>和<literal>isnull</>数组给出需要被索引的键值，而<literal>heap_tid</>是要被索引的 TID。 如果该访问方法支持唯一索引（它的<structname>pg_am</>.<structfield>amcanunique</>标志为真），那么<literal>checkUnique</>指示要执行的唯一性检查类型。这根据唯一约束是否为可推迟的而变化，详见<xref linkend="index-unique-checks">。通常在执行唯一性检查时访问方法仅需要<literal>heapRelation</>参数（因为那时它将不得不到堆中验证元组的存活性）。
   </para>
 
   <para>
-<!--
-   The function's Boolean result value is significant only when
-   <literal>checkUnique</> is <literal>UNIQUE_CHECK_PARTIAL</>.
-   In this case a TRUE result means the new entry is known unique, whereas
-   FALSE means it might be non-unique (and a deferred uniqueness check must
-   be scheduled).  For other cases a constant FALSE result is recommended.
--->
-只有当<literal>checkUnique</>是<literal>UNIQUE_CHECK_PARTIAL</>时，该函数的返回值才有意义。
-TRUE的返回值意味着新的索引项是唯一的，FALSE意味着不唯一（并且延期的唯一性检查必须被调度）。
-其它情况下推荐返回常量FALSE。
+   该函数的布尔结果值仅仅在<literal>checkUnique</>为<literal>UNIQUE_CHECK_PARTIAL</>时才有意义。这种情况下一个 TRUE 结果意味着这个新项是已知唯一的，反之 FALSE 意味着它可能不 是唯一的（并且一个延迟的唯一性校验必须是预定的）。对于其他情况，建议使用一个常量 FALSE 结果。
   </para>
 
   <para>
-<!--
-   Some indexes might not index all tuples.  If the tuple is not to be
-   indexed, <function>aminsert</> should just return without doing anything.
--->
-一些索引可能并不索引所有的行。如果行不被索引，<function>aminsert</>应该不做任何事情就直接返回。
+   有些索引可能不会索引所有元组。如果元组不被索引，<function>aminsert</>应该仅返回而什么都不做。
   </para>
 
   <para>
@@ -322,43 +95,11 @@ ambulkdelete (IndexVacuumInfo *info,
               IndexBulkDeleteCallback callback,
               void *callback_state);
 </programlisting>
-<!--
-   Delete tuple(s) from the index.  This is a <quote>bulk delete</> operation
-   that is intended to be implemented by scanning the whole index and checking
-   each entry to see if it should be deleted.
-   The passed-in <literal>callback</> function must be called, in the style
-   <literal>callback(<replaceable>TID</>, callback_state) returns bool</literal>,
-   to determine whether any particular index entry, as identified by its
-   referenced TID, is to be deleted.  Must return either NULL or a palloc'd
-   struct containing statistics about the effects of the deletion operation.
-   It is OK to return NULL if no information needs to be passed on to
-   <function>amvacuumcleanup</>.
--->
-从索引中删除行。
-这是一个<quote>批量删除</>的操作，通常都是通过扫描整个索引，检查每条记录，看看它是否需要被删除来实现的。
-可以调用传递进来的<literal>callback</>函数，调用风格是：
-<literal>callback(<replaceable>TID</>, callback_state) returns bool</literal>，
-其作用是判断某个用其引用的 TID 标识的索引项是否需要删除。
-必须返回 NULL 或者是一个 palloc 出来的，包含删除操作执行影响的统计信息的结构。
-如果不需要向<function>amvacuumcleanup</>传递信息，返回 NULL 也是 OK 的。
+   从索引中删除元组。这是一个<quote>批量删除</>操作，它的意图是通过扫描整个索引并检查每个项看它是否需要被删除。被传递进来的<literal>callback</>函数必须被调用（调用风格是：<literal>callback(<replaceable>TID</>, callback_state) returns bool</literal>）来判断任何其引用的 TID 标识的索引项是否需要删除。必须返回 NULL 或者是一个 palloc 过的、 包含删除操作效果的统计信息的结构。如果不需要向<function>amvacuumcleanup</>传递信息，返回 NULL 也是 OK 的。
   </para>
 
   <para>
-<!--
-   Because of limited <varname>maintenance_work_mem</>,
-   <function>ambulkdelete</> might need to be called more than once when many
-   tuples are to be deleted.  The <literal>stats</> argument is the result
-   of the previous call for this index (it is NULL for the first call within a
-   <command>VACUUM</> operation).  This allows the AM to accumulate statistics
-   across the whole operation.  Typically, <function>ambulkdelete</> will
-   modify and return the same struct if the passed <literal>stats</> is not
-   null.
--->
-由于<varname>maintenance_work_mem</>的限制，在删除多行的时候
-<function>ambulkdelete</>可能需要被调用多次，<literal>stats</>
-参数是先前在这个索引上的调用结果(在一个<command>VACUUM</>操作内部第一次调用的话则是 NULL)。
-这将允许 AM 在整个操作过程中积累统计信息。
-典型的，如果传递的<literal>stats</>不是 null 的话，<function>ambulkdelete</>将会修改并返回相同的结构。
+   由于<varname>maintenance_work_mem</>被限制，在删除多行的时候<function>ambulkdelete</>可能需要被调用多次。<literal>stats</>参数是对这个索引上一次调用的结果（在一个<command>VACUUM</>操作中第一次调用时是 NULL）。这将允许 AM 在整个操作过程中积累统计信息。典型的，如果被传递的<literal>stats</>非空，<function>ambulkdelete</>将会修改并返回相同的结构。
   </para>
 
   <para>
@@ -367,42 +108,11 @@ IndexBulkDeleteResult *
 amvacuumcleanup (IndexVacuumInfo *info,
                  IndexBulkDeleteResult *stats);
 </programlisting>
-<!--
-   Clean up after a <command>VACUUM</command> operation (zero or more
-   <function>ambulkdelete</> calls).  This does not have to do anything
-   beyond returning index statistics, but it might perform bulk cleanup
-   such as reclaiming empty index pages.  <literal>stats</> is whatever the
-   last <function>ambulkdelete</> call returned, or NULL if
-   <function>ambulkdelete</> was not called because no tuples needed to be
-   deleted.  If the result is not NULL it must be a palloc'd struct.
-   The statistics it contains will be used to update <structname>pg_class</>,
-   and will be reported by <command>VACUUM</> if <literal>VERBOSE</> is given.
-   It is OK to return NULL if the index was not changed at all during the
-   <command>VACUUM</command> operation, but otherwise correct stats should
-   be returned.
--->
-在一个<command>VACUUM</command>操作(一个或多个<function>ambulkdelete</>调用)之后清理。
-虽然不必做任何返回索引状态之外的任何其他事情，但是它通常用于批量清理，比如说回收空的索引页面。
-<literal>stats</>是最后的<function>ambulkdelete</>调用返回的东西或者 NULL(如果因为没有行需要删除而未调用<function>ambulkdelete</>的话)。
-如果结果不是 NULL ，那么它必须是一个 palloc 出来的结构。
-它包含的统计信息将用于更新<structname>pg_class</>并且由<command>VACUUM</>报告(如果给出了<literal>VERBOSE</>)。
-如果索引在<command>VACUUM</command>操作的过程中根本没有改变，那么返回 NULL 也是 OK 的，否则必须返回当前状态。
+   在一个<command>VACUUM</command>操作（零个或更多次<function>ambulkdelete</>调用）后清空。虽然不必做任何返回索引统计信息之外的事情，但是它可能执行批量清理，例如回收空索引页面。<literal>stats</>是最后一次<function>ambulkdelete</> 调用返回的东西或者 NULL（如果没有元组需要删除而未调用<function>ambulkdelete</>）。如果结果不是 NULL，那么它必须是一个已经被 palloc 的结构。它包含的统计信息将用于更新<structname>pg_class</>并且由<command>VACUUM</>报 告（如果给出了<literal>VERBOSE</>）。如果索引在<command>VACUUM</command>操作期间根本没有改变，那么返回 NULL 也是可以的，否则必须返回正确的统计信息。
   </para>
 
   <para>
-<!--
-   As of <productname>PostgreSQL</productname> 8.4,
-   <function>amvacuumcleanup</> will also be called at completion of an
-   <command>ANALYZE</> operation.  In this case <literal>stats</> is always
-   NULL and any return value will be ignored.  This case can be distinguished
-   by checking <literal>info-&gt;analyze_only</literal>.  It is recommended
-   that the access method do nothing except post-insert cleanup in such a
-   call, and that only in an autovacuum worker process.
--->
-在<productname>PostgreSQL</productname>8.4中，<function>amvacuumcleanup</>也会在<command>ANALYZE</>完成时被调用。
-这时，<literal>stats</>总是为NULL，并且返回值会被忽略。
-通过检查<literal>info-&gt;analyze_only</literal>可以区分出这种情况。
-建议访问方法在这样的调用里除了插入后的清理不要做其他事情，并且这只在autovacuum工作进程中。
+   从<productname>PostgreSQL</productname> 8.4 开始，<function>amvacuumcleanup</>将也会在一个<command>ANALYZE</>操作结束时被调用。这种情况中<literal>stats</>总是 NULL 并且任何返回值都将会被忽略。这种情况可以通过检测<literal>info-&gt;analyze_only</literal>来区分。我们建议，在这样的调用中访问方法除了做插入后的清理之外什么也不做，并且那是仅仅是在一个自动清理工作者进程中。
   </para>
 
   <para>
@@ -410,18 +120,7 @@ amvacuumcleanup (IndexVacuumInfo *info,
 bool
 amcanreturn (Relation indexRelation);
 </programlisting>
-<!--
-   Check whether the index can support <firstterm>index-only scans</> by
-   returning the indexed column values for an index entry in the form of an
-   IndexTuple.  Return TRUE if so, else FALSE.  If the index AM can never
-   support index-only scans (an example is hash, which stores only
-   the hash values not the original data), it is sufficient to set its
-   <structfield>amcanreturn</> field to zero in <structname>pg_am</>.
--->
-检查索引是否支持<firstterm>index-only扫描</>，通过为一个索引项以IndexTuple的形式返回被索引的列值。
-如果支持返回TRUE，否则返回FALSE。
-如果索引AM永远不支持index-only扫描（比如hash，它只存储哈希值而不是原始数据），
-可以有充分的理由把<structname>pg_am</>中的<structfield>amcanreturn</>字段设置为零。
+   通过返回型为一个<structname>IndexTuple</structname>的索引项的被索引列值，检查索引是否能支持<firstterm>只用索引的扫描</>。如果支持返回 TRUE，否则返回 FALSE。如果索引 AM 不能支持只用索引的扫描（一个例子是哈希，它只存储哈希值而不是原始数据），在<structname>pg_am</>中把它的<structfield>amcanreturn</>域设置为零就足够了。
   </para>
 
   <para>
@@ -435,11 +134,7 @@ amcostestimate (PlannerInfo *root,
                 Selectivity *indexSelectivity,
                 double *indexCorrelation);
 </programlisting>
-<!--
-   Estimate the costs of an index scan.  This function is described fully
-   in <xref linkend="index-cost-estimation">, below.
--->
-估算一个索引扫描的开销。该函数在下面的<xref linkend="index-cost-estimation">中有详细的讨论。
+   估计一次索引扫描的开销。这个函数在下面的<xref linkend="index-cost-estimation">中有完整的讨论。
   </para>
 
   <para>
@@ -448,48 +143,11 @@ bytea *
 amoptions (ArrayType *reloptions,
            bool validate);
 </programlisting>
-<!--
-   Parse and validate the reloptions array for an index.  This is called only
-   when a non-null reloptions array exists for the index.
-   <parameter>reloptions</> is a <type>text</> array containing entries of the
-   form <replaceable>name</><literal>=</><replaceable>value</>.
-   The function should construct a <type>bytea</> value, which will be copied
-   into the <structfield>rd_options</> field of the index's relcache entry.
-   The data contents of the <type>bytea</> value are open for the access
-   method to define; most of the standard access methods use struct
-   <structname>StdRdOptions</>.
-   When <parameter>validate</> is true, the function should report a suitable
-   error message if any of the options are unrecognized or have invalid
-   values; when <parameter>validate</> is false, invalid entries should be
-   silently ignored.  (<parameter>validate</> is false when loading options
-   already stored in <structname>pg_catalog</>; an invalid entry could only
-   be found if the access method has changed its rules for options, and in
-   that case ignoring obsolete entries is appropriate.)
-   It is OK to return NULL if default behavior is wanted.
--->
-为一个索引分析和验证 reloptions 数组，仅当一个索引存在非空 reloptions 数组时才会被调用。
-<parameter>reloptions</>是一个<type>text</>数组，包含<replaceable>name</><literal>=</><replaceable>value</>格式的项。
-该函数应当创建一个<type>bytea</>值，该值将被拷贝进索引的 relcache 项的<structfield>rd_options</>字段。
-<type>bytea</>值的数据内容可以由访问方法定义，不过目前所有的标准访问方法都使用<structname>StdRdOptions</>结构。
-当<parameter>validate</>为真时，如果任何一个选项不可识别或者含有非法值，该函数都应当报告一个适当的错误消息；当<parameter>validate</>为假时，非法项应该被悄悄的忽略。
-（当载入已经存储在<structname>pg_catalog</>中的选项时，<parameter>validate</>为假，仅在访问方法已经改变了选项规则的时候才可能找到非法项，在此情况下可以忽略废弃的项。）
-如果默认行为正是想要的，那么返回 NULL 也 OK 。
+   分析和验证一个索引的 reloptions 数组。仅当一个索引存在非空 reloptions 数组时才会被调用。<parameter>reloptions</>是一个<type>text</>数组，包含<replaceable>name</><literal>=</><replaceable>value</>形式的项。 该函数应当构建一个<type>bytea</>值，该值将被拷贝进索引的 relcache 项的<structfield>rd_options</>域。<type>bytea</>值的数据内容是开放由访问方法定义的， 大部分的标准访问方法都使用<structname>StdRdOptions</>结构。当<parameter>validate</>为真时，如果任何一个选项都不可识别或者含有非法值，该函数都应当报告一个适当的错误消息；当<parameter>validate</>为假时，非法 项应该被安静地忽略（当正在载入的选项已经在<structname>pg_catalog</>中时， <parameter>validate</>为假；仅在访问方法已经改变了选项的规则时才可能找 到非法项，并且在此情况下忽略废弃的项是合适的）。如果想要默认行为，那么返回 NULL 也 OK。
   </para>
 
   <para>
-<!--
-   The purpose of an index, of course, is to support scans for tuples matching
-   an indexable <literal>WHERE</> condition, often called a
-   <firstterm>qualifier</> or <firstterm>scan key</>.  The semantics of
-   index scanning are described more fully in <xref linkend="index-scanning">,
-   below.  An index access method can support <quote>plain</> index scans,
-   <quote>bitmap</> index scans, or both.  The scan-related functions that an
-   index access method must or may provide are:
--->
-索引的目的当然是支持那些包含一个可以索引的<literal>WHERE</>条件的行的扫描，这个条件通常叫<firstterm>修饰词</>或<firstterm>扫描键字</>。
-索引扫描的语义在下面的<xref linkend="index-scanning">里面有更完整的描述。
-一个索引访问方法可以支持<quote>plain</>索引扫描，<quote>bitmap</>索引扫描，或者两者都支持。
-必须或可以提供的与扫描有关的函数有：
+   当然，索引的目的是支持扫描那些匹配一个可索引<literal>WHERE</>情况的元组，常常也被称为<firstterm>限定词</>或<firstterm>扫描键</>。索引扫描的语义在下面的<xref linkend="index-scanning">中有完整的描述。一个索引访问方法可以支持<quote>普通</>索引扫描、<quote>位图</>索引扫描或者两者。一个索引访问方法必须或可能提供的与扫描相关的函数是：
   </para>
 
   <para>
@@ -499,25 +157,7 @@ ambeginscan (Relation indexRelation,
              int nkeys,
              int norderbys);
 </programlisting>
-<!--
-   Prepare for an index scan.  The <literal>nkeys</> and <literal>norderbys</>
-   parameters indicate the number of quals and ordering operators that will be
-   used in the scan; these may be useful for space allocation purposes.
-   Note that the actual values of the scan keys aren't provided yet.
-   The result must be a palloc'd struct.
-   For implementation reasons the index access method
-   <emphasis>must</> create this struct by calling
-   <function>RelationGetIndexScan()</>.  In most cases
-   <function>ambeginscan</> does little beyond making that call and perhaps
-   acquiring locks;
-   the interesting parts of index-scan startup are in <function>amrescan</>.
--->
-准备一个索引扫描。
-<literal>nkeys</>和<literal>norderbys</>参素指示扫描中使用的修饰词和排序操作符的个数；它们可能对空间分配有用。
-注意实际的扫描键还没有提供。
-结果必须是一个 palloc 出来的结构。
-由于实现的原因，索引访问方法<emphasis>必须</>通过调用<function>RelationGetIndexScan()</>来创建这个结构。
-在大多数情况下，<function>ambeginscan</>本身除了调用上面这个函数和可能获取一些锁之外几乎不干别的事情；索引扫描启动时的有趣部分在<function>amrescan</>里。
+   为一个索引扫描做准备。<literal>nkeys</>和<literal>norderbys</>参数说明要被用在扫描中的条件和排序操作符的数目，它们可以用于空间分配目的。注意扫描键的实际值还没有被提供。结果必须是一个 palloc 过的结构。由于实现的原因，索引访问方法<emphasis>必须</>通过调用<function>RelationGetIndexScan()</>来创建这个结构。在大多数情况中，<function>ambeginscan</>除了做这个调用和获取锁之外不会做很多工作，索引扫描启动中有趣的部分在<function>amrescan</>中。
   </para>
 
   <para>
@@ -529,20 +169,7 @@ amrescan (IndexScanDesc scan,
           ScanKey orderbys,
           int norderbys);
 </programlisting>
-<!--
-   Start or restart an index scan, possibly with new scan keys.  (To restart
-   using previously-passed keys, NULL is passed for <literal>keys</> and/or
-   <literal>orderbys</>.)  Note that it is not allowed for
-   the number of keys or order-by operators to be larger than
-   what was passed to <function>ambeginscan</>.  In practice the restart
-   feature is used when a new outer tuple is selected by a nested-loop join
-   and so a new key comparison value is needed, but the scan key structure
-   remains the same.
--->
-启动或重新启动一个索引扫描，可能会使用新的扫描键字。
-（要使用先前提供的键重启动，给<literal>keys</> 和/或者<literal>orderbys</>传入NULL）
-记住扫描键字或排序操作符的个数不予许大于传给 <function>ambeginscan</>的数值。
-实际上，重新启动特性用于这样的场景：当一个新的外元组被嵌套循环(nested-loop)连接选中时，需要一个新的键比较值，但是扫描键结构仍然是相同的。
+   开始或者重新开始一个索引扫描，可能使用的是一个新的扫描键（要想使用之前传递的键重新开始，给<literal>keys</> 和/或<literal>orderbys</>传递 NULL）。请注意，使用的键或排序操作符的个数不能大于传递给<function>ambeginscan</>的个数。实际上这个重新开始特性的使用场景是：在一个嵌套循环连接选取了一个新的 outer 元组时，因此需要一个新的键比较值，但扫描键结构仍然保持相同。
   </para>
 
   <para>
@@ -551,61 +178,15 @@ boolean
 amgettuple (IndexScanDesc scan,
             ScanDirection direction);
 </programlisting>
-<!--
-   Fetch the next tuple in the given scan, moving in the given
-   direction (forward or backward in the index).  Returns TRUE if a tuple was
-   obtained, FALSE if no matching tuples remain.  In the TRUE case the tuple
-   TID is stored into the <literal>scan</> structure.  Note that
-   <quote>success</> means only that the index contains an entry that matches
-   the scan keys, not that the tuple necessarily still exists in the heap or
-   will pass the caller's snapshot test.  On success, <function>amgettuple</>
-   must also set <literal>scan-&gt;xs_recheck</> to TRUE or FALSE.
-   FALSE means it is certain that the index entry matches the scan keys.
-   TRUE means this is not certain, and the conditions represented by the
-   scan keys must be rechecked against the heap tuple after fetching it.
-   This provision supports <quote>lossy</> index operators.
-   Note that rechecking will extend only to the scan conditions; a partial
-   index predicate (if any) is never rechecked by <function>amgettuple</>
-   callers.
--->
-在给出的扫描里抓取下一个行，向给出的方向移动(在索引里向前或者向后)。
-如果抓取到了行，则返回 TRUE ，如果没有抓到匹配的行，返回 FALSE 。
-在为 TRUE 的时候，该行的 TID 存储在<literal>scan</>结构里。
-请注意<quote>成功</>只是意味着索引包含一个匹配扫描键字的条目，并不是说该行仍然在堆中存在，或者是能够通过调用者的快照检查(译注：MVCC 快照，用于判断事务边界内的行可视性)。
-如果成功，<function>amgettuple</>必须设置<literal>scan-&gt;xs_recheck</>为TRUE或FALSE。
-FALSE意味着已经可以确定索引项匹配扫描键字。
-TRUE意味着尚不确定，在取到堆元组后必须对堆元组再次检查代表这个扫描键值的条件。
+   在给定扫描中取下一个元组，向给定方向移动（在索引中向前或者向后）。如果取到了元组，则返回 TRUE，如果取到匹配的元组，返回 FALSE。在 TRUE 的情况中，该元组的 TID 被存储在<literal>scan</>结构中。请注意<quote>成功</>只 意味着索引包含一个匹配扫描键的项，并不意味该元组仍然在堆中存在， 或者是能够通过调用者的快照测试。在成功时，<function>amgettuple</>也必须把<literal>scan-&gt;xs_recheck</>设 置成 TRUE 或者 FALSE。FALSE 意味着它确定索引项匹配扫描键。TRUE 意味着它并不确定，而且必须在取得堆元组之后对它重新检查扫描键表示的条件。 这条规定支持<quote>有损的</>索引操作符。注意重新检查仅仅对扫描条件扩展；一个部分索引谓语（如果有）从不被<function>amgettuple</>调用者重新检查。
   </para>
 
   <para>
-<!--
-   If the index supports index-only scans (i.e.,
-   <function>amcanreturn</function> returns TRUE for it),
-   then on success the AM must also check
-   <literal>scan-&gt;xs_want_itup</>, and if that is true it must return
-   the original indexed data for the index entry, in the form of an
-   <structname>IndexTuple</> pointer stored at <literal>scan-&gt;xs_itup</>,
-   with tuple descriptor <literal>scan-&gt;xs_itupdesc</>.
-   (Management of the data referenced by the pointer is the access method's
-   responsibility.  The data must remain good at least until the next
-   <function>amgettuple</>, <function>amrescan</>, or <function>amendscan</>
-   call for the scan.)
--->
-如果索引支持index-only扫描（比如，<function>amcanreturn</function>为它返回TRUE），
-那么成功执行后，这个AM也必须检查<literal>scan-&gt;xs_want_itup</>，如果为TRUE,
-它必须通过存储在<literal>scan-&gt;xs_itup</>中的<structname>IndexTuple</>指针以及元组描述符<literal>scan-&gt;xs_itupdesc</>为这个索引项返回原始的被索引数据。
-（访问方法需要负责维护被这个指针引用的数据。至少在该扫描下一次调用<function>amgettuple</>，<function>amrescan</>或<function>amendscan</>前，这个数据必须保持完好）
+   如果索引支持只用索引扫描（即<function>amcanreturn</function>对它返回 TRUE），则在成功时 AM 也必须检查<literal>scan-&gt;xs_want_itup</>，并且如果检查为真它必须返回索引项（存储在<literal>scan-&gt;xs_itup</>中的<structname>IndexTuple</>指针）的原始被索引数据，原始数据的形式按照元组描述符<literal>scan-&gt;xs_itupdesc</>来解释（由指针引用的数据的管理是访问方法的责任。至少在为扫描下一次调用<function>amgettuple</>、<function>amrescan</>或<function>amendscan</>之前，该数据必须是完好的）。
   </para>
 
   <para>
-<!--
-   The <function>amgettuple</> function need only be provided if the access
-   method supports <quote>plain</> index scans.  If it doesn't, the
-   <structfield>amgettuple</> field in its <structname>pg_am</> row must
-   be set to zero.
--->
-如果访问方法支持<quote>plain</>索引扫描，只需要提供<function>amgettuple</>函数。
-如果不是，在它的<structname>pg_am</>行中的<structfield>amgettuple</>字段必须被设置成零。
+   如果访问方法支持<quote>普通</>索引扫描，只需要提供<function>amgettuple</>函数。如果不支持，它的<structname>pg_am</>行的<structfield>amgettuple</>域必须被设置为零。
   </para>
 
   <para>
@@ -614,43 +195,11 @@ int64
 amgetbitmap (IndexScanDesc scan,
              TIDBitmap *tbm);
 </programlisting>
-<!--
-   Fetch all tuples in the given scan and add them to the caller-supplied
-   <type>TIDBitmap</type> (that is, OR the set of tuple IDs into whatever set is already
-   in the bitmap).  The number of tuples fetched is returned (this might be
-   just an approximate count, for instance some AMs do not detect duplicates).
-   While inserting tuple IDs into the bitmap, <function>amgetbitmap</> can
-   indicate that rechecking of the scan conditions is required for specific
-   tuple IDs.  This is analogous to the <literal>xs_recheck</> output parameter
-   of <function>amgettuple</>.  Note: in the current implementation, support
-   for this feature is conflated with support for lossy storage of the bitmap
-   itself, and therefore callers recheck both the scan conditions and the
-   partial index predicate (if any) for recheckable tuples.  That might not
-   always be true, however.
-   <function>amgetbitmap</> and
-   <function>amgettuple</> cannot be used in the same index scan; there
-   are other restrictions too when using <function>amgetbitmap</>, as explained
-   in <xref linkend="index-scanning">.
--->
-在指定的扫描中抓取所有元组并把它们加入到调用者提供的<type>TIDBitmap</type>中（换句话说，元组的ID集合加入到某个已存在的bitmap）。
-函数返回抓取到的元组数（这可能只是一个近似计数，某些AM实例并不检测重复）。
-当插入元组的TID到bitmap,<function>amgetbitmap</>可以指示对特定的元组TID需要对扫描条件做再检查。
-这和<function>amgettuple</>函数的输出参数<literal>xs_recheck</>类似。
-注意：在当前实现中，支持这个特性涉及到支持bitmap自身的有损存储，因此调用者为可再检查的元组再次检查扫描条件和部分索引谓词（如果有的话）。
-然而，这可能不会总是正确的。
-<function>amgetbitmap</>和<function>amgettuple</>不能在同一个索引扫描中使用；在使用
-<function>amgetbitmap</>的时候还有其它限制，在<xref linkend="index-scanning">里给出解释。
+   在给定扫描中取所有元组并且把它们添加到调用者提供的<type>TIDBitmap</type>中（即，把元组 ID 的集合 OR 到已经存在于位图中的东西里面）。返回被取得的元组的数量（这可能仅仅是一个近似计数，例如一些 AM 不会去重）。在把元组 ID 插入到位图时，<function>amgetbitmap</>可以指明对指定元组 ID 要求重新检查扫描条件。这与<function>amgettuple</>的 <literal>xs_recheck</>输出参数类似。注意：在当前的实现中，这个特性的支持是和对位图本身有损存储的支持合并在一起的，并且调用者会对可重新检查的元组检查扫描条件和部分索引谓词（如果有）。但是，那不会总是真的。<function>amgetbitmap</>和 <function>amgettuple</>不能被用于同一个索引扫描；正如<xref linkend="index-scanning">中所解释的，在使用<function>amgetbitmap</>时也有其他的限制条件。
   </para>
 
   <para>
-<!--
-   The <function>amgetbitmap</> function need only be provided if the access
-   method supports <quote>bitmap</> index scans.  If it doesn't, the
-   <structfield>amgetbitmap</> field in its <structname>pg_am</> row must
-   be set to zero.
--->
-只有访问方法支持<quote>bitmap</>索引扫描时才需要提供<function>amgetbitmap</>函数。
-如果访问方法不支持的话，必须在它的<structname>pg_am</>行里设置<structfield>amgetbitmap</>字段为零。
+   如果访问方法支持<quote>bitmap</>索引扫描，则仅需要提供<function>amgetbitmap</>函数。如果不支持，它的<structname>pg_am</>行中的<structfield>amgetbitmap</>域必须被设置为零。
   </para>
 
   <para>
@@ -658,12 +207,7 @@ amgetbitmap (IndexScanDesc scan,
 void
 amendscan (IndexScanDesc scan);
 </programlisting>
-<!--
-   End a scan and release resources.  The <literal>scan</> struct itself
-   should not be freed, but any locks or pins taken internally by the
-   access method must be released.
--->
-结束扫描并释放资源。不应该释放<literal>scan</>本身，但访问方法内部使用的任何锁或者销(pin)都应该释放。
+   结束扫描并释放资源。不应该释放<literal>scan</>结构本身，但访问方法内部使用的任何锁或者 pin 都应该被释放。
   </para>
 
   <para>
@@ -671,11 +215,7 @@ amendscan (IndexScanDesc scan);
 void
 ammarkpos (IndexScanDesc scan);
 </programlisting>
-<!--
-   Mark current scan position.  The access method need only support one
-   remembered scan position per scan.
--->
-标记当前扫描位置。访问方法只需要支持每次扫描里面有一个被记住的扫描位置。
+   标记当前扫描位置。访问方法只需要支持每个扫描里面有一个被标记的扫描位置。
   </para>
 
   <para>
@@ -683,662 +223,193 @@ ammarkpos (IndexScanDesc scan);
 void
 amrestrpos (IndexScanDesc scan);
 </programlisting>
-<!--
-   Restore the scan to the most recently marked position.
--->
-把扫描恢复到最近标记的位置。
+   把扫描恢复到最近标记的位置。
   </para>
 
   <para>
-<!--
-   By convention, the <literal>pg_proc</literal> entry for an index
-   access method function should show the correct number of arguments,
-   but declare them all as type <type>internal</> (since most of the arguments
-   have types that are not known to SQL, and we don't want users calling
-   the functions directly anyway).  The return type is declared as
-   <type>void</>, <type>internal</>, or <type>boolean</> as appropriate.
-   The only exception is <function>amoptions</>, which should be correctly
-   declared as taking <type>text[]</> and <type>bool</> and returning
-   <type>bytea</>.  This provision allows client code to execute
-   <function>amoptions</> to test validity of options settings.
--->
-通常，任何索引访问方法函数的<literal>pg_proc</literal>记录都应该显示正确数目的参数，
-只是把类型都声明为类型<type>internal</>(因为大多数参数的类型都是 SQL 不识别的类型，并且不希望用户直接调用该函数)。
-返回类型根据具体情况声明为<type>void</>, <type>internal</>, or <type>boolean</>。
-唯一的例外是 <function>amoptions</>，它应当被声明为接受<type>text[]</>和<type>bool</>并返回<type>bytea</>。
-这样就允许客户端代码执行<function>amoptions</>以确认选项设置的有效性。
+   通常，一个索引访问方法函数的<literal>pg_proc</literal>项都应该显示参数的正确 数目，但是把它们都声明为类型<type>internal</>（因为大多数参数的类型对于 SQL 都是未知的，并且我们不希望用户以任何方式直接调用这些函数）。返回类型根据具体情况被声明为<type>void</>、<type>internal</>或<type>boolean</>。唯一的例外是<function>amoptions</>，它应当被正确地声明为接受<type>text[]</>和<type>bool</>并返回 <type>bytea</>。这个规定允许客户端代码执行<function>amoptions</>来测试选项设置的有效性。
   </para>
 
  </sect1>
 
  <sect1 id="index-scanning">
-<!--
-  <title>Index Scanning</title>
--->
   <title>索引扫描</title>
 
   <para>
-<!--
-   In an index scan, the index access method is responsible for regurgitating
-   the TIDs of all the tuples it has been told about that match the
-   <firstterm>scan keys</>.  The access method is <emphasis>not</> involved in
-   actually fetching those tuples from the index's parent table, nor in
-   determining whether they pass the scan's time qualification test or other
-   conditions.
--->
-在一个索引扫描里，索引访问方法负责把它拿到的那些据说匹配<firstterm>扫描键字</>的所有行之 TID 的回流。
-访问方法<emphasis>不会</>卷入从索引的父表中实际抓取这些行的动作中，也不会判断他们是否通过了扫描的时间条件测试或者是其它条件。
+   在一个索引扫描中，索引访问方法负责把它拿到的那些据说匹配<firstterm>扫描键</>的所有元组的 TID 的regurgitating。访问方法<emphasis>不</>会涉及从索引的父表中实际取得那些元组，也不会涉及判断它们是否通过了扫描的时间条件测试或者是其它条件。
   </para>
 
   <para>
-<!--
-   A scan key is the internal representation of a <literal>WHERE</> clause of
-   the form <replaceable>index_key</> <replaceable>operator</>
-   <replaceable>constant</>, where the index key is one of the columns of the
-   index and the operator is one of the members of the operator family
-   associated with that index column.  An index scan has zero or more scan
-   keys, which are implicitly ANDed &mdash; the returned tuples are expected
-   to satisfy all the indicated conditions.
--->
-一个扫描键字是形如<replaceable>index_key</> <replaceable>operator</><replaceable>constant</>
-的<literal>WHERE</>子句的内部表现形式，
-这里的索引键字是索引中的一个字段，而操作符是和该索引字段相关联的操作符族的一个成员。
-一个索引扫描拥有零个或者多个扫描键字，他们是隐含着 AND 的关系 —返回的行被认为是满所所有列出的条件的行。
+   一个扫描键是一个<literal>WHERE</>子句的内部表示，<literal>WHERE</>子句的形式是<replaceable>index_key</> <replaceable>operator</> <replaceable>constant</>，其中索引键字索引中的一个列，而操作符是和该索引列相关联的操作符族的一个成员。一个索引扫描拥有零个或者多个扫描键，它们是隐式 AND 关系 &mdash; 返回的元组被认为满足所有列出的条件。
   </para>
 
   <para>
-<!--
-   The access method can report that the index is <firstterm>lossy</>, or
-   requires rechecks, for a particular query.  This implies that the index
-   scan will return all the entries that pass the scan key, plus possibly
-   additional entries that do not.  The core system's index-scan machinery
-   will then apply the index conditions again to the heap tuple to verify
-   whether or not it really should be selected.  If the recheck option is not
-   specified, the index scan must return exactly the set of matching entries.
--->
-访问方法可以声称自己是<firstterm>有损的</>或对特定的查询需要再检查。
-这意味着，索引扫描会返回所有通过扫描键字的条目并可能加上一些不能通过的条目。
-核心系统的索引扫描装置之后会对堆元组应用索引条件以确认是否真的这个元组应该被选中。
-如果再检查选项没有被指定，索引扫描必须精确返回匹配的条目。
+   对于一个特定查询，访问方法可能报告索引是<firstterm>有损的</>或者要求重新检查。这就暗示着该索引扫 描会返回所有通过扫描键的项，外加上一些可能没通过扫描键的项。核心系统的索引扫描机制然后就会再次在堆元组上应用索引条件来验证它是否真地应该被选择。如果没有指定重新检查选项，索引扫描必须返回准确的匹配项集合。
   </para>
 
   <para>
-<!--
-   Note that it is entirely up to the access method to ensure that it
-   correctly finds all and only the entries passing all the given scan keys.
-   Also, the core system will simply hand off all the <literal>WHERE</>
-   clauses that match the index keys and operator families, without any
-   semantic analysis to determine whether they are redundant or
-   contradictory.  As an example, given
-   <literal>WHERE x &gt; 4 AND x &gt; 14</> where <literal>x</> is a b-tree
-   indexed column, it is left to the b-tree <function>amrescan</> function
-   to realize that the first scan key is redundant and can be discarded.
-   The extent of preprocessing needed during <function>amrescan</> will
-   depend on the extent to which the index access method needs to reduce
-   the scan keys to a <quote>normalized</> form.
--->
-请注意，确保找到所有条目以及确保所有条目都通过给出的扫描键字的条件完全是访问方法的责任。
-还有，核心系统将只是简单的把所有匹配扫描键字和操作符族的<literal>WHERE</>子句传递过来，而不会做任何语义分析，以判断他们是否冗余或者是否相互矛盾。
-举例来说，给出<literal>WHERE x &gt; 4 AND x &gt; 14</> where <literal>x</> ，这里的
-<literal>x</>是一个 b-tree 索引字段，
-那么把第一个扫描键字识别成冗余的和可抛弃的工作是 b-tree <function>amrescan</>函数的事。
-<function>amrescan</>过程中所需要的预处理的范围将由索引访问方法把扫描键字缩减为一个<quote>规范化</>形式的具体需要而定。
+   请注意，确保找到所有（只有）通过所有给定扫描键的条目的工作完全由访问方法负责。还有，核心系统将只是简单地 hand off 所有匹配扫描键和操作符族的<literal>WHERE</>子句，而不会做任何语义分析来判断它们是否冗余或者矛盾。例如，给定<literal>WHERE x &gt; 4 AND x &gt; 14</>（其中<literal>x</>是一个 b-tree 索引列，它被留给 b-tree <function>amrescan</>函数来发现第一个扫描键是冗余并且可以被丢弃。<function>amrescan</>期间需要的预处理的范围将取决于索引访问方法需要什么来把扫描键缩减为一种<quote>正规化的</>形式。
   </para>
 
   <para>
-<!--
-   Some access methods return index entries in a well-defined order, others
-   do not.  There are actually two different ways that an access method can
-   support sorted output:
--->
-一些访问方法以明确的顺序返回索引项，另外一些则不是。
-实际上访问方法可以支持两种不同的排序输出方法：
+   一些访问方法按照一个良定义的顺序来返回索引项，其他的则不会。实际上一个访问方法可以有两种不同的方式支持排序输出：
+
     <itemizedlist>
      <listitem>
       <para>
-<!--
-       Access methods that always return entries in the natural ordering
-       of their data (such as btree) should set
-       <structname>pg_am</>.<structfield>amcanorder</> to true.
-       Currently, such access methods must use btree-compatible strategy
-       numbers for their equality and ordering operators.
--->
-以自然的数据顺序返回条目的访问方法（比如btree）应该设置<structname>pg_am</>.<structfield>amcanorder</>为真。
-当前，这样的访问方法必须为它们的相等和排序操作符使用btree兼容的策略数。
+       总是按数据的自然序返回项的访问方法应该设置<structname>pg_am</>.<structfield>amcanorder</>为真。当前，这样的访问方法必须对它们的等值和排序操作符使用b-tree兼容的策略号。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       Access methods that support ordering operators should set
-       <structname>pg_am</>.<structfield>amcanorderbyop</> to true.
-       This indicates that the index is capable of returning entries in
-       an order satisfying <literal>ORDER BY</> <replaceable>index_key</>
-       <replaceable>operator</> <replaceable>constant</>.  Scan modifiers
-       of that form can be passed to <function>amrescan</> as described
-       previously.
--->
-支持排序操作的访问方法必须设置<structname>pg_am</>.<structfield>amcanorderbyop</>为真。
-这表明这个索引能够以满足<literal>ORDER BY</> <replaceable>index_key</><replaceable>operator</> <replaceable>constant</>
-的顺序返回条目。
-这种形式的扫描修饰子能够像前面描述的那样被传入<function>amrescan</>。
+       支持排序操作符的访问方法应该设置<structname>pg_am</>.<structfield>amcanorderbyop</>为真。这表示索引有能力按照满足<literal>ORDER BY</> <replaceable>index_key</> <replaceable>operator</> <replaceable>constant</>的一种顺序返回项。如前所述，这种形式的扫描修饰符可以被传递给<function>amrescan</>。
       </para>
      </listitem>
     </itemizedlist>
   </para>
 
   <para>
-<!--
-   The <function>amgettuple</> function has a <literal>direction</> argument,
-   which can be either <literal>ForwardScanDirection</> (the normal case)
-   or  <literal>BackwardScanDirection</>.  If the first call after
-   <function>amrescan</> specifies <literal>BackwardScanDirection</>, then the
-   set of matching index entries is to be scanned back-to-front rather than in
-   the normal front-to-back direction, so <function>amgettuple</> must return
-   the last matching tuple in the index, rather than the first one as it
-   normally would.  (This will only occur for access
-   methods that set <structfield>amcanorder</> to true.)  After the
-   first call, <function>amgettuple</> must be prepared to advance the scan in
-   either direction from the most recently returned entry.  (But if
-   <structname>pg_am</>.<structfield>amcanbackward</> is false, all subsequent
-   calls will have the same direction as the first one.)
--->
-<function>amgettuple</>函数有一个<literal>direction</>参数，它可以是<literal>ForwardScanDirection</>
-(正常情况)或者 <literal>BackwardScanDirection</> 。
-如果<function>amrescan</>之后的第一次调用声明<literal>BackwardScanDirection</>，那么匹配条件的索引记录集是从后向前扫描的，而不是通常的从前向后扫描，
-因此<function>amgettuple</>必须返回索引中最后的匹配行，而不是通常情况下的第一条。
-（这些事情只会在那些设置了<structfield>amcanorder</>为真的访问方法上会发生。）
-在第一次调用之后，<function>amgettuple</>必须准备从最近返回的条目的位置开始，在两个方向上进行扫描步进。
-（但是，如果<structname>pg_am</>.<structfield>amcanbackward</>为假，所有随后的调用将会和第一次调用使用相同的顺序。）
+   <function>amgettuple</>函数有一个<literal>direction</>参数，它可以是 <literal>ForwardScanDirection</>（正常情况）或者<literal>BackwardScanDirection</>。如果<function>amrescan</>之后的第一次调用指定了<literal>BackwardScanDirection</>，那么匹配条件的索引项集合是从后向前扫描的，而 不是通常的从前向后扫描，因此<function>amgettuple</>必须返回索引中最后一个匹配元组，而不是通常情况下的第一个（这只对设置了<structfield>amcanorder</>为真访问方法发生）。在第一次调用后，<function>amgettuple</>必须被准备好从最近被返回项的位置按照任何一种方向推进扫描（但是如果<structname>pg_am</>.<structfield>amcanbackward</>为假，所有后续调用将使用第一次相同的方向）。
   </para>
 
   <para>
-<!--
-   Access methods that support ordered scans must support <quote>marking</> a
-   position in a scan and later returning to the marked position.  The same
-   position might be restored multiple times.  However, only one position need
-   be remembered per scan; a new <function>ammarkpos</> call overrides the
-   previously marked position.  An access method that does not support
-   ordered scans should still provide mark and restore functions in
-   <structname>pg_am</>, but it is sufficient to have them throw errors if
-   called.
--->
-支持排序扫描的访问方法必须支持在扫描上<quote>标记</>位置，并在之后可以返回这个被标记的位置。
-相同的位置可能被恢复多次。
-然而，每次扫描只有一个位置需要被记住；一次新的<function>ammarkpos</>调用会覆盖先前被标记的位置。
-不支持排序扫描的访问方法仍然可以在<structname>pg_am</>中提供标记和恢复函数，但是如果被调用可以让这些函数抛出错误。
+   支持排序扫描的访问方法必须支持在扫描里<quote>标记</>一个位置并且随后返回到这个标记过的位置。同一个位置可能会被重复多次还原。但是，每个扫描中只有一个位置需要被记住；一个新的<function>ammarkpos</>调用将重写之前标记的位置。一个不支持排序扫描的访问方法仍然应该在<structname>pg_am</>中提供标记和还原函数，在它们被调用时抛出错误就足够了。
   </para>
 
   <para>
-<!--
-   Both the scan position and the mark position (if any) must be maintained
-   consistently in the face of concurrent insertions or deletions in the
-   index.  It is OK if a freshly-inserted entry is not returned by a scan that
-   would have found the entry if it had existed when the scan started, or for
-   the scan to return such an entry upon rescanning or backing
-   up even though it had not been returned the first time through.  Similarly,
-   a concurrent delete might or might not be reflected in the results of a scan.
-   What is important is that insertions or deletions not cause the scan to
-   miss or multiply return entries that were not themselves being inserted or
-   deleted.
--->
-扫描位置和标记位置(如果存在)都必须在面对索引中存在并发插入和删除的时候保持一致性。
-如果一条并发新插入的记录并未被一次扫描返回(而如果扫描开始的时候该记录就存在的话，则会被返回)，
-或者说扫描通过重新扫描或者回头扫描返回这样的记录（即使它第一次跑的时候没有返回这样的行），对于系统来说，这种情况是可以接受的。
-类似的还有，一个并发的删除可以反映，也可以不反应一个扫描的结果。
-重要的是，插入或者删除不会导致扫描会略过或者重复返回本身不是被插入或者删除的条目。
+   扫描位置和标记位置（如果存在)）都必须在面对索引中的并发插入和删除时保持一致性。如果一个新插入的项并未被一个扫描返回（如果该扫描开始的时候该项已经存在，该扫描将已经找到该项），或者说扫描通过重新扫描或者反向扫描返回这样一个项（即使它第一次没有返回这样一个项），这些情况都是可以接受的。类似的还有，一个并发的删除可能或不可能被反映在一个扫描的结果中。重要的是，插入或者删除不会导致扫描错过或者多次返回本身不是被插入或者删除的项。
   </para>
 
   <para>
-<!--
-   If the index stores the original indexed data values (and not some lossy
-   representation of them), it is useful to support index-only scans, in
-   which the index returns the actual data not just the TID of the heap tuple.
-   This will only work if the visibility map shows that the TID is on an
-   all-visible page; else the heap tuple must be visited anyway to check
-   MVCC visibility.  But that is no concern of the access method's.
--->
-如果索引存储原始的被索引数据值（而不是某种有损的表现形式），对支持index-only扫描是有用的，
-这时，索引返回实际的数据而不仅是堆元组的TID。
-只有在可见性映射显示这个TID在一个全可见页上是这才有效；否则还是必须检查堆元组的MVCC可见性。
-但是访问方法不需要关心这件事。
+   如果索引存储原始被索引的数据值（并且不是它们的某种有损表示），它可用来支持只用索引的扫描，着这种扫描中索引返回的就是实际的数据而不只是堆元组的 TID。这只有在可见性映射显示该 TID 位于一个全部可见的页面时才工作；否则必须访问堆元组来检查 MVCC 可见性。但是这就不用访问方法操心了。
   </para>
 
   <para>
-<!--
-   Instead of using <function>amgettuple</>, an index scan can be done with
-   <function>amgetbitmap</> to fetch all tuples in one call.  This can be
-   noticeably more efficient than <function>amgettuple</> because it allows
-   avoiding lock/unlock cycles within the access method.  In principle
-   <function>amgetbitmap</> should have the same effects as repeated
-   <function>amgettuple</> calls, but we impose several restrictions to
-   simplify matters.  First of all, <function>amgetbitmap</> returns all
-   tuples at once and marking or restoring scan positions isn't
-   supported. Secondly, the tuples are returned in a bitmap which doesn't
-   have any specific ordering, which is why <function>amgetbitmap</> doesn't
-   take a <literal>direction</> argument.  (Ordering operators will never be
-   supplied for such a scan, either.)
-   Also, there is no provision for index-only scans with
-   <function>amgetbitmap</>, since there is no way to return the contents of
-   index tuples.
-   Finally, <function>amgetbitmap</>
-   does not guarantee any locking of the returned tuples, with implications
-   spelled out in <xref linkend="index-locking">.
--->
-作为<function>amgettuple</>的替代，索引扫描可以可以通过一次<function>amgetbitmap</>调用抓取所有元组来完成。
-这明显可能比<function>amgettuple</>更高效，因为可以避免在访问方法内部的加锁解锁。
-一般而言，<function>amgetbitmap</>和重复调用 <function>amgettuple</>有相同的效果，
-但是为了简化我们加入了一些限制。
-首先，<function>amgetbitmap</>一次返回所有元组，并且不支持标记和恢复位置。
-第二，在bitmap中返回的元组没有任何指定的顺序，这也是<function>amgetbitmap</>没有<literal>direction</>参数的原因。
-（排序操作也就永远不会被应用到这样的扫描上）
-既然没有办法返回被索引元组的内容，也就不会有使用<function>amgetbitmap</>的index-only扫描。
-最后，<function>amgetbitmap</>不能保证对被返回元组上实施任何在<xref linkend="index-locking">中描述的锁。
+   除了使用<function>amgettuple</>，一个索引扫描可以通过<function>amgetbitmap</>在一次调用中取得所有元组来完成。这样做可能会比<function>amgettuple</>有显著的效率提升，因为它可以避免在访问方法内的加锁/解锁循环。原则上<function>amgetbitmap</>应该和重复调用<function>amgettuple</>的效果相同， 不过我们强加了一些限制来简化这件事。首先，<function>amgetbitmap</>一次返回 所有元组并且标记并且不支持标记或恢复扫描位置。第二，在一个位图中返回的元组没有任何指定的顺序，这也是为什么<function>amgetbitmap</>没有一个<literal>direction</>参数的原因（排序操作符也将永远不会提供给这种扫描）。还有，对于使用<function>amgetbitmap</>的只用索引扫描没有规定，因为没有办法返回索引元组的内容。最后，如<xref linkend="index-locking">中所说的，<function>amgetbitmap</>不保证被返回元组上的任何锁。
   </para>
 
   <para>
-<!--
-   Note that it is permitted for an access method to implement only
-   <function>amgetbitmap</> and not <function>amgettuple</>, or vice versa,
-   if its internal implementation is unsuited to one API or the other.
--->
-注意，如果一个访问方法的内部实现不适合实现其中一个API的话，
-允许一个访问方法只实现<function>amgetbitmap</>和<function>amgettuple</>中的一个。
+   注意如果访问方法的内部实现不适合一个 API 或其他 API，允许一个访问方法只实现<function>amgetbitmap</>而不实现<function>amgettuple</>，或者反过来。
   </para>
 
  </sect1>
 
  <sect1 id="index-locking">
-<!--
-  <title>Index Locking Considerations</title>
--->
-  <title>索引锁的考量</title>
+  <title>索引锁定考虑</title>
 
   <para>
-<!--
-   Index access methods must handle concurrent updates
-   of the index by multiple processes.
-   The core <productname>PostgreSQL</productname> system obtains
-   <literal>AccessShareLock</> on the index during an index scan, and
-   <literal>RowExclusiveLock</> when updating the index (including plain
-   <command>VACUUM</>).  Since these lock types do not conflict, the access
-   method is responsible for handling any fine-grained locking it might need.
-   An exclusive lock on the index as a whole will be taken only during index
-   creation, destruction, or <command>REINDEX</>.
--->
-索引访问方法必须支持多个进程对索引的并发更新。
-在索引扫描期间，<productname>PostgreSQL</productname>核心系统在索引上抓取 
-<literal>AccessShareLock</> ，并且在更新索引期间(包括<command>VACUUM</>)也会抓取<literal>RowExclusiveLock</>。
-因为这些锁类型不会冲突，所以访问方法有责任处理任何它自己需要的更细致的锁需求。
-把整个索引锁住的排他锁只是在创建和删除索引或者<command>REINDEX</>的时候使用。
+   索引访问方法必须支持多个进程对索引的并发更新。在索引扫描期间，核心<productname>PostgreSQL</productname>系统在索引上获取 <literal>AccessShareLock</>，并且在更新索引时（包括普通<command>VACUUM</>）获取<literal>RowExclusiveLock</>。因为这些锁类型不会冲突，所以访问方法负责处理它可能需要的任何细粒度锁。把索引作为一个整体的排他锁只会在索引创建、删除或<command>REINDEX</>时被使用。
   </para>
 
   <para>
-<!--
-   Building an index type that supports concurrent updates usually requires
-   extensive and subtle analysis of the required behavior.  For the b-tree
-   and hash index types, you can read about the design decisions involved in
-   <filename>src/backend/access/nbtree/README</> and
-   <filename>src/backend/access/hash/README</>.
--->
-创建一个支持并发更新的索引类型通常要求对所需的行为进行广泛的并且细致的分析。
-对于 b-tree 和 Hash 索引类型，你可以读取在 
-<filename>src/backend/access/nbtree/README</>和 
-<filename>src/backend/access/hash/README</>里面描述的设计决策。
+   创建一个支持并发更新的索引类型通常要求对所需的行为进行广泛并且细致的分析。对于b-tree 和哈希索引类型，你可以阅读<filename>src/backend/access/nbtree/README</>和<filename>src/backend/access/hash/README</>中的设计决策。
   </para>
 
   <para>
-<!--
-   Aside from the index's own internal consistency requirements, concurrent
-   updates create issues about consistency between the parent table (the
-   <firstterm>heap</>) and the index.  Because
-   <productname>PostgreSQL</productname> separates accesses
-   and updates of the heap from those of the index, there are windows in
-   which the index might be inconsistent with the heap.  We handle this problem
-   with the following rules:
--->
-除了索引自己内部的一致性要求之外，并发更新产生了一些有关父表(<firstterm>堆</>)和索引之间的一致性问题。
-因为<productname>PostgreSQL</productname>是把堆的访问和更新与索引的访问和更新分开的。
-用下面的规则处理这样的问题：
+   除了索引自己内部的一致性要求之外，并发更新带来了一些父表（<firstterm>堆</>）和索引之 间的一致性问题。因为 <productname>PostgreSQL</productname>是把堆的访问和 更新与索引的访问和更新分开的，所以存在一些窗口期，在其间索引可能会与堆不一致。我们用下面的规则处理这样的问题：
+
     <itemizedlist>
      <listitem>
       <para>
-<!--
-       A new heap entry is made before making its index entries.  (Therefore
-       a concurrent index scan is likely to fail to see the heap entry.
-       This is okay because the index reader would be uninterested in an
-       uncommitted row anyway.  But see <xref linkend="index-unique-checks">.)
--->
-在制作一行的索引记录之前，先做堆记录。
-（因此并发的索引扫描很可能看不到堆记录。
-这么做应该是 OK 的，因为索引读者应该对未提交的行不感兴趣。
-不过需要看看<xref linkend="index-unique-checks">。）
+       一个新堆项在其索引项之前被制作（因此并发的索引扫描很可能看不到堆项。这么做应该是可以的，因为索引的读取者对未提交的行不感兴趣。见<xref linkend="index-unique-checks">）。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       When a heap entry is to be deleted (by <command>VACUUM</>), all its
-       index entries must be removed first.
--->
-如果一条堆记录要被删除(被 <command>VACUUM</>)，所有其索引记录都必须首先删除。
+       当一个堆项要被删除（通过<command>VACUUM</>）时，它的所有索引项都必须首先删除。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       An index scan must maintain a pin
-       on the index page holding the item last returned by
-       <function>amgettuple</>, and <function>ambulkdelete</> cannot delete
-       entries from pages that are pinned by other backends.  The need
-       for this rule is explained below.
--->
-对于并发索引类型，一次索引扫描必须在保存有<function>amgettuple</>
-最后返回记录的索引页面上维护一个销，而<function>ambulkdelete</>
-不能删除其它后端用销固定的索引页面里面的记录。
-为何需要这条规则在下面解释。
+       一次索引扫描必须在保存有<function>amgettuple</>最后返回项的索引页面上维护一个 pin， 并且<function>ambulkdelete</>不能从页面中删除被其他后端加 pin 的项。下面会解释需要这条规则的原因。
       </para>
      </listitem>
     </itemizedlist>
 
-<!--
-   Without the third rule, it is possible for an index reader to
-   see an index entry just before it is removed by <command>VACUUM</>, and
-   then to arrive at the corresponding heap entry after that was removed by
-   <command>VACUUM</>.
-   This creates no serious problems if that item
-   number is still unused when the reader reaches it, since an empty
-   item slot will be ignored by <function>heap_fetch()</>.  But what if a
-   third backend has already re-used the item slot for something else?
-   When using an MVCC-compliant snapshot, there is no problem because
-   the new occupant of the slot is certain to be too new to pass the
-   snapshot test.  However, with a non-MVCC-compliant snapshot (such as
-   <literal>SnapshotNow</>), it would be possible to accept and return
-   a row that does not in fact match the scan keys.  We could defend
-   against this scenario by requiring the scan keys to be rechecked
-   against the heap row in all cases, but that is too expensive.  Instead,
-   we use a pin on an index page as a proxy to indicate that the reader
-   might still be <quote>in flight</> from the index entry to the matching
-   heap entry.  Making <function>ambulkdelete</> block on such a pin ensures
-   that <command>VACUUM</> cannot delete the heap entry before the reader
-   is done with it.  This solution costs little in run time, and adds blocking
-   overhead only in the rare cases where there actually is a conflict.
--->
-如果没有第三条规则，那么一个索引读者是可能在一条索引记录刚要被<command>VACUUM</>删除之前看到它，
-然后在对应的堆记录已经被<command>VACUUM</>删除时，去找这条堆记录。
-如果读者到达该项时，该项编号仍然没有使用，那么这种情况不会导致严重的问题，因为空的项槽位会被<function>heap_fetch()</>忽略。
-但是如果第三个后端已经为其它什么东西复用了这个项槽位又如何?
-如果使用 MVCC 兼容的快照，那么就不会有问题，因为新占据的槽位当然是太新了，因而无法通过快照测试。
-但是，对于非 MVCC 兼容的快照(比如<literal>SnapshotNow</>)，那么就有可能接受并返回一个实际上并不匹配扫描键字的行。
-可以通过要求扫描键字在所有场合下都重新检查的方法来避免这种情况，但是这种方法开销太大了。
-取而代之的是，通过在索引页面上使用一个销，当作一个代理，告诉系统说，读者可能还在对应堆记录的索引记录上空<quote>飞行</>。
-让<function>ambulkdelete</>在这样的销上阻塞可确保<command>VACUUM</>无法在读者完成读取之前删除堆记录。
-这种解觉办法只增加了一点点运行时开销，并且只是在非常罕见的实际有冲突的情况下才导致阻塞开销。
+   没有第三条规则，那么一个索引读取者是可以在一条索引项被<command>VACUUM</>删除之前看到它的，并且然后在<command>VACUUM</>删除它之后找到其对应的堆项。如果读取者到达该项时，该项编号仍然没有被使用，那么这种 情况不会导致严重的问题，因为空的项槽位会被<function>heap_fetch()</>忽略。 但是如果第三个后端已经为其它什么东西重用了这个项槽位又会怎样？在使用 MVCC  兼容的快照时，那么就不会有问题，因为槽位的新占据者太新了以至于无法通过快照测试。但是，对于非 MVCC 兼容的快照（例如 <literal>SnapshotAny</>），那么就有可能接受并返回一个实际上并不匹配扫描键的行。可以通过要求扫描键在所有情况下都在堆行上重新检查来避免这种情况，但是这种方法开销太大了。取而 代之的是，通过在索引页面上使用一个 pin 作为一个代理来表示，读取者可能还处于从索引项到匹配的堆项的<quote>飞行中</>。用<function>ambulkdelete</>来操作这样一个 pin 上的块确保<command>VACUUM</>无法在读取者完成之前删除堆项。这种解决方案在运行时只有一点开销，而只是在真有一个冲突的非常罕见情况下才导致阻塞开销。
   </para>
 
   <para>
-<!--
-   This solution requires that index scans be <quote>synchronous</>: we have
-   to fetch each heap tuple immediately after scanning the corresponding index
-   entry.  This is expensive for a number of reasons.  An
-   <quote>asynchronous</> scan in which we collect many TIDs from the index,
-   and only visit the heap tuples sometime later, requires much less index
-   locking overhead and can allow a more efficient heap access pattern.
-   Per the above analysis, we must use the synchronous approach for
-   non-MVCC-compliant snapshots, but an asynchronous scan is workable
-   for a query using an MVCC snapshot.
--->
-这个解决方法要求索引扫描必须是<quote>同步的</>：必须在扫描完对应的索引记录之后马上抓取每个堆记录。
-这样的方案开销比较大，原因有若干个。
-而<quote>异步的</>扫描，可以先从索引里收集很多 TID ，然后在稍后的某个时间访问堆行，这样就会绕开很多索引锁的开销，以及可以允许更有效的堆访问模式。
-但是按照上面的分析，在非 MVCC 兼容快照上必须使用同步方法，而对使用 MVCC 快照的查询，使用异步扫描应该是可行的。
+   这个解决方法要求索引扫描是<quote>同步的</>：我们不得不在扫描完对应的索引项之后马上去取每个堆元组。这样的方案开销比较大，原因有多个。而一个<quote>异步的</>扫描可以先从索引里收集很多 TID ，并且在稍后的某个时间只访问堆元组，这样要求更少的索引锁定负荷并且能够允许一种更高效的堆访问模式。但是按照上面的分析，在非 MVCC 兼容的快照上我们必须使用同步方法，而异步扫描则适合于使用 MVCC 快照的查询。
   </para>
 
   <para>
-<!--
-   In an <function>amgetbitmap</> index scan, the access method does not
-   keep an index pin on any of the returned tuples.  Therefore
-   it is only safe to use such scans with MVCC-compliant snapshots.
--->
-在<function>amgetbitmap</>索引扫描里，访问方法不需要保证在任何返回的行上保持一个销。
-毕竟，除了给最后一个行加销之外，也没法给其它的加。
-因此，只能在 MVCC 兼容的快照里使用这样的扫描。
+   在一个<function>amgetbitmap</>索引扫描中，访问方法不会在任何被返回的元组上保持一个索引 pin。因此只有把这种扫描与 MVCC 兼容的快照一起使用才是安全的。
   </para>
 
   <para>
-<!--
-   When the <structfield>ampredlocks</> flag is not set, any scan using that
-   index access method within a serializable transaction will acquire a
-   nonblocking predicate lock on the full index.  This will generate a
-   read-write conflict with the insert of any tuple into that index by a
-   concurrent serializable transaction.  If certain patterns of read-write
-   conflicts are detected among a set of concurrent serializable
-   transactions, one of those transactions may be canceled to protect data
-   integrity.  When the flag is set, it indicates that the index access
-   method implements finer-grained predicate locking, which will tend to
-   reduce the frequency of such transaction cancellations.
--->
-如果没有设置<structfield>ampredlocks</>，任何在可串行化事务中使用这个索引访问方法的扫描将会在整个索引上获得一个非阻塞的谓词锁。
-与其并发的另一个可串行化事务向这个索引中插入任何一个元组时都会引发一个读写冲突。
-如果在并发的可串行化事务间检测到某种模式的读写冲突，为了保证数据一致性其中一个事务可能会被取消。
-如果设置了这个标志，表明这种索引访问方法实现了精细的谓词锁，因而趋向于削减这种事务取消的频度。
+   当<structfield>ampredlocks</>标志没有被设置时，在一个可序列化事务中使用该索引访问方法的任何扫描将在整个索引上获取一个非阻塞的谓词锁。这将和一个并发可序列化事务中项索引中插入任何元组发生读-写冲突。如果在一组并发可序列化事务之间检测到特定模式的读-写冲突，其中一个事务可能会被取消来保护数据完整性。当该标志被设置，它表示该索引访问方法实现了细粒度的谓词锁，这将有望缩减这种事务取消的频率。
   </para>
 
  </sect1>
 
  <sect1 id="index-unique-checks">
-<!--
-  <title>Index Uniqueness Checks</title>
--->
   <title>索引唯一性检查</title>
 
   <para>
-<!--
-   <productname>PostgreSQL</productname> enforces SQL uniqueness constraints
-   using <firstterm>unique indexes</>, which are indexes that disallow
-   multiple entries with identical keys.  An access method that supports this
-   feature sets <structname>pg_am</>.<structfield>amcanunique</> true.
-   (At present, only b-tree supports it.)
--->
-<productname>PostgreSQL</productname>使用<firstterm>唯一索引</>来强制 SQL 唯一约束，唯一索引实际上是不允许多条记录有相同键值的的索引。
-一个支持这个特性的访问方法要设置<structname>pg_am</>.<structfield>amcanunique</>为真。（目前，只有 b-tree 支持它。）
+   <productname>PostgreSQL</productname>使用<firstterm>唯一索引</>来强制 SQL 唯一性约束，唯一 索引实际上是不允许多个项有相同键的索引。一个支持这个特性的访问方法要 设置<structname>pg_am</>.<structfield>amcanunique</>为真（目前，只有 b-tree 支持它）。
   </para>
 
   <para>
-<!--
-   Because of MVCC, it is always necessary to allow duplicate entries to
-   exist physically in an index: the entries might refer to successive
-   versions of a single logical row.  The behavior we actually want to
-   enforce is that no MVCC snapshot could include two rows with equal
-   index keys.  This breaks down into the following cases that must be
-   checked when inserting a new row into a unique index:
--->
-因为 MVCC ，必须允许重复的条目物理上存在于索引之中：该条目可能指向某个逻辑行的后面的版本。
-实际想强制的行为是，任何 MVCC 快照都不能包含两条相同的索引键字。
-这种要求在向一个唯一索引插入新行的时候分解成下面的几种情况：
+   因为 MVCC，必须允许重复的项在物理上存在于索引之中：这些项可能指向某个单一逻辑行的后继版本。实际想强制的行为是，任何 MVCC 快照都不能包含两个具有相同索引键的行。在向一个唯一索引中插入一个新行时需要被检查的情况可分解成：
 
     <itemizedlist>
      <listitem>
       <para>
-<!--
-       If a conflicting valid row has been deleted by the current transaction,
-       it's okay.  (In particular, since an UPDATE always deletes the old row
-       version before inserting the new version, this will allow an UPDATE on
-       a row without changing the key.)
--->
-如果一个有冲突的合法行被当前事务删除，这是可以的。
-（特别是因为一个 UPDATE 总是在插入新版本之前删除旧版本，这样就允许一个行上的 UPDATE 不用改变键字进行操作。）
+       如果一个有冲突的合法行已被当前事务删除，这是可以的（特别是因为一个  UPDATE 总是在插入新版本之前删除旧版本，这样就允许一个行上的UPDATE 不改变键）。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       If a conflicting row has been inserted by an as-yet-uncommitted
-       transaction, the would-be inserter must wait to see if that transaction
-       commits.  If it rolls back then there is no conflict.  If it commits
-       without deleting the conflicting row again, there is a uniqueness
-       violation.  (In practice we just wait for the other transaction to
-       end and then redo the visibility check in toto.)
--->
-如果一个在等待提交的事务插入了一行有冲突的数据，那么准备插入数据的事务必须等待看看改事务是否提交。
-如果该事务回滚，那么就没有冲突。如果它没有删除冲突行然后提交，那么就有一个唯一性违例。
-（实际上只是等待另外那个事务结束，然后在程序里重做可视性检查。）
+       如果一个有冲突的行已经被还未提交的事务插入，那么准备插入的事务必须等待看看前面那个事务是否提交。如果它回滚额不会有冲突。如果它提交并且没有删除存在冲突的行，则有一个唯一性违背（实际上我们只是等待那个其他事务结束，然后在全部事务里重做可见性检查）。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       Similarly, if a conflicting valid row has been deleted by an
-       as-yet-uncommitted transaction, the would-be inserter must wait
-       for that transaction to commit or abort, and then repeat the test.
--->
-类似的，如果一个有冲突的有效行被一个准备提交的事务删除，那么另外一个准备提交的插入事务必须等待该事务提交或者退出，然后重做测试。
+       类似的，如果一个有冲突的有效行被一个准备提交的事务删除，那么另外一个准备插入的事务必须等待该事务提交或者退出，然后重做测试。
       </para>
      </listitem>
     </itemizedlist>
   </para>
 
   <para>
-<!--
-   Furthermore, immediately before reporting a uniqueness violation
-   according to the above rules, the access method must recheck the
-   liveness of the row being inserted.  If it is committed dead then
-   no violation should be reported.  (This case cannot occur during the
-   ordinary scenario of inserting a row that's just been created by
-   the current transaction.  It can happen during
-   <command>CREATE UNIQUE INDEX CONCURRENTLY</>, however.)
--->
-此外，根据上面的规则报告唯一性违反前，访问方法必须重新检查刚被插入的行是否仍然<quote>活着</>。
-如果这一行已经因为事务的提交而<quote>死掉了</>，那么不应当发出任何错误。
-(这种情况不可能出现在插入一个由当前事务创建的行的普通场景下。
-但是在<command>CREATE UNIQUE INDEX CONCURRENTLY</>的过程中是可能的。）
+   此外，在根据上述规则报告唯一性违背之前，访问方法必须重新检查刚被插入的行的存活性。如果已经因为事务的提交而死亡，那么不应当报告任何违背（这种情况不可能出现在插入在同一事务中创建的行的普通场景中。但是在<command>CREATE UNIQUE INDEX CONCURRENTLY</>的过程中是可能发生的）。
   </para>
 
   <para>
-<!--
-   We require the index access method to apply these tests itself, which
-   means that it must reach into the heap to check the commit status of
-   any row that is shown to have a duplicate key according to the index
-   contents.  This is without a doubt ugly and non-modular, but it saves
-   redundant work: if we did a separate probe then the index lookup for
-   a conflicting row would be essentially repeated while finding the place to
-   insert the new row's index entry.  What's more, there is no obvious way
-   to avoid race conditions unless the conflict check is an integral part
-   of insertion of the new index entry.
--->
-我们要求索引访问方法自己进行这些测试，这就意味着它必须检查堆，以便查看那些根据索引内容表明有重复键字的任意行的提交状态。
-这样做毫无疑问地很难看并且也不是模块化的，但是这样可以节约重复的工作：
-如果我们实施分离的探测，那么，当查找新行的索引项的插入位置时，必须重复对冲突行的索引查找。
-并且，没有很显然的方法来避免竞争条件，除非冲突检查是插入新索引项的整体动作的一部分。
+   要求索引访问方法自己应用这些测试，这就意味着它必须到达堆来查看那些根据 索引内容有重复键的任意行的提交状态。这无疑是丑陋并且非模块化的，但是这样可以节约重复的工作：如果我们进行一次独立的探测，那么查找一个冲突行的索引查找本质上将在查找插入新行索引项位置时被重复。此外，没有很明显的方法来避免竞争情况，除非冲突检查是插入新索引项动作的一部分。
   </para>
 
   <para>
-<!--
-   If the unique constraint is deferrable, there is additional complexity:
-   we need to be able to insert an index entry for a new row, but defer any
-   uniqueness-violation error until end of statement or even later.  To
-   avoid unnecessary repeat searches of the index, the index access method
-   should do a preliminary uniqueness check during the initial insertion.
-   If this shows that there is definitely no conflicting live tuple, we
-   are done.  Otherwise, we schedule a recheck to occur when it is time to
-   enforce the constraint.  If, at the time of the recheck, both the inserted
-   tuple and some other tuple with the same key are live, then the error
-   must be reported.  (Note that for this purpose, <quote>live</> actually
-   means <quote>any tuple in the index entry's HOT chain is live</>.)
-   To implement this, the <function>aminsert</> function is passed a
-   <literal>checkUnique</> parameter having one of the following values:
--->
-如果唯一性约束是可延期的，情况将更加复杂：我们需要能够为新行插入一个新的索引项，
-但推迟任何唯一性违反的错误，直到语句结束甚至更晚。
-为了避免不必要的重复搜索索引，索引访问方法应该在初始插入时做一个初步的唯一性约束检查。
-如果结果明确地显示没有和活着的元组没有冲突，那么事情已经完成了。
-否则当需要实施这个约束时，我们需要调度一个再检查。
-如果再检查时，被插入的元组和有着相同键的其他元组都还活着，那么必须报告错误。
-（为此，<quote>活着</>实际上意味着<quote>在该索引项的HOT链上的任何一个元组还活着</>。）
-为了实现这个，<function>aminsert</>函数被传入拥有下列某一个值的<literal>checkUnique</>参数：
+   如果唯一约束是可延迟的，就存在额外的复杂性：我们需要能够为一个新行插入一个索引项，但是推迟任何唯一性违背错误直到语句结束或者更晚。为了避免对索引不必要的重复搜索，索引访问方法应该在初始插入过程中做一次初步的唯一性检查。如果显示绝对不会有冲突的活元组，就可以完成。否则，我们计划一次重新检查，它将在强制约束的时候发生。在重新检查时，如果具有相同键的被插入元组和某个其他元组都活着，则必须报告错误（注意为了这个目的，“活着”实际意味着“在索引项的 HOT 链上的任何元组都活着”）。要实现这一点，需要给 aminsert 传递一个 checkUnique 参数，其中包含下列值之一：
+
     <itemizedlist>
      <listitem>
       <para>
-<!--
-       <literal>UNIQUE_CHECK_NO</> indicates that no uniqueness checking
-       should be done (this is not a unique index).
--->
-<literal>UNIQUE_CHECK_NO</>指示不检查唯一性约束（这是一个非唯一索引）。
+       <literal>UNIQUE_CHECK_NO</>表明不需要做唯一性检测（这不是一个唯一索引）。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       <literal>UNIQUE_CHECK_YES</> indicates that this is a non-deferrable
-       unique index, and the uniqueness check must be done immediately, as
-       described above.
--->
-<literal>UNIQUE_CHECK_YES</>指示这是一个非可推迟唯一性约束，并且正如上面描述的必须立即检查唯一性约束。
+       如上所述，<literal>UNIQUE_CHECK_YES</>表明有一个不可延迟的唯 一索引，并且必须立即做唯一性检测。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       <literal>UNIQUE_CHECK_PARTIAL</> indicates that the unique
-       constraint is deferrable. <productname>PostgreSQL</productname>
-       will use this mode to insert each row's index entry.  The access
-       method must allow duplicate entries into the index, and report any
-       potential duplicates by returning FALSE from <function>aminsert</>.
-       For each row for which FALSE is returned, a deferred recheck will
-       be scheduled.
--->
-<literal>UNIQUE_CHECK_PARTIAL</>指示这个唯一性约束是可延期的。
-<productname>PostgreSQL</productname>将使用这种模式插入每一行的索引项。
-访问方法必须允许在索引中插入重复的项目，并且通过让<function>aminsert</>返回FALSE报告任何潜在的重复。
-对每一个返回FALSE的行，一个延期的再检查将会被调度。
+       <literal>UNIQUE_CHECK_PARTIAL</>表明唯一性约束是可延迟的。<productname>PostgreSQL</productname>将会用这个模式来插入每一行的索引项。访问方法必须允许重复的项进入索引，并且通过从	<function>aminsert</>返回 FALSE 来报告任何可能的重复。对于返回 FALSE 的每一行，将计划一个延迟的重新检查。
       </para>
 
       <para>
-<!--
-       The access method must identify any rows which might violate the
-       unique constraint, but it is not an error for it to report false
-       positives. This allows the check to be done without waiting for other
-       transactions to finish; conflicts reported here are not treated as
-       errors and will be rechecked later, by which time they may no longer
-       be conflicts.
--->
-访问方法必须识别任何可能违反唯一性约束的行，但是对它来说把不违反唯一性约束的行报告成可能违反并不是一个错误。
-这允许不必等待其他事务完成就可以完成检查；在这里被报告的冲突不被当成错误并且将在以后进行再检查，那时冲突可能已经消失了。
+       访问方法必须能够标识任何可能违反唯一约束的行，但是对它来说假阳性报告不是错误。这样就允许检查不用等到其他事务都结束；这里报告的冲突不会被当做错误来看待，并且随后将会被重新检查，而到那时它们可能不再是冲突了。
       </para>
      </listitem>
      <listitem>
       <para>
-<!--
-       <literal>UNIQUE_CHECK_EXISTING</> indicates that this is a deferred
-       recheck of a row that was reported as a potential uniqueness violation.
-       Although this is implemented by calling <function>aminsert</>, the
-       access method must <emphasis>not</> insert a new index entry in this
-       case.  The index entry is already present.  Rather, the access method
-       must check to see if there is another live index entry.  If so, and
-       if the target row is also still live, report error.
--->
-<literal>UNIQUE_CHECK_EXISTING</>指示这是对一个被报告有潜在唯一性违反的行的被延期的再检查。
-尽管是通过调用<function>aminsert</>函数，这种情况下访问方法必须<emphasis>不能</>插入新的索引项。
-相应的索引项已经存在了。当然，访问方法必须检查是否有另一个活着的索引项。
-如果有并且目标行仍然活着的话报告错误。
+       <literal>UNIQUE_CHECK_EXISTING</>表明这是一个行的延迟重新检查，该行被报告为一个潜在的唯一性违背。尽管这会通过调用<function>aminsert</>来实现，在这种情况下这个访问方法<emphasis>不</>能插入一个新索引项。该索引项已经存在。 当然，访问方法必须检查是否有另一个活着的索引项。如果有，并且如果目标行也仍然存活，那么报告错误。
       </para>
 
       <para>
-<!--
-       It is recommended that in a <literal>UNIQUE_CHECK_EXISTING</> call,
-       the access method further verify that the target row actually does
-       have an existing entry in the index, and report error if not.  This
-       is a good idea because the index tuple values passed to
-       <function>aminsert</> will have been recomputed.  If the index
-       definition involves functions that are not really immutable, we
-       might be checking the wrong area of the index.  Checking that the
-       target row is found in the recheck verifies that we are scanning
-       for the same tuple values as were used in the original insertion.
--->
-<literal>UNIQUE_CHECK_EXISTING</>被调用时，建议访问方法进一步去确认目标行已经在索引中有一个索引项，如果没有则报错。
-这是个好的做法，因为传入<function>aminsert</>的索引元组的值可能被重新计算。
-如果索引定义涉及不是真正不可变（immutable）的函数，我们可能会在索引中错误的区域查找。
-检查目标行可以在再检查中被找到确保我们正在扫描原始插入时使用的相同的元组值。
+       我们推荐，在一个<literal>UNIQUE_CHECK_EXISTING</>调用中，访问方法进一步验证目标行真的在索引中有一个现有的项，并且如果不是这样就报错。这是个好主意，因为被传到<function>aminsert</>的索引元组值将已经被重新计算过。如果索引定义涉及不是真正不变的函数，我们可能正在检查索引的错误区域。对重新检查中找到的目标行的检查会验证我们正在扫描之前被用于原始插入的同一元组值。
       </para>
      </listitem>
     </itemizedlist>
@@ -1347,35 +418,14 @@ amrestrpos (IndexScanDesc scan);
  </sect1>
 
  <sect1 id="index-cost-estimation">
-<!--
-  <title>Index Cost Estimation Functions</title>
--->
   <title>索引开销估计函数</title>
 
   <para>
-<!--
-   The <function>amcostestimate</> function is given information describing
-   a possible index scan, including lists of WHERE and ORDER BY clauses that
-   have been determined to be usable with the index.  It must return estimates
-   of the cost of accessing the index and the selectivity of the WHERE
-   clauses (that is, the fraction of parent-table rows that will be
-   retrieved during the index scan).  For simple cases, nearly all the
-   work of the cost estimator can be done by calling standard routines
-   in the optimizer; the point of having an <function>amcostestimate</> function is
-   to allow index access methods to provide index-type-specific knowledge,
-   in case it is possible to improve on the standard estimates.
--->
-系统给<function>amcostestimate</> 一些描述可能的索引扫描的信息，包括一个 WHERE 子句和 ORDER BY 子句的列表，这个子句列表是系统认为可以被索引使用的东西。
-它必须返回访问该索引的开销估计值以及 WHERE 子句的选择性(也就是说，在索引扫描期间检索的将被返回的数据行在父表中所占据的比例)。
-对于简单的场合，几乎开销估计器的所有工作都可以通过调用优化器里面的标准过程完成；
-有<function>amcostestimate</>这个函数的目的是允许索引访问方法提供和索引类型相关的知识，这样也许可以改进标准的开销估计。
+   <function>amcostestimate</>函数被给定描述一个可能的索引扫描的信息，包括决定在索引中使用的 WHERE 和 ORDER BY 子句的列表。它必须返回访问该索引的开销估计以及 WHERE 子句的选择度（也就是说，在索引扫描期间将检索的行在父表中所占据的比例）。对于简单情况，几乎开销估计器的所有工作都可以通过调用优化器中的标准过程完成；有<function>amcostestimate</>函数的目的是允许索引访问方法提供和索引类型相关的知识，这种情况下可以改进标准的估计。
   </para>
 
   <para>
-<!--
-   Each <function>amcostestimate</> function must have the signature:
--->
-每个<function>amcostestimate</>函数都必须有下面这样的签名：
+   每个<function>amcostestimate</>函数必须有 signature：
 
 <programlisting>
 void
@@ -1388,20 +438,14 @@ amcostestimate (PlannerInfo *root,
                 double *indexCorrelation);
 </programlisting>
 
-<!--
-   The first three parameters are inputs:
--->
-头3个参数是输入：
+   前三个参数是输入参数：
 
    <variablelist>
     <varlistentry>
      <term><parameter>root</></term>
      <listitem>
       <para>
-<!-- 
-       The planner's information about the query being processed.
--->
-规划器的有关正在被处理的查询的信息。
+       规划器的有关正在被处理的查询的信息。
       </para>
      </listitem>
     </varlistentry>
@@ -1410,11 +454,7 @@ amcostestimate (PlannerInfo *root,
      <term><parameter>path</></term>
      <listitem>
       <para>
-<!--
-       The index access path being considered.  All fields except cost and
-       selectivity values are valid.
--->
-被考虑的索引访问路径。除了开销和选择性其他所有的域都是有效的。
+       被考虑的索引访问路径。其中除了开销和选择度值之外的域都有效。
       </para>
      </listitem>
     </varlistentry>
@@ -1423,17 +463,7 @@ amcostestimate (PlannerInfo *root,
      <term><parameter>loop_count</></term>
      <listitem>
       <para>
-<!--
-       The number of repetitions of the index scan that should be factored
-       into the cost estimates.  This will typically be greater than one when
-       considering a parameterized scan for use in the inside of a nestloop
-       join.  Note that the cost estimates should still be for just one scan;
-       a larger <parameter>loop_count</> means that it may be appropriate
-       to allow for some caching effects across multiple scans.
--->
-索引扫描的重复次数，这个应该被考虑到开销估算中。
-当考虑到用于嵌套循环内部的参数化扫描时，通常它大于1。
-注意开销估算仍然只是为了一次扫描；一个大的<parameter>loop_count</>的意思在多次扫描间进行某些缓存可能是合适的。
+       应该被开销估计所考虑的索引扫描重复次数。当考虑用在一个嵌套循环连接中的参数化扫描时，这个参数通常会大于 1 。注意代价估计应该仍然是对于一次扫描的，一个更大的<parameter>loop_count</>意味着可能在多次扫描间允许一些缓冲效果比较合适。
       </para>
      </listitem>
     </varlistentry>
@@ -1441,20 +471,14 @@ amcostestimate (PlannerInfo *root,
   </para>
 
   <para>
-<!--
-   The last four parameters are pass-by-reference outputs:
--->
-后面四个参数是传递引用的输出：
+   后四个参数是传引用的输出参数：
 
    <variablelist>
     <varlistentry>
      <term><parameter>*indexStartupCost</></term>
      <listitem>
       <para>
-<!--
-       Set to cost of index start-up processing
--->
-设置为索引启动处理的开销
+       设置为索引启动处理的开销。
       </para>
      </listitem>
     </varlistentry>
@@ -1463,10 +487,7 @@ amcostestimate (PlannerInfo *root,
      <term><parameter>*indexTotalCost</></term>
      <listitem>
       <para>
-<!--
-       Set to total cost of index processing
--->
-设置为索引处理的总开销
+       设置为索引处理的总开销。
       </para>
      </listitem>
     </varlistentry>
@@ -1475,10 +496,7 @@ amcostestimate (PlannerInfo *root,
      <term><parameter>*indexSelectivity</></term>
      <listitem>
       <para>
-<!--
-       Set to index selectivity
--->
-设置为索引的选择性
+       设置为索引的选择度。
       </para>
      </listitem>
     </varlistentry>
@@ -1487,11 +505,7 @@ amcostestimate (PlannerInfo *root,
      <term><parameter>*indexCorrelation</></term>
      <listitem>
       <para>
-<!--
-       Set to correlation coefficient between index scan order and
-       underlying table's order
---> 
-设置为索引扫描顺序和下层的表的顺序之间的相关有效性
+       设置为索引扫描顺序和下层的表的顺序之间的相关性。
       </para>
      </listitem>
     </varlistentry>
@@ -1499,104 +513,42 @@ amcostestimate (PlannerInfo *root,
   </para>
 
   <para>
-<!--
-   Note that cost estimate functions must be written in C, not in SQL or
-   any available procedural language, because they must access internal
-   data structures of the planner/optimizer.
--->
-请注意开销估计函数必须用 C 写，而不能用 SQL 或者任何可用的存储过程语言，因为它们必须访问规划器/优化器的内部数据结构。
+   请注意开销估计函数必须用 C 编写，而不能用 SQL 或者任何可用的过程语言，因为它们必须访问规划器/优化器的内部数据结构。
   </para>
 
   <para>
-<!--
-   The index access costs should be computed using the parameters used by
-   <filename>src/backend/optimizer/path/costsize.c</filename>: a sequential
-   disk block fetch has cost <varname>seq_page_cost</>, a nonsequential fetch
-   has cost <varname>random_page_cost</>, and the cost of processing one index
-   row should usually be taken as <varname>cpu_index_tuple_cost</>.  In
-   addition, an appropriate multiple of <varname>cpu_operator_cost</> should
-   be charged for any comparison operators invoked during index processing
-   (especially evaluation of the indexquals themselves).
--->
-索引访问开销应该以<filename>src/backend/optimizer/path/costsize.c</filename> 
-使用的单位进行计算：一个顺序磁盘块抓取开销是<varname>seq_page_cost</>，
-一个非顺序抓取开销是<varname>random_page_cost</>，
-而处理一个索引行的开销通常应该是<varname>cpu_index_tuple_cost</>。
-另外，在任何索引处理期间调用的比较操作符，都应该增加一个数量为<varname>cpu_operator_cost</>
-倍数的开销(特别是计算索引条件 indexquals 自己的时候)。
+   索引访问开销应该采用被<filename>src/backend/optimizer/path/costsize.c</filename>使用的参数进行计算：一次顺序磁盘块获取的开销是<varname>seq_page_cost</>、一次非顺序获取的开销是<varname>random_page_cost</>并且处理一个索引行的开销通常应该是<varname>cpu_index_tuple_cost</>。另外，在索引处理期间（尤其是索引条件本身的计算）调用的任何比较操作符都会耗费<varname>cpu_operator_cost</>倍数的开销。
   </para>
 
   <para>
-<!--
-   The access costs should include all disk and CPU costs associated with
-   scanning the index itself, but <emphasis>not</> the costs of retrieving or
-   processing the parent-table rows that are identified by the index.
--->
-访问开销应该包括所有与扫描索引本身相关的磁盘和 CPU 开销，但是<emphasis>不包括</>检索或者处理索引标识出来的父表的行的开销。
+   访问开销应该包括所有与扫描索引本身相关的磁盘和 CPU 开销，但是<emphasis>不</>包括检索或者处理被索引标识出来的父表行的开销。
   </para>
 
   <para>
-<!--
-   The <quote>start-up cost</quote> is the part of the total scan cost that
-   must be expended before we can begin to fetch the first row.  For most
-   indexes this can be taken as zero, but an index type with a high start-up
-   cost might want to set it nonzero.
--->
-<quote>启动开销</quote>是总扫描开销中的这样一部分：在开始抓取第一行之前，必须花掉的开销。
-对于大多数索引，这个可以是零，但是那些启动开销很大的索引类型可能不能把它设置为零。
+   <quote>启动开销</quote>是整个扫描开销中的一部分：在能够开始取第一行之前必须花掉的开销。对于大多数索引这个开销是零，但 是那些启动开销很大的索引类型不会把它设置为零。
   </para>
 
   <para>
-<!--
-   The <parameter>indexSelectivity</> should be set to the estimated fraction of the parent
-   table rows that will be retrieved during the index scan.  In the case
-   of a lossy query, this will typically be higher than the fraction of
-   rows that actually pass the given qual conditions.
--->
-<parameter>indexSelectivity</>应该设置成在索引扫描期间，父表中的行被选出来的部分的百分比。
-在有损耗的查询的情况下，这个值通常比实际通过给出的查询条件的行所占的百分比要高。
+   <parameter>indexSelectivity</>应该设置成在索引扫描期间，父表行被检索的估计比例。在一个有损查询的情况下，这个值通常高于实际通过 给定查询条件的行的比例。
   </para>
 
   <para>
-<!--
-   The <parameter>indexCorrelation</> should be set to the correlation (ranging between
-   -1.0 and 1.0) between the index order and the table order.  This is used
-   to adjust the estimate for the cost of fetching rows from the parent
-   table.
--->
-<parameter>indexCorrelation</>应该设置成索引顺序和表顺序之间的相关性(范围在 -1.0 到 1.0 之间)。
-这个数值用于调整从父表中抓取行的开销估计。
+   <parameter>indexCorrelation</>应该被设置成索引顺序和表顺序之间的相关性（范围从 -1.0 到 1.0）。这个数值被用于调整从父表中取出行的开销估计。
   </para>
 
   <para>
-<!--
-   When <parameter>loop_count</> is greater than one, the returned numbers
-   should be averages expected for any one scan of the index.
--->
-当<parameter>loop_count</>大于1，返回的数值应当在每一次索引扫描之间平均。
+   当<parameter>loop_count</>大于一时，返回的数应该是该索引任何一次扫描的平均期望值。
   </para>
 
   <procedure>
-<!--
-   <title>Cost Estimation</title>
--->
    <title>开销估计</title>
    <para>
-<!--
-    A typical cost estimator will proceed as follows:
--->
-一个典型的开销估计器会像下面这样进行处理：
+    一个典型的开销估计器会像下面这样进行处理：
    </para>
 
    <step>
     <para>
-<!--
-     Estimate and return the fraction of parent-table rows that will be visited
-     based on the given qual conditions.  In the absence of any index-type-specific
-     knowledge, use the standard optimizer function <function>clauselist_selectivity()</function>:
--->
-基于给出的查询条件，估计并返回父表中将被访问的行的百分比。
-如果缺乏索引类型相关的知识，那么使用标准的优化器函数<function>clauselist_selectivity()</function>:
+     基于给出的条件情况，估计并返回父表行将被访问的比例。如果缺乏索引类型相关的知识，那么使用标准的优化器函数<function>clauselist_selectivity()</function>：
 
 <programlisting>
 *indexSelectivity = clauselist_selectivity(root, path-&gt;indexquals,
@@ -1608,34 +560,19 @@ amcostestimate (PlannerInfo *root,
 
    <step>
     <para>
-<!--
-     Estimate the number of index rows that will be visited during the
-     scan.  For many index types this is the same as <parameter>indexSelectivity</> times
-     the number of rows in the index, but it might be more.  (Note that the
-     index's size in pages and rows is available from the
-     <literal>path-&gt;indexinfo</> struct.)
--->
-估计在扫描过程中将被访问的索引行数。对于许多索引类型，这个等于<parameter>indexSelectivity</>乘以索引中的行数，但是可能更多。
-（请注意，索引的总页面数和行数可以从<literal>path-&gt;indexinfo</>结构中获得。）
+     估计在扫描过程中将被访问的索引行数。对于许多索引类型，这个等于<parameter>indexSelectivity</>乘以索引中的行数，但是可能更多（请注意，页面和行中的索引尺寸从<literal>path-&gt;indexinfo</>结构中获得）。
     </para>
    </step>
 
    <step>
     <para>
-<!--
-     Estimate the number of index pages that will be retrieved during the scan.
-     This might be just <parameter>indexSelectivity</> times the index's size in pages.
--->
-估计在扫描中将取出的索引页面数量。这个可能就是<parameter>indexSelectivity</>乘以索引的总页面数。
+     估计在扫描中将检索的索引页面数量。这个可能就是<parameter>indexSelectivity</>乘以索引的总页面数。
     </para>
    </step>
 
    <step>
     <para>
-<!--
-     Compute the index access cost.  A generic estimator might do this:
--->
-计算索引访问开销。一个通用的估计器可以这么干：
+     计算索引访问开销。一个通用的估计器可能会：
 
 <programlisting>
 /*
@@ -1650,33 +587,19 @@ cost_qual_eval(&amp;index_qual_cost, path-&gt;indexquals, root);
     (cpu_index_tuple_cost + index_qual_cost.per_tuple) * numIndexTuples;
 </programlisting>
 
-<!--
-     However, the above does not account for amortization of index reads
-     across repeated index scans.
--->
-不过，上面没有考虑多次重复索引扫描中索引读取的开销分摊。
+     不过，上面没有考虑重复索引扫描间的索引读分期补偿（amortization）。
     </para>
    </step>
 
    <step>
     <para>
-<!--
-     Estimate the index correlation.  For a simple ordered index on a single
-     field, this can be retrieved from pg_statistic.  If the correlation
-     is not known, the conservative estimate is zero (no correlation).
--->
-估计索引的相关性。对于简单的在单个字段上的有序索引，这个值可以从 pg_statistic 中检索。
-如果相关性是未知，那么保守的估计是零(没有相关性)。
+     估计索引的相关性。对于一个简单的在单列有序索引，这个值可以从 pg_statistic 中检索。如果相关性是未知，那么保守的估计是零（没有相关性）。
     </para>
    </step>
   </procedure>
 
   <para>
-<!--
-   Examples of cost estimator functions can be found in
-   <filename>src/backend/utils/adt/selfuncs.c</filename>.
--->
-开销估计器函数的例子可以在<filename>src/backend/utils/adt/selfuncs.c</filename>里面找到。
+   开销估计器函数的例子可以在<filename>src/backend/utils/adt/selfuncs.c</filename>中找到。
   </para>
  </sect1>
 </chapter>

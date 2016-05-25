@@ -1,1287 +1,292 @@
 <!-- doc/src/sgml/wal.sgml -->
 
 <chapter id="wal">
- <!-- 
- <title>Reliability and the Write-Ahead Log</title> 
- -->
  <title>可靠性和预写式日志</title>
 
- <!--
-<para>
-  This chapter explains how the Write-Ahead Log is used to obtain
-  efficient, reliable operation.
+ <para>
+  本章解释预写式日志如何用于获得有效的、可靠的操作。
  </para>
--->
-<para>
-本章解释预写式日志如何用于获得高效且可靠的操作。
-</para>
 
  <sect1 id="wal-reliability">
-  <!-- 
-  <title>Reliability</title> 
-  -->
   <title>可靠性</title>
 
-  <!--
-<para>
-   Reliability is an important property of any serious database
-   system, and <productname>PostgreSQL</> does everything possible to
-   guarantee reliable operation. One aspect of reliable operation is
-   that all data recorded by a committed transaction should be stored
-   in a nonvolatile area that is safe from power loss, operating
-   system failure, and hardware failure (except failure of the
-   nonvolatile area itself, of course).  Successfully writing the data
-   to the computer's permanent storage (disk drive or equivalent)
-   ordinarily meets this requirement.  In fact, even if a computer is
-   fatally damaged, if the disk drives survive they can be moved to
-   another computer with similar hardware and all committed
-   transactions will remain intact.
+  <para>
+   可靠性是任何严肃的数据库系统的重要属性，<productname>PostgreSQL</>尽一切可能来保证可靠的操作。可靠的操作的一个方面是，被一个提交事务记录的所有数据应该被存储在一个非易失的区域， 这样就不会因为失去电力、操作系统失败以及硬件失败（当然，除了非易失区域自身失效之外）等原因导致的数据丢失。 向计算机的永久存储（磁盘驱动器或者等效的设备）成功写入数据通常可以满足这个要求。 实际上，即使计算机受到致命损坏，只要磁盘驱动器幸存下来，那么它们就可以被移动到另外一台具有类似硬件的计算机上， 而所有已经提交的事务将保持原状。
   </para>
--->
-<para>
-可靠性是任何严肃的数据库系统的重要属性，<productname>PostgreSQL</>尽一切可能来保证操作的可靠性。
-可靠性操作的一个方面是所有已提交的数据都应该存储在一个非易失的区域，这样就不会因为电力失效、
-操作系统崩溃、硬件失效(除了非易失区域自身失效之外)等原因导致数据丢失。向计算机的永久存储设备
-(磁盘驱动器或其他等效的设备)成功写入数据通常可以满足这个要求。实际上，即使计算机完全失效，
-只要磁盘驱动器幸免于难，那么就可以将它们移动到另外一台硬件兼容的计算机上，
-而所有已经提交的事务将保持原状。
-</para>
 
-  <!--
-<para>
-   While forcing data to the disk platters periodically might seem like
-   a simple operation, it is not. Because disk drives are dramatically
-   slower than main memory and CPUs, several layers of caching exist
-   between the computer's main memory and the disk platters.
-   First, there is the operating system's buffer cache, which caches
-   frequently requested disk blocks and combines disk writes. Fortunately,
-   all operating systems give applications a way to force writes from
-   the buffer cache to disk, and <productname>PostgreSQL</> uses those
-   features.  (See the <xref linkend="guc-wal-sync-method"> parameter
-   to adjust how this is done.)
+  <para>
+   周期地强制数据进入磁盘盘片看上去像一件简单的操作，但实际上并不是。 因为磁盘驱动器比内存和CPU要慢很多，在计算机的主存和磁盘盘片之间存在多层的高速缓存。 首先，有操作系统的高速缓存，它缓冲常用的磁盘块并且组合对磁盘的写入。 幸运的是，所有操作系统都给予应用一种强制从高速缓存写入磁盘的方法，<productname>PostgreSQL</>则使用了那个特性（参阅<xref linkend="guc-wal-sync-method">参数调节如何完成之）。
   </para>
--->
-<para>
-周期性地将数据强制写入磁盘盘片看上去像一个简单的操作，但实际并非如此。
-因为磁盘驱动器比内存和 CPU 要慢许多，在计算机的主存和磁盘盘片之间存在多层缓冲。
-首先，有操作系统的缓冲区内存，它缓冲常用的磁盘块并将磁盘的写入请求进行合并。幸运的是，
-所有操作系统都给予应用一个强制从缓冲区写入磁盘的方法，<productname>PostgreSQL</>
-使用了该特性(参阅<xref linkend="guc-wal-sync-method">参数)。
-</para>
 
-  <!--
-<para>
-   Next, there might be a cache in the disk drive controller; this is
-   particularly common on <acronym>RAID</> controller cards. Some of
-   these caches are <firstterm>write-through</>, meaning writes are sent
-   to the drive as soon as they arrive. Others are
-   <firstterm>write-back</>, meaning data is sent to the drive at
-   some later time. Such caches can be a reliability hazard because the
-   memory in the disk controller cache is volatile, and will lose its
-   contents in a power failure.  Better controller cards have
-   <firstterm>battery-backup units</> (<acronym>BBU</>s), meaning
-   the card has a battery that
-   maintains power to the cache in case of system power loss.  After power
-   is restored the data will be written to the disk drives.
+  <para>
+   然后，在磁盘驱动器的控制器上可能还有一个高速缓存；这在<acronym>RAID</>控制卡上是特别常见的。有些高速缓存是<firstterm>直写式</>的，即写入动作在到达的时候就立刻写入到磁盘上。其它是<firstterm>回写式</>的， 即发送给驱动器的数据在稍后的某个时间写入驱动器。这样的高速缓存可能会称为可靠性灾难，因为磁盘控制器高速缓存的内存是易失性的，在发生电力失败的情况下会丢失其内容。 好一些的控制器卡有<firstterm>后备电池单元</>（<acronym>BBU</>）， 即这种卡上面有电池可以在系统电力失败的情况下提供电力。 在电力恢复之后，这些数据将会被写入磁盘驱动器。
   </para>
--->
-<para>
-然后，在磁盘驱动器的控制器上可能还有一个缓冲；尤其在<acronym>RAID</>控制卡上更为常见。
-这些缓冲区中，有些是<firstterm>透过式写入</>，意思是写入动作在到达的同时写入到磁盘上。
-其它则是<firstterm>回写式写入</>，意思是数据将在稍后写入驱动器，这样的缓冲区会降低可靠性，
-因为磁盘控制器上的内存是易失的，在发生电力失效的情况下会丢失其中的内容。
-好一些的控制器卡备有<firstterm>电池备份单元</>(<acronym>BBU</>s)，
-可以在系统电力失效的情况下提供电力，在电力恢复之后，这些数据将会被写入磁盘驱动器。
-</para>
 
-  <!--
-<para>
-   And finally, most disk drives have caches. Some are write-through
-   while some are write-back, and the same concerns about data loss
-   exist for write-back drive caches as for disk controller
-   caches.  Consumer-grade IDE and SATA drives are particularly likely
-   to have write-back caches that will not survive a power failure.  Many
-   solid-state drives (SSD) also have volatile write-back caches.
+  <para>
+   最后，大多数磁盘驱动器都有高速缓存。有些是直写的，有些是回写的， 和磁盘控制器一样，回写的磁盘高速缓存也存在数据丢失的问题。 消费级别的IDE和SATA驱动器尤其可能包含回写式高速缓存，在掉电的情况下很容易丢失数据。很多固态驱动器（SSD）也具有易失性回写式高速缓存。
   </para>
--->
-<para>
-最后，大多数磁盘驱动器自身也有缓冲区。有些是透过式的，有些是回写式的。
-和磁盘控制器一样，回写式的磁盘缓冲区也存在数据丢失的问题。
-消费级别的 IDE 和 SATA 驱动器一般都有回写式缓冲，在掉电的情况下很容易丢失数据。
-很多固态磁盘(SSD)也有易失的回写式缓冲。
-</para>
 
-  <!--
-<para>
-   These caches can typically be disabled; however, the method for doing
-   this varies by operating system and drive type:
+  <para>
+   这些高速缓存通常可以被禁用，但是不同的操作系统和驱动器类型有不同的做法：
   </para>
--->
-<para>
-这些缓存通常可以禁用，然而，禁用的方法会因操作系统和驱动类型而不同。
-</para>
 
   <itemizedlist>
     <listitem>
-      <!--
-<para>
-        On <productname>Linux</>, IDE and SATA drives can be queried using
-        <command>hdparm -I</command>; write caching is enabled if there is
-        a <literal>*</> next to <literal>Write cache</>.  <command>hdparm -W 0</>
-        can be used to turn off write caching.  SCSI drives can be queried
-        using <ulink url="http://sg.danny.cz/sg/sdparm.html"><application>sdparm</></ulink>.
-        Use <command>sdparm -&#045;get=WCE</command> to check
-        whether the write cache is enabled and <command>sdparm &#045;-clear=WCE</>
-        to disable it.
+      <para>
+        在<productname>Linux</>上，可以使用<command>hdparm -I</command>查询IDE和SATA驱动器，如果在<literal>Write cache</>之后有一个<literal>*</>则表示写高速缓存被启用。可以用<command>hdparm -W 0</>来关闭写高速缓存。可以使用<ulink url="http://sg.danny.cz/sg/sdparm.html"><application>sdparm</></ulink>查询SCSI驱动器。使用<command>sdparm --get=WCE</command>来检查写高速缓存是否被启用，而<command>sdparm --clear=WCE</>可以用来禁用它。
       </para>
--->
-<para>
-在<productname>Linux</>上，IDE和SATA驱动器可以使用<command>hdparm -I</command>查询；
-如果在<literal>Write cache</>后面有一个<literal>*</>则写缓存是开启的。<command>hdparm -W 0</>
-可以用来关闭写缓存。SCSI驱动器可以使用<ulink url="http://sg.danny.cz/sg/sdparm.html"><application>sdparm</></ulink>
-查询。使用<command>sdparm --get=WCE</command>来检查写缓存是否打开，使用<command>sdparm --clear=WCE</>
-来关闭写缓存。
-</para>
     </listitem>
 
     <listitem>
-      <!--
-<para>
-        On <productname>FreeBSD</>, IDE drives can be queried using
-        <command>atacontrol</command> and write caching turned off using
-        <literal>hw.ata.wc=0</> in <filename>/boot/loader.conf</>;
-        SCSI drives can be queried using <command>camcontrol identify</command>,
-        and the write cache both queried and changed using
-        <command>sdparm</command> when available.
+      <para>
+        在<productname>FreeBSD</>上，IDE驱动器可以使用<command>atacontrol</command>查询，而写高速缓存可以用<filename>/boot/loader.conf</>中的<literal>hw.ata.wc=0</>关闭。SCSI驱动器可以使用<command>camcontrol identify</command>查询，而写高速缓存的查询和更改都可以使用<command>sdparm</command>。
       </para>
--->
-<para>
-在<productname>FreeBSD</>上，IDE驱动器可以使用<command>atacontrol</command>查询，
-写缓存在<filename>/boot/loader.conf</>里用<literal>hw.ata.wc=0</>来关闭；
-SCSI驱动器可以使用<command>camcontrol identify</command>查询，如果<command>sdparm</command>可用，则写缓存的查询和修改皆可使用该命令。
-</para>
     </listitem>
 
     <listitem>
-      <!--
-<para>
-        On <productname>Solaris</>, the disk write cache is controlled by
-        <command>format -e</>.
-        (The Solaris <acronym>ZFS</> file system is safe with disk write-cache
-        enabled because it issues its own disk cache flush commands.)
+      <para>
+        在<productname>Solaris</>上，磁盘的写高速缓存被<command>format -e</>控制（Solaris的<acronym>ZFS</>文件系统对于开启的磁盘写高速缓存是安全的，因为它会发出它自己的磁盘高速缓存刷写命令）。
       </para>
--->
-<para>
-在<productname>Solaris</>上，磁盘写缓存通过<command>format -e</>来控制。
-（Solaris的 <acronym>ZFS</>文件系统对于打开磁盘写缓存是安全的，因为它使用自己的磁盘缓存刷写命令。）
-</para>
     </listitem>
 
     <listitem>
-      <!--
-<para>
-        On <productname>Windows</>, if <varname>wal_sync_method</> is
-        <literal>open_datasync</> (the default), write caching can be disabled
-        by unchecking <literal>My Computer\Open\<replaceable>disk drive</>\Properties\Hardware\Properties\Policies\Enable write caching on the disk</>.
-        Alternatively, set <varname>wal_sync_method</varname> to
-        <literal>fsync</> or <literal>fsync_writethrough</>, which prevent
-        write caching.
+      <para>
+        在<productname>Windows</>上，如果<varname>wal_sync_method</>是<literal>open_datasync</>（默认值），写高速缓存可以通过取消选中<literal>My Computer\Open\<replaceable>disk drive</>\Properties\Hardware\Properties\Policies\Enable write caching on the disk</>禁用。另一种方法可以通过设置<varname>wal_sync_method</varname>为<literal>fsync</>或<literal>fsync_writethrough</>来阻止写高速缓存。
       </para>
--->
-<para>
-在<productname>Windows</>上，如果<varname>wal_sync_method</>为<literal>open_datasync</>（默认值），
-写缓存可以通过取消选中<literal>My Computer\Open\<replaceable>disk drive</>\Properties\Hardware\Properties\Policies\Enable write caching on the disk</>
-来禁用。或者，设置<varname>wal_sync_method</varname>为<literal>fsync</>或<literal>fsync_writethrough</>
-来阻止写缓存。
-
-</para>
     </listitem>
 
     <listitem>
-      <!--
-<para>
-        On <productname>Mac OS X</productname>, write caching can be prevented by
-        setting <varname>wal_sync_method</> to <literal>fsync_writethrough</>.
+      <para>
+        在<productname>OS X</productname>上，通过设置<varname>wal_sync_method</>为<literal>fsync_writethrough</>可以阻止写高速缓存。
       </para>
--->
-<para>
-在<productname>Mac OS X</productname>上，写缓存可以通过设置<varname>wal_sync_method</>
-为<literal>fsync_writethrough</>来阻止。
-</para>
     </listitem>
   </itemizedlist>
 
-  <!--
-<para>
-   Recent SATA drives (those following <acronym>ATAPI-6</> or later)
-   offer a drive cache flush command (<command>FLUSH CACHE EXT</>),
-   while SCSI drives have long supported a similar command
-   <command>SYNCHRONIZE CACHE</>.  These commands are not directly
-   accessible to <productname>PostgreSQL</>, but some file systems
-   (e.g., <acronym>ZFS</>, <acronym>ext4</>) can use them to flush
-   data to the platters on write-back-enabled drives.  Unfortunately, such
-   file systems behave suboptimally when combined with battery-backup unit
-   (<acronym>BBU</>) disk controllers.  In such setups, the synchronize
-   command forces all data from the controller cache to the disks,
-   eliminating much of the benefit of the BBU.  You can run the
-   <xref linkend="pgtestfsync"> program to see
-   if you are affected.  If you are affected, the performance benefits
-   of the BBU can be regained by turning off write barriers in
-   the file system or reconfiguring the disk controller, if that is
-   an option.  If write barriers are turned off, make sure the battery
-   remains functional; a faulty battery can potentially lead to data loss.
-   Hopefully file system and disk controller designers will eventually
-   address this suboptimal behavior.
+  <para>
+   最近的SATA驱动器（遵循<acronym>ATAPI-6</>及更新标准）提供了一个驱动器高速缓存刷写命令（<command>FLUSH CACHE EXT</>），而SCSI驱动器有一个存在很长时间的类似命令<command>SYNCHRONIZE CACHE</>。这些命令对于<productname>PostgreSQL</>并不能直接访问，但某些文件系统（例如<acronym>ZFS</>、<acronym>ext4</>）可以使用它们将数据刷写到回写式驱动器的盘片上。不幸的是，这些文件系统在和后备电池单元（<acronym>BBU</>）一起工作时的表现要略差。在这种设置下，同步命令强制所有来自控制器高速缓存的数据到磁盘，消除了BBU的很多好处。你可以运行<xref linkend="pgtestfsync">程序来看你是否被影响。如果你被影响了，BBU带来的性能好处可以通过关闭文件系统的写障碍或者重新配置磁盘控制器来重新获得。如果写障碍被关闭，请确认电池是否保持有效，一个有问题的电池可能会导致数据丢失。但愿文件系统和磁盘控制器设计师们将最终解决这种次优行为。
   </para>
--->
-<para>
-最近的SATA驱动器（在<acronym>ATAPI-6</>之后或更晚一些的）提供一个驱动器缓存刷写命令(<command>FLUSH CACHE EXT</>)，
-而SCSI驱动器长期以来支持一个类似的命令<command>SYNCHRONIZE CACHE</>。这些命令不能直接访问<productname>PostgreSQL</>，
-但是某些文件系统（例如，<acronym>ZFS</>，<acronym>ext4</>）可以使用它们来刷写数据到启用了回写的驱动器上的盘片上。
-不幸的是，这样的文件系统与电池备份单元(<acronym>BBU</>)磁盘驱动器结合使用时效果并不理想。在这样的设置中，
-同步命令强制所有数据从驱动器缓存到磁盘，消除了BBU的好处。你可以运行<xref linkend="pgtestfsync">
-程序来查看你是否受影响。如果你受到影响，BBU的性能优势可以通过在文件系统中关掉写屏障或重新配置磁盘控制器重新获得，前提是这是一个选项。如果关闭了写屏障，确保电池仍然运行；失效的电池可能导致数据丢失。
-希望文件系统和磁盘控制器设计者最终解决这个并不理想的行为。
-</para>
 
-  <!--
-<para>
-   When the operating system sends a write request to the storage hardware,
-   there is little it can do to make sure the data has arrived at a truly
-   non-volatile storage area. Rather, it is the
-   administrator's responsibility to make certain that all storage components
-   ensure integrity for both data and file-system metadata.
-   Avoid disk controllers that have non-battery-backed write caches.
-   At the drive level, disable write-back caching if the
-   drive cannot guarantee the data will be written before shutdown.
-   If you use SSDs, be aware that many of these do not honor cache flush
-   commands by default.
-   You can test for reliable I/O subsystem behavior using <ulink
-   url="http://brad.livejournal.com/2116715.html"><filename>diskchecker.pl</filename></ulink>.
+  <para>
+   在操作系统向存储硬件发出一个写请求的时候，它没有什么好办法来保证数据真正到达非易失的存储区域。 实际上，确保所有存储部件都保证数据和文件系统元数据的完整性是管理员的责任。 避免使用那些没有电池作为后备的写高速缓存的磁盘控制器。在驱动器级别，如果驱动器不能保证在关闭（掉电）之前写入数据， 那么关闭回写高速缓冲。如果你在使用SSD，注意很多SSD默认都没有兑现高速缓存刷写命令。你可以使用<ulink url="http://brad.livejournal.com/2116715.html"><filename>diskchecker.pl</filename></ulink>来测试可靠的I/O子系统行为。
   </para>
--->
-<para>
-在操作系统向存储硬件发出一个写请求的时候，它没有什么好办法来保证数据真正到达非易失的存储区域。
-实际上，确保所有存储部件都保证数据和文件系统元数据的完整性是管理员的责任。
-应该避免使用没有电池供电的回写缓冲磁盘控制器。在驱动器级别，
-如果驱动器不能保证在关闭(掉电)之前写入数据，那么应该关闭回写缓冲。
-如果你使用SSD，要知道默认情况下缓存刷新命令对这些是无能为力的。你可以使用
-<ulink url="http://brad.livejournal.com/2116715.html"><filename>diskchecker.pl</filename></ulink>
-测试可靠的I/O子系统的行为。
-</para>
 
-  <!--
-<para>
-   Another risk of data loss is posed by the disk platter write
-   operations themselves. Disk platters are divided into sectors,
-   commonly 512 bytes each.  Every physical read or write operation
-   processes a whole sector.
-   When a write request arrives at the drive, it might be for some multiple
-   of 512 bytes (<productname>PostgreSQL</> typically writes 8192 bytes, or
-   16 sectors, at a time), and the process of writing could fail due
-   to power loss at any time, meaning some of the 512-byte sectors were
-   written while others were not.  To guard against such failures,
-   <productname>PostgreSQL</> periodically writes full page images to
-   permanent WAL storage <emphasis>before</> modifying the actual page on
-   disk. By doing this, during crash recovery <productname>PostgreSQL</> can
-   restore partially-written pages from WAL.  If you have file-system software
-   that prevents partial page writes (e.g., ZFS),  you can turn off
-   this page imaging by turning off the <xref
-   linkend="guc-full-page-writes"> parameter. Battery-Backed Unit
-   (BBU) disk controllers do not prevent partial page writes unless
-   they guarantee that data is written to the BBU as full (8kB) pages.
+  <para>
+   另外一个数据丢失的风险来自磁盘盘片写操作自身。磁盘盘片会被分割为扇区，通常每个扇区512字节。每次物理读写都对整个扇区进行操作。当一个写操作到达磁盘的时候，它可能是512 字节（<productname>PostgreSQL</>通常一次写8192字节或者16个扇区）的某个倍数，而写入处理可能因为电力失效在任何时候失败，这 意味着某些512字节的扇区写入了，而有些没有。为了避免这样的失效，<productname>PostgreSQL</>在修改磁盘上的实际页面<emphasis>之前</>， 周期地把整个页面的映像写入永久WAL存储。这么做之后，在崩溃恢复的时候，<productname>PostgreSQL</>可以从WAL恢复部分写入的页面。如果你的文件系统阻止部分页面写入（如ZFS），你可以通过关闭<xref linkend="guc-full-page-writes">参数来关闭这种页映像。后备电池单元（BBU）磁盘控制器不阻止部分页面写入，除非它们保证数据都是以整页（8kB）写入到BBU。
   </para>
--->
-<para>
-另外一个数据丢失的风险来自磁盘盘片写操作自身。磁盘盘片会被分割为段，通常每段 512 字节。
-每次物理读写都对整个段进行操作。当一个写操作到达磁盘的时候，它可能是512字节的某些整数倍
-（<productname>PostgreSQL</>通常一次写入8192字节，或者16段），而写入操作可能因为电力失效而随时失败，
-意味着某些 512 字节的段写入了，而另一些则没有。为了避免这个问题，<productname>PostgreSQL</>
-在修改磁盘上的实际页面<emphasis>之前</>周期性地把整个页面的映像写入永久WAL存储。这样，
-在崩溃恢复的时候，<productname>PostgreSQL</>就可以从WAL中恢复部分写入的页面。
-如果你有文件系统(比如ZFS)自身能够避免部分页面写入，你可以通过关闭<xref linkend="guc-full-page-writes">
-参数来关闭页面映像功能。电池备份单元(BBU)磁盘控制器不能阻止部分页面写入，
-除非他们保证数据以完整页面（8kB）写入BBU。
-</para>
- 
-<para>
-<!-- 
-   <productname>PostgreSQL</> also protects against some kinds of data corruption
-   on storage devices that may occur because of hardware errors or media failure over time,
-   such as reading/writing garbage data. 
--->
-<productname>PostgreSQL</>也能阻止某些因为硬件错误或介质失效可能发生在存储驱动器上的数据损坏，
-比如读/写垃圾数据。
+  <para>
+   <productname>PostgreSQL</>也能防止由于硬件错误或者介质失败超时在存储设备上造成的各种数据损坏，例如读/写垃圾数据。
    <itemizedlist>
     <listitem>
- <!--
- <para>
-      Each individual record in a WAL file is protected by a CRC-32 (32-bit) check
-      that allows us to tell if record contents are correct. The CRC value
-      is set when we write each WAL record and checked during crash recovery,
-      archive recovery and replication.
+     <para>
+      WAL文件中的每一个记录都被一个CRC-32（32位）校验码所保护，这让我们可以判断记录内容是否正确。CRC值在我们写入每一个WAL记录时设置，并且在崩溃恢复、归档恢复和复制时检查。
      </para>
--->
-<para>
-在WAL文件中的每个单独的记录受CRC-32 (32-bit)校验保护，这样允许我们判断记录内容是否正确。当我们写入每个WAL记录时会设置其CRC值，在崩溃恢复、归档恢复和复制时都会对其进行检测。
-</para>
     </listitem>
     <listitem>
-     <!--
-<para>
-      Data pages are not currently checksummed, though full page images recorded
-      in WAL records will be protected. Data pages have a 16-bit field available
-      for future use with a data page checksum feature.
+     <para>
+      目前数据页并没有默认地被校验，但是WAL记录中记录的整页映像将被保护。关于启用数据页校验的内容详见<link linkend="app-initdb-data-checksums"><application>initdb</></link>。
      </para>
--->
-<para>
-数据页不是当前校验和的，尽管记录在在WAL记录中的整个页面映像将受到保护。
-为未来使用数据页校验和的特性，数据页有一个16位字段可用。
-</para>
     </listitem>
     <listitem>
-     <!--
-<para>
-      Internal data structures such as <filename>pg_clog</filename>, <filename>pg_subtrans</filename>, <filename>pg_multixact</filename>,
-      <filename>pg_serial</filename>, <filename>pg_notify</filename>, <filename>pg_stat</filename>, <filename>pg_snapshots</filename> are not directly
-      checksummed, nor are pages protected by full page writes. However, where
-      such data structures are persistent, WAL records are written that allow
-      recent changes to be accurately rebuilt at crash recovery and those
-      WAL records are protected as discussed above.
+     <para>
+      诸如<filename>pg_clog</filename>、<filename>pg_subtrans</filename>、<filename>pg_multixact</filename>、
+      <filename>pg_serial</filename>、<filename>pg_notify</filename>、<filename>pg_stat</filename>、<filename>pg_snapshots</filename>等内部数据结构既没有被直接校验，其页面也没有被整页写保护。但是，这些数据结构是持久的话，WAL记录被写入，它允许最近的修改能在崩溃恢复时被准确重建且这些WAL记录被按照以上讨论的方式保护着。
      </para>
--->
-<para>
-内部数据结构例如<filename>pg_clog</filename>, <filename>pg_subtrans</filename>,
- <filename>pg_multixact</filename>, <filename>pg_serial</filename>, <filename>pg_notify</filename>,
- <filename>pg_stat</filename>, <filename>pg_snapshots</filename> 不是直接校验和的，
-也不是通过全页面写入受到保护的页面。然而，这样的数据结构具有持久性，
-已经写入的WAL记录允许最近的改变在崩溃恢复时精确重建并且这些WAL记录正如上述讨论的那样受到保护。
-</para>
     </listitem>
     <listitem>
-     <!--
-<para>
-      Individual state files in <filename>pg_twophase</filename> are protected by CRC-32.
+     <para>
+      <filename>pg_twophase</filename>中的单个状态文件被CRC-32保护。
      </para>
--->
-<para>
-在<filename>pg_twophase</filename>中个别的状态文件受到CRC-32保护。
-</para>
     </listitem>
     <listitem>
-     <!--
-<para>
-      Temporary data files used in larger SQL queries for sorts,
-      materializations and intermediate results are not currently checksummed,
-      nor will WAL records be written for changes to those files.
+     <para>
+      用在大型SQL查询中排序的临时数据库文件、物化和中间结果目前没有被校验，对于这些文件的改变也不会导致写入WAL记录。
      </para>
--->
-<para>
-需要排序的较大的SQL查询需要的临时数据文件，物化和中间结果不是当前校验和的，
-这些文件的修改也不会写入WAL记录。
-</para>
     </listitem>
    </itemizedlist>
   </para>
-  <!--
-<para>
-   <productname>PostgreSQL</> does not protect against correctable memory errors
-   and it is assumed you will operate using RAM that uses industry standard
-   Error Correcting Codes (ECC) or better protection.
+  <para>
+   <productname>PostgreSQL</>无法避免可更正内存错误，它假定你会操作由工业标准纠错码（ECC）或更好方案保护的RAM。
   </para>
--->
-<para>
-<productname>PostgreSQL</>不预防矫正内存错误，它假设您将使用具有工业标准纠错编码(ECC)
-的内存操作或更好的保护。
-</para>
  </sect1>
 
   <sect1 id="wal-intro">
-   <!-- 
-   <title>Write-Ahead Logging (<acronym>WAL</acronym>)</title>
-   -->
-   <title>预写式日志(<acronym>WAL</acronym>)</title>
+   <title>预写式日志（<acronym>WAL</acronym>）</title>
 
    <indexterm zone="wal">
     <primary>WAL</primary>
    </indexterm>
 
    <indexterm>
-    <!-- 
-<primary>transaction log</primary> 
--->
-<primary>事务日志</primary>
+    <primary>transaction log</primary>
     <see>WAL</see>
    </indexterm>
 
-   <!--
-<para>
-    <firstterm>Write-Ahead Logging</firstterm> (<acronym>WAL</acronym>)
-    is a standard method for ensuring data integrity.  A detailed
-    description can be found in most (if not all) books about
-    transaction processing. Briefly, <acronym>WAL</acronym>'s central
-    concept is that changes to data files (where tables and indexes
-    reside) must be written only after those changes have been logged,
-    that is, after log records describing the changes have been flushed
-    to permanent storage. If we follow this procedure, we do not need
-    to flush data pages to disk on every transaction commit, because we
-    know that in the event of a crash we will be able to recover the
-    database using the log: any changes that have not been applied to
-    the data pages can be redone from the log records.  (This is
-    roll-forward recovery, also known as REDO.)
+   <para>
+    <firstterm>预写式日志</firstterm>（<acronym>WAL</acronym>）是保证数据完整性的一种标准方法。对其详尽的描述几乎可以在所有（如果不是全部）有关事务处理的书中找到。简单来说，<acronym>WAL</acronym>的中心概念是数据文件（存储着表和索引）的修改必须在这些动作被日志记录之后才被写入，即在描述这些改变的日志记录被刷到持久存储以后。如果我们遵循这种过程，我们不需要在每个事务提交时刷写数据页面到磁盘，因为我们知道在发生崩溃时可以使用日志来恢复数据库：任何还没有被应用到数据页面的改变可以根据其日志记录重做（这是前滚恢复，也被称为REDO）。
    </para>
--->
-<para>
-<firstterm>预写式日志</firstterm>(<acronym>WAL</acronym>)是一种确保数据完整性的标准方法。
-有关它的详细描述可以在大多数(如果不是全部的话)有关事务处理的书中找到。简而言之，
-<acronym>WAL</acronym>的中心思想是对数据文件的修改(它们是表和索引的载体)
-必须只能发生在这些修改已经记录到日志之后，也就是说，
-在描述这些变化的日志记录刷写到永久存储器之后。如果我们遵循这个过程，
-那么就不需要在每次事务提交的时候都把数据页刷写到磁盘，
-因为在出现崩溃的情况下可以用日志来恢复数据库：
-任何尚未应用于数据页的修改都可以先从日志记录中重做(这叫向前滚动恢复，也叫 REDO)。
-</para>
 
    <tip>
-    <!--
-<para>
-     Because <acronym>WAL</acronym> restores database file
-     contents after a crash, journaled file systems are not necessary for
-     reliable storage of the data files or WAL files.  In fact, journaling
-     overhead can reduce performance, especially if journaling
-     causes file system <emphasis>data</emphasis> to be flushed
-     to disk.  Fortunately, data flushing during journaling can
-     often be disabled with a file system mount option, e.g.
-     <literal>data=writeback</> on a Linux ext3 file system.
-     Journaled file systems do improve boot speed after a crash.
+    <para>
+     因为<acronym>WAL</acronym>在崩溃后恢复数据库文件内容，不需要日志化文件系统作为数据文件或WAL文件的可靠存储。实际上，日志会降低性能，特别是如果日志导致文件系统<emphasis>数据</emphasis>被刷写到磁盘。幸运地是，日志期间的数据刷写常常可以在文件系统挂载选项中被禁用，例如在Linux ext3文件系统中可以使用<literal>data=writeback</>。在崩溃后日志化文件系统确实可以提高启动速度。
     </para>
--->
-<para>
-因为<acronym>WAL</acronym>在崩溃之后恢复数据文件内容，
-所以日志文件系统对于数据文件或WAL文件的可靠存储是完全没有必要的。实际上，
-日志开销会降低性能，尤其是如果日志导致文件系统<emphasis>数据</emphasis>
-刷写到磁盘，幸运的是，在记录日志期间的数据刷写通常可以通过一个文件系统的挂载选项禁用，
-例如，在Linux ext3文件系统上的<literal>data=writeback</>。在崩溃后日志文件系统确实提高了启动速度。
-</para>
    </tip>
 
 
-   <!--
-<para>
-    Using <acronym>WAL</acronym> results in a
-    significantly reduced number of disk writes, because only the log
-    file needs to be flushed to disk to guarantee that a transaction is
-    committed, rather than every data file changed by the transaction.
-    The log file is written sequentially,
-    and so the cost of syncing the log is much less than the cost of
-    flushing the data pages.  This is especially true for servers
-    handling many small transactions touching different parts of the data
-    store.  Furthermore, when the server is processing many small concurrent
-    transactions, one <function>fsync</function> of the log file may
-    suffice to commit many transactions.
+   <para>
+    使用<acronym>WAL</acronym>可以显著降低磁盘的写次数，因为只有日志文件需要被刷出到磁盘以保证事务被提交，而被事务改变的每一个数据文件则不必被刷出。日志文件被按照顺序写入，因此同步日志的代价要远低于刷写数据页面的代价。在处理很多影响数据存储不同部分的小事务的服务器上这一点尤其明显。此外，当服务器在处理很多小的并行事务时，日志文件的一个<function>fsync</function>可以提交很多事务。
    </para>
--->
-<para>
-使用<acronym>WAL</acronym>显著地减少了磁盘写的次数，因为只有日志文件需要刷写到磁盘以保证事务被提交，
-而不是事务修改的所有数据文件都需要刷写到磁盘。日志文件是顺序写的，所以同步日志的开销要远比刷写数据页的开销小。
-尤其对于有很多修改不同数据存储位置的小事务的服务而言更是如此。另外，当服务器正在处理许多小的并发事务时，
-日志文件的一个<function>fsync</function>足以提交许多事务。
-</para>
 
-   <!--
-<para>
-    <acronym>WAL</acronym> also makes it possible to support on-line
-    backup and point-in-time recovery, as described in <xref
-    linkend="continuous-archiving">.  By archiving the WAL data we can support
-    reverting to any time instant covered by the available WAL data:
-    we simply install a prior physical backup of the database, and
-    replay the WAL log just as far as the desired time.  What's more,
-    the physical backup doesn't have to be an instantaneous snapshot
-    of the database state &mdash; if it is made over some period of time,
-    then replaying the WAL log for that period will fix any internal
-    inconsistencies.
+   <para>
+    <acronym>WAL</acronym>也使得在线备份和时间点恢复能被支持，如<xref linkend="continuous-archiving">所述。通过归档WAL数据，我们可以支持回转到被可用WAL数据覆盖的任何时间：我们简单地安装数据库的一个较早的物理备份，并且重放WAL日志一直到所期望的时间。另外，该物理备份不需要是数据库状态的一个一致的快照 &mdash; 如果它的制作经过了一段时间，则重放这一段时间的WAL日志将会修复任何内部不一致性。
    </para>
--->
-<para>
-<acronym>WAL</acronym>还提供了数据库在线备份和基于时间点恢复的可能，就像<xref linkend="continuous-archiving">
-里描述的那样。通过归档的 WAL 文件，可以将数据库恢复到 WAL 文件包含的任意时刻：
-只需要简单地安装以前的数据库物理备份，然后重做 WAL 到希望的时间点。另外，
-物理备份不必是数据库状态的一个即时快照；如果其制作花了较长的时间周期，
-对于该周期内WAL日志的重做将修复任何内部的不一致。
-</para>
   </sect1>
 
  <sect1 id="wal-async-commit">
-  <!-- 
-  <title>Asynchronous Commit</title> 
-  -->
   <title>异步提交</title>
 
    <indexterm>
-    <!-- 
-<primary>synchronous commit</primary> 
--->
-<primary>同步提交</primary>
+    <primary>同步提交</primary>
    </indexterm>
 
    <indexterm>
-    <!-- 
-<primary>asynchronous commit</primary> 
--->
-<primary>异步提交</primary>
+    <primary>异步提交</primary>
    </indexterm>
 
-  <!--
-<para>
-   <firstterm>Asynchronous commit</> is an option that allows transactions
-   to complete more quickly, at the cost that the most recent transactions may
-   be lost if the database should crash.  In many applications this is an
-   acceptable trade-off.
+  <para>
+   <firstterm>异步提交</>是一个允许事务能更快完成的选项，代价是在数据库崩溃时最近的事务会丢失。在很多应用中这是一个可接受的交换。
   </para>
--->
-<para>
-<firstterm>异步提交</>是一个允许事务更快完成的选项，付出的代价是，如果数据库崩溃时，最新的事务可能会丢失。
-在大多数应用中这个是可以接受的开销。 
-</para>
 
-  <!--
-<para>
-   As described in the previous section, transaction commit is normally
-   <firstterm>synchronous</>: the server waits for the transaction's
-   <acronym>WAL</acronym> records to be flushed to permanent storage
-   before returning a success indication to the client.  The client is
-   therefore guaranteed that a transaction reported to be committed will
-   be preserved, even in the event of a server crash immediately after.
-   However, for short transactions this delay is a major component of the
-   total transaction time.  Selecting asynchronous commit mode means that
-   the server returns success as soon as the transaction is logically
-   completed, before the <acronym>WAL</acronym> records it generated have
-   actually made their way to disk.  This can provide a significant boost
-   in throughput for small transactions.
+  <para>
+   如前一节所述，事务提交通常是<firstterm>同步的</>：服务器等到事务的<acronym>WAL</acronym>记录被刷写到持久存储之后才向客户端返回成功指示。因此客户端可以确保那些报告已被提交的事务确会被保存，即便随后马上发生了一次服务器崩溃。但是，对于短事务来说这种延迟是其总执行时间的主要部分。选择异步提交模式意味着服务器将在事务被逻辑上提交后立刻返回成功，而此时由它生成的<acronym>WAL</acronym>记录还没有被真正地写到磁盘上。这将为小型事务的生产力产生显著地提升。
   </para>
--->
-<para>
-如前一节所述，事务提交通常是<firstterm>同步的</>：服务器等待事务的<acronym>WAL</acronym>
-记录刷写到永久存储区，然后返回一个成功提示到客户端。客户端因此保证报告提交的事务将被保存，
-即使服务器立即崩溃。然而，对于短事务，延迟是总事务时间的主要部分。选择异步提交模式意味着，
-在它产生的<acronym>WAL</acronym>记录实际转移到磁盘之前，一旦事务在逻辑上完成之后服务器就返回成功。
-这样在小事务的吞吐量上可以提供一个显著的推动作用。
-</para>
 
-  <!--
-<para>
-   Asynchronous commit introduces the risk of data loss. There is a short
-   time window between the report of transaction completion to the client
-   and the time that the transaction is truly committed (that is, it is
-   guaranteed not to be lost if the server crashes).  Thus asynchronous
-   commit should not be used if the client will take external actions
-   relying on the assumption that the transaction will be remembered.
-   As an example, a bank would certainly not use asynchronous commit for
-   a transaction recording an ATM's dispensing of cash.  But in many
-   scenarios, such as event logging, there is no need for a strong
-   guarantee of this kind.
+  <para>
+   异步提交会带来数据丢失的风险。在向客户端报告事务完成到事务真正被提交（即能保证服务器崩溃时它也不会被丢失）之间有一个短的时间窗口。因此如果客户端将会做一些要求其事务被记住的外部动作，就不应该用异步提交。例如，一个银行肯定不会使用异步提交事务来记录一台ATM的现金分发。但是在很多情境中不需要这种强的保证，例如事件日志。
   </para>
--->
-<para>
-异步提交引进了数据丢失的风险。在向客户端报告事务完成和事务实际完成的时间点之间有一个很小的时间窗口
-（也就是，保证如果服务器崩溃时不会丢失）。因此如果客户端采取外部动作（这些动作假设事务会被记下），
-此时不应使用异步提交。例如，一个银行肯定不会为一个ATM分配现金的事务使用异步提交。但在多数情况下，
-如事件日志记录，不需要这种强力保证。
-</para>
 
-  <!--
-<para>
-   The risk that is taken by using asynchronous commit is of data loss,
-   not data corruption.  If the database should crash, it will recover
-   by replaying <acronym>WAL</acronym> up to the last record that was
-   flushed.  The database will therefore be restored to a self-consistent
-   state, but any transactions that were not yet flushed to disk will
-   not be reflected in that state.  The net effect is therefore loss of
-   the last few transactions.  Because the transactions are replayed in
-   commit order, no inconsistency can be introduced &mdash; for example,
-   if transaction B made changes relying on the effects of a previous
-   transaction A, it is not possible for A's effects to be lost while B's
-   effects are preserved.
+  <para>
+   使用异步提交带来的风险是数据丢失，而不是数据损坏。如果数据库可能崩溃，它会通过重放<acronym>WAL</acronym>到被刷写的最后一个记录来进行恢复。数据库将因此被恢复到一个自身一致状态，但是任何还没有被刷写到磁盘的事务将不会反映在该状态中。因此其影响就是丢失了最后的少量事务。由于事务按照提交顺序被重放，所以不会出现任何不一致性 &mdash; 例如一个事务B按照前面一个事务A的效果来进行修改，则不会出现A的效果丢失而B的效果被保留的情况。
   </para>
--->
-<para>
-使用异步提交的风险在于数据丢失，而不是数据损坏。如果数据库崩溃，那么它会根据刷入的最新的
-<acronym>WAL</acronym>记录来进行恢复。因此数据库会被转储到一个一致的状态，
-但任何没有写入到磁盘的事务不能反映在这个状态。因此最后的结果是丢失最新的几个事务。
-因为事务是以提交的顺序进行重放，不会引入非一致状态；例如，如果事务B所做的更改依赖于前一个事务A，
-那么丢失A的效果，而B的效果被保留是不可能的。 
-</para>
 
-  <!--
-<para>
-   The user can select the commit mode of each transaction, so that
-   it is possible to have both synchronous and asynchronous commit
-   transactions running concurrently.  This allows flexible trade-offs
-   between performance and certainty of transaction durability.
-   The commit mode is controlled by the user-settable parameter
-   <xref linkend="guc-synchronous-commit">, which can be changed in any of
-   the ways that a configuration parameter can be set.  The mode used for
-   any one transaction depends on the value of
-   <varname>synchronous_commit</varname> when transaction commit begins.
+  <para>
+   用户可以选择每一个事务的提交模式，这样可以有同步提交和异步提交的事务并行运行。这允许我们灵活地在性能和事务持久性之间进行权衡。提交模式由用户可设置的参数<xref linkend="guc-synchronous-commit">控制，它可以使用任何一种修改配置参数的方法进行设置。一个事务真正使用的提交模式取决于当事务提交开始时<varname>synchronous_commit</varname>的值。
   </para>
--->
-<para>
-用户可以为每个事务选择提交模式，因此可以同时使用同步和异步提交事务。
-这样就允许在性能和事务持久性之间做一个灵活的权衡。提交模式是由用户可设定的参数
-<xref linkend="guc-synchronous-commit">控制的，可以用任意配置参数可以设置的方式改变。
-任意一个事务的提交模式依赖于事务提交开始时<varname>synchronous_commit</varname>的值。 
-</para>
 
-  <!--
-<para>
-   Certain utility commands, for instance <command>DROP TABLE</>, are
-   forced to commit synchronously regardless of the setting of
-   <varname>synchronous_commit</varname>.  This is to ensure consistency
-   between the server's file system and the logical state of the database.
-   The commands supporting two-phase commit, such as <command>PREPARE
-   TRANSACTION</>, are also always synchronous.
+  <para>
+   特定的实用命令，如<command>DROP TABLE</>，被强制按照同步提交而不考虑<varname>synchronous_commit</varname>的设定。这是为了确保服务器文件系统和数据库逻辑状态之间的一致性。支持两阶段提交的命令页总是同步提交的，如<command>PREPARE TRANSACTION</>。
   </para>
--->
-<para>
-某些实用命令，如<command>DROP TABLE</>，会强制使用同步提交，无论<varname>synchronous_commit</varname>
-参数是怎么设置的。这是为了保证服务器文件系统和数据库逻辑状态之间的一致性。支持两阶段提交的命令，
-如<command>PREPARE TRANSACTION</>，也是使用同步提交。 
-</para>
 
-  <!--
-<para>
-   If the database crashes during the risk window between an
-   asynchronous commit and the writing of the transaction's
-   <acronym>WAL</acronym> records,
-   then changes made during that transaction <emphasis>will</> be lost.
-   The duration of the
-   risk window is limited because a background process (the <quote>WAL
-   writer</>) flushes unwritten <acronym>WAL</acronym> records to disk
-   every <xref linkend="guc-wal-writer-delay"> milliseconds.
-   The actual maximum duration of the risk window is three times
-   <varname>wal_writer_delay</varname> because the WAL writer is
-   designed to favor writing whole pages at a time during busy periods.
+  <para>
+   如果数据库在异步提交和事务<acronym>WAL</acronym>记录写入之间的风险窗口期间崩溃，在该事务期间所作的修改<emphasis>将</>丢失。风险窗口的持续时间是有限制的，因为一个后台进程（<quote>WAL写进程</>）每<xref linkend="guc-wal-writer-delay">毫秒会把未写入的<acronym>WAL</acronym>记录刷写到磁盘。风险窗口实际的最大持续时间是<varname>wal_writer_delay</varname>的3倍，因为WAL写进程被设计成倾向于在忙时一次写入所有页面。
   </para>
--->
-<para>
-如果在一个异步提交和写事务的<acronym>WAL</acronym>记录中间时发生数据库崩溃，
-在事务期间的修改<emphasis>将</>会丢失。风险的持续时间会被限制，因为<quote>WAL writer</>
-后台进程会每隔<xref linkend="guc-wal-writer-delay">毫秒就向磁盘刷入未写入的<acronym>WAL</acronym>记录。
-风险的实际最大持续时间是三倍的<varname>wal_writer_delay</varname>，
-因为WAL写进程被设计为支持在繁忙时一次写入所有块。
-</para>
 
   <caution>
-   <!--
-<para>
-    An immediate-mode shutdown is equivalent to a server crash, and will
-    therefore cause loss of any unflushed asynchronous commits.
+   <para>
+    一个立刻关闭等同于一次服务器崩溃，因此也将会导致未刷写的异步提交丢失。
    </para>
--->
-<para>
-IMMEDIATE模式的关闭等同于服务器崩溃，因此会造成那些未刷入的异步提交的数据丢失。 
-</para>
   </caution>
 
-  <!--
-<para>
-   Asynchronous commit provides behavior different from setting
-   <xref linkend="guc-fsync"> = off.
-   <varname>fsync</varname> is a server-wide
-   setting that will alter the behavior of all transactions.  It disables
-   all logic within <productname>PostgreSQL</> that attempts to synchronize
-   writes to different portions of the database, and therefore a system
-   crash (that is, a hardware or operating system crash, not a failure of
-   <productname>PostgreSQL</> itself) could result in arbitrarily bad
-   corruption of the database state.  In many scenarios, asynchronous
-   commit provides most of the performance improvement that could be
-   obtained by turning off <varname>fsync</varname>, but without the risk
-   of data corruption.
+  <para>
+   异步提交提供的行为与配置<xref linkend="guc-fsync"> = off不同。<varname>fsync</varname>是一个服务器范围的设置，它将会影响所有事务的行为。它禁用了<productname>PostgreSQL</>中所有尝试同步写入到数据库不同部分的逻辑，并且因此一次系统崩溃（即，一个硬件或操作系统崩溃，不是<productname>PostgreSQL</>本身的失败）可能造成数据库状态的任意损坏。在很多情境中，带来大部分性能提升的异步提交可以通过关闭<varname>fsync</varname>来获得，而且不会带来数据损坏的风险。
   </para>
--->
-<para>
-异步提交不同于设置<xref linkend="guc-fsync"> = off。<varname>fsync</varname>
-是一个用于更改所有事物行为的服务器端设置。它会禁用所有<productname>PostgreSQL</>
-中尝试向数据库不同部分同步写入的逻辑，因此，一次系统崩溃（硬件或操作系统崩溃，
-而不是<productname>PostgreSQL</>本身出问题）会导致数据库状态不可预知的崩溃。
-在多数情况下，通过关闭<varname>fsync</varname>的方式同样可以获得异步提交的性能提升，但异步提交不会有数据崩溃的风险。 
-</para>
 
-  <!--
-<para>
-   <xref linkend="guc-commit-delay"> also sounds very similar to
-   asynchronous commit, but it is actually a synchronous commit method
-   (in fact, <varname>commit_delay</varname> is ignored during an
-   asynchronous commit).  <varname>commit_delay</varname> causes a delay
-   just before a transaction flushes <acronym>WAL</acronym> to disk, in
-   the hope that a single flush executed by one such transaction can also
-   serve other transactions committing at about the same time.  The
-   setting can be thought of as a way of increasing the time window in
-   which transactions can join a group about to participate in a single
-   flush, to amortize the cost of the flush among multiple transactions.
+  <para>
+   <xref linkend="guc-commit-delay">也看起来很像异步提交，但它实际上是一种同步提交方法（事实上，<varname>commit_delay</varname>在异步提交时被忽略）。<varname>commit_delay</varname>会使事务在刷写<acronym>WAL</acronym>到磁盘之前有一个延迟，它期望由一个这样的事务所执行的刷写能够也服务于其他同时提交的事务。该设置可以被看成是一种时间窗口，在其期间事务可以参与到一次单一的刷写中，这种方式用于在多个事务之间摊销刷写的开销。
   </para>
--->
-<para>
-看起来，<xref linkend="guc-commit-delay">与异步提交很相似，但实际上它是一种同步提交方法
-（事实上，异步提交时会忽略<varname>commit_delay</varname>）。一个事务尝试向磁盘刷入
-<acronym>WAL</acronym>之前，<varname>commit_delay</varname>会造成延迟，
-希望在一个这样的事务中执行一个单独的刷入可以用于同一时间的其他事务提交。
-这个设置可以看作增大时间窗口的一种方式，在这个时间窗口内，事务可以加入一个单次刷写的分组，
-来分摊多个事务刷写的开销。
-</para>
 
  </sect1>
 
  <sect1 id="wal-configuration">
-  <!-- 
-  <title><acronym>WAL</acronym> Configuration</title> 
-  -->
   <title><acronym>WAL</acronym>配置</title>
 
-  <!--
-<para>
-   There are several <acronym>WAL</>-related configuration parameters that
-   affect database performance. This section explains their use.
-   Consult <xref linkend="runtime-config"> for general information about
-   setting server configuration parameters.
+  <para>
+   有几个<acronym>WAL</>相关的配置参数会影响数据库性能。本节将解释它们的使用。关于服务器配置参数的设置的一般信息请参考<xref linkend="runtime-config">。
   </para>
--->
-<para>
-有几个与<acronym>WAL</>相关的参数会影响数据库性能。本节讨论它们的使用。
-参阅<xref linkend="runtime-config">获取有关服务器配置参数的一般信息。
-</para>
 
-  <!--
-<para>
-   <firstterm>Checkpoints</firstterm><indexterm><primary>checkpoint</></>
-   are points in the sequence of transactions at which it is guaranteed
-   that the heap and index data files have been updated with all
-   information written before that checkpoint.  At checkpoint time, all
-   dirty data pages are flushed to disk and a special checkpoint record is
-   written to the log file.  (The change records were previously flushed
-   to the <acronym>WAL</acronym> files.)
-   In the event of a crash, the crash recovery procedure looks at the latest
-   checkpoint record to determine the point in the log (known as the redo
-   record) from which it should start the REDO operation.  Any changes made to
-   data files before that point are guaranteed to be already on disk.
-   Hence, after a checkpoint, log segments preceding the one containing
-   the redo record are no longer needed and can be recycled or removed. (When
-   <acronym>WAL</acronym> archiving is being done, the log segments must be
-   archived before being recycled or removed.)
+  <para>
+   <firstterm>检查点</firstterm><indexterm><primary>检查点</></>是在事务序列中的点，这种点保证被更新的堆和索引数据文件的所有信息在该检查点之前已被写入。在检查点时刻，所有脏数据页被刷写到磁盘，并且一个特殊的检查点记录将被写入到日志文件（修改记录之前已经被刷写到<acronym>WAL</acronym>文件）。在崩溃时，崩溃恢复过程检查最新的检查点记录用来决定从日志中的哪一点（称为重做记录）开始REDO操作。在这一点之前对数据文件所做的任何修改都已经被保证位于磁盘之上。因此，完成一个检查点后位于包含重做记录的日志段之前的日志段就不再需要了，可以将其回收或删除（当<acronym>WAL</acronym>归档工作时，日志段在被回收或删除之前必须被归档）。
   </para>
--->
-<para>
-<firstterm>检查点</firstterm><indexterm><primary>检查点</></>是事务序列中的点，
-在该点之前的所有信息都确保已经写到数据文件中去了。在设置检查点时，
-所有脏数据页都刷写到磁盘并且向日志文件中写入一条特殊的检查点记录。
-（变更记录已经预先刷新到<acronym>WAL</acronym>文件了。）在发生崩溃的时候，
-崩溃恢复过程查找最后的检查点记录，判断应该从日志中的哪个点(称为 redo 记录)开始 REDO 操作，
-在该记录之前对数据文件的任何修改都保证已经写在磁盘上了。因此，在检查点之后，
-任何在包含 redo 记录点之前的日志段都不再需要，因此可以循环使用或者删除。当然，
-在进行<acronym>WAL</acronym>归档的时候，这些日志段在循环利用或者删除之前必须先归档。
-</para>
 
-  <!--
-<para>
-   The checkpoint requirement of flushing all dirty data pages to disk
-   can cause a significant I/O load.  For this reason, checkpoint
-   activity is throttled so that I/O begins at checkpoint start and completes
-   before the next checkpoint is due to start; this minimizes performance
-   degradation during checkpoints.
+  <para>
+   检查点对于刷写所有脏数据页到磁盘的要求可能会导致可观的I/O负载。出于这一原因，检查点活动是被有所限制的，这样I/O在检查点开始时开始并且能在下一个检查点将要开始之间完成，这使得检查点期间的性能下降被最小化。
   </para>
--->
-<para>
-检查点需要刷写所有脏数据页面到磁盘，这会导致显著的I/O负载，因此，对设置检查点的行为进行了限制，
-I/O在检查点开始时启动，在下一个检查点开始之前完成，这会在检查点进行时降低性能损耗。
-</para>
 
-  <!--
-<para>
-   The server's checkpointer process automatically performs
-   a checkpoint every so often.  A checkpoint is begun every <xref
-   linkend="guc-checkpoint-segments"> log segments, or every <xref
-   linkend="guc-checkpoint-timeout"> seconds, whichever comes first.
-   The default settings are 3 segments and 300 seconds (5 minutes), respectively.
-   If no WAL has been written since the previous checkpoint, new checkpoints
-   will be skipped even if <varname>checkpoint_timeout</> has passed.
-   (If WAL archiving is being used and you want to put a lower limit on how
-   often files are archived in order to bound potential data loss, you should
-   adjust the <xref linkend="guc-archive-timeout"> parameter rather than the
-   checkpoint parameters.)
-   It is also possible to force a checkpoint by using the SQL
-   command <command>CHECKPOINT</command>.
+  <para>
+   服务器的检查点进程自动地偶尔执行一个检查点。检查点在每<xref linkend="guc-checkpoint-segments">个日志段或者每<xref linkend="guc-checkpoint-timeout">秒开始，以先达到的为准。默认的设置分别是3个段和300秒（5分钟）。如果从前一个检查点以来没有WAL被写入，则即使过了<varname>checkpoint_timeout</>新的检查点也会被跳过（如果正在使用WAL归档并且你想对文件被归档频率设置一个较低的限制来约束潜在的数据丢失，你应该调整<xref linkend="guc-archive-timeout">参数而不是检查点参数）。也可以使用SQL命令<command>CHECKPOINT</command>来强制一个检查点。
   </para>
--->
-<para>
-服务器的检查点进程每<xref linkend="guc-checkpoint-segments">个日志段或每
-<xref linkend="guc-checkpoint-timeout">秒就创建一个检查点，以先到为准。
-缺省设置分别是 3 个段和 300 秒（5分钟）。如果自前一个检查点以来没有WAL写入，
-那么将跳过新的检查点，即使已经超过了<varname>checkpoint_timeout</>。
-（如果使用了WAL归档并且你希望放置一个低一些的限制在多久文件归档一次上，以限制潜在的数据丢失，
-你应该调整<xref linkend="guc-archive-timeout">参数而不是检查点参数。）
-我们也可以用 SQL 命令<command>CHECKPOINT</command>强制创建一个检查点。
-</para>
 
-  <!--
-<para>
-   Reducing <varname>checkpoint_segments</varname> and/or
-   <varname>checkpoint_timeout</varname> causes checkpoints to occur
-   more often. This allows faster after-crash recovery, since less work
-   will need to be redone. However, one must balance this against the
-   increased cost of flushing dirty data pages more often. If
-   <xref linkend="guc-full-page-writes"> is set (as is the default), there is
-   another factor to consider. To ensure data page consistency,
-   the first modification of a data page after each checkpoint results in
-   logging the entire page content. In that case,
-   a smaller checkpoint interval increases the volume of output to the WAL log,
-   partially negating the goal of using a smaller interval,
-   and in any case causing more disk I/O.
+  <para>
+   降低<varname>checkpoint_segments</varname>和/或<varname>checkpoint_timeout</varname>会导致检查点更频繁地发生。这使得崩溃后恢复更快，因为需要重做的工作更少。但是，我们必须在这一点和增多的刷写脏数据页开销之间做出平衡。如果<xref linkend="guc-full-page-writes">被设置（默认情况），则还有一个因素需要考虑。为了确保数据页一致性，在每个检查点之后对一个数据页的第一次修改将导致整个页面内容被日志记录。在这情况下，一个较小的检查点间隔会增加输出到WAL日志的容量，这让使用较小间隔的效果打了折扣并且将导致更多的磁盘I/O。
   </para>
--->
-<para>
-减少<varname>checkpoint_segments</varname>和/或<varname>checkpoint_timeout</varname>
-会更频繁的创建检查点。这样就允许更快的崩溃后恢复(因为需要重做的工作更少)。不过，
-我们必须在更快的恢复与更频繁的刷新脏数据页所带来的额外开销之间进行平衡。并且，
-如果开启了<xref linkend="guc-full-page-writes">(缺省开启)，那么还有其它的因素需要考虑。
-为了保证数据页的一致性，在每个检查点之后的第一次数据页变化会导致对整个页面内容的日志记录。
-因此，减小检查点时间间隔会导致输出到 WAL 日志中的数据量增加，从而抵销一部分使用较短时间间隔的目标，
-并且无论如何都会产生更多的磁盘 I/O。
-</para>
 
-  <!--
-<para>
-   Checkpoints are fairly expensive, first because they require writing
-   out all currently dirty buffers, and second because they result in
-   extra subsequent WAL traffic as discussed above.  It is therefore
-   wise to set the checkpointing parameters high enough so that checkpoints
-   don't happen too often.  As a simple sanity check on your checkpointing
-   parameters, you can set the <xref linkend="guc-checkpoint-warning">
-   parameter.  If checkpoints happen closer together than
-   <varname>checkpoint_warning</> seconds,
-   a message will be output to the server log recommending increasing
-   <varname>checkpoint_segments</varname>.  Occasional appearance of such
-   a message is not cause for alarm, but if it appears often then the
-   checkpoint control parameters should be increased. Bulk operations such
-   as large <command>COPY</> transfers might cause a number of such warnings
-   to appear if you have not set <varname>checkpoint_segments</> high
-   enough.
+  <para>
+   检查点的代价相对比较昂贵，首先是因为它们要求写出所有当前为脏的缓冲区，正如以上讨论的，第二个原因是它们会导致额外的WAL流量。因此比较明智的做法是将检查点参数设置得足够高，这样检查点就不会过于频繁地发生。你可以设置<xref linkend="guc-checkpoint-warning">参数作为对于你的检查点参数的一种简单完整性检查。如果检查点的发生时间间隔比<varname>checkpoint_warning</>秒还要接近，一个消息将会被发送到服务器日志来推荐你增加<varname>checkpoint_segments</varname>。偶尔出现的这样的消息并不会导致警报，但是如果它出现得太频繁，那么就应该增加检查点控制参数。 如果你没有把<varname>checkpoint_segments</>设置得足够高， 那么在进行如大型<command>COPY</>传输等批量操作的时候可能会导致出现大量类似的警告消息。
   </para>
--->
-<para>
-检查点的开销相当高，首先是因为它需要写出所有当前脏缓冲区，其次是因为导致前面讨论过的额外后继 WAL 流量。
-因此把检查点参数设置得足够高，让检查点发生的频率降低是明智的。可以通过设置
-<xref linkend="guc-checkpoint-warning">对检查点参数进行一个简单自检。如果检查点发生的间隔接近
-<varname>checkpoint_warning</>秒，那么将向服务器日志输出一条消息，建议你增加<varname>checkpoint_segments</varname>
-的数值。偶尔出现这样的警告并不会导致警报，但是如果出现得太频繁，那么就应该增加检查点控制参数。
-如果你没有把<varname>checkpoint_segments</>设置得足够大，那么批量操作的时候
-(比如大批的<command>COPY</>传输)会导致出现大量此类警告消息。
-</para>
 
-  <!--
-<para>
-   To avoid flooding the I/O system with a burst of page writes,
-   writing dirty buffers during a checkpoint is spread over a period of time.
-   That period is controlled by
-   <xref linkend="guc-checkpoint-completion-target">, which is
-   given as a fraction of the checkpoint interval.
-   The I/O rate is adjusted so that the checkpoint finishes when the
-   given fraction of <varname>checkpoint_segments</varname> WAL segments
-   have been consumed since checkpoint start, or the given fraction of
-   <varname>checkpoint_timeout</varname> seconds have elapsed,
-   whichever is sooner.  With the default value of 0.5,
-   <productname>PostgreSQL</> can be expected to complete each checkpoint
-   in about half the time before the next checkpoint starts.  On a system
-   that's very close to maximum I/O throughput during normal operation,
-   you might want to increase <varname>checkpoint_completion_target</varname>
-   to reduce the I/O load from checkpoints.  The disadvantage of this is that
-   prolonging checkpoints affects recovery time, because more WAL segments
-   will need to be kept around for possible use in recovery.  Although
-   <varname>checkpoint_completion_target</varname> can be set as high as 1.0,
-   it is best to keep it less than that (perhaps 0.9 at most) since
-   checkpoints include some other activities besides writing dirty buffers.
-   A setting of 1.0 is quite likely to result in checkpoints not being
-   completed on time, which would result in performance loss due to
-   unexpected variation in the number of WAL segments needed.
+  <para>
+   为了避免大批页面写入对I/O系统产生的冲击，一个检查点中对脏缓冲区的写出操作被散布到一段时间上。这个时间段由<xref linkend="guc-checkpoint-completion-target">控制，它用检查点间隔的一个分数表示。I/O率将被调整，以便能按照要求完成检查点：当从检查点开始后一定数量（由<varname>checkpoint_segments</varname>的分数指定）的WAL段被消耗时完成检查点，或者过去一段指定的时间（由<varname>checkpoint_timeout</varname>的分数指定），以两种要求先达到的为准。默认值为0.5，<productname>PostgreSQL</>被期望能够在下一个检查点启动之前的大约一半时间内完成每个检查点。在一个接近于正常操作期间最大I/O的系统上，你可能希望增加<varname>checkpoint_completion_target</varname>来降低检查点的I/O负载。但这种做法的缺点是被延长的检查点将会影响恢复时间，因为需要保留更多WAL段来用于可能的恢复操作。尽管<varname>checkpoint_completion_target</varname>可以被设置为高于1.0，但最好还是让它小于1.0（也许最多0.9），因为检查点还包含除了写出脏缓冲区之外的其他一些动作。1.0的设置极有可能导致检查点不能按时被完成，这可能由于所需的WAL段数量意外变化导致性能损失。
   </para>
--->
-<para>
-为了避免大量的块写操作塞满I/O系统，在检查点期间写脏缓冲会持续一段时间。这个时间是由
-<xref linkend="guc-checkpoint-completion-target">控制的，作为检查点时间间隔的一小部分。
-调整I/O速率以便当从检查点开始时给出的<varname>checkpoint_segments</varname>段的分数已使用完，
-或已经过了给定的<varname>checkpoint_timeout</varname>秒数时完成检查点，不管时间哪个更早。
-缺省值是0.5，<productname>PostgreSQL</>可以在下次检查点开始之前用大约一半的时间完成检查点。
-在一个正常操作时就很接近最大I/O吞吐量的操作系统上，可以增加<varname>checkpoint_completion_target</varname>
-以降低创建检查点时的I/O负载。这样做的弊端在于会延长检查点，从而影响恢复时间，
-因为会保留更多的在恢复中可能用到的WAL段。尽管<varname>checkpoint_completion_target</varname>
-最大可以设置为1.0，最好不要设置那么大，最大0.9，因为检查点期间的操作不仅仅包括写脏缓冲区。
-设置为1.0极有可能会导致不会按时完成检查点，从而由于所需的WAL段的数目的意外变化造成性能丢失。 
-</para>
 
-  <!--
-<para>
-   There will always be at least one WAL segment file, and will normally
-   not be more than (2 + <varname>checkpoint_completion_target</varname>) * <varname>checkpoint_segments</varname> + 1
-   or <varname>checkpoint_segments</> + <xref linkend="guc-wal-keep-segments"> + 1
-   files.  Each segment file is normally 16 MB (though this size can be
-   altered when building the server).  You can use this to estimate space
-   requirements for <acronym>WAL</acronym>.
-   Ordinarily, when old log segment files are no longer needed, they
-   are recycled (that is, renamed to become future segments in the numbered
-   sequence). If, due to a short-term peak of log output rate, there
-   are more than 3 * <varname>checkpoint_segments</varname> + 1
-   segment files, the unneeded segment files will be deleted instead
-   of recycled until the system gets back under this limit.
+  <para>
+   总会有一个WAL段文件，并且通常最多不会超过 (2 + <varname>checkpoint_completion_target</varname>) * <varname>checkpoint_segments</varname> + 1 或者  <varname>checkpoint_segments</> + <xref linkend="guc-wal-keep-segments"> + 1 个文件。每一个段文件通常是16MB（在构建服务器时可以修改这个大小）。你可以使用这些信息来估计<acronym>WAL</acronym>所需的空间。通常，当旧的日志段文件不再需要时，它们将被回收（即，被重名用于编号序列中将来的段）。如果由于短时间的日志输出高峰造成多于 3 * <varname>checkpoint_segments</varname> + 1 个段文件，多余的不需要的段文件将直接被删除而不是回收，直到系统回到上面所说的限制之下。
   </para>
--->
-<para>
-至少会有一个 WAL 段文件，而且通常不会超过(2 + <varname>checkpoint_completion_target</varname>) * <varname>checkpoint_segments</varname> + 1
-或<varname>checkpoint_segments</> + <xref linkend="guc-wal-keep-segments"> + 1个文件。
-每个段文件通常为 16MB(你可以在编译服务器的时候修改它)。你可以用这些信息来估计<acronym>WAL</acronym>需要的空间。
-通常，如果一个旧日志段文件不再需要了，那么它将得到回收(重命名为顺序的新的可用段)。
-如果由于短期的日志输出高峰导致了超过3 * <varname>checkpoint_segments</varname> + 1个段文件，
-那么当系统再次回到这个限制之内的时候，不需要的段文件将被删除，而不是回收利用。
-</para>
 
-  <!--
-<para>
-   In archive recovery or standby mode, the server periodically performs
-   <firstterm>restartpoints</>,<indexterm><primary>restartpoint</></>
-   which are similar to checkpoints in normal operation: the server forces
-   all its state to disk, updates the <filename>pg_control</> file to
-   indicate that the already-processed WAL data need not be scanned again,
-   and then recycles any old log segment files in the <filename>pg_xlog</>
-   directory.
-   Restartpoints can't be performed more frequently than checkpoints in the
-   master because restartpoints can only be performed at checkpoint records.
-   A restartpoint is triggered when a checkpoint record is reached if at
-   least <varname>checkpoint_timeout</> seconds have passed since the last
-   restartpoint. In standby mode, a restartpoint is also triggered if at
-   least <varname>checkpoint_segments</> log segments have been replayed
-   since the last restartpoint.
+  <para>
+   在归档恢复模式或后备模式，服务器周期性地执行<firstterm>重启点</>。<indexterm><primary>重启点</></>和正常操作时的检查点相似：服务器强制它所有的状态到磁盘，更新<filename>pg_control</>来指示已被处理的WAL数据不需要被再次扫描，并且接着回收<filename>pg_xlog</>中的任何旧日志段文件。重启点的执行频率不能高于主机中检查点的执行频率，因为重启点只有在检查点记录处才能被执行。
+   
+   如果从最后一个重启点之后过去了至少<varname>checkpoint_timeout</>则会到达一个检查点，这时会触发一个重启点。在后备模式下，如果从最后一个重启点之后重放了至少<varname>checkpoint_segments</>个日志段，则也会触发一个重启点。
   </para>
--->
-<para>
-在归档恢复或待机模式时，服务器在正常操作中会定期执行类似于检查点的<firstterm>restartpoints</>
-<indexterm><primary>restartpoint</></>：服务器会强制将他的状态写入磁盘，更新<filename>pg_control</>
-文件来表明已经处理了的WAL数据不需要再次扫描，然后便会回收在<filename>pg_xlog</>目录下所有旧日志段文件。
-重启点不能比检查点运行的更频繁，因为重启点只能在检查点记录上执行。当到达检查点记录时，
-如果从最后一个重启点至少已经过去<varname>checkpoint_timeout</>秒，那么触发重启点。
-在待机模式下，如果自从最后一个重启点已经至少<varname>checkpoint_segments</>个日志段重放，
-也会触发重启点。
-</para>
 
-  <!--
-<para>
-   There are two commonly used internal <acronym>WAL</acronym> functions:
-   <function>XLogInsert</function> and <function>XLogFlush</function>.
-   <function>XLogInsert</function> is used to place a new record into
-   the <acronym>WAL</acronym> buffers in shared memory. If there is no
-   space for the new record, <function>XLogInsert</function> will have
-   to write (move to kernel cache) a few filled <acronym>WAL</acronym>
-   buffers. This is undesirable because <function>XLogInsert</function>
-   is used on every database low level modification (for example, row
-   insertion) at a time when an exclusive lock is held on affected
-   data pages, so the operation needs to be as fast as possible.  What
-   is worse, writing <acronym>WAL</acronym> buffers might also force the
-   creation of a new log segment, which takes even more
-   time. Normally, <acronym>WAL</acronym> buffers should be written
-   and flushed by an <function>XLogFlush</function> request, which is
-   made, for the most part, at transaction commit time to ensure that
-   transaction records are flushed to permanent storage. On systems
-   with high log output, <function>XLogFlush</function> requests might
-   not occur often enough to prevent <function>XLogInsert</function>
-   from having to do writes.  On such systems
-   one should increase the number of <acronym>WAL</acronym> buffers by
-   modifying the <xref linkend="guc-wal-buffers"> parameter.  When
-   <xref linkend="guc-full-page-writes"> is set and the system is very busy,
-   setting <varname>wal_buffers</> higher will help smooth response times
-   during the period immediately following each checkpoint.
+  <para>
+   有两个常用的内部<acronym>WAL</acronym>函数：<function>XLogInsert</function>和<function>XLogFlush</function>。 <function>XLogInsert</function>用于向共享内存中的<acronym>WAL</acronym>缓冲区里放置一个新记录。如果没有空间存放新记录， 那么<function>XLogInsert</function>就不得不写出（向内核缓存里写）一些填满了的<acronym>WAL</acronym>缓冲区。 这并非我们所期望的，因为<function>XLogInsert</function>用于每次数据库低层修改（比如，记录插入）时都要在受影响的数据页上持有一个排它锁，因为该操作需要越快越好。但糟糕的是， 写<acronym>WAL</acronym>缓冲可能还会强制创建新的日志段，这花的时间甚至更多。通常，<acronym>WAL</acronym>缓冲区应该由一个<function>XLogFlush</function>请求来写和刷出， 在大部分时候它都是发生在事务提交的时候以确保事务记录被刷写到永久存储。在那些日志输出量比较大的系统上，<function>XLogFlush</function>请求可能不够频繁，这样就不能避免<function>XLogInsert</function>进行写操作。在这样的系统上，我们应该通过修改配置参数 <xref linkend="guc-full-page-writes">的值来增加<acronym>WAL</acronym>缓冲区的数量。如果设置了 <xref linkend="guc-full-page-writes">并且系统相当繁忙， 把<varname>wal_buffers</>设置得更高一些将有助于在紧随每个检查点之后的时间段里得到平滑的响应时间。
   </para>
--->
-<para>
-有两个常用的内部<acronym>WAL</acronym>函数<function>XLogInsert</function>和<function>XLogFlush</function>。
-<function>XLogInsert</function>用于向共享内存中的<acronym>WAL</acronym>缓冲区里添加一条新记录。
-如果没有空间存放新记录，那么<function>XLogInsert</function>就不得不写出(向内核缓存里写)
-一些填满了的<acronym>WAL</acronym>缓冲。我们可不想这样，因为<function>XLogInsert</function>
-用于每次数据库低层修改(比如插入记录)时都要在受影响的数据页上持有一个排它锁，
-所以该操作需要越快越好；更糟糕的是，写<acronym>WAL</acronym>缓冲可能还会强制创建新的日志段，
-它花的时间甚至更多。通常，<acronym>WAL</acronym>缓冲区应该由一个<function>XLogFlush</function>
-请求来写和刷新，在大部分时候它都是发生在事务提交的时候以确保事务记录被刷新到永久存储器上去了。
-在那些日志输入量比较大的系统上，<function>XLogFlush</function>请求可能不够频繁，
-这样就不能避免<function>XLogInsert</function>进行写操作。在这样的系统上，
-我们应该修改<xref linkend="guc-wal-buffers">参数的值来增加<acronym>WAL</acronym>缓冲区的数量。
-如果设置了<xref linkend="guc-full-page-writes">并且系统相当繁忙，
-把<varname>wal_buffers</>设置得高一些将有助于在紧随每个检查点之后的时间里平滑响应时间。
-</para>
 
-  <!--
-<para>
-   The <xref linkend="guc-commit-delay"> parameter defines for how many
-   microseconds a group commit leader process will sleep after acquiring a
-   lock within <function>XLogFlush</function>, while group commit
-   followers queue up behind the leader.  This delay allows other server
-   processes to add their commit records to the WAL buffers so that all of
-   them will be flushed by the leader's eventual sync operation.  No sleep
-   will occur if <xref linkend="guc-fsync"> is not enabled, or if fewer
-   than <xref linkend="guc-commit-siblings"> other sessions are currently
-   in active transactions; this avoids sleeping when it's unlikely that
-   any other session will commit soon.  Note that on some platforms, the
-   resolution of a sleep request is ten milliseconds, so that any nonzero
-   <varname>commit_delay</varname> setting between 1 and 10000
-   microseconds would have the same effect.  Note also that on some
-   platforms, sleep operations may take slightly longer than requested by
-   the parameter.
+  <para>
+   <xref linkend="guc-commit-delay">定义了一个组提交领导者进程在<function>XLogFlush</function>中要求一个锁之后将会休眠的微秒数，而组提交追随者都排队等候在领导者之后。这样的延迟可以允许其它服务器进程把它们提交的记录追加到WAL缓冲区中，这样所有的这些记录将会被领导者的最终同步操作刷出。如果<xref linkend="guc-fsync">被禁用或者当前处于活跃事务中的会话数少于<xref linkend="guc-commit-siblings">，休眠将不会发生；这样就避免了在其它事务不会很快提交的情况下进行休眠。 请注意在某些平台上，休眠要求的单位是十毫秒，所以任何介于 1 和 10000 微秒之间的非零<varname>commit_delay</varname>设置的作用都是一样的。 还要注意在某些平台上，休眠操作用的时间会比该参数所请求的要略长一点。
   </para>
--->
-<para>
-<xref linkend="guc-commit-delay">定义了在<function>XLogFlush</function>
-内请求一个锁后一组提交领导者进程将要休眠的毫秒数，组提交后面跟着排队的领导者。
-这样的延迟可以允许其它的服务器进程把它们提交的记录追加到WAL缓存中，
-这样就可以通过领导者的最终sync操作把所有记录刷新。如果没有打开<xref linkend="guc-fsync">
-或者当前少于<xref linkend="guc-commit-siblings">个处于活跃事务状态的其它会话时则不会发生休眠；
-这样就避免了在其它事务不会很快提交的情况下睡眠。请注意，在一些平台上，
-休眠要求的分辩率是 10 毫秒，所以任何介于 1 和 10000 微秒之间的非零<varname>commit_delay</varname>
-设置的作用都是一样的。也要注意，在一些平台上，睡眠操作可能比参数要求的时间稍长一些。
-</para>
 
-  <!--
-<para>
-   Since the purpose of <varname>commit_delay</varname> is to allow the
-   cost of each flush operation to be amortized across concurrently
-   committing transactions (potentially at the expense of transaction
-   latency), it is necessary to quantify that cost before the setting can
-   be chosen intelligently.  The higher that cost is, the more effective
-   <varname>commit_delay</varname> is expected to be in increasing
-   transaction throughput, up to a point.  The <xref
-   linkend="pgtestfsync"> program can be used to measure the average time
-   in microseconds that a single WAL flush operation takes.  A value of
-   half of the average time the program reports it takes to flush after a
-   single 8kB write operation is often the most effective setting for
-   <varname>commit_delay</varname>, so this value is recommended as the
-   starting point to use when optimizing for a particular workload.  While
-   tuning <varname>commit_delay</varname> is particularly useful when the
-   WAL log is stored on high-latency rotating disks, benefits can be
-   significant even on storage media with very fast sync times, such as
-   solid-state drives or RAID arrays with a battery-backed write cache;
-   but this should definitely be tested against a representative workload.
-   Higher values of <varname>commit_siblings</varname> should be used in
-   such cases, whereas smaller <varname>commit_siblings</varname> values
-   are often helpful on higher latency media.  Note that it is quite
-   possible that a setting of <varname>commit_delay</varname> that is too
-   high can increase transaction latency by so much that total transaction
-   throughput suffers.
+  <para>
+   由于<varname>commit_delay</varname>的目的是允许每次刷写操作的开销能够在并发提交的事务之间进行分摊（可能会以事务延迟为代价），在能够明智地选择该设置之前有必要对代价进行量化。代价越高，在一定程度上<varname>commit_delay</varname>对于提高事务吞吐量的效果就越好。<xref linkend="pgtestfsync">程序可以被用来衡量一次WAL刷写操作需要的平均微秒数。该程序报告的一次8kB写操作后的刷出所用的平均时间的一半常常是<varname>commit_delay</varname>最有效的设置，因此在优化一种特定工作负荷时，该值被推荐为起始点。当WAL日志被存储在高延迟的旋转磁盘上时，调节<varname>commit_delay</varname>特别有效，即使在具有非常快同步时间的存储介质上也能得到很显著的收益，例如固态驱动器或具有电池后备写高速缓存的RAID阵列。但是这应该在一个具有代表性的工作负荷下进行明确地测试。较高的<varname>commit_siblings</varname>值应该用在这种情况中，反之较小的<varname>commit_siblings</varname>值通常对高延迟介质有用。注意过高的<varname>commit_delay</varname>设置也很有可能增加事务延迟甚至于整个事务吞吐量都会受到影响。
   </para>
--->
-<para>
-因为<varname>commit_delay</varname>的目的是允许每个刷新操作的开销分摊给并发的提交事务
-（可能是事务潜在开销），在设置可以明智的选择前量化开销是必须的。开销越高，<varname>commit_delay</varname>
-在一定程度上提高事务吞吐量越有效。<xref linkend="pgtestfsync">程序可以用来测量单次WAL刷新操作使用的平均毫秒数。
-这个程序报告的平均时间的一半用来在单个8kB写操作之后刷新，这个时间通常是<varname>commit_delay</varname>
-最有效的设置，所以当优化特定负载时，建议使用这个值作为起始点。当WAL日志存储在高时延旋转磁盘上时，
-调整<varname>commit_delay</varname>是尤其有用的，即使存储媒体有非常快的sync时间也是有显著效益的，
-比如有电池备用写缓存的固态硬盘或RAID阵列；但是这应该明确对代表工作负载进行测试。<varname>commit_siblings</varname>
-的更高值应该在诸如此类的情况下使用，而更小值通常对高时延媒体有帮助。注意，
-总事务吞吐量太大时，<varname>commit_delay</varname>的设置太高会增加事务时延是极有可能的。
-</para>
 
-  <!--
-<para>
-   When <varname>commit_delay</varname> is set to zero (the default), it
-   is still possible for a form of group commit to occur, but each group
-   will consist only of sessions that reach the point where they need to
-   flush their commit records during the window in which the previous
-   flush operation (if any) is occurring.  At higher client counts a
-   <quote>gangway effect</> tends to occur, so that the effects of group
-   commit become significant even when <varname>commit_delay</varname> is
-   zero, and thus explicitly setting <varname>commit_delay</varname> tends
-   to help less.  Setting <varname>commit_delay</varname> can only help
-   when (1) there are some concurrently committing transactions, and (2)
-   throughput is limited to some degree by commit rate; but with high
-   rotational latency this setting can be effective in increasing
-   transaction throughput with as few as two clients (that is, a single
-   committing client with one sibling transaction).
+  <para>
+   当<varname>commit_delay</varname>被设置为0（默认值），仍然有可能出现组提交的形式，但是组中的成员只能是那些在前一个刷写操作发生过程窗口中需要刷写它们提交记录的会话。在较高的客户端数量时很可能发生<quote>gangway effect</>，因此即使<varname>commit_delay</varname>为0，组提交的效果也很显著，并且显式地设置<varname>commit_delay</varname>将会没有作用。设置<varname>commit_delay</varname>只有在两种情况下有帮助：（1）有一些并发提交的事务，以及（2）吞吐量在某种程度上被提交率限制。但是在高旋转延迟的设备上，即使少到只有两个客户端，该设置也能有效提高事务吞吐量。
   </para>
--->
-<para>
-当<varname>commit_delay</varname>设置为0时（缺省），仍然可能发生组提交，
-但是每组将只由到达点的会话组成，在这个点它们需要刷新在前一个刷新操作（如果有）
-发生时它们的提交记录。更高的客户端计数<quote>舷梯效应</>往往会发生，
-所以组提交的影响会是显著的，即使<varname>commit_delay</varname>为0，
-并且因此明确的设置<varname>commit_delay</varname>往往没什么用处。设置<varname>commit_delay</varname>
-只能帮助以下情况：（1）有一些并发提交事务，（2）吞吐量通过提交率限制到某种程度；
-但是对于高旋转延迟，只有两个客户端时，这个设置对增加事务吞入量是有效的（也就是，
-单次提交客户端有一个兄弟事务）。
-</para>
 
-  <!--
-<para>
-   The <xref linkend="guc-wal-sync-method"> parameter determines how
-   <productname>PostgreSQL</productname> will ask the kernel to force
-   <acronym>WAL</acronym> updates out to disk.
-   All the options should be the same in terms of reliability, with
-   the exception of <literal>fsync_writethrough</>, which can sometimes
-   force a flush of the disk cache even when other options do not do so.
-   However, it's quite platform-specific which one will be the fastest.
-   You can test the speeds of different options using the <xref
-   linkend="pgtestfsync"> program.
-   Note that this parameter is irrelevant if <varname>fsync</varname>
-   has been turned off.
+  <para>
+   <xref linkend="guc-wal-sync-method">参数决定<productname>PostgreSQL</productname>如何请求内核强制将<acronym>WAL</acronym>更新到磁盘。只要满足可靠性，那么除了<literal>fsync_writethrough</>所有选项应该都是一样的，<literal>fsync_writethrough</>可以在某些时候强制磁盘高速缓存的刷写，而其他选项不能这样做。不过，哪种选项最快则可能和平台密切相关。 你可以使用<xref linkend="pgtestfsync">程序来测试不同选项的速度。请注意如果你关闭了<varname>fsync</varname>，那么这个参数就无所谓了。
   </para>
--->
-<para>
-<xref linkend="guc-wal-sync-method">参数决定<productname>PostgreSQL</productname>
-如何请求操作系统内核强制将<acronym>WAL</acronym>更新输出到磁盘。只要满足可靠性，
-那么所有选项应该都是一样的，除<literal>fsync_writethrough</>，可以有时强制刷新磁盘高速缓存，
-即使其他选项不这样做。但是哪个最快则可能和平台密切相关。你可以使用
-<xref linkend="pgtestfsync">测试不同选项的速度。请注意如果你关闭了<varname>fsync</varname>
-的话这个参数就无关紧要了。 
-</para>
 
-  <!--
-<para>
-   Enabling the <xref linkend="guc-wal-debug"> configuration parameter
-   (provided that <productname>PostgreSQL</productname> has been
-   compiled with support for it) will result in each
-   <function>XLogInsert</function> and <function>XLogFlush</function>
-   <acronym>WAL</acronym> call being logged to the server log. This
-   option might be replaced by a more general mechanism in the future.
+  <para>
+   启用<xref linkend="guc-wal-debug">配置参数（前提是<productname>PostgreSQL</productname>编译的时候打开了这个支持） 将导致每次<function>XLogInsert</function>和<function>XLogFlush</function> <acronym>WAL</acronym>调用都被记录到服务器日志。这个选项以后可能会被更通用的机制取代。
   </para>
--->
-<para>
-打开<xref linkend="guc-wal-debug">配置参数(前提是编译<productname>PostgreSQL</productname>
-的时候打开了这个支持)将导致每次<function>XLogInsert</function>和<function>XLogFlush</function> <acronym>WAL</acronym>
-调用都被记录到服务器日志。这个选项以后可能会被更通用的机制取代。
-</para>
  </sect1>
 
  <sect1 id="wal-internals">
-  <!-- 
-  <title>WAL Internals</title> 
-  -->
-  <title>WAL 内部</title>
+  <title>WAL内部</title>
 
-  <!--
-<para>
-   <acronym>WAL</acronym> is automatically enabled; no action is
-   required from the administrator except ensuring that the
-   disk-space requirements for the <acronym>WAL</acronym> logs are met,
-   and that any necessary tuning is done (see <xref
-   linkend="wal-configuration">).
+  <para>
+   <acronym>WAL</acronym>是自动被启用的。除了做一些设置满足存放<acronym>WAL</acronym>日志的磁盘空间需求以及一些必要的调节以外（参阅<xref linkend="wal-configuration">），对管理员没有什么其他要求。
   </para>
--->
-<para>
-<acronym>WAL</acronym>是自动打开的。除了要求一些磁盘空间存放<acronym>WAL</acronym>
-日志以及一些必要的调节以外(参阅<xref linkend="wal-configuration">)，对管理员没有什么其它要求。
-</para>
 
-  <!--
-<para>
-   <acronym>WAL</acronym> logs are stored in the directory
-   <filename>pg_xlog</filename> under the data directory, as a set of
-   segment files, normally each 16 MB in size (but the size can be changed
-   by altering the <option>&#045;-with-wal-segsize</> configure option when
-   building the server).  Each segment is divided into pages, normally
-   8 kB each (this size can be changed via the <option>-&#045;with-wal-blocksize</>
-   configure option).  The log record headers are described in
-   <filename>access/xlog.h</filename>; the record content is dependent
-   on the type of event that is being logged.  Segment files are given
-   ever-increasing numbers as names, starting at
-   <filename>000000010000000000000000</filename>.  The numbers do not wrap,
-   but it will take a very, very long time to exhaust the
-   available stock of numbers.
+  <para>
+   <acronym>WAL</acronym>日志被存放在数据目录的<filename>pg_xlog</filename>目录里，它是作为一个文件段的集合存储的，通常每个段16MB大（但是可以在构建服务器时通过修改<option>--with-wal-segsize</>配置选项来修改段的大小）。每个段分割成多个页，通常每个页为8K（该尺寸可以通过<option>--with-wal-blocksize</>配置选项来修改）。日志记录头部在<filename>access/xlog.h</filename>里描述；日志内容取决于它记录的事件类型。段文件的名字是不断增长的数字，从<filename>000000010000000000000000</filename>开始。目前这些数字不能回卷，不过要把所有可用的数字都用光也需要非常非常长的时间。
   </para>
--->
-<para>
-<acronym>WAL</acronym>日志存放在数据目录的<filename>pg_xlog</filename>子目录里，
-它是一个段文件的集合，通常每段 16MB （但是大小可以通过建立服务器时改变
-<option>--with-wal-segsize</>配置选项改变）。每个段又分割成多个页，通常每页 8KB（这个大小可以通过
-<option>--with-wal-blocksize</>配置选项改变）。日志记录头在<filename>access/xlog.h</filename>里描述；
-日志内容取决于它记录的事件类型。段文件的名字是递增自然数，从<filename>000000010000000000000000</filename>
-开始。这些数字不能循环使用，不过要把所有可用的数字都用光也需要非常长的时间。
-</para>
 
-  <!--
-<para>
-   It is advantageous if the log is located on a different disk from the
-   main database files.  This can be achieved by moving the
-   <filename>pg_xlog</filename> directory to another location (while the server
-   is shut down, of course) and creating a symbolic link from the
-   original location in the main data directory to the new location.
+  <para>
+   日志被放置在和主数据库文件不同的另外一个磁盘上会比较好。你可以通过把<filename>pg_xlog</filename>目录移动到另外一个位置（当然在此期间服务器应当被关闭），然后在原来的位置上创建一个指向新位置的符号链接来实现重定位日志。
   </para>
--->
-<para>
-日志放置在和主数据库文件不同的磁盘上会比较好。你可以通过把<filename>pg_xlog</filename>
-目录移动到另外一个位置(此时必须关闭服务器)，然后在原来的位置创建一个指向新位置的符号链接。
-</para>
 
-  <!--
-<para>
-   The aim of <acronym>WAL</acronym> is to ensure that the log is
-   written before database records are altered, but this can be subverted by
-   disk drives<indexterm><primary>disk drive</></> that falsely report a
-   successful write to the kernel,
-   when in fact they have only cached the data and not yet stored it
-   on the disk.  A power failure in such a situation might lead to
-   irrecoverable data corruption.  Administrators should try to ensure
-   that disks holding <productname>PostgreSQL</productname>'s
-   <acronym>WAL</acronym> log files do not make such false reports.
-   (See <xref linkend="wal-reliability">.)
+  <para>
+   <acronym>WAL</acronym>的目的是确保在数据库记录被修改之前先写了日志，但是这可能会被那些谎称向内核写成功的<indexterm><primary>磁盘驱动器</></>破坏， 这时候它们实际上只是缓冲了数据而并未把数据存储到磁盘上。 这种情况下的电源失效仍然可能导致不可恢复的数据崩溃。 管理员应该确保保存<productname>PostgreSQL</productname>的<acronym>WAL</acronym>日志文件的磁盘不会做这种谎报（参见<xref linkend="wal-reliability">）。
   </para>
--->
-<para>
-<acronym>WAL</acronym>的目的是确保在数据库记录被修改之前先写日志，
-但是这个目的有可能被那些向内核谎报成功写入的磁盘驱动器
-<indexterm><primary>磁盘驱动器</></>破坏，这时候，
-它们实际上只是缓冲了数据而并未把数据存储到磁盘上。
-这种情况下的电源失效仍然可能导致不可恢复的数据崩溃；管理员应该确保保存
-<productname>PostgreSQL</productname>的<acronym>WAL</acronym>日志文件的磁盘不会做这种虚假报告。
-(参阅 <xref linkend="wal-reliability">.)
-</para>
 
-  <!--
-<para>
-   After a checkpoint has been made and the log flushed, the
-   checkpoint's position is saved in the file
-   <filename>pg_control</filename>. Therefore, at the start of recovery,
-   the server first reads <filename>pg_control</filename> and
-   then the checkpoint record; then it performs the REDO operation by
-   scanning forward from the log position indicated in the checkpoint
-   record.  Because the entire content of data pages is saved in the
-   log on the first page modification after a checkpoint (assuming
-   <xref linkend="guc-full-page-writes"> is not disabled), all pages
-   changed since the checkpoint will be restored to a consistent
-   state.
+  <para>
+   在完成一个检查点并且刷写了日志文件之后，检查点的位置被保存在文件<filename>pg_control</filename>里。因此在恢复的开始， 服务器首先读取<filename>pg_control</filename>，然后读取检查点记录； 接着它通过从检查点记录里标识的日志位置开始向前扫描执行 REDO操作。 因为数据页的所有内容都保存在检查点之后的第一个页面修改的日志里（假设<xref linkend="guc-full-page-writes">没有被禁用）， 所以自检查点以来的所有变化的页都将被恢复到一个一致的状态。
   </para>
--->
-<para>
-在完成一个检查点并且刷新了日志文件之后，检查点的位置就保存在了<filename>pg_control</filename>
-文件里。因此在恢复开始的时候，后端首先读取<filename>pg_control</filename>和检查点记录；
-然后通过从检查点记录里标识的日志位置开始向前扫描执行 REDO 操作。
-因为数据页的所有内容都保存在检查点之后的第一个页面修改的日志里（假设
-<xref linkend="guc-full-page-writes">没有禁用），所以自检查点以来的所有变化都将被恢复到一个一致的状态。
-</para>
 
-  <!--
-<para>
-   To deal with the case where <filename>pg_control</filename> is
-   corrupt, we should support the possibility of scanning existing log
-   segments in reverse order &mdash; newest to oldest &mdash; in order to find the
-   latest checkpoint.  This has not been implemented yet.
-   <filename>pg_control</filename> is small enough (less than one disk page)
-   that it is not subject to partial-write problems, and as of this writing
-   there have been no reports of database failures due solely to the inability
-   to read <filename>pg_control</filename> itself.  So while it is
-   theoretically a weak spot, <filename>pg_control</filename> does not
-   seem to be a problem in practice.
+  <para>
+   为了处理<filename>pg_control</filename>被损坏的情况， 我们应该支持对于现有日志段反向扫描的功能 &mdash; 从最新到最老 &mdash; 这样才能找到最后的检查点。但这些目前还没有被实现。<filename>pg_control</filename>很小（比一个磁盘页小），因此它不会出现页断裂问题， 并且到目前为止还没有发现仅仅由于无法读取<filename>pg_control</filename>本身导致数据库失败的报告。 因此，尽管这在理论上是一个薄弱环节，但是<filename>pg_control</filename>看起来似乎并不是实际会发生的问题。
   </para>
--->
-<para>
-为了处理<filename>pg_control</filename>损坏的情况，
-我们应该支持对现存日志段的反向顺序扫描(从最新到最老)，这样才能找到最后的检查点。
-这些还没有实现。<filename>pg_control</filename>很小(比一个磁盘页小)，
-因此它出现只写了一部分的问题的概率几乎为零，到目前为止，
-我们还没有看到不能读取<filename>pg_control</filename>自身的错误。因此，
-尽管这在理论上是一个薄弱环节，但是实践中<filename>pg_control</filename>似乎并不会出现问题。
-</para>
  </sect1>
 </chapter>
