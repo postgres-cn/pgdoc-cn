@@ -203,6 +203,11 @@
       <entry>过程语言的模板数据</entry>
      </row>
 
+      <row>
+      <entry><link linkend="catalog-pg-policy"><structname>pg_policy</structname></link></entry>
+      <entry>行安全策略</entry>
+     </row>
+     
      <row>
       <entry><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link></entry>
       <entry>函数和过程</entry>
@@ -213,15 +218,18 @@
       <entry>范围类型的信息</entry>
      </row>
 
+      <row>
+      <entry><link linkend="catalog-pg-replication-origin"><structname>pg_replication_origin</structname></link></entry>
+      <entry>记录复制由来</entry>
+
+
+     </row>
      <row>
       <entry><link linkend="catalog-pg-rewrite"><structname>pg_rewrite</structname></link></entry>
       <entry>查询重写规则</entry>
      </row>
 
-     <row>
-      <entry><link linkend="catalog-pg-replication-slots"><structname>pg_replication_slots</structname></link></entry>
-      <entry>复制槽信息</entry>
-     </row>
+    
 
      <row>
       <entry><link linkend="catalog-pg-seclabel"><structname>pg_seclabel</structname></link></entry>
@@ -253,6 +261,11 @@
       <entry>本数据库集簇内的表空间</entry>
      </row>
 
+      <row>
+      <entry><link linkend="catalog-pg-transform"><structname>pg_transform</structname></link></entry>
+      <entry>转换（数据类型到程序语言）</entry>
+     </row>
+     
      <row>
       <entry><link linkend="catalog-pg-trigger"><structname>pg_trigger</structname></link></entry>
       <entry>触发器</entry>
@@ -1106,7 +1119,7 @@
       <entry><type>bool</type></entry>
       <entry></entry>
       <entry>
-       这表示一个非空约束。可以通过修改该列来启用和禁用该约束。
+       这表示一个非空约束。
       </entry>
      </row>
 
@@ -1265,13 +1278,6 @@
       <entry>角色是否能创建数据库</entry>
      </row>
 
-     <row>
-      <entry><structfield>rolcatupdate</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry>
-       角色是否能直接更新系统目录。（如果这一列不为真，即便是一个超级用户也不能更新系统目录）
-      </entry>
-     </row>
 
      <row>
       <entry><structfield>rolcanlogin</structfield></entry>
@@ -1289,6 +1295,15 @@
       </entry>
      </row>
 
+      <row>
+      <entry><structfield>rolbypassrls</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry>
+       该角色避开了每一级安全策略，参阅
+       <xref linkend="ddl-rowsecurity">获取更多信息。
+      </entry>
+     </row>
+     
      <row>
       <entry><structfield>rolconnlimit</structfield></entry>
       <entry><type>int4</type></entry>
@@ -1714,6 +1729,27 @@
       <entry>如果表有（或曾有）任何继承子女则为真</entry>
      </row>
 
+     <row>
+      <entry><structfield>relrowsecurity</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>
+       如果表具有行级安全性则为真；参阅
+       <link linkend="catalog-pg-policy"><structname>pg_policy</structname></link>系统表
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>relforcerowsecurity</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>
+        如果行级安全（启用时）适用于表的所有者则为真；参阅
+       <link linkend="catalog-pg-policy"><structname>pg_policy</structname></link>系统表
+      </entry>
+     </row>
+     
+     
      <row>
       <entry><structfield>relispopulated</structfield></entry>
       <entry><type>bool</type></entry>
@@ -4132,7 +4168,99 @@
 
  </sect1>
 
+<sect1 id="catalog-pg-policy">
+  <title><structname>pg_policy</structname></title>
 
+  <indexterm zone="catalog-pg-policy">
+   <primary>pg_policy</primary>
+  </indexterm>
+
+  <para>
+   系统表<structname>pg_policy</structname>存储表的行级安全策略。
+   策略包含各种命令，它适用于(可能是所有命令)角色，
+   作为安全屏障添加的表达式满足表的查询,
+   带有<literal>WITH CHECK</>选项的表达式可以执行向表添加新记录的查询。
+  </para>
+
+  <table>
+
+   <title><structname>pg_policy</structname>列</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>名称</entry>
+      <entry>类型</entry>
+      <entry>引用</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>polname</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry></entry>
+      <entry>策略名称</entry>
+     </row>
+
+     <row>
+      <entry><structfield>polrelid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
+      <entry>策略应用的表</entry>
+     </row>
+
+     <row>
+      <entry><structfield>polcmd</structfield></entry>
+      <entry><type>char</type></entry>
+      <entry></entry>
+      <entry>策略应用的命令类型:
+       <literal>r</> for <command>SELECT</>，
+       <literal>a</> for <command>INSERT</>，
+       <literal>w</> for <command>UPDATE</>，
+       <literal>d</> for <command>DELETE</>，
+       或者<literal>*</> for all</entry>
+     </row>
+
+     <row>
+      <entry><structfield>polroles</structfield></entry>
+      <entry><type>oid[]</type></entry>
+      <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.oid</literal></entry>
+      <entry>适用该策略的角色</entry>
+     </row>
+
+     <row>
+      <entry><structfield>polqual</structfield></entry>
+      <entry><type>pg_node_tree</type></entry>
+      <entry></entry>
+      <entry>
+      添加到安全屏障的表达式符合使用表的查询条件
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>polwithcheck</structfield></entry>
+      <entry><type>pg_node_tree</type></entry>
+      <entry></entry>
+      <entry>
+      添加到WITH CHECK表达式符合试图增加表行的查询条件
+      </entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <note>
+   <para>
+    当为表设置<structname>pg_class</>.<structfield>relrowsecurity</>的时候，
+    适用<structname>pg_policy</>中的策略。
+   </para>
+  </note>
+
+ </sect1>
+ 
  <sect1 id="catalog-pg-proc">
   <title><structname>pg_proc</structname></title>
 
@@ -4355,6 +4483,15 @@
      </row>
 
      <row>
+      <entry><structfield>protrftypes</structfield></entry>
+      <entry><type>oid[]</type></entry>
+      <entry></entry>
+      <entry>
+       数据类型OID为了应用转换。
+      </entry>
+     </row>
+     
+     <row>
       <entry><structfield>prosrc</structfield></entry>
       <entry><type>text</type></entry>
       <entry></entry>
@@ -4473,6 +4610,54 @@
 
  </sect1>
 
+ <sect1 id="catalog-pg-replication-origin">
+  <title><structname>pg_replication_origin</structname></title>
+
+  <indexterm zone="catalog-pg-replication-origin">
+   <primary>pg_replication_origin</primary>
+  </indexterm>
+
+  <para>
+   <structname>pg_replication_origin</structname>包含所有创建的复制源。关于
+   复制源的更多信息，参阅<xref linkend="replication-origins">。
+  </para>
+
+  <table>
+
+   <title><structname>pg_replication_origin</structname> Columns</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>名称</entry>
+      <entry>类型</entry>
+      <entry>引用</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>roident</structfield></entry>
+      <entry><type>Oid</type></entry>
+      <entry></entry>
+      <entry>
+      复制源独特的，集群标识符。不应该脱离系统。
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>roname</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+      外部的，用户定义的，复制源名字</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+ 
  <sect1 id="catalog-pg-rewrite">
   <title><structname>pg_rewrite</structname></title>
 
@@ -4577,111 +4762,6 @@
    </para>
   </note>
 
- </sect1>
-
- <sect1 id="catalog-pg-replication-slots">
-  <title><structname>pg_replication_slots</structname></title>
-
-  <indexterm zone="catalog-pg-replication-slots">
-   <primary>pg_replication_slots</primary>
-  </indexterm>
-
-  <para>
-   <structname>pg_replication_slots</structname>视图提供了当前存在于数据库集簇上的所
-   有复制槽的列表，其中也包括复制槽的当前状态。
-  </para>
-
-  <para>
-   更多关于复制槽的信息，请见
-   <xref linkend="streaming-replication-slots">和<xref linkend="logicaldecoding">。
-  </para>
-
-  <table>
-
-   <title><structname>pg_replication_slots</structname>列</title>
-
-   <tgroup cols="4">
-    <thead>
-     <row>
-      <entry>名称</entry>
-      <entry>类型</entry>
-      <entry>引用</entry>
-      <entry>描述</entry>
-     </row>
-    </thead>
-
-    <tbody>
-     <row>
-      <entry><structfield>slot_name</structfield></entry>
-      <entry><type>name</type></entry>
-      <entry></entry>
-      <entry>一个唯一的、集簇范围内的复制槽标识符</entry>
-     </row>
-
-     <row>
-      <entry><structfield>plugin</structfield></entry>
-      <entry><type>name</type></entry>
-      <entry></entry>
-      <entry>包含这个逻辑槽正在使用的输出插件的共享对象基础名称，这个列对于物理槽为空值。</entry>
-     </row>
-
-     <row>
-      <entry><structfield>slot_type</structfield></entry>
-      <entry><type>text</type></entry>
-      <entry></entry>
-      <entry>槽类型 - <literal>physical</>（物理）或者<literal>logical</>（逻辑）</entry>
-     </row>
-
-     <row>
-      <entry><structfield>datoid</structfield></entry>
-      <entry><type>oid</type></entry>
-      <entry><literal><link linkend="catalog-pg-database"><structname>pg_database</structname></link>.oid</literal></entry>
-      <entry>与这个槽相关的数据库的OID，或者为空值。只有逻辑槽具有相关的数据库。</entry>
-     </row>
-
-     <row>
-      <entry><structfield>database</structfield></entry>
-      <entry><type>text</type></entry>
-      <entry><literal><link linkend="catalog-pg-database"><structname>pg_database</structname></link>.datname</literal></entry>
-      <entry>与这个槽相关的数据库的名称，或者为空值。只有逻辑槽具有相关的数据库。</entry>
-     </row>
-
-     <row>
-      <entry><structfield>active</structfield></entry>
-      <entry><type>boolean</type></entry>
-      <entry></entry>
-      <entry>如果这个槽当前正在被使用则为真</entry>
-     </row>
-
-     <row>
-      <entry><structfield>xmin</structfield></entry>
-      <entry><type>xid</type></entry>
-      <entry></entry>
-      <entry>这个槽要需要数据库保留的最旧事务。
-      <literal>VACUUM</literal>不能移除被其后续事务删除的元组。
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>catalog_xmin</structfield></entry>
-      <entry><type>xid</type></entry>
-      <entry></entry>
-      <entry>这个槽要需要数据库保留的影响系统目录的最旧事务。
-      <literal>VACUUM</literal>不能移除被其后续事务删除的目录元组。
-      </entry>
-     </row>
-
-     <row>
-      <entry><structfield>restart_lsn</structfield></entry>
-      <entry><type>pg_lsn</type></entry>
-      <entry></entry>
-      <entry>可能仍被这个槽的消费者要求的最旧WAL地址（<literal>LSN</literal>），
-      并且因此不会在检查点期间自动被移除。
-      </entry>
-     </row>
-    </tbody>
-   </tgroup>
-  </table>
  </sect1>
 
  <sect1 id="catalog-pg-seclabel">
@@ -4865,6 +4945,15 @@
      </listitem>
     </varlistentry>
 
+    <varlistentry>
+     <term><symbol>SHARED_DEPENDENCY_POLICY</> (<literal>r</>)</term>
+     <listitem>
+      <para>
+       引用的对象（必须是一个角色）被称为相关策略对象的目标。
+      </para>
+     </listitem>
+    </varlistentry>
+    
     <varlistentry>
      <term><symbol>SHARED_DEPENDENCY_PIN</> (<literal>p</>)</term>
      <listitem>
@@ -5197,7 +5286,75 @@
   </table>
  </sect1>
 
+ <sect1 id="catalog-pg-transform">
+  <title><structname>pg_transform</structname></title>
 
+  <indexterm zone="catalog-pg-transform">
+   <primary>pg_transform</primary>
+  </indexterm>
+
+  <para>
+   系统表<structname>pg_transform</structname>存储转换信息，
+   这是一种适应数据类型程序语言的机制。参阅<xref linkend="sql-createtransform">获取更多信息。
+  </para>
+
+  <table>
+   <title><structname>pg_transform</> Columns</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>名称</entry>
+      <entry>类型</entry>
+      <entry>引用</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>trftype</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-type"><structname>pg_type</structname></link>.oid</literal></entry>
+      <entry>
+       用于这个转换的数据类型的OID
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>trflang</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-language"><structname>pg_language</structname></link>.oid</literal></entry>
+      <entry>
+      用于这个转换的语言OID
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>trffromsql</structfield></entry>
+      <entry><type>regproc</type></entry>
+      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
+      <entry>
+       当为输入转换数据类型到程序语言的时候，使用该函数的OID（比如，函数参数）。
+       如果不支持这个操作，则存储零。
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>trftosql</structfield></entry>
+      <entry><type>regproc</type></entry>
+      <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
+      <entry>
+       当从程序语言转换输出到数据类型时，使用该函数的OID（比如返回值）。
+       如果不支持这个操作，则存储为零。
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+ 
  <sect1 id="catalog-pg-trigger">
   <title><structname>pg_trigger</structname></title>
 
@@ -6218,7 +6375,7 @@
 
 
  <sect1 id="views-overview">
-  <title>System Views</title>
+  <title>系统视图</title>
 
   <para>
    除系统目录外，<productname>PostgreSQL</productname>提供了一些内建视图。一些系统视图为系统目录上一些常用查询提供了便利的访问。其他视图提供了对内部服务器状态的访问。
@@ -6264,6 +6421,11 @@
      </row>
 
      <row>
+      <entry><link linkend="view-pg-file-settings"><structname>pg_file_settings</structname></link></entry>
+      <entry>配置文件内容概要</entry>
+     </row>
+     
+     <row>
       <entry><link linkend="view-pg-group"><structname>pg_group</structname></link></entry>
       <entry>数据库用户组</entry>
      </row>
@@ -6284,6 +6446,11 @@
      </row>
 
      <row>
+      <entry><link linkend="view-pg-policies"><structname>pg_policies</structname></link></entry>
+      <entry>策略</entry>
+     </row>
+     
+     <row>
       <entry><link linkend="view-pg-prepared-statements"><structname>pg_prepared_statements</structname></link></entry>
       <entry>预备好的语句</entry>
      </row>
@@ -6293,6 +6460,16 @@
       <entry>预备好的事务</entry>
      </row>
 
+     <row>
+      <entry><link linkend="view-pg-replication-origin-status"><structname>pg_replication_origin_status</structname></link></entry>
+      <entry>关于复制起源的信息，包含复制进程</entry>
+     </row>
+
+     <row>
+      <entry><link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link></entry>
+      <entry>复制槽信息</entry>
+     </row>
+     
      <row>
       <entry><link linkend="view-pg-roles"><structname>pg_roles</structname></link></entry>
       <entry>数据库角色</entry>
@@ -6596,6 +6773,106 @@
 
  </sect1>
 
+ <sect1 id="view-pg-file-settings">
+  <title><structname>pg_file_settings</structname></title>
+
+  <indexterm zone="view-pg-file-settings">
+   <primary>pg_file_settings</primary>
+  </indexterm>
+
+  <para>
+   视图<structname>pg_file_settings</structname>提供了服务器配置文件的内容概要。
+   为了存在于文件中的<quote>名称 = 值</>项每行出现在该视图中，有注释说明该值是否可以
+   成功应用。附加行可能没有链接到<quote>名称 = 值</>项，比如文件中的语法错误。
+  </para>
+
+  <para>
+   该视图有助于检查配置文件中计划的变化是否可行，或者用于诊断之前的错误。
+   请注意，此视图报告在文件的<emphasis>当前</>内容中，
+   而不是服务器最后的应用上。
+   （<link linkend="view-pg-settings"><structname>pg_settings</structname></link>
+   视图往往足以决定这一点）   
+  </para>
+
+  <para>
+   <structname>pg_file_settings</structname>视图只能被超级用户读取。
+  </para>
+
+  <table>
+   <title><structname>pg_file_settings</>列</title>
+
+  <tgroup cols="3">
+   <thead>
+    <row>
+     <entry>名称</entry>
+     <entry>类型</entry>
+     <entry>描述</entry>
+    </row>
+   </thead>
+   <tbody>
+    <row>
+     <entry><structfield>sourcefile</structfield></entry>
+     <entry><structfield>text</structfield></entry>
+     <entry>配置文件的完整路径名</entry>
+    </row>
+    <row>
+     <entry><structfield>sourceline</structfield></entry>
+     <entry><structfield>integer</structfield></entry>
+     <entry>
+      出现记录位置配置文件的行数
+     </entry>
+    </row>
+    <row>
+     <entry><structfield>seqno</structfield></entry>
+     <entry><structfield>integer</structfield></entry>
+     <entry>处理项的顺序(1..<replaceable>n</>)</entry>
+    </row>
+    <row>
+     <entry><structfield>name</structfield></entry>
+     <entry><structfield>text</structfield></entry>
+     <entry>配置参数名称</entry>
+    </row>
+    <row>
+     <entry><structfield>setting</structfield></entry>
+     <entry><structfield>text</structfield></entry>
+     <entry>分配给参数的值</entry>
+    </row>
+    <row>
+     <entry><structfield>applied</structfield></entry>
+     <entry><structfield>boolean</structfield></entry>
+     <entry>
+     如果成功应用该值则为真
+     </entry>
+    </row>
+    <row>
+     <entry><structfield>error</structfield></entry>
+     <entry><structfield>text</structfield></entry>
+     <entry>
+      如果不为空，错误信息说明该项可能不适用
+      </entry>
+    </row>
+   </tbody>
+  </tgroup>
+  </table>
+
+  <para>
+   如果配置文件包含语法错误或者无效参数名，那么服务器不会试图应用任何设置，
+   因此所有的<structfield>applied</>字段解读为错误。
+   在这种情况下有非空<structfield>error</structfield>字段的一行或者多行表明该问题。
+   否则，如果可能的话，将应用个人设置。
+   如果不能应用个人设置（比如，无效的值，或者该设置在服务器启动后不能被改变）
+   则在<structfield>error</structfield>字段会有适当的信息。
+   另外一种方法该项可能有<structfield>applied</> = false，也就是它被具有相同参数名
+   的后面的条目覆盖了。这种情况不看作错误，因为没有出现在<structfield>error</structfield>字段中。
+  </para>
+
+  <para>
+   参阅<xref linkend="config-setting">获取更多有关改变运行时参数的各种方法信息。
+  </para>
+
+</sect1>
+ 
+ 
  <sect1 id="view-pg-group">
   <title><structname>pg_group</structname></title>
 
@@ -6990,6 +7267,82 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
 
  </sect1>
 
+ <sect1 id="view-pg-policies">
+  <title><structname>pg_policies</structname></title>
+
+  <indexterm zone="view-pg-policies">
+   <primary>pg_policies</primary>
+  </indexterm>
+
+  <para>
+   视图<structname>pg_policies</structname>提供访问数据库中每个行级安全策略的有用信息。
+  </para>
+
+  <table>
+   <title><structname>pg_policies</>列</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>名字</entry>
+      <entry>类型</entry>
+      <entry>引用</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><structfield>schemaname</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry><literal><link linkend="catalog-pg-namespace"><structname>pg_namespace</structname></link>.nspname</literal></entry>
+      <entry>包含表策略的模式名</entry>
+     </row>
+     <row>
+      <entry><structfield>tablename</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.relname</literal></entry>
+      <entry>表策略名称</entry>
+     </row>
+     <row>
+      <entry><structfield>policyname</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry><literal><link linkend="catalog-pg-policy"><structname>pg_policy</structname></link>.polname</literal></entry>
+      <entry>策略名</entry>
+     </row>
+     <row>
+      <entry><structfield>roles</structfield></entry>
+      <entry><type>name[]</type></entry>
+      <entry></entry>
+      <entry>该策略适用的角色</entry>
+     </row>
+     <row>
+      <entry><structfield>cmd</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>策略应用的命令类型</entry>
+     </row>
+     <row>
+      <entry><structfield>qual</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+       添加到安全屏障的表达式符合策略适用的查询条件
+      </entry>
+     </row>
+     <row>
+      <entry><structfield>with_check</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>
+       带有WITH CHECK表达式符合试图增加表行的查询条件
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ </sect1>
+ 
  <sect1 id="view-pg-prepared-statements">
   <title><structname>pg_prepared_statements</structname></title>
 
@@ -7139,6 +7492,188 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
 
  </sect1>
 
+ <sect1 id="view-pg-replication-origin-status">
+  <title><structname>pg_replication_origin_status</structname></title>
+
+  <indexterm zone="view-pg-replication-origin-status">
+   <primary>pg_replication_origin_status</primary>
+  </indexterm>
+
+  <para>
+   <structname>pg_replication_origin_status</structname>视图包含关于回放某个特定源的进展信息。
+   关于更多复制源信息请参阅<xref linkend="replication-origins">。
+  </para>
+
+  <table>
+
+   <title><structname>pg_replication_origin_status</structname>列</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>名字</entry>
+      <entry>类型</entry>
+      <entry>引用</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>local_id</structfield></entry>
+      <entry><type>Oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-replication-origin"><structname>pg_replication_origin</structname></link>.roident</literal></entry>
+      <entry>内部节点标识符</entry>
+     </row>
+
+     <row>
+      <entry><structfield>external_id</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry><literal><link linkend="catalog-pg-replication-origin"><structname>pg_replication_origin</structname></link>.roname</literal></entry>
+      <entry>内部节点标识符</entry>
+     </row>
+
+     <row>
+      <entry><structfield>remote_lsn</structfield></entry>
+      <entry><type>pg_lsn</type></entry>
+      <entry></entry>
+      <entry>
+       源节点的LSN达到了已被复制的数据。
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>local_lsn</structfield></entry>
+      <entry><type>pg_lsn</type></entry>
+      <entry></entry>
+      <entry>
+       这个节点的LSN已经复制<literal>remote_lsn</literal>。
+       当使用异步提交时，将持久数据保存到
+       磁盘之前用于刷新提交记录。
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+ 
+  
+ <sect1 id="view-pg-replication-slots">
+  <title><structname>pg_replication_slots</structname></title>
+
+  <indexterm zone="view-pg-replication-slots">
+   <primary>pg_replication_slots</primary>
+  </indexterm>
+  
+  
+  <para>
+   <structname>pg_replication_slots</structname>视图提供了当前存在于数据库集簇上的所
+   有复制槽的列表，其中也包括复制槽的当前状态。
+  </para>
+
+  <para>
+   更多关于复制槽的信息，请见
+   <xref linkend="streaming-replication-slots">和<xref linkend="logicaldecoding">。
+  </para>
+
+  <table>
+
+   <title><structname>pg_replication_slots</structname>列</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>名称</entry>
+      <entry>类型</entry>
+      <entry>引用</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>slot_name</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry></entry>
+      <entry>一个唯一的、集簇范围内的复制槽标识符</entry>
+     </row>
+
+     <row>
+      <entry><structfield>plugin</structfield></entry>
+      <entry><type>name</type></entry>
+      <entry></entry>
+      <entry>包含这个逻辑槽正在使用的输出插件的共享对象基础名称，这个列对于物理槽为空值。</entry>
+     </row>
+
+     <row>
+      <entry><structfield>slot_type</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry></entry>
+      <entry>槽类型 - <literal>physical</>（物理）或者<literal>logical</>（逻辑）</entry>
+     </row>
+
+     <row>
+      <entry><structfield>datoid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-database"><structname>pg_database</structname></link>.oid</literal></entry>
+      <entry>与这个槽相关的数据库的OID，或者为空值。只有逻辑槽具有相关的数据库。</entry>
+     </row>
+
+     <row>
+      <entry><structfield>database</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry><literal><link linkend="catalog-pg-database"><structname>pg_database</structname></link>.datname</literal></entry>
+      <entry>与这个槽相关的数据库的名称，或者为空值。只有逻辑槽具有相关的数据库。</entry>
+     </row>
+
+     <row>
+      <entry><structfield>active</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <entry></entry>
+      <entry>如果这个槽当前正在被使用则为真</entry>
+     </row>
+
+     <row>
+      <entry><structfield>active_pid</structfield></entry>
+      <entry><type>integer</type></entry>
+      <entry></entry>
+      <entry>
+       如果该槽正被积极使用，则使用该槽会话的进程ID。
+       如果不积极，则为<literal>NULL</literal>。
+      </entry>
+     </row>
+     
+     <row>
+      <entry><structfield>xmin</structfield></entry>
+      <entry><type>xid</type></entry>
+      <entry></entry>
+      <entry>这个槽要需要数据库保留的最旧事务。
+      <literal>VACUUM</literal>不能移除被其后续事务删除的元组。
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>catalog_xmin</structfield></entry>
+      <entry><type>xid</type></entry>
+      <entry></entry>
+      <entry>这个槽要需要数据库保留的影响系统目录的最旧事务。
+      <literal>VACUUM</literal>不能移除被其后续事务删除的目录元组。
+      </entry>
+     </row>
+
+     <row>
+      <entry><structfield>restart_lsn</structfield></entry>
+      <entry><type>pg_lsn</type></entry>
+      <entry></entry>
+      <entry>可能仍被这个槽的消费者要求的最旧WAL地址（<literal>LSN</literal>），
+      并且因此不会在检查点期间自动被移除。
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+ 
  <sect1 id="view-pg-roles">
   <title><structname>pg_roles</structname></title>
 
@@ -7203,14 +7738,6 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry>角色能否创建数据库？</entry>
      </row>
 
-     <row>
-      <entry><structfield>rolcatupdate</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>
-       角色能否直接更新系统目录？（如果此列不为真，即便是超级用户也不能更新）
-      </entry>
-     </row>
 
      <row>
       <entry><structfield>rolcanlogin</structfield></entry>
@@ -7521,6 +8048,14 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry>当前值在配置文件中的行号（如果值是从配置文件之外的其他来源设置的，或者被一个非超级用户查看时，此列为空）
       </entry>
      </row>
+     <row>
+      <entry><structfield>pending_restart</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <entry>
+      如果在配置文件中已经修改了该值，但需要重启，则为<literal>true</literal>；
+      否则为<literal>false</literal>。
+      </entry>
+     </row>     
     </tbody>
    </tgroup>
   </table>
@@ -7531,6 +8066,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
 
   <variablelist>
    <varlistentry>
+   <!-- PGC_INTERNAL -->
     <term><literal>internal</literal></term>
     <listitem>
      <para>
@@ -7539,6 +8075,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     </listitem>
    </varlistentry>
    <varlistentry>
+    <!-- PGC_POSTMASTER -->
     <term><literal>postmaster</literal></term>
     <listitem>
      <para>
@@ -7547,6 +8084,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     </listitem>
    </varlistentry>
    <varlistentry>
+   <!-- PGC_SIGHUP -->
     <term><literal>sighup</literal></term>
     <listitem>
      <para>
@@ -7555,14 +8093,45 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     </listitem>
    </varlistentry>
    <varlistentry>
-    <term><literal>backend</literal></term>
+   
+   <!-- PGC_SU_BACKEND -->
+    <term><literal>superuser-backend</literal></term>
     <listitem>
      <para>
-      对于这些设置的修改可以在<filename>postgresql.conf</filename>中完成并且不需要重启服务器。它们也可以在一个连接请求包（例如，通过<application>libpq</>的<literal>PGOPTIONS</>环境变量）中为一个特定会话设置 。然而，这些设置在会话启动后永不变化。如果你在<filename>postgresql.conf</filename>中修改它们，可以向postmaster发送一个<systemitem>SIGHUP</systemitem>信号让它重读<filename>postgresql.conf</filename>。新值只会影响后续启动的会话。
+      对于这些设置的修改可以在<filename>postgresql.conf</filename>
+      中完成并且不需要重启服务器。它们也可以在连接请求包中
+      （例如，通过<application>libpq</>的<literal>PGOPTIONS</>环境变量）
+      中为一个特定会话设置 。但只有链接用户是超级用户的时候。
+      然而，这些设置在会话启动后永不变化。
+      如果你在<filename>postgresql.conf</filename>中修改它们，
+      可以向postmaster发送一个<systemitem>SIGHUP</systemitem>信号
+      让它重读<filename>postgresql.conf</filename>。
+      新值只会影响后续启动的会话。
+
      </para>
     </listitem>
    </varlistentry>
    <varlistentry>
+    <!-- PGC_BACKEND -->
+    <term><literal>backend</literal></term>
+    <listitem>
+     <para>
+
+      对于这些设置的修改可以在<filename>postgresql.conf</filename>
+      中完成并且不需要重启服务器。它们也可以在连接请求包中
+      （例如，通过<application>libpq</>的<literal>PGOPTIONS</>环境变量）
+      中为一个特定会话设置。任何用户都可以为它的会话做出这个改变。
+      
+      然而，这些设置在会话启动后永不变化。
+      如果你在<filename>postgresql.conf</filename>中修改它们，
+      可以向postmaster发送一个<systemitem>SIGHUP</systemitem>信号
+      让它重读<filename>postgresql.conf</filename>。
+      新值只会影响后续启动的会话。
+     </para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+   <!-- PGC_SUSET -->
     <term><literal>superuser</literal></term>
     <listitem>
      <para>
@@ -7571,6 +8140,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
     </listitem>
    </varlistentry>
    <varlistentry>
+   <!-- PGC_USERSET -->
     <term><literal>user</literal></term>
     <listitem>
      <para>
@@ -7649,23 +8219,23 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
      </row>
 
      <row>
-      <entry><structfield>usecatupd</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>
-       用户能否更新系统目录（如果此列为假，即使是一个超级用户也不能更新）。
-      </entry>
-     </row>
-
-     <row>
       <entry><structfield>userepl</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
       <entry>
-       用户能否开启流复制并将系统设置或者取消备份模式。
+        用户可以开启流复制并将系统转入/转出备份模式。
       </entry>
      </row>
 
+     <row>
+      <entry><structfield>usebypassrls</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>
+       用户避开每个行级安全策略，参阅<xref linkend="ddl-rowsecurity">获取更多信息。
+      </entry>
+     </row>
+     
      <row>
       <entry><structfield>passwd</structfield></entry>
       <entry><type>text</type></entry>
@@ -7910,6 +8480,16 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.relhastriggers</literal></entry>
       <entry>如果表有（或者曾经有过）触发器，此列为真</entry>
      </row>
+     
+     <row>
+      <entry><structfield>rowsecurity</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.relrowsecurity</literal></entry>
+      <entry>
+      如果在表上启用行级安全，则为真
+      </entry>
+     </row>
+
     </tbody>
    </tgroup>
   </table>
@@ -8057,22 +8637,26 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry>用户是否为超级用户</entry>
      </row>
 
-     <row>
-      <entry><structfield>usecatupd</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry>
-       用户是否能更新系统目录（除非此列为真，即使一个超级用户也不能更新系统目录）。
-      </entry>
-     </row>
 
      <row>
       <entry><structfield>userepl</structfield></entry>
       <entry><type>bool</type></entry>
       <entry>
-       用户能否开启流复制以及将系统转入/转出备份模式。
+       用户可以开启流复制以及将系统转入/转出备份模式。
+
       </entry>
      </row>
 
+     <row>
+      <entry><structfield>usebypassrls</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry>
+       用户避开每个行级安全策略，参阅<xref linkend="ddl-rowsecurity">
+       获取更多信息。
+      </entry>
+     </row>
+     
+     
      <row>
       <entry><structfield>passwd</structfield></entry>
       <entry><type>text</type></entry>
@@ -8210,7 +8794,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.relname</literal></entry>
       <entry>视图名称</entry>
      </row>
-     <row>
+     <row> 
       <entry><structfield>viewowner</structfield></entry>
       <entry><type>name</type></entry>
       <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.rolname</literal></entry>
