@@ -131,6 +131,13 @@ shared_buffers = 128MB
      <filename>postgresql.auto.conf</>中的设置会覆盖<filename>postgresql.conf</>
      中的设置。
     </para>
+    
+    <para>
+     如果<systemitem>SIGHUP</>信号没有产生预期效果，
+     那么系统表<link linkend="view-pg-file-settings"><structname>pg_file_settings</structname></link>
+     有助于对配置文件的预测试更改，或者诊断问题。
+    </para>
+    
    </sect2>
 
    <sect2 id="config-setting-sql-command-interaction">
@@ -731,23 +738,6 @@ include 'filename'
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-ssl-renegotiation-limit" xreflabel="ssl_renegotiation_limit">
-      <term><varname>ssl_renegotiation_limit</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>ssl_renegotiation_limit</>配置参数</primary>
-      </indexterm></term>
-      <listitem>
-       <para>
-        指定在会话密钥被重新协调之前有多少数据可流过一个<acronym>SSL</>加密连接。 重新协调可以减低攻击者利用大量流量进行密码分析攻击的机会，但同样会造成较大的性能损失。 发送和接受的总流量将被用于进行检查该限制。如果这个参数被设置为 0，则禁用重新协调。默认是<literal>512MB</>。
-       </para>
-       <note>
-        <para>
-         在使用 SSL 重新协调时，2009 年 11 月之前的 SSL 库是不安全的，因为 SSL 协议中存在弱点。 由于修复这个漏洞很麻烦，因此一些厂商提供的 SSL 库无法做重新协调。如果任何这种库被用于客户端或服务器，SSL 协调应该被禁用。
-        </para>
-       </note>
-      </listitem>
-     </varlistentry>
-
      <varlistentry id="guc-ssl-ciphers" xreflabel="ssl_ciphers">
       <term><varname>ssl_ciphers</varname> (<type>string</type>)
       <indexterm>
@@ -946,7 +936,16 @@ include 'filename'
        </para>
 
        <para>
-        如果有一个专用的 1GB 或更多内存的数据库服务器，一个合理的<varname>shared_buffers</varname>开始值是系统内存的 25%。即使很大的<varname>shared_buffers</varname>有效，也会造成一些工作负载， 但因为<productname>PostgreSQL</productname>同样依赖操作系统的高速缓冲区，将<varname>shared_buffers</varname>设置为超过 40% 的RAM不太可能比一个小点值工作得更好。为了能把对写大量新的或改变的数据的处理分布在一个较长的时间段内，<varname>shared_buffers</varname>更大的设置通常要求对<varname>checkpoint_segments</varname>也做相应增加。
+        如果有一个专用的 1GB 或更多内存的数据库服务器，
+        一个合理的<varname>shared_buffers</varname>开始值是系统内存的 25%。
+        即使很大的<varname>shared_buffers</varname>有效，
+        也会造成一些工作负载， 
+        但因为<productname>PostgreSQL</productname>同样依赖操作系统的高速缓冲区，
+        将<varname>shared_buffers</varname>设置为超过 40% 
+        的RAM不太可能比一个小点值工作得更好。
+        为了能把对写大量新的或改变的数据的处理分布在一个较长的时间段内，
+        <varname>shared_buffers</varname>更大的
+        设置通常要求对<varname>max_wal_size</varname>也做相应增加。
        </para>
 
        <para>
@@ -1317,6 +1316,11 @@ include 'filename'
         <para>
          异步 I/O 依赖于一个有效的<function>posix_fadvise</>函数（一些操作系统可能没有）。 如果不存在这个函数，将这个参数设置为除 0 之外的任何东西将导致错误。在一些操作系统上（如Solaris）虽然提供了这个函数，但它不会做任何事情。
         </para>
+        
+        <para>
+         支持的系统上缺省为1，否则为0。
+        </para>
+          
        </listitem>
       </varlistentry>
 
@@ -1525,6 +1529,29 @@ include 'filename'
        </para>
       </listitem>
      </varlistentry>
+     
+     <varlistentry id="guc-wal-compression" xreflabel="wal_compression">
+      <term><varname>wal_compression</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>wal_compression</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        当这个参数为<literal>on</>，
+        <xref linkend="guc-full-page-writes">为on，或者基础备份中，
+        <productname>PostgreSQL</>服务器压缩完整页面图片到WAL中。
+        在WAL回放中解压压缩的页面图片。缺省值为<literal>off</>。
+        只有超级用户可以修改这个设置。 
+       </para>
+
+       <para>
+       开启这个参数可以减少WAL量而不增加不可恢复数据丢失的风险，
+       但是增加了WAL日志压缩以及WAL回放解压过程中一些额外CPU成本开销。
+       </para>
+      </listitem>
+     </varlistentry>
+     
 
      <varlistentry id="guc-wal-buffers" xreflabel="wal_buffers">
       <term><varname>wal_buffers</varname> (<type>integer</type>)
@@ -1586,20 +1613,7 @@ include 'filename'
      </sect2>
      <sect2 id="runtime-config-wal-checkpoints">
      <title>检查点</title>
-
-    <variablelist>
-     <varlistentry id="guc-checkpoint-segments" xreflabel="checkpoint_segments">
-      <term><varname>checkpoint_segments</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>checkpoint_segments</>配置参数</primary>
-      </indexterm></term>
-      <listitem>
-       <para>
-        自动 WAL 检查点之间的日志文件段的最大数量（每个段通常是 16 兆字节）。默认是 3 个段。增加这个参数的值会增加崩溃恢复所需的时间。这个参数只能在<filename>postgresql.conf</>文件中或在服务器命令行上设置。
-       </para>
-      </listitem>
-     </varlistentry>
-
+     
      <varlistentry id="guc-checkpoint-timeout" xreflabel="checkpoint_timeout">
       <term><varname>checkpoint_timeout</varname> (<type>integer</type>)
       <indexterm>
@@ -1607,7 +1621,11 @@ include 'filename'
       </indexterm></term>
       <listitem>
        <para>
-        自动 WAL 检查点之间的最长时间，以秒计。默认是 5 分钟（<literal>5min</>）。增加这个参数的值会增加崩溃恢复所需的时间。这个参数只能在<filename>postgresql.conf</>文件中或在服务器命令行上设置。
+        自动 WAL 检查点之间的最长时间，以秒计。
+        有效值在30秒和1小时之间。
+        默认是 5 分钟（<literal>5min</>）。
+        增加这个参数的值会增加崩溃恢复所需的时间。
+        这个参数只能在<filename>postgresql.conf</>文件中或在服务器命令行上设置。
        </para>
       </listitem>
      </varlistentry>
@@ -1633,11 +1651,46 @@ include 'filename'
       </indexterm></term>
       <listitem>
        <para>
-        如果由于填充检查点段文件导致的检查点之间的间隔低于这个参数表示的秒数，那么就向服务器日志写一个消息（它建议增加<varname>checkpoint_segments</>的值）。默认值是 30 秒（<literal>30s</>）。零则关闭警告。如果<varname>checkpoint_timeout</varname>低于<varname>checkpoint_warning</varname>，则不会有警告产生。这个参数只能在<filename>postgresql.conf</>文件中或在服务器命令行上设置。
+        如果由于填充检查点段文件导致的检查点之间的间隔低于这个参数表示的秒数，那么就向服务器日志写一个消息（它建议增加<varname>max_wal_size</>的值）。默认值是 30 秒（<literal>30s</>）。零则关闭警告。如果<varname>checkpoint_timeout</varname>低于<varname>checkpoint_warning</varname>，则不会有警告产生。这个参数只能在<filename>postgresql.conf</>文件中或在服务器命令行上设置。
        </para>
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-max-wal-size" xreflabel="max_wal_size">
+      <term><varname>max_wal_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>max_wal_size</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        在自动WAL检查点使得WAL增长到最大尺寸。这是软限制；特殊情况下WAL大小可以超过
+        <varname>max_wal_size</>，如重负载下，错误<varname>archive_command</>，或者
+        较大<varname>wal_keep_segments</>的设置。缺省是1GB。
+        增加这个参数会延长崩溃恢复所需要的时间。
+        这个参数只能在<filename>postgresql.conf</>文件或者服务器命令行上设置。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-min-wal-size" xreflabel="min_wal_size">
+      <term><varname>min_wal_size</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>min_wal_size</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        只要WAL磁盘使用率低于这个设置，旧的WAL文件总数被回收，以供将来检查点使用。而不是删除。
+        这可以用来确保预留足够的WAL空间处理WAL使用中的峰值，比如当运行大批量工作时。
+        缺省是80MB。这个参数只能在<filename>postgresql.conf</>文件或者
+        服务器命令行上设置。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     
+     
      </variablelist>
      </sect2>
      <sect2 id="runtime-config-wal-archiving">
@@ -1645,13 +1698,22 @@ include 'filename'
 
     <variablelist>
      <varlistentry id="guc-archive-mode" xreflabel="archive_mode">
-      <term><varname>archive_mode</varname> (<type>boolean</type>)
+      <term><varname>archive_mode</varname> (<type>enum</type>)
       <indexterm>
        <primary><varname>archive_mode</>配置参数</primary>
       </indexterm></term>
       <listitem>
        <para>
-        当启用<varname>archive_mode</>时，可以通过设置<xref linkend="guc-archive-command">命令将完成的 WAL 段发送到归档存储。<varname>archive_mode</>和<varname>archive_command</>是独立的变量，这样可以在不影响归档模式的前提下修改<varname>archive_command</>。这个参数只能在服务器启动时设置。当<varname>wal_level</>被设置为<literal>minimal</>时，<varname>archive_mode</>不能被启用。
+        当启用<varname>archive_mode</>时，
+        可以通过设置<xref linkend="guc-archive-command">命令将完成的 
+        WAL段发送到归档存储。
+        除了<literal>off</>，要禁用两种模式<literal>on</>和
+        <literal>always</>。在正常操作过程中，两种模式没有区别，但是
+        当设置为<literal>always</>时，归档恢复或者待机模式中激活WAL归档。
+        在<literal>always</>模式中，
+        从归档中恢复所有文件或者再次归档使用流复制传输的文件。
+        参阅<xref linkend="continuous-archiving-in-standby">获取详情。
+       
        </para>
       </listitem>
      </varlistentry>
@@ -1765,6 +1827,21 @@ include 'filename'
       </listitem>
      </varlistentry>
 
+     
+     <varlistentry id="guc-track-commit-timestamp" xreflabel="track_commit_timestamp">
+      <term><varname>track_commit_timestamp</varname> (<type>bool</type>)
+      <indexterm>
+       <primary><varname>track_commit_timestamp</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        记录事务提交时间。这个参数只能在<filename>postgresql.conf</>文件
+        或者服务器命令行上设置。缺省值是<literal>off</literal>。
+       </para>
+      </listitem>
+     </varlistentry>
+     
      </variablelist>
     </sect2>
 
@@ -1910,6 +1987,29 @@ include 'filename'
       </listitem>
      </varlistentry>
 
+    <varlistentry id="guc-wal-retrieve-retry-interval" xreflabel="wal_retrieve_retry_interval">
+      <term><varname>wal_retrieve_retry_interval</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>wal_retrieve_retry_interval</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>  
+       <para>
+        指定等待服务器应等待多长时间时，
+        当重试检索WAL数据之前来自任何源
+        （流复制，本地<filename>pg_xlog</>或者WAL归档）的WAL数据不可用。
+        此参数只能在<filename>postgresql.conf</>文件或服务器命令行设置。
+        缺省值是5秒。如果没有指定，单位是毫秒。
+       </para>
+       <para>
+        此参数有助于配置恢复节点控制等待新的WAL数据可用的时间数。
+        例如，在归档恢复中，通过减少此参数的值检测一个新的WAL日志文件中使得恢复更加敏感，
+        这种做法是有可能的。在一个低WAL活动系统中，增加它减少了必要的访问WAL归档的需求量，
+        一些有用例子在云环境中访问基础设施的时间量要考虑在内。
+       </para>
+      </listitem>
+     </varlistentry> 
+     
      </variablelist>
     </sect2>
    </sect1>
@@ -2488,7 +2588,8 @@ local0.*    /var/log/postgresql
       </indexterm></term>
       <listitem>
        <para>
-        当<varname>logging_collector</varname>被启用时，这个参数设置被创建的日志文件的文件名。该值被视为一种<function>strftime</function>模式，因此<literal>%</literal>转义可以被用来指定根据时间变化的文件名（注意如果有任何时区独立的<literal>%</literal>转义，计算将在由<xref linkend="guc-log-timezone">指定的时区中完成）。被支持的<literal>%</literal>转义和开放组织的<ulink url="http://pubs.opengroup.org/onlinepubs/009695399/functions/strftime.html">strftime</ulink>说明中列举的类似。注意系统的<systemitem>strftime</systemitem>不会被直接使用，因此平台相关（非标准）的扩展无法工作。
+        当<varname>logging_collector</varname>被启用时，这个参数设置被创建的日志文件的文件名。该值被视为一种<function>strftime</function>模式，因此<literal>%</literal>转义可以被用来指定根据时间变化的文件名（注意如果有任何时区独立的<literal>%</literal>转义，计算将在由<xref linkend="guc-log-timezone">指定的时区中完成）。被支持的<literal>%</literal>转义和开放组织的<ulink url="http://pubs.opengroup.org/onlinepubs/009695399/functions/strftime.html">strftime</ulink>说明中列举的类似。
+        注意系统的<function>strftime</function>不会被直接使用，因此平台相关（非标准）的扩展无法工作。
         默认是<literal>postgresql-%Y-%m-%d_%H%M%S.log</literal>。
        </para>
        <para>
@@ -2836,7 +2937,9 @@ local0.*    /var/log/postgresql
       </indexterm></term>
       <listitem>
        <para>
-        导致每一次尝试对服务器的连接被记录，客户端认证的成功完成也会被记录。这个参数在会话开始后不能被改变。默认值是关闭。
+        导致每一次尝试对服务器的连接被记录，客户端认证的成功完成也会被记录。
+        只有超级用户在会话开启时可以改变这个参数，并且在所有会话中不能改变。
+        缺省是<literal>off</>。
        </para>
 
        <note>
@@ -2854,7 +2957,9 @@ local0.*    /var/log/postgresql
       </indexterm></term>
       <listitem>
        <para>
-        这个参数和<varname>log_connections</varname>相似地在服务器日志中输出一行，不过是在会话终止时记录并且包括会话的持续时间。默认是关闭。这个参数在会话开始后不能被更改。
+        记录会话终止原因。日志输出提供信息类似于<varname>log_connections</varname>，
+        以及会话持续时间。只有超级用户在会话开启时可以改变这个参数，
+        并且在所有会话中不能改变。缺省是<literal>off</>。
        </para>
       </listitem>
      </varlistentry>
@@ -3018,7 +3123,7 @@ local0.*    /var/log/postgresql
 
          <literal>%c</>转义打印一个准唯一的会话标识符，它由两个 4 字节的十六进制数（不带先导零）组成，以点号分隔。这些数字是进程启动时间和进程 ID，因此<literal>%c</>也可以被用作保存打印这些项的方式的空间。例如，要从<literal>pg_stat_activity</>生成会话标识符，使用这个查询：
 <programlisting>
-SELECT to_hex(EXTRACT(EPOCH FROM backend_start)::integer) || '.' ||
+SELECT to_hex(trunc(EXTRACT(EPOCH FROM backend_start))::integer) || '.' ||
        to_hex(pid)
 FROM pg_stat_activity;
 </programlisting>
@@ -3081,6 +3186,21 @@ FROM pg_stat_activity;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-log-replication-commands" xreflabel="log_replication_commands">
+      <term><varname>log_replication_commands</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>log_replication_commands</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        导致每个复制命令记录在服务器日志中。
+        参阅<xref linkend="protocol-replication">获取更多复制命令的详细信息。
+        缺省值是<literal>off</>。只有超级用户可以修改这个设置。
+       </para>
+      </listitem>
+     </varlistentry>
+      
      <varlistentry id="guc-log-temp-files" xreflabel="log_temp_files">
       <term><varname>log_temp_files</varname> (<type>integer</type>)
       <indexterm>
@@ -3207,6 +3327,55 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </para>
 
     </sect2>
+    
+    <sect2>
+    <title>进程标题</title>
+
+    <para>
+     这些设置控制进程标题如<command>ps</command>是如何被修改的。
+     参阅<xref linkend="monitoring-ps">获取详情。
+    </para>
+
+    <variablelist>
+     <varlistentry id="guc-cluster-name" xreflabel="cluster_name">
+      <term><varname>cluster_name</varname> (<type>string</type>)
+      <indexterm>
+       <primary><varname>cluster_name</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        设置出现在集群中的所有进程标题中的集群名称。
+        名称可以是任何小于<symbol>NAMEDATALEN</>字符（标准64字符）的字符串。
+        只有可输出的ASCII字符可以用在<varname>cluster_name</varname>值中。
+        其他字符将用问号替换(<literal>?</literal>)。
+        如果此参数设置为空字符串<literal>''</>（即为缺省值），不显示名字。
+        此参数只能在服务器启动时设置。
+       </para>
+       <para>
+        通常使用程序查看进程标题，如
+        <application>ps</>或者Windows上的<application>进程管理器</>。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-update-process-title" xreflabel="update_process_title">
+      <term><varname>update_process_title</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>update_process_title</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para> 
+        启用更新进程标题的特性，这个特性在每次服务器接收到一个新SQL命令时都会更新进程的标题。
+       进程标题通常通过<command>ps</>命令来查看，
+       或者在Windows中用<application>进程管理器</>查看。
+       只有超级用户可以更改这个设置。
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </sect2>
    </sect1>
 
    <sect1 id="runtime-config-statistics">
@@ -3288,18 +3457,6 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-update-process-title" xreflabel="update_process_title">
-      <term><varname>update_process_title</varname> (<type>boolean</type>)
-      <indexterm>
-       <primary><varname>update_process_title</>配置参数</primary>
-      </indexterm></term>
-      <listitem>
-       <para>
-        启用更新进程标题的特性，这个特性在每次服务器接收到一个新 SQL 命令时都会更新进程的标题。进程标题通常通过<command>ps</>命令来查看，或者在 Windows 中用<application>进程管理器</>查看。只有超级用户可以更改这个设置。
-       </para>
-      </listitem>
-     </varlistentry>
-
      <varlistentry id="guc-stats-temp-directory" xreflabel="stats_temp_directory">
       <term><varname>stats_temp_directory</varname> (<type>string</type>)
       <indexterm>
@@ -3361,7 +3518,10 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
     </indexterm>
 
      <para>
-      这些设置控制<firstterm>自动清理</>特性的行为。详情请见<xref linkend="autovacuum">。
+      这些设置控制<firstterm>自动清理</>特性的行为。
+      详情请见<xref linkend="autovacuum">。请注意在每个表基础上可以重写这些设置；
+      参阅<xref linkend="sql-createtable-storage-parameters"
+      endterm="sql-createtable-storage-parameters-title">。
      </para>
 
     <variablelist>
@@ -3374,6 +3534,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <listitem>
        <para>
         控制服务器是否运行自动清理启动器后台进程。默认为开启，不过要自动清理正常工作还需要启用<xref linkend="guc-track-counts">。该参数只能在<filename>postgresql.conf</>文件或服务器命令行中设置。
+        然而，为单表通过修改表存储参数可以禁用自动清理。
        </para>
        <para>
         注意即使该参数被禁用，系统也会在需要防止事务ID回卷时发起清理进程。详情请见<xref linkend="vacuum-for-wraparound">。
@@ -3389,6 +3550,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <listitem>
        <para>
         如果自动清理运行至少该值所指定的毫秒数，被自动清理执行的每一个动作都会被日志记录。将该参数设置为0会记录所有的自动清理动作。-1（默认值）将禁用对自动清理动作的记录。例如，如果你将它设置为<literal>250ms</literal>，则所有运行250ms或更长时间的自动清理和分析将被记录。此外，当该参数被设置为除<literal>-1</literal>外的任何值时，如果一个自动清理动作由于存在一个锁冲突而被跳过，将会为此记录一个消息。开启这个参数对于追踪自动清理活动非常有用。该设置只能在<filename>postgresql.conf</>文件或者服务器命令行上设置。
+        但是可以通过为单表修改表存储参数重写这个设置。
        </para>
       </listitem>
      </varlistentry>
@@ -3576,6 +3738,30 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-row-security" xreflabel="row_security">
+      <term><varname>row_security</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>row_security</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        此变量控制是否提高错误以代替应用行安全策略。
+        当设置为<literal>on</>时，策略往往适用。
+        当设置为<literal>off</>时，查询失败，这将应用至少一个策略。
+        默认为<literal>on</>。
+        在有限的行可见性引起不正确的结果的位置更改为<literal>off</>。
+        例如，<application>pg_dump</>使用缺省更改。
+        这个变量不影响避开每行安全策略的角色，
+        即超级用户和具有<literal>BYPASSRLS</>属性的角色。
+       </para>
+
+       <para>
+        关于行安全策略的更多信息，参阅<xref linkend="SQL-CREATEPOLICY">。
+       </para>
+      </listitem>
+     </varlistentry>
+     
      <varlistentry id="guc-default-tablespace" xreflabel="default_tablespace">
       <term><varname>default_tablespace</varname> (<type>string</type>)
       <indexterm>
@@ -3862,6 +4048,25 @@ SET XML OPTION { DOCUMENT | CONTENT };
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-gin-pending-list-limit" xreflabel="gin_pending_list_limit">
+      <term><varname>gin_pending_list_limit</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>gin_pending_list_limit</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+         当启用<literal>fastupdate</>时，设置正在使用的GIN挂起列表的最大尺寸。
+         如果列表增长大于这个最大尺寸，
+         通过移动块存储的主要的GIN数据结构项进行清理。
+         默认值为四字节(<literal>4MB</>)。
+         为单个GIN索引改变索引存储参数来重写此设置。
+         参阅<xref linkend="gin-fast-update">和<xref linkend="gin-tips">
+         获取更多信息。
+       </para>
+      </listitem>
+     </varlistentry>
+     
      </variablelist>
     </sect2>
      <sect2 id="runtime-config-client-format">
@@ -4065,8 +4270,9 @@ SET XML OPTION { DOCUMENT | CONTENT };
       </term>
       <listitem>
        <para>
-        这个变量指定一个或者多个要在连接开始时预载入的共享库。这个参数在一个特定会话启动后
-        就不能再被更改。如果指定的库没有找到，连接尝试将会失败。
+        这个变量指定一个或者多个要在连接开始时预载入的共享库。
+        这个参数在连接启动时起作用，对后续更改没有影响。
+        如果指定的库没有找到，连接尝试将会失败。    
        </para>
 
        <para>
@@ -4078,6 +4284,12 @@ SET XML OPTION { DOCUMENT | CONTENT };
         <literal>$libdir/plugins/mylib</literal>的效果是相同的。
        </para>
 
+       <para>
+        这个功能的目的是允许非特权用户加载调试或性能测量库到特定会话，
+        而不需要显式的<command>LOAD</>命令。
+        为达到此目的，典型的使用<envar>PGOPTIONS</envar>环境变量或使用<command>ALTER ROLE SET</>设置这个参数。
+       </para>
+       
        <para>
         除非一个模块被特别设计成由非超级用户以这种方式使用，通常不推荐使用这个设置。应该看看
         <xref linkend="guc-session-preload-libraries">。
@@ -4318,7 +4530,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </indexterm></term>
       <listitem>
        <para>
-        这个参数控制<command>CREATE TABLE</command>和<command>CREATE TABLE AS</command>在既没有指定<literal>WITH OIDS</literal>也没有指定<literal>WITHOUT OIDS</literal>的情况下，是否在新创建的表中包含 OID 列。它还决定被<command>SELECT INTO</command>创建的表里面是否包含 OID 。这个参数在默认情况下为<literal>off</>。在<productname>PostgreSQL</> 8.0 及更早的版本中，它默认为打开。
+        这个参数控制<command>CREATE TABLE</command>和<command>CREATE TABLE AS</command>在既没有指定<literal>WITH OIDS</literal>也没有指定<literal>WITHOUT OIDS</literal>的情况下，是否在新创建的表中包含 OID 列。它还决定被<command>SELECT INTO</command>创建的表里面是否包含 OID 。这个参数在默认情况下为<literal>off</>。在<productname>PostgreSQL</> 8.0 及更早的版本中，它默认为<literal>on</>。
        </para>
 
        <para>
@@ -4359,6 +4571,29 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
        </para>
        <para>
         设置这个参数不会禁用所有与大对象相关的安全检查 &mdash; 除了那些在<productname>PostgreSQL</> 9.0中已经修改了的默认行为。例如，<literal>lo_import()</literal>和<literal>lo_export()</literal>需要超级用户权限而不管这个设置。
+       </para>
+      </listitem>
+     </varlistentry>
+         
+     <varlistentry id="guc-operator-precedence-warning" xreflabel="operator_precedence_warning">
+      <term><varname>operator_precedence_warning</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>operator_precedence_warning</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        当开启时，解析器为了可能修改的任何结构发出警告，
+        意味着<productname>PostgreSQL</> 9.4操作符优先级中作为修改结果。     
+        对审计应用程序是非常有用的，
+        看看是否优先更改会打断任何东西；
+        但它并不意味着在生成过程中保持开启，
+        因为它会对一些完全有效的，符合标准的SQL代码发出警告。
+        缺省<literal>off</>。
+       </para>
+
+       <para>
+           参阅<xref linkend="sql-precedence">获取更多信息。
        </para>
       </listitem>
      </varlistentry>
@@ -4515,6 +4750,23 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       <listitem>
        <para>
         报告对这个集簇是否启用了数据校验码。详见<xref linkend="app-initdb-data-checksums">。
+       </para>
+      </listitem>
+     </varlistentry>
+      
+     <varlistentry id="guc-debug-assertions" xreflabel="debug_assertions">
+      <term><varname>debug_assertions</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>debug_assertions</>配置参数</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        报告是否启用断言编译<productname>PostgreSQL</productname>。
+       当构建<productname>PostgreSQL</productname>时（比如通过<command>configure</command>选项
+        <option>--enable-cassert</option>完成），
+        如果是这样的话，定义宏<symbol>USE_ASSERT_CHECKING</symbol>。
+        缺省情况下编译没有断言的<productname>PostgreSQL</productname>。        
        </para>
       </listitem>
      </varlistentry>
@@ -4703,17 +4955,6 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-debug-assertions" xreflabel="debug_assertions">
-      <term><varname>debug_assertions</varname> (<type>boolean</type>)
-      <indexterm>
-       <primary><varname>debug_assertions</>配置参数</primary>
-      </indexterm></term>
-      <listitem>
-       <para>
-        打开各种断言检查。这是一个调试助手。如果你经历了奇怪的问题或者崩溃， 那么你可能会想把这个打开，因为它可能暴露编程错误。要使用这个 选项，<productname>PostgreSQL</productname>被编译时必须定义宏<symbol>USE_ASSERT_CHECKING</symbol>（通过<command>configure</command>的选项<option>--enable-cassert</option>完成）。请注意，如果<productname>PostgreSQL</productname>编译时启用了断言，那么<varname>debug_assertions</varname>的默认值就是<literal>on</>。
-       </para>
-      </listitem>
-     </varlistentry>
 
      <varlistentry id="guc-ignore-system-indexes" xreflabel="ignore_system_indexes">
       <term><varname>ignore_system_indexes</varname> (<type>boolean</type>)
@@ -4965,10 +5206,6 @@ LOG:  CleanUpLock: deleting: lock(0xb7acd844) id(24688,24696,0,0,0,1)
       </thead>
 
       <tbody>
-       <row>
-        <entry><option>-A <replaceable>x</replaceable></option></entry>
-        <entry><literal>debug_assertions = <replaceable>x</replaceable></></entry>
-       </row>
        <row>
         <entry><option>-B <replaceable>x</replaceable></option></entry>
         <entry><literal>shared_buffers = <replaceable>x</replaceable></></entry>
