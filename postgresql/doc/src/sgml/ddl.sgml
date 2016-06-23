@@ -363,7 +363,7 @@ CREATE TABLE products (
    </para>
 
    <para>
-    如果一个唯一约束引用了一组列，则将列用逗号分隔：
+    为一组列定义一个唯一约束，将它看做使用逗号分隔列名的表约束：
 <programlisting>
 CREATE TABLE example (
     a integer,
@@ -387,8 +387,8 @@ CREATE TABLE products (
    </para>
 
    <para>
-    增加一个唯一约束会在约束中的列或列组上自动创建一个唯一B-tree索引。只在某些行上的唯一
-    约束可以通过创建一个<link linkend="indexes-partial">部分索引</link>来强制。
+    增加一个唯一约束会在约束中的列或列组上自动创建一个唯一B-tree索引。
+    在某些行上的唯一约束不能看做唯一约束，但是可能通过创建一个唯一<link linkend="indexes-partial">部分索引</link>执行这个约束。
    </para>
 
    <indexterm>
@@ -414,7 +414,8 @@ CREATE TABLE products (
    </indexterm>
 
    <para>
-    从技术上来说，一个主键约束仅仅是一个唯一约束和一个非空约束的组合。因此，下面的两个表定义接受相同的数据：
+    主键约束表示列，或者列组，可以作为表中行唯一标识符使用。需要该值是
+    唯一的而且非空。因此，下面的两个表定义接受相同的数据：
 <programlisting>
 CREATE TABLE products (
     product_no integer UNIQUE NOT NULL,
@@ -442,18 +443,22 @@ CREATE TABLE example (
     <emphasis>PRIMARY KEY (a, c)</emphasis>
 );
 </programlisting>
-   </para>
+   </para> 
 
    <para>
-    一个主键表明一个列或一组列可以用作表中行的一个唯一标识符（这是一个主键定义的直接结果。注意单靠一个唯一约束无法提供一个唯一的标识符，因为它并未排除空值）。这对于建立文档的目的和客户端应用都有用。例如，一个允许修改行值的GUI应用 可能需要知道一个表的主键，这样它才能唯一地区分行。
-   </para>
-
-   <para>
-    增加一个主键将自动在主键用到的列或列组上创建一个唯一B-tree索引。
+     添加主键将在主键列出的列上或者列组中自动创建唯一B树索引，
+     并且强制列被标记为<literal>非空</>。
    </para>
 
    <para>
     一个表最多只能有一个主键（可以有任意数量的唯一和非空约束，它们可以达到和逐渐一样的功能，但只能有一个被标识为主键）。关系数据库理论要求每一个表都要有一个主键。但<productname>PostgreSQL</productname>中并未强制要求这一点，但是最好能够遵循它。
+   </para>
+   
+    <para>
+    主键对于建立文档的目的和客户端应用都有用。
+    例如，一个允许修改行值的GUI应用可能需要知道一个表的主键，
+    这样它才能唯一地区分行。在数据库系统中有各种方法，如果已声明，
+    则使用主键；例如，主键定义了用于外键参照表的缺省目标列(s)。
    </para>
   </sect2>
 
@@ -1086,6 +1091,349 @@ REVOKE ALL ON accounts FROM PUBLIC;
   </para>
  </sect1>
 
+<sect1 id="ddl-rowsecurity">
+  <title>行安全策略</title>
+
+  <indexterm zone="ddl-rowsecurity">
+   <primary>行级安全</primary>
+  </indexterm>
+
+  <indexterm zone="ddl-rowsecurity">
+   <primary>策略</primary>
+  </indexterm>
+
+  <para> 
+   除了SQL标准通过<xref linkend="sql-grant"><link linkend="ddl-priv">权限系统</link>可用之外，
+   表可以有<firstterm>行安全策略</>，每个用户基础上，
+   限制通过正常查询或者插入，更新，或者数据修改命令删除的返回行。
+   该功能看做<firstterm>行级安全</>。缺省情况下，表没有任何策略，
+   因此如果用户按照SQL权限系统有对表的访问权限，在它内的所有行同样
+   可以用于查询或者更新。 
+  </para>
+
+  <para>
+   当表上（使用<link linkend="sql-altertable">ALTER TABLE ... ENABLE ROW LEVEL
+   SECURITY</>）启用行安全时， 
+   通过行安全策略允许正常访问表进行选择行或者修改行。（然而，表的所有者通常
+   不受限于行安全策略。）如果没有策略存在于表中，使用缺省拒绝策略，意味着
+   没有行可见或者被修改。适用整个表的操作，
+   比如<command>TRUNCATE</>和<literal>REFERENCES</>不受行安全限制。
+  </para>
+
+  <para>
+   行安全策略特定于命令，或者角色，或者两者。指定策略适用于<literal>ALL</literal>
+   命令，或者<literal>SELECT</>，<literal>INSERT</>，<literal>UPDATE</>，
+   或者<literal>DELETE</>。分配多个角色给特定策略，适用正常角色从属关系和继承规则。
+  </para>
+
+  <para>
+   指定哪些行按政策可见或者可修改，表达式是必需的，它返回一个布尔结果。
+   表达式将对先于任何条件或者来自用户查询的任何函数之前的每一行进行评估。
+（这个规则的唯一例外是<literal>leakproof</literal>函数，它保证不泄露信息；该优化器
+可能选择行安全检查前应用这个函数。）不处理那些表达式不返回<literal>true</>的行。
+可以指定单独的表达式，用以提供对可见的行和允许进行修改的行的独立控制。
+策略表达式作为查询部分运行，并具有用户运行查询权限，
+尽管安全定义函数可用于访问对主叫用户不可见的数据。
+  </para>
+
+  <para>
+   当访问表的时候，超级用户以及具有<literal>BYPASSRLS</>属性的角色总是避开
+   行安全系统。表的所有者通常也绕过行安全，尽管表所有者可以选择从属于具有
+   <link linkend="sql-altertable">ALTER TABLE ... FORCE ROW LEVEL SECURITY</>的行安全。
+  </para>
+
+  <para>
+   启用和禁用行安全，以及增加表策略，总是表所有者的特权。
+  </para>
+
+  <para>
+   使用<xref linkend="sql-createpolicy">命令创建策略，
+   使用<xref linkend="sql-alterpolicy">命令修改策略，
+   使用<xref linkend="sql-droppolicy">命令删除策略。
+   为了启用和禁用特定表的行安全性，使用<xref linkend="sql-altertable">命令。
+  </para>
+
+  <para>
+   Each policy has a name and multiple policies can be defined for a
+   table.  As policies are table-specific, each policy for a table must
+   have a unique name.  Different tables may have policies with the
+   same name.
+   每个策略都有一个名字并且可以为表定义多个策略。
+   由于策略是表特定的，每一个表策略必须有唯一的名称。
+   不同的表可能有相同名称的策略。
+  </para>
+
+  <para>
+   当多个策略应用于特定查询时，使用<literal>OR</literal>结合，
+   因此如果任何策略允许的话，
+   行是可访问的。这类似于特定角色是所有角色成员权限的规则。
+  </para>
+
+  <para>
+   作为一个简单的例子，这里是如何创建关于
+<literal>account</>关系允许<literal>managers</>角色成员访问行的策略，
+并且只有他们账户里面的行：
+  </para>
+
+<programlisting>
+CREATE TABLE accounts (manager text, company text, contact_email text);
+
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY account_managers ON accounts TO managers
+    USING (manager = current_user);
+</programlisting>
+
+  <para>
+   如果不指定任何角色，或者使用特定用户名<literal>PUBLIC</literal>，
+   那么策略应用于系统上的所有用户。允许所有用户访问<literal>用户</>
+   表中的行，可以使用简单策略： 
+  </para>
+
+<programlisting>
+CREATE POLICY user_policy ON users
+    USING (user = current_user);
+</programlisting>
+
+  <para>
+   相比较那些可见行为添加到表中行使用不同策略，可以使用<literal>WITH CHECK</>子句。
+   这个策略允许所有用户查看<literal>users</>表中的所有行，但是仅仅修改自己：
+  </para>
+
+<programlisting>
+CREATE POLICY user_policy ON users
+    USING (true)
+    WITH CHECK (user = current_user);
+</programlisting>
+
+  <para>
+   使用<command>ALTER TABLE</>命令禁用行安全性。
+   禁用行安全性不移除在表上定义的任何策略；他们只是忽略。
+   然后表上所有的行是可见的并且可修改的，属于标准的SQL权限系统。
+  </para>
+
+  <para>
+   下面是一个在生产环境中如何使用这个功能的例子。表<literal>passwd</>模拟
+   Unix密码文件：
+  </para>
+
+<programlisting>
+-- 简单密码文件基本例子
+CREATE TABLE passwd (
+  username              text UNIQUE NOT NULL,
+  pwhash                text,
+  uid                   int  PRIMARY KEY,
+  gid                   int  NOT NULL,
+  real_name             text NOT NULL,
+  home_phone            text,
+  extra_info            text,
+  home_dir              text NOT NULL,
+  shell                 text NOT NULL
+);
+
+CREATE ROLE admin;  -- Administrator
+CREATE ROLE bob;    -- Normal user
+CREATE ROLE alice;  -- Normal user
+
+-- 填充表
+INSERT INTO passwd VALUES
+  ('admin','xxx',0,0,'Admin','111-222-3333',null,'/root','/bin/dash');
+INSERT INTO passwd VALUES
+  ('bob','xxx',1,1,'Bob','123-456-7890',null,'/home/bob','/bin/zsh');
+INSERT INTO passwd VALUES
+  ('alice','xxx',2,1,'Alice','098-765-4321',null,'/home/alice','/bin/zsh');
+
+-- 一定启用表上行级安全性
+ALTER TABLE passwd ENABLE ROW LEVEL SECURITY;
+
+-- 创建策略
+-- 管理员可以查看所有行并且添加行
+CREATE POLICY admin_all ON passwd TO admin USING (true) WITH CHECK (true);
+-- 普通用户可以查看所有行
+CREATE POLICY all_view ON passwd FOR SELECT USING (true);
+-- 普通用户可以更新自己的记录，但是限制普通用户设置哪个脚本
+CREATE POLICY user_mod ON passwd FOR UPDATE
+  USING (current_user = username)
+  WITH CHECK (
+    current_user = username AND
+    shell IN ('/bin/bash','/bin/sh','/bin/dash','/bin/zsh','/bin/tcsh')
+  );
+
+-- 允许管理所有普通权限
+GRANT SELECT, INSERT, UPDATE, DELETE ON passwd TO admin;
+-- 用户只在public列上获取select访问
+GRANT SELECT
+  (username, uid, gid, real_name, home_phone, extra_info, home_dir, shell)
+  ON passwd TO public;
+-- 允许用户更新某些列
+GRANT UPDATE
+  (pwhash, real_name, home_phone, extra_info, shell)
+  ON passwd TO public;
+</programlisting>
+
+  <para>
+   正如任何安全设置，重要的是要测试，并确保该系统的行为如预期。
+   使用上面的例子，这演示了权限系统正常工作。
+  </para>
+
+<programlisting>
+-- 管理员可以查看所有行和字段
+postgres=&gt; set role admin;
+SET
+postgres=&gt; table passwd;
+ username | pwhash | uid | gid | real_name |  home_phone  | extra_info | home_dir    |   shell
+----------+--------+-----+-----+-----------+--------------+------------+-------------+-----------
+ admin    | xxx    |   0 |   0 | Admin     | 111-222-3333 |            | /root       | /bin/dash
+ bob      | xxx    |   1 |   1 | Bob       | 123-456-7890 |            | /home/bob   | /bin/zsh
+ alice    | xxx    |   2 |   1 | Alice     | 098-765-4321 |            | /home/alice | /bin/zsh
+(3 rows)
+
+-- 测试Alice能做什么
+postgres=&gt; set role alice;
+SET
+postgres=&gt; table passwd;
+ERROR:  permission denied for relation passwd
+postgres=&gt; select username,real_name,home_phone,extra_info,home_dir,shell from passwd;
+ username | real_name |  home_phone  | extra_info | home_dir    |   shell
+----------+-----------+--------------+------------+-------------+-----------
+ admin    | Admin     | 111-222-3333 |            | /root       | /bin/dash
+ bob      | Bob       | 123-456-7890 |            | /home/bob   | /bin/zsh
+ alice    | Alice     | 098-765-4321 |            | /home/alice | /bin/zsh
+(3 rows)
+
+postgres=&gt; update passwd set username = 'joe';
+ERROR:  permission denied for relation passwd
+-- Alice可以修改她的real_name，但是没有其他人
+postgres=&gt; update passwd set real_name = 'Alice Doe';
+UPDATE 1
+postgres=&gt; update passwd set real_name = 'John Doe' where username = 'admin';
+UPDATE 0
+postgres=&gt; update passwd set shell = '/bin/xx';
+ERROR:  new row violates WITH CHECK OPTION for "passwd"
+postgres=&gt; delete from passwd;
+ERROR:  permission denied for relation passwd
+postgres=&gt; insert into passwd (username) values ('xxx');
+ERROR:  permission denied for relation passwd
+-- Alice can change her own password; RLS silently prevents updating other rows
+postgres=&gt; update passwd set pwhash = 'abc';
+UPDATE 1
+</programlisting>
+
+  <para>
+   引用完整性检查，比如唯一或者主键约束和外键引用，总是绕开行安全性确保
+   维持数据完整性。当开发模式时必须小心，
+   并且行级策略通过引用完整性检查避开<quote>隐蔽通道</>泄露信息。 
+  </para>
+
+  <para>
+   在某些情况下重要的是要确保行安全不被应用。
+   例如，当备份时，它可能是灾难性的，如果行安全默默地导致从备份中省略了一些行。
+   在这种情况下,你可以设置<xref linkend="guc-row-security">配置参数为
+   <literal>off</>。这本身不绕开行安全；如果任何
+   查询的结果可以过滤策略，那么它会抛出一个错误。错误的原因可以调查并且修复。
+  </para>
+
+  <para>
+   在上面的例子中，策略表达式只考虑当前被访问或者被更新行中的值。
+   这是最简单和表现最好的情况下；如果可能，最好设计行安全应用程序以这种方式工作。
+   如果有必要咨询其它行或其它表采取策略决定，可以通过策略表达式中使用子-<command>SELECT</>,
+   或包含<command>SELECT</>的函数完成。
+   然而要注意这样的访问可以创建竞态条件，如果不小心可能造成信息泄漏。
+   作为一个例子，考虑下面的表设计：
+  </para>
+
+<programlisting>
+-- 权限组定义
+CREATE TABLE groups (group_id int PRIMARY KEY,
+                     group_name text NOT NULL);
+
+INSERT INTO groups VALUES
+  (1, 'low'),
+  (2, 'medium'),
+  (5, 'high');
+
+GRANT ALL ON groups TO alice;  -- alice is the administrator
+GRANT SELECT ON groups TO public;
+
+-- 用户的权限级别定义
+CREATE TABLE users (user_name text PRIMARY KEY,
+                    group_id int NOT NULL REFERENCES groups);
+
+INSERT INTO users VALUES
+  ('alice', 5),
+  ('bob', 2),
+  ('mallory', 2);
+
+GRANT ALL ON users TO alice;
+GRANT SELECT ON users TO public;
+
+-- 保持受保护信息的表
+CREATE TABLE information (info text,
+                          group_id int NOT NULL REFERENCES groups);
+
+INSERT INTO information VALUES
+  ('barely secret', 1),
+  ('slightly secret', 2),
+  ('very secret', 5);
+
+ALTER TABLE information ENABLE ROW LEVEL SECURITY;
+
+-- 行对于安全group_id大于或者等于行的group_id的用户是可见的/可更新的
+CREATE POLICY fp_s ON information FOR SELECT
+  USING (group_id &lt;= (SELECT group_id FROM users WHERE user_name = current_user));
+CREATE POLICY fp_u ON information FOR UPDATE
+  USING (group_id &lt;= (SELECT group_id FROM users WHERE user_name = current_user));
+
+-- 我们只依赖RLS保护信息表
+GRANT ALL ON information TO public;
+</programlisting>
+
+  <para>
+   现在假设<literal>alice</>想要改变<quote>秘密</>信息，
+   但是决定<literal>mallory</>不信任行的新内容，因此：
+  </para>
+
+<programlisting>
+BEGIN;
+UPDATE users SET group_id = 1 WHERE user_name = 'mallory';
+UPDATE information SET info = 'secret from mallory' WHERE group_id = 2;
+COMMIT;
+</programlisting>
+
+  <para>
+   看起来安全；在<literal>mallory</>中可以<quote>从mallory查看秘密</>字符串。
+   然而，这有个竞态条件。如果<literal>mallory</>是同时执行的，即
+<programlisting>
+SELECT * FROM information WHERE group_id = 2 FOR UPDATE;
+</programlisting>
+   并且事务是<literal>READ COMMITTED</>模式，对于她有可能看到<quote>来自mallory的秘密</>。
+   如果她的事务在<literal>alice</>之后到达<structname>information</>行，则会发生。
+   他阻塞等待<literal>alice</>事务提交，
+   那么获取由于<literal>FOR UPDATE</>子句更新的行内容。然而，它确实<emphasis>没有</>
+   从<structname>users</>为隐含的<command>SELECT</>抓取更新行，
+   因为子-<command>SELECT</>没有<literal>FOR UPDATE</>；相反<structname>users</>行读取查询开始时采取的快照。
+   因此，策略表达式测试<literal>mallory</>权限级别的旧值，并且允许她查看更新的行。
+  </para>
+
+  <para>
+   有几种方法可以解决这个问题。一个简单的答案是在子<command>SELECT</>行安全策略中使用
+<literal>SELECT ... FOR SHARE</>。然而，这需要授予引用表（这里<structname>users</>）的
+受影响用户<literal>UPDATE</>权限，这可能是不可取的。
+（但是可以应用另一个行安全策略以防止它们实际上行使这一
+特权；或子<command>SELECT</>可以嵌入到一个安全
+定义函数中。）同时，行共享锁在引用表上大并发使用可能会造成性能问题，
+尤其是如果更新它是频繁的。
+如果引用表更新不频繁，另一个解决方案是当更新时在引用表上采取排它锁。
+所以没有并发事务会检查旧的行值。
+或者提交引用表的更新之后，并在修改依赖于新安全方法之前只是等待所有并发事务结束。 
+  </para>
+
+  <para>
+   更多详细信息参阅 <xref linkend="sql-createpolicy">和<xref linkend="sql-altertable">。
+  </para>
+
+ </sect1> 
+ 
  <sect1 id="ddl-schemas">
   <title>模式</title>
 
@@ -1530,11 +1878,20 @@ WHERE c.altitude &gt; 500 AND c.tableoid = p.oid;
 </programlisting>
   </para>
 
+<para>
+   另一种方法是使用<type>regclass</>伪类型获得相同效果，这将象征性地输出表OID：
+<programlisting>
+SELECT c.tableoid::regclass, c.name, c.altitude
+FROM cities c
+WHERE c.altitude &gt; 500;
+</programlisting>
+  </para>  
+  
   <para>
    继承不会自动地将来自<command>INSERT</command>或<command>COPY</command>命令的数据传播到继承层次中的其他表中。在我们的例子中，下面的<command>INSERT</command>语句将会失败：
 <programlisting>
 INSERT INTO cities (name, population, altitude, state)
-VALUES ('New York', NULL, NULL, 'NY');
+VALUES ('Albany', NULL, NULL, 'NY');
 </programlisting>
    我们也许希望数据能被以某种方式被引入到<structname>capitals</structname>表中，但是这不会发生：<command>INSERT</command>总是向指定的表中插入。在某些情况下，可以通过使用一个规则（见<xref linkend="rules">）来将插入动作重定向。但是这对上面的情况并没有帮助，因为<structname>cities</>表根本就不包含<structfield>state</>列，因而这个命令将在触发规则之前就被拒绝。
   </para>
@@ -1567,7 +1924,13 @@ VALUES ('New York', NULL, NULL, 'NY');
   <para>
    请注意表访问权限的处理方式。查询一个父表将自动地访问子表中的数据而不需要进一步的访问权限检查。这体现了子表的数据（也）在父表里存在。但是，访问子表并不是自动被允许的且可能需要进一步被授予权限。
   </para>
-
+  
+  <para>
+   外表（参见<xref linkend="ddl-foreign-data">）也可以作为继承层次结构的一部分，
+   无论是作为父表或者子表，正如普通表一样。
+   如果外表是继承层次结构的一部分，那么任何外表不支持的操作在整个层次结构中也不被支持。
+  </para>
+  
  <sect2 id="ddl-inherit-caveats">
   <title>警告</title>
 
@@ -1706,7 +2069,8 @@ VALUES ('New York', NULL, NULL, 'NY');
        </para>
 
        <para>
-        我们将这些子表认为是分区，尽管它们在各方面来看普通的<productname>PostgreSQL</>表。
+        我们将这些子表认为是分区，尽管它们在各方面来看普通的<productname>PostgreSQL</>表
+        (或者可能外表)。
        </para>
       </listitem>
 
@@ -2110,6 +2474,13 @@ ANALYZE measurement;
       只会处理主表。
      </para>
     </listitem>
+    
+    <listitem>
+     <para>
+      具有<literal>ON CONFLICT</>子句的<command>INSERT</command>语句不太可能像预期那样工作，
+      正如特定目标关系中而非子关系的独特侵权情况下采取<literal>ON CONFLICT</>操作。
+     </para>
+    </listitem>
 
    </itemizedlist>
    </para>
@@ -2172,10 +2543,9 @@ ANALYZE measurement;
 
    <para>
     更多信息请见
-    <xref linkend="sql-createforeigndatawrapper">、
-    <xref linkend="sql-createserver">、
-    <xref linkend="sql-createusermapping">以及
-    <xref linkend="sql-createforeigntable">。
+    <xref linkend="sql-createforeigndatawrapper">，
+    <xref linkend="sql-createserver">，<xref linkend="sql-createusermapping">，
+    <xref linkend="sql-createforeigntable">以及<xref linkend="sql-importforeignschema">。
    </para>
  </sect1>
 
