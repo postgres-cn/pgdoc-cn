@@ -34,9 +34,8 @@
     </para>
 
     <para>
-     验证器函数负责验证<command>CREATE</command>和<command>ALTER</command>命令中对它的外部数据包装器给出的选项，以及使用该包装器的外部服务器、用户映射和外部表。验证器函数必须被注册为要求两个参数：一个包含需要被验证的选项的文本数组，以及一个表示与这些选项相关联的对象类型的OID（以该对象可能被存储的系统目录的OID的形式，可以是<literal>ForeignDataWrapperRelationId</>、
-     <literal>ForeignServerRelationId</>、
-     <literal>UserMappingRelationId</>、
+     验证器函数负责验证<command>CREATE</command>和<command>ALTER</command>命令中对它的外部数据包装器给出的选项，以及使用该包装器的外部服务器、用户映射和外部表。验证器函数必须被注册为要求两个参数：一个包含需要被验证的选项的文本数组，以及一个表示与这些选项相关联的对象类型的OID（以该对象可能被存储的系统目录的OID的形式，
+     可以是<literal>ForeignDataWrapperRelationId</>、<literal>ForeignServerRelationId</>、<literal>UserMappingRelationId</>、
      或<literal>ForeignTableRelationId</>）。如果没有提供验证器函数，在对象创建或修改时选项不会被检查。
     </para>
 
@@ -102,10 +101,14 @@ GetForeignPlan (PlannerInfo *root,
                 Oid foreigntableid,
                 ForeignPath *best_path,
                 List *tlist,
-                List *scan_clauses);
+                List *scan_clauses,
+                Plan *outer_plan);
 </programlisting>
 
-     从选择的外部访问路径创建一个<structname>ForeignScan</>计划节点。这个函数在查询规划的末尾被调用。参数和<function>GetForeignRelSize</>的一样，外加选中的<structname>ForeignPath</>（在前面由<function>GetForeignPaths</>产生）、被计划节点发出的目标列表以及计划节点强制的限制子句。
+     从选择的外部访问路径创建一个<structname>ForeignScan</>计划节点。这个函数在查询规划的末尾被调用。参数和<function>GetForeignRelSize</>的一样，外加选中的<structname>ForeignPath</>（在前面由<function>GetForeignPaths</>或<function>GetForeignJoinPaths</>产生）。
+     由计划节点发出目标列表，计划节点强制执行限制子句以及<structname>ForeignScan</>的外部子查询，
+     用于<function>RecheckForeignScan</>执行的重新检查。（如果路径是一个连接而不是基本关系，
+     那么<literal>foreigntableid</>是<literal>InvalidOid</>。） 
     </para>
 
     <para>
@@ -140,11 +143,18 @@ IterateForeignScan (ForeignScanState *node);
     </para>
 
     <para>
-     被返回的行必须匹配被扫描的外部表的列签名。如果你选择将那些不需要的列优化掉，你应该在那些列位置上插入空值。
+     被返回的行必须匹配提供的<structfield>fdw_scan_tlist</>目标列。
+     否则，它们必须与被扫描的外表的行类型匹配。
+     如果你选择将那些不需要的列优化掉，你应该在那些列位置上插入空值。
+     否则产生忽略掉那些列的<structfield>fdw_scan_tlist</>列表。
     </para>
 
     <para>
-     注意<productname>PostgreSQL</productname>的执行器并不关心被返回的行是否违反任何定义在外部表列上的<literal>NOT NULL</literal>约束 &mdash; 但是规划器却关心，并且如果<literal>NULL</>值出现在一个被声明为不可能包含它们的列中，优化器可能会不正确地优化查询。如果用户已经声明了不会出现空值时遇到一个<literal>NULL</>值，可能抛出一个错误更为合适（就像你在数据类型失配的情况下你需要做的一样）。
+     注意<productname>PostgreSQL</productname>的执行器并不关心被返回的行是否违反任何定义在外部表列上的任何约束 &mdash; 
+     但是规划器却关心，并且如果在不满足声明约束的外表中有可见行，
+     可能优化查询不正确。
+     当用户已经声明该约束是真的时，如果违反了该约束，
+     可能抛出一个错误更为合适（就像你在数据类型失配的情况下你需要做的一样）。
     </para>
 
     <para>
@@ -166,7 +176,60 @@ EndForeignScan (ForeignScanState *node);
     </para>
 
    </sect2>
+  
+   <sect2 id="fdw-callbacks-join-scan">
+    <title>扫描外部表的FDW例程</title>
 
+    <para>
+     如果一个FDW支持执行远程外部链接（而不是抓取表的数据以及执行本地链接），
+     它应该提供这个回调函数：
+    </para>
+
+    <para>
+<programlisting>
+void
+GetForeignJoinPaths (PlannerInfo *root,
+                     RelOptInfo *joinrel,
+                     RelOptInfo *outerrel,
+                     RelOptInfo *innerrel,
+                     JoinType jointype,
+                     JoinPathExtraData *extra);
+</programlisting>
+    创建两个（或多个）外表链接的可能访问路径都属于同一个外部服务器。
+    在查询规划中调用这个可选函数。
+    伴随<function>GetForeignPaths</>，
+    这个函数为提供的<literal>joinrel</>产生<structname>ForeignPath</>路径，
+    并且调用<function>add_path</>添加这些路径到考虑链接的路径集合中。
+    但不同于<function>GetForeignPaths</>，
+    这个函数成功创建至少一个路径是没有必要的，
+    因为涉及本地链接的路径总是有可能的。
+    </para>
+
+    <para>
+     请注意，此函数为了相同的连接关系以及内、外部关系的不同组合将被重复调用；
+     FDW有责任减少重复工作。
+    </para>
+
+    <para>
+     如果为链接选择<structname>ForeignPath</>路径，
+     它将代表整个链接过程；不会使用为组件表生成的路径以及子辅助链接。
+     链接路径过程的随后处理正如扫描单一外部表的路径一样。
+    不同的是产生的<structname>ForeignScan</>计划节点的<structfield>scanrelid</>应设置为零，
+    因为它没有一个单一的关系，相反，
+    <structname>ForeignScan</>节点的<structfield>fs_relids</>字段代表要加入的关系集。
+    （较后面的字段是由核心策划代码自动设置的，不需要通过FDW填充。）
+    因为没有发现来自系统目录的远程连接的字段列表，
+    另一个区别是，FDW必须填充<structfield>fdw_scan_tlist</>以及<structfield>TargetEntry</>节点的适当列表。
+    代表一组列提供运行时返回的元组。
+     
+    </para>
+
+    <para>
+     参阅<xref linkend="fdw-planning">获取附加信息。
+    </para>
+
+   </sect2>
+     
    <sect2 id="fdw-callbacks-update">
     <title>更新外部表的FDW例程</title>
 
@@ -361,6 +424,124 @@ IsForeignRelUpdatable (Relation rel);
 
    </sect2>
 
+   <sect2 id="fdw-callbacks-row-locking">
+    <title>行锁定的FDW例程</title>
+
+    <para>
+     如果FDW希望支持<firstterm>末行锁</>（正如<xref linkend="fdw-row-locking">所描述的），
+     它必须提供以下回调函数：
+    </para>
+
+    <para>
+<programlisting>
+RowMarkType
+GetForeignRowMarkType (RangeTblEntry *rte,
+                       LockClauseStrength strength);
+</programlisting>
+
+     报告用于外部表的行标记选项。<literal>rte</>是表的<structname>RangeTblEntry</>节点，
+     并且<literal>strength</>描述通过相关的<literal>FOR UPDATE/SHARE</>子句请求的锁强度，
+     如果存在的情况下。结果必须是<literal>RowMarkType</>枚举类型成员。
+     
+    </para>
+
+    <para>
+     
+     在查询规划<command>UPDATE</>，<command>DELETE</>或者<command>SELECT
+     FOR UPDATE/SHARE</>查询中的每个外部表时调用此函数，
+     并且不是<command>UPDATE</>或者<command>DELETE</>的目标。
+    </para>
+
+    <para>
+     如果<function>GetForeignRowMarkType</>指针设置为
+     <literal>NULL</>，那么使用<literal>ROW_MARK_COPY</>选项。
+     （这意味着永远不会调用<function>RefetchForeignRow</>，因此它也不需要被提供。）
+    </para>
+
+    <para>
+     参见<xref linkend="fdw-row-locking">获取更多信息。
+    </para>
+
+    <para>
+<programlisting>
+HeapTuple
+RefetchForeignRow (EState *estate,
+                   ExecRowMark *erm,
+                   Datum rowid,
+                   bool *updated);
+</programlisting>
+
+     如果需要的话锁定之后，重新从外部表中获取一个元组。
+     <literal>estate</>是查询的全局执行状态。
+     <literal>erm</>是描述目标外表的<structname>ExecRowMark</>结构
+     并且获得行锁类型（如果有的话）。<literal>rowid</>标识要获取的元组。
+     <literal>updated</>是一个输出参数。   
+    </para>
+
+    <para>
+     如果无法获得行锁，这个函数应该返回获取的元组的复制或者<literal>NULL</>，
+获取的行锁类型由<literal>erm-&gt;markType</>定义，
+通过<function>GetForeignRowMarkType</>返回之前的值。
+（<literal>ROW_MARK_REFERENCE</>意味着重新获取没有获取任何锁的元组，
+并且这个例程不会看到<literal>ROW_MARK_COPY</>。）   
+    </para>
+
+    <para>
+     此外，如果获取的是一个元组的更新版本，
+     而不是先前获得的相同版本。<literal>*updated</>应该设置为<literal>true</>
+     （如果FDW无法确定，建议总是返回<literal>true</>。）
+    </para>
+
+    <para>
+     请注意缺省情况下，未能获得行锁导致产生错误；
+     如果通过<literal>erm-&gt;waitPolicy</>指定<literal>SKIP LOCKED</>选项，
+     则<literal>NULL</>返回是唯一适当的。
+    </para>
+
+    <para>
+     <literal>rowid</>是之前行重新抓取的<structfield>ctid</>值。
+     尽管<literal>rowid</>值作为<type>Datum</>传递，它目前只为<type>tid</>。
+     选择函数API希望允许将来行ID其它数据类型。
+    </para>
+
+    <para>
+     如果<function>RefetchForeignRow</>指针被设置为<literal>NULL</>，
+     尝试重新获取行出现错误消息而失败。它目前只能为<type>tid</>。
+    </para>
+
+    <para>
+     参见<xref linkend="fdw-row-locking">获取更多信息。
+    </para>
+
+    <para>
+<programlisting> 
+bool
+RecheckForeignScan (ForeignScanState *node, TupleTableSlot *slot);
+</programlisting>
+     
+     重新检查之前返回的元组仍然匹配相关的扫描和连接限定符，
+     并且有可能提供元组的修改版本。
+     外部数据封装器不执行连接下推，
+     通常设置为<literal>NULL</>更方便，
+     而不是设置为<structfield>fdw_recheck_quals</structfield>。
+     当外连接被向下推时，然而，它不足以重新应用所有的基表与结果元组的检查相关性，
+     即使所有需要的属性都是存在的，
+     因为没有匹配一些限定符可能会导致一些属性为空，
+     而不是没有返回元组。如果它们仍然满足并为假，
+     则<literal>RecheckForeignScan</>可以复查限定符并返回真，
+     否则，它也可以将替换的元组存储到所提供的狭槽中。
+     
+    </para>
+
+    <para>
+     为了实现连接下推，外部数据包通常会建立用于复查的其它的本地连接计划；
+     这将成为<literal>ForeignScan</>的外部子查询。
+     当必须复查时，可以执行这个子计划并且产生的元组可以被存储在插槽中。
+     这个计划不必是有效的，因为没有基表会返回更多行；
+     例如，它可以作为嵌套循环实现所有的连接。
+    </para>
+   </sect2>
+   
    <sect2 id="fdw-callbacks-explain">
     <title><command>EXPLAIN</>的FDW例程</title>
 
@@ -430,6 +611,60 @@ AcquireSampleRowsFunc (Relation relation, int elevel,
 
    </sect2>
 
+     <sect2 id="fdw-callbacks-import">
+    <title><command>IMPORT FOREIGN SCHEMA</>的FDW例程</title>
+
+    <para>
+<programlisting>
+List *
+ImportForeignSchema (ImportForeignSchemaStmt *stmt, Oid serverOid);
+</programlisting>
+
+     获取外表创建命令的列表。
+     当执行<xref linkend="sql-importforeignschema">的时候，调用这个函数。
+     并且为这个声明传递到解析树，以及使用外部服务器的OID。
+     它应该返回C字符串列表，
+     每一个必须包含一个<xref linkend="sql-createforeigntable">命令。
+     这些字符串将被解析并且通过核心服务器执行。
+    </para>
+
+    <para>
+     
+     在<structname>ImportForeignSchemaStmt</>结构中，
+<structfield>remote_schema</>是导入该表的远程模式名。
+<structfield>list_type</>标识如何过滤表的名称：
+<literal>FDW_IMPORT_SCHEMA_ALL</>意味着远程模式中应该导入的所有表
+（在这种情况下，<structfield>table_list</>为空），
+<literal>FDW_IMPORT_SCHEMA_LIMIT_TO</>意味着包含<structfield>table_list</>列出的表，
+并且<literal>FDW_IMPORT_SCHEMA_EXCEPT</>意味着排除了
+<structfield>table_list</>列出的表。
+<structfield>options</>是用于导入过程的选择列表。
+该选项的含义是符合FDW。
+例如，FDW可以使用选项来定义是否要导入的列的<literal>NOT NULL</>属性。
+这些选项不需要与FDW作为数据库对象选项所支持的那些有任何关系。
+
+    </para>
+
+    <para>
+     FDW可能忽略<structname>ImportForeignSchemaStmt</>的
+     <structfield>local_schema</>字段，
+     因为核心服务器自动地将该名称插入到解析的<command>CREATE FOREIGN TABLE</>命令中。
+    </para>
+
+    <para>
+FDW不用担心自身实现由<structfield>list_type</>和<structfield>table_list</>指定的过滤，
+要么，作为核心服务器将自动为了依据这些选项排除的表而忽略任何返回的命令。
+然而，它可以有效的避免为第一个位置处的排除表创建命令的工作。
+函数<function>IsImportableForeignTable()</>可以有效的测试给定的外表名称是否会通过过滤器。 
+    </para>
+
+    <para>
+     如果FDW不支持导入表定义，
+     那么<function>ImportForeignSchema</>指针可以设置为<literal>NULL</>。
+    </para>
+
+   </sect2>
+   
    </sect1>
 
    <sect1 id="fdw-helpers">
@@ -512,9 +747,9 @@ GetForeignServerByName(const char *name, bool missing_ok);
     <title>外部数据包装器查询规划</title>
 
     <para>
-     FDW回调函数<function>GetForeignRelSize</>、
-     <function>GetForeignPaths</>、<function>GetForeignPlan</>和
-     <function>PlanForeignModify</>必须适合<productname>PostgreSQL</>规划器的工作。这里有一些关于它们必须做什么的注记。
+     FDW回调函数<function>GetForeignRelSize</>，<function>GetForeignPaths</>，<function>GetForeignPlan</>，
+     <function>PlanForeignModify</>以及<function>GetForeignJoinPaths</>必须适合<productname>PostgreSQL</>规划器的工作。
+     这里有一些关于它们必须做什么的注记。
     </para>
 
     <para>
@@ -525,7 +760,7 @@ GetForeignServerByName(const char *name, bool missing_ok);
      有多个私有域可以给FDW规划函数来保存信息。通常，不管你存储什么在FDW私有域中，它们都应该被palloc，这样它会在规划结束时被回收。    </para>
 
     <para>
-     <literal>baserel-&gt;fdw_private</>是一个<type>void</>指针，它可以被FDW规划函数用来存储与特定外部表相关的信息。核心规划器不会碰它除非当<literal>baserel</>节点被创建时把它初始化为NULL。它对从<function>GetForeignRelSize</>传递信息给<function>GetForeignPaths</>和/或从<function>GetForeignPaths</>传递信息给<function>GetForeignPlan</>非常有用，这样避免了重新计算。
+     <literal>baserel-&gt;fdw_private</>是一个<type>void</>指针，它可以被FDW规划函数用来存储与特定外部表相关的信息。核心规划器不会碰它除非当<literal>RelOptInfo</>节点被创建时把它初始化为NULL。它对从<function>GetForeignRelSize</>传递信息给<function>GetForeignPaths</>和/或从<function>GetForeignPaths</>传递信息给<function>GetForeignPlan</>非常有用，这样避免了重新计算。
     </para>
 
     <para>
@@ -546,17 +781,138 @@ GetForeignServerByName(const char *name, bool missing_ok);
     </para>
 
     <para>
+     从计划节点的质量列表中删除的任何子句
+     相反必须添加到<literal>fdw_recheck_quals</>中，
+     为了确保<literal>读取已提交</>隔离级别中正确的操作<literal>RecheckForeignScan</>重新检查。
+     在查询中涉及的一些其它表中发生并行更新的时候，
+     执行器可能需要验证所有最初的质量还是满足元组的，
+     可能是针对一组不同的参数值。
+     使用<literal>fdw_recheck_quals</>通常比在<literal>RecheckForeignScan</>中实现检查更容易，
+     当外部链接下推的时候，这种方法不充分。因为链接元组在这种情况下可能有一些字段为空而不会完全拒绝元组。
+    </para>
+
+    <para>
+     另一个通过FDW填充的<structname>ForeignScan</>字段是<structfield>fdw_scan_tlist</>，
+它描述了为计划节点通过FDW返回的元组。
+对于简单的外表扫描，可以设置为<literal>NIL</>，
+意味着返回的元组有用于外表的行类型声明。
+非<symbol>NIL</symbol>值必须是包含变量的目标列表
+（<structname>TargetEntry</>列）和/或表示返回列的表达式。 
+可能会使用，比如，显示了FDW已经忽略的不再需要查询的一些列。
+另外，如果FDW可以计算使用查询的表达式比在本地执行更便宜，
+它可以添加这些表达式到<structfield>fdw_scan_tlist</>。
+注意，链接计划（由<function>GetForeignJoinPaths</>创建路径）
+必须供给<structfield>fdw_scan_tlist</>用来描述它们返回的列集合。
+    </para>
+    
+    <para>
      FDW应该总是只依靠表的限制子句构建至少一个路径。在连接查询中，它可能还会选择依靠连接子句构建路径，例如<replaceable>foreign_variable</> <literal>=</> <replaceable>local_variable</>。这样的子句将不会在<literal>baserel-&gt;baserestrictinfo</>中找到，但是必须出现在关系的连接列表中。使用这样一个子句的路径被称为一个<quote>参数化路径</>。它必须用一个合适的<literal>param_info</>值来标识其他被使用在选中的连接子句中的关系；使用<function>get_baserel_parampathinfo</>来计算该值。在<function>GetForeignPlan</>中，连接子句的<replaceable>local_variable</>部分将被加到<structfield>fdw_exprs</>中，并且接着在运行时和一个普通限制子句一样工作。
     </para>
 
+     <para>
+     如果FDW支持远程连接，<function>GetForeignJoinPaths</>
+     为潜在的远程连接生成<structname>ForeignPath</>与作为基表的<function>GetForeignPaths</>一样。
+     有关预期连接的信息以上述相同的方式传递给<function>GetForeignPlan</>。
+     然而，<structfield>baserestrictinfo</>是不相关的连接关系；
+     相反，一个特定连接的相关连接子句作为单独的参数(<literal>extra-&gt;restrictlist</>)
+     传递给函数<function>GetForeignJoinPaths</>。
+    </para>
+    
     <para>
      在规划一个<command>UPDATE</>或<command>DELETE</>时，<function>PlanForeignModify</>能为外部表查找<structname>RelOptInfo</>结构，并利用之前由扫描规划函数创建的<literal>baserel-&gt;fdw_private</>数据。但是，在<command>INSERT</>中目标表不会被扫描，因此不会有它的<structname>RelOptInfo</>。由<function>PlanForeignModify</>返回的<structname>List</>具有和<structname>ForeignScan</>计划节点的<structfield>fdw_private</>列表相同的限制，即它必须只包含<function>copyObject</>知道怎么拷贝的结构。
     </para>
-
+ 
+    
     <para>
-     对于一个支持并发更新的外部数据源的<command>UPDATE</>或<command>DELETE</>，我们推荐让<literal>ForeignScan</>操作锁住它得到的行，也许通过一种等效于<command>SELECT FOR UPDATE</>的方式。当外部表是在一个<command>SELECT FOR UPDATE/SHARE</>中被引用时，FDW也许还会选择在获取时就锁住行；如果不是这样，<literal>FOR UPDATE</>或<literal>FOR SHARE</>选项对于所关注的外部表来说在本质上是一个空操作。这个行为可能产生和本地表上操作略微不同的语义，在后者中行锁通常被尽可能延迟：即使远程行无法通过后续的本地限制或连接条件，它们也应该被锁住。不过，准确地匹配本地语义将要求对每一行有一次额外的远程访问，并且可能无法依靠外部数据源提供的锁语义。
+     带有<literal>ON CONFLICT</>的<command>INSERT</>子句不支持声明冲突目标，
+     作为唯一的约束或远程表上的排除约束不是本地已知的。
+     这反过来意味着不支持<literal>ON CONFLICT DO UPDATE</>，
+     因为该规范是强制性的。  
     </para>
 
+   </sect1>
+
+   <sect1 id="fdw-row-locking">
+    <title>外部数据封装器中的行锁定</title>
+
+    <para>
+     如果FDW的底层存储机制具有锁定独立行的概念用来防止这些行的并发更新，
+     FDW执行行级锁尽可能近似实际在普通<productname>PostgreSQL</>表的语义是值得的。
+     有涉及这个的多方面考虑。
+    </para>
+
+    <para>
+    关键决定是是否执行<firstterm>早期锁定</>或者<firstterm>后期锁定</>。
+    早期锁定中，当开始从底层存储中检索的时候，行是被锁定的，而在后期锁定中，
+    当它是已知的需要被锁定的时候，该行才被锁定。
+    （产生差异，因为局部检查限制或连接条件某些行可能会被丢弃。）
+     早期锁定更简单，并且避免了到远程存储的额外往返，
+     但它可以导致不需要被锁定的行锁定，从而减少了并发甚至意外死锁。
+     此外，如果要锁定的行可以后期被唯一地重新确定，那么后期锁定是唯一可能。
+     优选行标识符标识行的特定版本，正如<productname>PostgreSQL</> TID一样。 
+    </para>
+
+    <para>
+     默认情况下，当连接到FDW的时候，<productname>PostgreSQL</>忽略锁定因素，
+     但FDW可提早进行锁定而无核心代码的任何明确支持。
+     <xref linkend="fdw-callbacks-row-locking">中描述的API函数，
+     被添加到<productname>PostgreSQL</> 9.5中，如果愿意允许FDW使用原来的锁定。
+    </para>
+
+    <para>
+     另一个考虑是在<literal>READ COMMITTED</>隔离模式中，
+     <productname>PostgreSQL</>可能需要重新检查一些目标元组更新版本的限制和链接条件。
+     当执行标准<productname>PostgreSQL</>表时，
+     重新检查链接条件需要重新获取之前加入到目标元组的非目标行的副本。
+     通过包含连接列表中非目标表的TID来执行，
+     当需要时，然后重新获取非目标行。
+     这种方法保持连接数据集的紧凑，但它需要廉价的重新获取能力，
+     以及可以唯一标识被重新取出的行版本的TID。
+     默认情况下，因此，使用外部表的方法是包括通过链接列表中的外部表抓取的整行的副本。
+     这对FDW并没有特别的要求，但导致合并以及哈希连接的性能降低。
+     能够满足重新提取需求的FDW可以选择第一种方式执行它。
+    </para>
+
+    <para>
+     对于外表上<command>UPDATE</>或者<command>DELETE</>，
+     推荐目标表上的<literal>ForeignScan</>操作在抓取的行上执行早期锁定，
+     可能相当于<command>SELECT FOR UPDATE</>。
+     FDW可以在计划时间内通过比较relid到<literal>root-&gt;parse-&gt;resultRelation</>
+     或者在执行时间通过使用<function>ExecRelationIsTargetRelation()</>检测
+     表是否是<command>UPDATE</>/<command>DELETE</>目标。
+     另一种可能性是在<function>ExecForeignUpdate</>或者<function>ExecForeignDelete</>回调中
+     执行后期锁定，但没有这个特别的支持。
+    </para>
+
+    <para>
+     指定外部表通过<command>SELECT FOR UPDATE/SHARE</>命令锁定，
+     <literal>ForeignScan</>操作可以通过抓取使用等效<command>SELECT FOR UPDATE/SHARE</>元组执行早期锁定。
+     相反执行后期锁定，提供<xref linkend="fdw-callbacks-row-locking">里面定义的回调函数。
+     在<function>GetForeignRowMarkType</>中，
+     选择rowmark选项<literal>ROW_MARK_EXCLUSIVE</>，<literal>ROW_MARK_NOKEYEXCLUSIVE</>，
+     <literal>ROW_MARK_SHARE</>或者<literal>ROW_MARK_KEYSHARE</>依赖于请求锁强度。
+     （核心代码将采取相同操作，不论你选择四个选项中的哪一个。）
+     在其他地方，您可以检测是否指定外表被该类型命令锁定，
+     通过计划时间使用<function>get_plan_rowmark</>或者执行时间使用<function>ExecFindRowMark</>；
+     你不仅仅检查返回的是否非空rowmark结构，但<structfield>strength</>字段为非<literal>LCS_NONE</>。 
+    </para>
+
+    <para>
+     最后，对于<command>UPDATE</>，<command>DELETE</>或者<command>SELECT FOR UPDATE/SHARE</>命令中使用的外部表，
+     但未指定行锁定，当看到锁强度<literal>LCS_NONE</>时，你可以通过<function>GetForeignRowMarkType</>选择选项<literal>ROW_MARK_REFERENCE</>重写缺省选项复制整个行。
+     这将导致调用使用<structfield>markType</>的<function>RefetchForeignRow</>；
+     然后重新获取行，而不需要获得任何新的锁。
+     （如果你有<function>GetForeignRowMarkType</>函数但不想重新抓取未锁定行，
+     为<literal>LCS_NONE</>选择选项<literal>ROW_MARK_COPY</>。）
+    </para>
+
+    <para>
+     参阅<filename>src/include/nodes/lockoptions.h</>，
+     <filename>src/include/nodes/plannodes.h</>中<type>RowMarkType</>和<type>PlanRowMark</>注释
+     以及<filename>src/include/nodes/execnodes.h</>中的<type>ExecRowMark</>注释
+     获取更多信息。
+    </para>
+    
   </sect1>
 
  </chapter>
