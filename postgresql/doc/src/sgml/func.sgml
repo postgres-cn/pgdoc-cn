@@ -83,7 +83,7 @@
       <tbody>
        <row>
         <entry>TRUE</entry>
-        <entry>TRUE</entry>
+        <entry>TRUE</entry> 
         <entry>TRUE</entry>
         <entry>TRUE</entry>
        </row>
@@ -810,20 +810,32 @@
         <indexterm>
          <primary>width_bucket</primary>
         </indexterm>
-        <literal><function>width_bucket(<parameter>op</parameter> <type>numeric</type>, <parameter>b1</parameter> <type>numeric</type>, <parameter>b2</parameter> <type>numeric</type>, <parameter>count</parameter> <type>int</type>)</function></literal>
-       </entry>
+        <literal><function>width_bucket(<parameter>operand</parameter> <type>dp</type>, <parameter>b1</parameter> <type>dp</type>, <parameter>b2</parameter> <type>dp</type>, <parameter>count</parameter> <type>int</type>)</function></literal></entry>
+
+
        <entry><type>int</type></entry>
-       <entry>返回一个桶，这个桶是在一个有<parameter>count</>个桶， 上界为<parameter>b1</>，下界为<parameter>b2</>的等深柱图中<parameter>operand</>将被赋予的那个桶</entry>
+       <entry>返回一个桶，这个桶是在一个有<parameter>count</>个桶， 上界为<parameter>b1</>，下界为<parameter>b2</>的柱图中<parameter>operand</>将被赋予的那个桶。为外部范围输入返回<literal>0</>或者<literal><parameter>count</>+1</literal></entry>
        <entry><literal>width_bucket(5.35, 0.024, 10.06, 5)</literal></entry>
        <entry><literal>3</literal></entry>
       </row>
 
       <row>
-       <entry><literal><function>width_bucket(<parameter>op</parameter> <type>dp</type>, <parameter>b1</parameter> <type>dp</type>, <parameter>b2</parameter> <type>dp</type>, <parameter>count</parameter> <type>int</type>)</function></literal></entry>
+       <entry><literal><function>width_bucket(<parameter>operand</parameter> <type>numeric</type>, <parameter>b1</parameter> <type>numeric</type>, <parameter>b2</parameter> <type>numeric</type>, <parameter>count</parameter> <type>int</type>)</function></literal></entry>
        <entry><type>int</type></entry>
-       <entry>返回一个桶，这个桶是在一个有<parameter>count</>个桶， 上界为<parameter>b1</>，下界为<parameter>b2</>的等深柱图中<parameter>operand</>将被赋予的那个桶</entry>
+       <entry>返回一个桶，这个桶是在一个有<parameter>count</>个桶，上界为<parameter>b1</>，下界为<parameter>b2</>的柱图中<parameter>operand</>将被赋予的那个桶；
+       为范围外的输入返回<literal>0</>或者<literal><parameter>count</>+1</literal></entry>
        <entry><literal>width_bucket(5.35, 0.024, 10.06, 5)</literal></entry>
        <entry><literal>3</literal></entry>
+      </row>
+
+      <row>
+       <entry><literal><function>width_bucket(<parameter>operand</parameter> <type>anyelement</type>, <parameter>thresholds</parameter> <type>anyarray</type>)</function></literal></entry>
+       <entry><type>int</type></entry>
+       <entry>返回一个桶，它是给定数组列出桶的下限<parameter>operand</>将被赋予的那个桶，
+       为了输入低于第一下界返回<literal>0</>；<parameter>thresholds</>数组<emphasis>必须被存储</>，
+       首先最小值，或者获取意想不到的结果</entry>
+       <entry><literal>width_bucket(now(), array['yesterday', 'today', 'tomorrow']::timestamptz[])</literal></entry>
+       <entry><literal>2</literal></entry>
       </row>
      </tbody>
     </tgroup>
@@ -2713,12 +2725,12 @@
           </listitem>
           <listitem>
            <para>
-            <literal>I</literal>将参数值视作 SQL 标识符，并在必要时用双写引号包围它。如果参数为空，将会是一个错误。
+            <literal>I</literal>将参数值视作 SQL 标识符，并在必要时用双写引号包围它。如果参数为空，将会是一个错误（等同于<function>quote_ident</>）。
            </para>
           </listitem>
           <listitem>
            <para>
-            <literal>L</literal>将参数值引用为 SQL 文字。一个空值将被显示为不带引号的字符串<literal>NULL</>。
+            <literal>L</literal>将参数值引用为 SQL 文字。一个空值将被显示为不带引号的字符串<literal>NULL</>（等同于<function>quote_nullable</function>）。
            </para>
           </listitem>
          </itemizedlist>
@@ -3246,6 +3258,25 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
     </para>
    </tip>
 
+   <caution>
+    <para>
+     当大多数正则表达式搜索可以很快执行时，
+     正则表达式可以被设计，采取时间和存储过程的任意数量。
+     警惕接受来自敌对来源的正则表达式搜索模式。
+     如果你必须这样做，那么建议强加语句超时。
+    </para>
+
+    <para>
+     使用<function>SIMILAR TO</function>模式的搜索具有相同的安全隐患，
+     因为<function>SIMILAR TO</function>
+     提供了许多诸如<acronym>POSIX</acronym>风格的规则表达式相同的能力。
+    </para>
+
+    <para>
+     <function>LIKE</function>搜索，比其它两个选项更简单，安全使用可能的敌对模式源。
+    </para>
+   </caution>
+   
   <sect2 id="functions-like">
    <title><function>LIKE</function></title>
 
@@ -3920,15 +3951,6 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
     <firstterm>后引用</>（<literal>\</><replaceable>n</>）匹配数字<literal>\</><replaceable>n</>指定的被前面的圆括号子表达式匹配的同一个串 （参阅<xref linkend="posix-constraint-backref-table">）。例如， <literal>([bc])\1</>匹配<literal>bb</>或者<literal>cc</>， 但是不匹配<literal>bc</>或者<literal>cb</>。RE 中子表达式必须完全在后引用前面。子表达式以它们的先导圆括号的顺序编号。非捕获圆括号并不定义子表达式。
    </para>
 
-   <note>
-    <para>
-     请注意，如果把模式当作一个 SQL 串常量输入，那么逃逸前导的<literal>\</>需要被双写。例如：
-<programlisting>
-'123' ~ E'^\\d{3}' <lineannotation>true</lineannotation>
-</programlisting>
-    </para>
-   </note>
-
    <table id="posix-character-entry-escapes-table">
     <title>正则表达式字符项逃逸</title>
 
@@ -3963,7 +3985,7 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
 
        <row>
        <entry> <literal>\e</> </entry>
-       <entry>排序序列名为<literal>ESC</>的字符，如果无法做到该字符为八进制值 033</entry>
+       <entry>排序序列名为<literal>ESC</>的字符，如果无法做到该字符为八进制值<literal>033</></entry>
        </row>
 
        <row>
@@ -3988,12 +4010,16 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
 
        <row>
        <entry> <literal>\u</><replaceable>wxyz</> </entry>
-       <entry>（其中<replaceable>wxyz</>正好是四个十六进制位）在本地字节序中的 UTF16（16位Unicode）字符<literal>U+</><replaceable>wxyz</></entry>
+       <entry>
+       （其中<replaceable>wxyz</>正好是四个十六进制位）
+        字符十六进制值是<literal>0x</><replaceable>wxyz</>
+       </entry>
        </row>
 
        <row>
        <entry> <literal>\U</><replaceable>stuvwxyz</> </entry>
-       <entry>（其中<replaceable>stuvwxyz</>正好是八个十六进制位）为假想的32位Unicode扩展保留
+       <entry>（其中<replaceable>stuvwxyz</>正好是八个十六进制位）
+       字符十六进制值是<literal>0x</><replaceable>stuvwxyz</> 
        </entry>
        </row>
 
@@ -4030,6 +4056,15 @@ SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
     十六进制位是<literal>0</>-<literal>9</>、<literal>a</>-<literal>f</>和<literal>A</>-<literal>F</>。八进制位是<literal>0</>-<literal>7</>。
    </para>
 
+   <para>
+     指定ASCII范围以外的值（0-127）数字字符输入逃逸依赖于数据库编码。
+     当编码是UTF-8的时候，逃避值相当于Unicode代码点，
+     例如<literal>\u1234</>即字符<literal>U+1234</>。
+     对于其它多字节编码，字符输入转义通常只指定字符的字节值的连接。
+     如果逃逸值不与数据库编码中的任何合法字符相对应，不会抛出错误，
+     但它永远不会匹配任何数据。
+   </para>
+   
    <para>
     字符项逃逸总是被当作普通字符。例如，<literal>\135</>是 ASCII 中的<literal>]</>， 但<literal>\135</>并不终止一个方括号表达式。
    </para>
@@ -4359,10 +4394,35 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
    </para>
 
    <para>
-    量词<literal>{1,1}</>和<literal>{1,1}?</>可以分别用于在一个子表达式或者整个 RE 上强制贪婪或者非贪婪。
+    量词<literal>{1,1}</>和<literal>{1,1}?</>可以分别用于在一个子表达式或者整个 RE 上强制
+    贪婪或者非贪婪。
+    当你需要整个RE具有不同于从它的元素推导出的贪婪属性，这是非常有用的。
+    作为一个例子，
+    假设我们正在尝试分隔包含一些数字到它们之前和之后的数字和部分的字符串。
+    我们可能会尝试这样做：
+<screen>
+SELECT regexp_matches('abc01234xyz', '(.*)(\d+)(.*)');
+<lineannotation>Result: </lineannotation><computeroutput>{abc0123,4,xyz}</computeroutput>
+</screen>
+    这不工作：第一个<literal>.*</>是贪婪的，因此它可以尽可能多的<quote>吃</>，
+    剩下的<literal>\d+</>在最后可能的位置上匹配最后一个数字。
+    我们可能会通过使它不贪婪尝试修复：    
+<screen>
+SELECT regexp_matches('abc01234xyz', '(.*?)(\d+)(.*)');
+<lineannotation>Result: </lineannotation><computeroutput>{abc,0,""}</computeroutput>
+</screen>
+    这也不能工作，因为现在RE作为一个整体是非贪婪的，
+    并且它尽快结束了整体匹配。
+    我们可以得到我们想要通过迫使RE作为一个整体是贪婪的东西：
+<screen>
+SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
+<lineannotation>Result: </lineannotation><computeroutput>{abc,01234,xyz}</computeroutput>
+</screen>
+    控制从组件贪婪中分离出RE整体贪婪允许处理可变长度的模式更加灵活。
    </para>
 
    <para>
+    当决定什么是较长或较短匹配的时候，
     匹配长度是以字符衡量的，而不是排序元素。一个空串会被认为比什么都不匹配长。例如：<literal>bb*</>匹配<literal>abbbc</>的中间三个字符；<literal>(week|wee)(night|knights)</>匹配<literal>weeknights</>的所有十个字符； 而<literal>(.*).*</>匹配 <literal>abc</>的时候，圆括号包围的子表达式匹配所有三个字符；当<literal>(a*)*</>被拿来匹配<literal>bc</>时，整个 RE 和圆括号 子表达式都匹配一个空串。
    </para>
 
@@ -4778,7 +4838,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
       <tbody>
        <row>
         <entry><literal>FM</literal> prefix</entry>
-        <entry>填充模式（抑制填充的空格和结尾零）</entry>
+        <entry>填充模式（抑制前导零以及填充的空格）</entry>
         <entry><literal>FMMonth</literal></entry>
        </row>
        <row>
@@ -4823,6 +4883,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
      <listitem>
       <para>
        <literal>TM</literal>不包括结尾空白。
+       <function>to_timestamp</>和<function>to_date</>忽略<literal>TM</literal>修饰符。
       </para>
      </listitem>
 
@@ -5067,7 +5128,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
       <tbody>
        <row>
         <entry><literal>FM</literal> prefix</entry>
-        <entry>填充模式（抑制空白和结尾处的零）</entry>
+        <entry>填充模式（抑制前导零和空白）</entry>
         <entry><literal>FM9999</literal></entry>
        </row>
        <row>
@@ -5204,7 +5265,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        </row>
        <row>
         <entry><literal>to_char(485, 'L999')</literal></entry>
-        <entry><literal>'DM&nbsp;485</literal></entry>
+        <entry><literal>'DM&nbsp;485'</literal></entry>
        </row>
        <row>
         <entry><literal>to_char(485, 'RN')</literal></entry>
@@ -5694,7 +5755,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
         <entry>
          从年、月、周、日、时、分、秒域创建 interval
         </entry>
-        <entry><literal>make_interval(days := 10)</literal></entry>
+        <entry><literal>make_interval(days => 10)</literal></entry>
         <entry><literal>10 days</literal></entry>
        </row>
 
@@ -6990,6 +7051,13 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><literal>box(circle '((0,0),2.0)')</literal></entry>
        </row>
        <row>
+        <entry><literal><function>box(<type>point</type>)</function></literal></entry>
+        <entry><type>box</type></entry>
+        <entry>点到空方框</entry>
+        <entry><literal>box(point '(0,0)')</literal></entry>
+       </row> 
+       
+       <row>
         <entry><literal><function>box(<type>point</type>, <type>point</type>)</function></literal></entry>
         <entry><type>box</type></entry>
         <entry>点到方框</entry>
@@ -7001,6 +7069,13 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry>多边形到方框</entry>
         <entry><literal>box(polygon '((0,0),(1,1),(2,0))')</literal></entry>
        </row>
+       
+       <row>
+        <entry><literal><function>bound_box(<type>box</type>, <type>box</type>)</function></literal></entry>
+        <entry><type>box</type></entry>
+        <entry>盒到边界框</entry>
+        <entry><literal>bound_box(box '((0,0),(1,1))', box '((3,3),(4,4))')</literal></entry>
+       </row> 
        <row>
         <entry>
          <indexterm>
@@ -7401,6 +7476,30 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry>抽取 IP 地址和网络掩码长度为文本</entry>
         <entry><literal>text(inet '192.168.1.5')</literal></entry>
         <entry><literal>192.168.1.5/32</literal></entry>
+       </row>       
+       <row>
+        <entry>
+         <indexterm>
+          <primary>inet_same_family</primary>
+         </indexterm>
+         <literal><function>inet_same_family(<type>inet</type>, <type>inet</type>)</function></literal>
+        </entry>
+        <entry><type>boolean</type></entry>
+        <entry>地址来自同一个网段吗？</entry>
+        <entry><literal>inet_same_family('192.168.1.5/24', '::1')</literal></entry>
+        <entry><literal>false</literal></entry>
+       </row>
+       <row>
+        <entry>
+         <indexterm>
+          <primary>inet_merge</primary>
+         </indexterm>
+         <literal><function>inet_merge(<type>inet</type>, <type>inet</type>)</function></literal>
+        </entry>
+        <entry><type>cidr</type></entry>
+        <entry>最小的网络包括给定的两个网络</entry>
+        <entry><literal>inet_merge('192.168.1.5/24', '192.168.2.5/24')</literal></entry>
+        <entry><literal>192.168.0.0/22</literal></entry>
        </row>
       </tbody>
      </tgroup>
@@ -8601,7 +8700,7 @@ table2-mapping
        <row>
         <entry><literal>-&gt;</literal></entry>
         <entry><type>int</type></entry>
-        <entry>获得 JSON 数组元素（索引从 0 开始）</entry>
+        <entry>获得 JSON 数组元素（索引从 0 开始，负整数结束）</entry>
         <entry><literal>'[{"a":"foo"},{"b":"bar"},{"c":"baz"}]'::json-&gt;2</literal></entry>
         <entry><literal>{"c":"baz"}</literal></entry>
        </row>
@@ -8649,8 +8748,8 @@ table2-mapping
     对<type>json</type>和<type>jsonb</type>类型，这些操作符都有其并行变体。
     域/元素/路径抽取操作符返回与其左手输入（<type>json</type>或<type>jsonb</type>）
     相同的类型，不过那些被指定为返回<type>text</>的除外，它们的返回值会被强制
-    为文本。如果该 JSON 输入没有匹配请求的正确结构（例如那样的元素不存在），这些
-    域/元素/路径抽取操作符会返回 NULL 而不是失败。
+    为文本。如果该 JSON 输入没有匹配请求的正确结构（例如那样的元素不存在），这些域/元素/路径抽取操作符会返回 NULL 而不是失败。
+    接受整数JSON数组下标的域/元素/路径提取操作符支持数组末尾的负下标。
    </para>
   </note>
   <para>
@@ -8680,41 +8779,77 @@ table2-mapping
        <row>
         <entry><literal>@&gt;</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>左边的 JSON 值是否包含右边的值？</entry>
+        <entry>左边的 JSON 值是否包含顶层右边JSON路径/值项?</entry>
         <entry><literal>'{"a":1, "b":2}'::jsonb &#64;&gt; '{"b":2}'::jsonb</literal></entry>
        </row>
        <row>
         <entry><literal>&lt;@</literal></entry>
         <entry><type>jsonb</type></entry>
-        <entry>左边的 JSON 值是否被包含在右边的值中？</entry>
+        <entry>左边的JSON路径/值是否包含在顶层右边JSON值中？</entry>
         <entry><literal>'{"b":2}'::jsonb &lt;@ '{"a":1, "b":2}'::jsonb</literal></entry>
        </row>
        <row>
         <entry><literal>?</literal></entry>
         <entry><type>text</type></entry>
-        <entry>键/元素<emphasis>字符串</emphasis>是否存在于 JSON 值中？</entry>
+        <entry><emphasis>字符串</emphasis>是否作为顶层键值存在于JSON值中？</entry>
         <entry><literal>'{"a":1, "b":2}'::jsonb ? 'b'</literal></entry>
        </row>
        <row>
         <entry><literal>?|</literal></entry>
         <entry><type>text[]</type></entry>
-        <entry>这些键/元素<emphasis>字符串</emphasis>中的任何一个是否存在？</entry>
+        <entry>这些数组<emphasis>字符串</emphasis>中的任何一个是否作为顶层键值存在？</entry>
         <entry><literal>'{"a":1, "b":2, "c":3}'::jsonb ?| array['b', 'c']</literal></entry>
        </row>
        <row>
         <entry><literal>?&amp;</literal></entry>
         <entry><type>text[]</type></entry>
-        <entry>这些键/元素<emphasis>字符串</emphasis>是否都存在？</entry>
+        <entry>这些数组<emphasis>字符串</emphasis>是否作为顶层键值存在？</entry>
         <entry><literal>'["a", "b"]'::jsonb ?&amp; array['a', 'b']</literal></entry>
        </row>
+       
+       <row>
+        <entry><literal>||</literal></entry>
+        <entry><type>jsonb</type></entry>
+        <entry>连接两个<type>jsonb</type>值到新的<type>jsonb</type>值</entry>
+        <entry><literal>'["a", "b"]'::jsonb || '["c", "d"]'::jsonb</literal></entry>
+       </row>
+       <row>
+        <entry><literal>-</literal></entry>
+        <entry><type>text</type></entry>
+        <entry>从左操作数中删除键/值对或<emphasis>字符串</emphasis>元素。基于键值匹配键/值对。</entry>
+        <entry><literal>'{"a": "b"}'::jsonb - 'a' </literal></entry>
+       </row>
+       <row>
+        <entry><literal>-</literal></entry>
+        <entry><type>integer</type></entry>
+        <entry>删除指定索引的数组元素（负整数结尾）。如果顶层容器不是一个数组，那么抛出错误。</entry>
+        <entry><literal>'["a", "b"]'::jsonb - 1 </literal></entry>
+       </row>
+       <row>
+        <entry><literal>#-</literal></entry>
+        <entry><type>text[]</type></entry>
+        <entry>删除指定路径的域或元素（JSON数组，负整数结尾）</entry>
+        <entry><literal>'["a", {"b":1}]'::jsonb #- '{1,b}'</literal></entry>
+       </row>  
+       
       </tbody>
      </tgroup>
    </table>
+   
+   <note>
+   <para>
+    <literal>||</>操作符连接每个操作数顶层的元素。
+    它不递归操作。比如，如果两个操作数都是具有共同键字段名称的对象，
+    则结果中字段值只会是从右边操作数的值。
+   </para>
+  </note>
 
   <para>
-   <xref linkend="functions-json-creation-table">展示了能用来创建<type>json</type>
-   值的函数（当前，没有用于<type>jsonb</>的等效函数，但是可以把这些函数的结果
-   造型成<type>jsonb</>）。
+   <xref linkend="functions-json-creation-table">展示了能用来创建
+   <type>json</type>和<type>jsonb</type>值的函数
+   （当前，没有用于<type>jsonb</>，
+   <literal>row_to_json</>以及<literal>array_to_json</>的等效函数，
+   然而，<literal>to_jsonb</>函数提供了许多诸如这些函数的相同功能）。
   </para>
 
   <indexterm>
@@ -8735,7 +8870,19 @@ table2-mapping
   <indexterm>
    <primary>json_object</primary>
   </indexterm>
-
+  <indexterm>
+   <primary>to_jsonb</primary>
+  </indexterm>
+  <indexterm>
+   <primary>jsonb_build_array</primary>
+  </indexterm>
+  <indexterm>
+   <primary>jsonb_build_object</primary>
+  </indexterm>
+  <indexterm>
+   <primary>jsonb_object</primary>
+  </indexterm>
+  
   <table id="functions-json-creation-table">
     <title>JSON 创建函数</title>
     <tgroup cols="4">
@@ -8750,14 +8897,14 @@ table2-mapping
      <tbody>
       <row>
        <entry>
-         <literal>to_json(anyelement)</literal>
-       </entry>
+         <para><literal>to_json(anyelement)</literal>
+          </para><para><literal>to_jsonb(anyelement)</literal>
+       </para></entry>
        <entry>
-         把值返回为 JSON。数组和组合被（递归地）转换成数组和对象；对其他类型，
-         如果有从该类型到<type>json</type>的造型，将使用该造型函数来执行转换；
-         否则将产生一个 JSON 标量值。对任何一个非数值、布尔量或空值的标量类型，
-         将使用其文本表达，并且会对其做适当的引用及转义以便使其成为一个有效的
-          JSON 字符串。
+         把值返回为<type>json</>或者<type>jsonb</>。数组和组合被（递归地）转换成数组和对象；否则，
+         如果有从该类型到<type>json</type>的投影，将使用该投影函数来执行转换；
+         否则将产生一个标量值。对任何一个数值、布尔量或空值的标量类型，
+         将使用其文本表达，以这样一种方式使其成为有效的<type>json</>或者<type>jsonb</>值。
        </entry>
        <entry><literal>to_json('Fred said "Hi."'::text)</literal></entry>
        <entry><literal>"Fred said \"Hi.\""</literal></entry>
@@ -8785,9 +8932,9 @@ table2-mapping
        <entry><literal>{"f1":1,"f2":"foo"}</literal></entry>
       </row>
       <row>
-       <entry>
-         <literal>json_build_array(VARIADIC "any")</literal>
-       </entry>
+       <entry><para><literal>json_build_array(VARIADIC "any")</literal>
+       </para><para><literal>jsonb_build_array(VARIADIC "any")</literal>
+       </para></entry>
        <entry>
          从一个可变参数列表构造一个可能包含异质类型的 JSON 数组。
        </entry>
@@ -8795,8 +8942,9 @@ table2-mapping
        <entry><literal>[1, 2, "3", 4, 5]</literal></entry>
       </row>
       <row>
-       <entry>
-         <literal>json_build_object(VARIADIC "any")</literal>
+       <entry><para><literal>json_build_object(VARIADIC "any")</literal>
+       </para><para><literal>jsonb_build_object(VARIADIC "any")</literal>
+       </para>
        </entry>
        <entry>
          从一个可变参数列表构造一个 JSON 对象。通过转换，该参数列表由交替
@@ -8806,9 +8954,9 @@ table2-mapping
        <entry><literal>{"foo": 1, "bar": 2}</literal></entry>
       </row>
       <row>
-       <entry>
-         <literal>json_object(text[])</literal>
-       </entry>
+       <entry><para><literal>json_object(text[])</literal>
+       </para><para><literal>jsonb_object(text[])</literal>
+       </para></entry>
        <entry>
          从一个文本数组构造一个 JSON 对象。该数组必须可以是具有偶数个成员的
          一维数组（成员被当做交替出现的键/值对），或者是一个二维数组（每一个
@@ -8819,9 +8967,9 @@ table2-mapping
        <entry><literal>{"a": "1", "b": "def", "c": "3.5"}</literal></entry>
       </row>
       <row>
-       <entry>
-         <literal>json_object(keys text[], values text[])</literal>
-       </entry>
+       <entry><para><literal>json_object(keys text[], values text[])</literal>
+          </para><para><literal>jsonb_object(keys text[], values text[])</literal>
+       </para></entry>
        <entry>
          <function>json_object</>的这种形式从两个独立的数组得到键/值对。在其
          他方面和一个参数的形式相同。
@@ -8931,6 +9079,18 @@ table2-mapping
   </indexterm>
   <indexterm>
    <primary>jsonb_to_recordset</primary>
+  </indexterm>
+  <indexterm>
+   <primary>json_strip_nulls</primary>
+  </indexterm>
+  <indexterm>
+   <primary>jsonb_strip_nulls</primary>
+  </indexterm>
+  <indexterm>
+   <primary>jsonb_set</primary>
+  </indexterm>
+  <indexterm>
+   <primary>jsonb_pretty</primary>
   </indexterm>
 
   <table id="functions-json-processing-table">
@@ -9160,6 +9320,61 @@ table2-mapping
 </programlisting>
        </entry>
       </row>
+      
+       <row>
+       <entry><para><literal>json_strip_nulls(from_json json)</literal>
+         </para><para><literal>jsonb_strip_nulls(from_json jsonb)</literal>
+       </para></entry>
+       <entry><para><type>json</type></para><para><type>jsonb</type></para></entry>
+       <entry>
+         返回具有空值对象域的<replaceable>from_json</replaceable>。其它空值不变。  
+       </entry>
+       <entry><literal>json_strip_nulls('[{"f1":1,"f2":null},2,null,3]')</literal></entry>
+       <entry><literal>[{"f1":1},2,null,3]</literal></entry>
+       </row>
+      <row>
+       <entry><para><literal>jsonb_set(target jsonb, path text[], new_value jsonb<optional>, <parameter>create_missing</parameter> <type>boolean</type></optional>)</literal>
+         </para></entry>
+       <entry><para><type>jsonb</type></para></entry>
+       <entry>
+         如果<replaceable>create_missing</replaceable>是真的
+         （缺省是<literal>true</>）并且通过<replaceable>path</replaceable>
+         指定部分不存在，那么返回<replaceable>target</replaceable>，
+         它具有<replaceable>path</replaceable>指定部分，
+         <replaceable>new_value</replaceable>替换部分，
+         或者<replaceable>new_value</replaceable>添加部分。
+         正如路径导向的操作符，负整数出现在JSON数组结尾的<replaceable>path</replaceable>>计数中。
+       </entry>
+       <entry><para><literal>jsonb_set('[{"f1":1,"f2":null},2,null,3]', '{0,f1}','[2,3,4]', false)</literal>
+         </para><para><literal>jsonb_set('[{"f1":1,"f2":null},2]', '{0,f3}','[2,3,4]')</literal>
+         </para></entry>
+       <entry><para><literal>[{"f1":[2,3,4],"f2":null},2,null,3]</literal>
+         </para><para><literal>[{"f1": 1, "f2": null, "f3": [2, 3, 4]}, 2]</literal>
+        </para></entry>
+       </row>
+      <row>
+       <entry><para><literal>jsonb_pretty(from_json jsonb)</literal>
+         </para></entry>
+       <entry><para><type>text</type></para></entry>
+       <entry>
+         作为缩进JSON文本返回<replaceable>from_json</replaceable>。
+       </entry>
+       <entry><literal>jsonb_pretty('[{"f1":1,"f2":null},2,null,3]')</literal></entry>
+       <entry>
+<programlisting>
+[
+    {
+        "f1": 1,
+        "f2": null
+    },
+    2,
+    null,
+    3
+]
+</programlisting>
+        </entry>
+       </row>
+          
      </tbody>
     </tgroup>
    </table>
@@ -9184,14 +9399,40 @@ table2-mapping
 
   <note>
     <para>
+      所有<literal>jsonb_set</>的<literal>path</>参数项必须存在于<literal>target</>中，
+      除非<literal>create_missing</>是真的，在这种情况下，除了最后一项都存在。
+      如果这些条件未满足<literal>target</>返回不变。
+    </para>
+    <para>
+      如果最后路径项是对象键，如果它不存在并且给予新值，则被创建。
+      如果最后路径项是一个数组索引，如果通过从左边计数发现设置项是正数，
+      如果从右边- <literal>-1</>计数负数指定右边的元素，等等。
+      如果项超出-array_length .. array_length -1范围，并且create_missing是真，
+      如果项是负数，则在数组开头添加新值，如果是正数，则添加到数组末尾。
+    </para>
+  </note>
+  
+  <note>
+    <para>
       不要把<literal>json_typeof</>函数的<literal>null</>返回值与 SQL 的 NULL 弄混。
       虽然调用<literal>json_typeof('null'::json)</>将会返回<literal>null</>，但调用
       <literal>json_typeof(NULL::json)</>将会返回一个 SQL 的 NULL。
     </para>
   </note>
+  
+  <note>
+    <para>
+      如果参数到<literal>json_strip_nulls</>包含任何对象的复制字段名，
+      其结果可能是语义上不同，依赖于它们所产生的顺序。
+      这不是<literal>jsonb_strip_nulls</>的问题，
+      因为<type>jsonb</type>值从不复制对象字段名。
+    </para>
+  </note>
 
   <para>
-    也可参见<xref linkend="functions-aggregate">了解聚集函数<function>json_agg</function>，它可以把记录值聚集成 JSON。还有聚集函数<function>json_object_agg</function>，它可以把值对聚集成一个 JSON 对象。
+    也可参见<xref linkend="functions-aggregate">了解聚集函数<function>json_agg</function>，它可以把记录值聚集成 JSON。还有聚集函数<function>json_object_agg</function>，它可以把值对
+    聚集成一个 JSON 对象，以及<type>jsonb</type>等价物，
+    <function>jsonb_agg</>和<function>jsonb_object_agg</>。
   </para>
  </sect1>
 
@@ -9306,7 +9547,15 @@ nextval('foo'::text)      <lineannotation><literal>foo</literal>在运行时查�
 
        <important>
         <para>
-         为了避免从同一个序列获取值的并发事务被阻塞，<function>nextval</function>操作决不会回滚；也就是说，一旦一个值已经被取走， 那么就认为它已经被用过了，即使调用<function>nextval</function>的事务后面又中断了也是如此。这就意味着中断的事务可能在被分配的值的序列中留下<quote>空洞</quote>。
+         为了避免从同一个序列获取值的并发事务被阻塞，
+         <function>nextval</function>操作决不会回滚；也就是说，一旦一个值已经被抓取，
+         那么就认为它已经被用过了，并且不会再被返回。
+         即使周围的事务之后中断，或者如果调用查询结束不使用该值，那么为真。
+         例如，带有<literal>ON CONFLICT</>的<command>INSERT</>子句将计算被插入的元组，
+         包括执行任何所需的<function>nextval</function>调用，
+         相反检测任何冲突之前将导致它遵循<literal>ON CONFLICT</>规则。
+         这种情况将在指定值的顺序中留下未使用的<quote>空洞</quote>。
+         因此，<productname>PostgreSQL</>序列对象<emphasis>不能用于获得<quote>无间隙</>序列</emphasis>。
         </para>
        </important>
 
@@ -9326,7 +9575,12 @@ nextval('foo'::text)      <lineannotation><literal>foo</literal>在运行时查�
       <term><function>lastval</function></term>
       <listitem>
        <para>
-        返回当前会话里最近一次<function>nextval</>返回的值。 这个函数等效于<function>currval</function>，只是它不用序列名作为参数， 它抓取当前会话里面最近一次<function>nextval</function>调用使用的序列。如果当前会话还没有调用过<function>nextval</function>，那么调用<function>lastval</function>会报错。
+        返回当前会话里最近一次<function>nextval</>返回的值。
+        这个函数等效于<function>currval</function>，
+        只是它不用序列名作参数，
+        它指的是哪个序列<function>nextval</function>被应用到当前会话。
+        如果当前会话还没有调用过<function>nextval</function>，
+        那么调用<function>lastval</function>会报错。
        </para>
       </listitem>
      </varlistentry>
@@ -9703,7 +9957,14 @@ SELECT NULLIF(value, '(none)') ...
   </indexterm>
   <indexterm>
     <primary>array_lower</primary>
+  </indexterm> 
+  <indexterm>
+    <primary>array_position</primary>
   </indexterm>
+  <indexterm>
+    <primary>array_positions</primary>
+  </indexterm>
+  
   <indexterm>
     <primary>array_prepend</primary>
   </indexterm>
@@ -9820,6 +10081,33 @@ SELECT NULLIF(value, '(none)') ...
         <entry><literal>array_lower('[0:2]={1,2,3}'::int[], 1)</literal></entry>
         <entry><literal>0</literal></entry>
        </row>
+       
+       <row>
+        <entry>
+         <literal>
+          <function>array_position</function>(<type>anyarray</type>, <type>anyelement</type> <optional>, <type>int</type></optional>)
+         </literal>
+        </entry>
+        <entry><type>int</type></entry>
+        <entry>
+        返回数组中第二个参数第一次出现的下标。
+        起始于第三个参数或第一个元素指示的元素位置（数组必须是一维的)
+        </entry>
+        <entry><literal>array_position(ARRAY['sun','mon','tue','wed','thu','fri','sat'], 'mon')</literal></entry>
+        <entry><literal>2</literal></entry>
+       </row>
+       <row>
+        <entry>
+         <literal>
+          <function>array_positions</function>(<type>anyarray</type>, <type>anyelement</type>)
+         </literal>
+        </entry>
+        <entry><type>int[]</type></entry>
+        <entry>返回作为第一个参数的数组中第二个参数出现的数组下标（数组必须是一维的)</entry>
+        <entry><literal>array_positions(ARRAY['A','A','B','A'], 'A')</literal></entry>
+        <entry><literal>{1,2,4}</literal></entry>
+       </row>
+            
        <row>
         <entry>
          <literal>
@@ -9928,6 +10216,20 @@ NULL baz</literallayout>(3 rows)</entry>
      </tgroup>
     </table>
 
+    <para>
+    在<function>array_position</function>和<function>array_positions</>中，
+    每个数组元素与使用<literal>IS NOT DISTINCT FROM</literal>语法的搜索值进行比较。
+   </para>
+
+   <para>
+    在<function>array_position</function>中，如果没有找到该值，则返回<literal>NULL</literal>。
+   </para>
+
+   <para>
+    在<function>array_positions</function>中，如果数组是<literal>NULL</literal>，则返回<literal>NULL</literal>；
+    如果数组中没有找到该值，相反返回空数组。
+   </para>
+    
    <para>
     在<function>string_to_array</function>中，如果定界符参数为 NULL，输入字符串中的每一个字符将变成结果数组中的一个独立元素。如果定界符是一个空串，则整个输入字符串被作为一个单一元素的数组返回。否则输入字符串会被在每一个出现定界符字符串的位置分裂。
    </para>
@@ -10236,7 +10538,18 @@ NULL baz</literallayout>(3 rows)</entry>
         <entry>上界无限？</entry>
         <entry><literal>upper_inf('(,)'::daterange)</literal></entry>
         <entry><literal>true</literal></entry>
-       </row>
+       </row>   
+       <row>
+        <entry>
+         <literal>
+          <function>range_merge</function>(<type>anyrange</type>, <type>anyrange</type>)
+         </literal>
+        </entry>
+        <entry><type>anyrange</type></entry>
+        <entry>最小范围其中包含两个给定范围</entry>
+        <entry><literal>range_merge('[1,2)'::int4range, '[3,4)'::int4range)</literal></entry>
+        <entry><literal>[1,4)</literal></entry>
+       </row>      
       </tbody>
      </tgroup>
     </table>
@@ -10256,7 +10569,7 @@ NULL baz</literallayout>(3 rows)</entry>
 
   <para>
    <firstterm>聚集函数</firstterm>从一个输入值的集合计算一个单一结果。内建的普通聚集函数被列在<xref linkend="functions-aggregate-table">和<xref linkend="functions-aggregate-statistics-table">中。内建的顺序集聚集函数被列在<xref linkend="functions-orderedset-table">和
-   <xref linkend="functions-hypothetical-table">中。聚集函数的特殊语法考虑在<xref linkend="syntax-aggregates">中解释。更多介绍性信息请参考<xref linkend="tutorial-agg">。
+   <xref linkend="functions-hypothetical-table">中。分组操作，这与聚集函数有密切联系，被列在<xref linkend="functions-grouping-table">中。聚集函数的特殊语法考虑在<xref linkend="syntax-aggregates">中解释。更多介绍性信息请参考<xref linkend="tutorial-agg">。
   </para>
 
   <table id="functions-aggregate-table">
@@ -10281,7 +10594,7 @@ NULL baz</literallayout>(3 rows)</entry>
        <function>array_agg(<replaceable class="parameter">expression</replaceable>)</function>
       </entry>
       <entry>
-       any
+        任何非数组类型
       </entry>
       <entry>
        参数类型的数组
@@ -10289,6 +10602,19 @@ NULL baz</literallayout>(3 rows)</entry>
       <entry>输入值（包括空）被连接到一个数组</entry>
      </row>
 
+     <row>
+      <entry>
+       <function>array_agg(<replaceable class="parameter">expression</replaceable>)</function>
+      </entry>
+      <entry>
+       任何数组类型
+      </entry>
+      <entry>
+       和参数数据类型一样
+      </entry>
+      <entry>级联到更高维数组的输入数组（输入必须都具有相同的维度，不能为空或NULL）</entry>
+     </row>
+        
      <row>
       <entry>
        <indexterm>
@@ -10431,6 +10757,22 @@ NULL baz</literallayout>(3 rows)</entry>
      <row>
       <entry>
        <indexterm>
+        <primary>jsonb_agg</primary>
+       </indexterm>
+       <function>jsonb_agg(<replaceable class="parameter">expression</replaceable>)</function>
+      </entry>
+      <entry>
+       <type>any</type>
+      </entry>
+      <entry>
+       <type>jsonb</type>
+      </entry>
+      <entry>将值聚集成一个JSON数组</entry>
+     </row>
+     
+     <row>
+      <entry>
+       <indexterm>
         <primary>json_object_agg</primary>
        </indexterm>
        <function>json_object_agg(<replaceable class="parameter">name</replaceable>, <replaceable class="parameter">value</replaceable>)</function>
@@ -10447,11 +10789,28 @@ NULL baz</literallayout>(3 rows)</entry>
      <row>
       <entry>
        <indexterm>
+        <primary>jsonb_object_agg</primary>
+       </indexterm>
+       <function>jsonb_object_agg(<replaceable class="parameter">name</replaceable>, <replaceable class="parameter">value</replaceable>)</function>
+      </entry>
+      <entry>
+       <type>(any, any)</type>
+      </entry>
+      <entry>
+       <type>jsonb</type>
+      </entry>
+      <entry>将名字/值对聚集成一个JSON对象</entry>
+     </row>
+     
+     
+     <row>
+      <entry>
+       <indexterm>
         <primary>max</primary>
        </indexterm>
        <function>max(<replaceable class="parameter">expression</replaceable>)</function>
       </entry>
-      <entry>任意数组、数字、串或日期/时间类型</entry>
+      <entry>任意数字、字符串，日期/时间，网络，或枚举类型或这些类型数组</entry>
       <entry>与参数数据类型相同</entry>
       <entry>
        所有输入值中<replaceable class="parameter">expression</replaceable>的最大值
@@ -10465,7 +10824,7 @@ NULL baz</literallayout>(3 rows)</entry>
        </indexterm>
        <function>min(<replaceable class="parameter">expression</replaceable>)</function>
       </entry>
-      <entry>任意数组、数字、串或日期/时间类型</entry>
+      <entry>任意数字、字符串，日期/时间，网络，或枚举类型或这些类型数组</entry>
       <entry>与参数数据类型相同</entry>
       <entry>
        所有输入值中<replaceable class="parameter">expression</replaceable>的最小值
@@ -10561,7 +10920,8 @@ SELECT count(*) FROM sometable;
 
   <para>
    与相似的用户定义的聚集函数一样，聚集函数<function>array_agg</function>、
-   <function>json_agg</function>、<function>json_object_agg</function>、   <function>string_agg</function>和<function>xmlagg</function>会依赖输入值的顺序产生有意义的不同结果值。这个顺序默认是不用指定的，但是可以在聚集调用时使用<literal>ORDER BY</>子句进行控制，如<xref linkend="syntax-aggregates">中所示。作为一种选择，从一个排序号的子查询来提供输入值通常会有帮助。例如：
+   <function>json_agg</function>、<function>jsonb_agg</function>、
+   <function>json_object_agg</function>、<function>jsonb_object_agg</function>、<function>string_agg</function>和<function>xmlagg</function>会依赖输入值的顺序产生有意义的不同结果值。这个顺序默认是不用指定的，但是可以在聚集调用时使用<literal>ORDER BY</>子句进行控制，如<xref linkend="syntax-aggregates">中所示。作为一种选择，从一个排序号的子查询来提供输入值通常会有帮助。例如：
 
 <screen><![CDATA[
 SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
@@ -11223,6 +11583,68 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
    的输入行。空值的排序根据<literal>ORDER BY</>子句中指定的规则进行。
   </para>
 
+  <table id="functions-grouping-table">
+   <title>分组操作</title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>函数</entry>
+      <entry>返回类型</entry>
+      <entry>描述</entry>
+     </row>
+    </thead>
+
+    <tbody>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>GROUPING</primary>
+       </indexterm>
+       <function>GROUPING(<replaceable class="parameter">args...</replaceable>)</function>
+      </entry>
+      <entry> 
+       <type>integer</type>
+      </entry>
+      <entry>整数位掩码表示当前分组集中不包含的参数</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+   <para>
+    分组操作与分组集合一起（参见<xref linkend="queries-grouping-sets">）区分结果行。
+    这个<literal>GROUPING</>操作的参数实际上并没有进行评估，
+    但它们必须完全匹配关联查询级别的<literal>GROUP BY</>子句中的表达式。
+    Bit连同最右边参数是最不重要的一点；
+    如果对应的表达式被包含在分组集生成的结果行的分组条件中，那么每位是0，
+    如果不是，则为1。比如：
+ 
+<screen>
+<prompt>=&gt;</> <userinput>SELECT * FROM items_sold;</>
+ make  | model | sales
+-------+-------+-------
+ Foo   | GT    |  10
+ Foo   | Tour  |  20 
+ Bar   | City  |  15
+ Bar   | Sport |  5
+(4 rows)
+
+<prompt>=&gt;</> <userinput>SELECT make, model, GROUPING(make,model), sum(sales) FROM items_sold GROUP BY ROLLUP(make,model);</>
+ make  | model | grouping | sum
+-------+-------+----------+-----
+ Foo   | GT    |        0 | 10
+ Foo   | Tour  |        0 | 20
+ Bar   | City  |        0 | 15
+ Bar   | Sport |        0 | 5
+ Foo   |       |        1 | 30
+ Bar   |       |        1 | 20
+       |       |        3 | 50
+(7 rows)
+</screen>
+   </para>
+  
  </sect1>
 
  <sect1 id="functions-window">
@@ -11343,16 +11765,19 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
         <primary>lag</primary>
        </indexterm>
        <function>
-         lag(<replaceable class="parameter">value</replaceable> <type>any</>
+          lag(<replaceable class="parameter">value</replaceable> <type>anyelement</>
              [, <replaceable class="parameter">offset</replaceable> <type>integer</>
-             [, <replaceable class="parameter">default</replaceable> <type>any</> ]])
+             [, <replaceable class="parameter">default</replaceable> <type>anyelement</> ]])
        </function>
       </entry>
       <entry>
        <type>和<replaceable class="parameter">value</replaceable>的类型相同</type>
       </entry>
       <entry>
-       返回<replaceable class="parameter">value</replaceable>，它在分区内当前行的之前<replaceable class="parameter">offset</replaceable>个位置的行上计算；如果没有这样的行，返回<replaceable class="parameter">default</replaceable>替代。<replaceable class="parameter">offset</replaceable>和<replaceable class="parameter">default</replaceable>都是根据当前行计算的结果。如果忽略它们，则<replaceable class="parameter">offset</replaceable>默认是1，<replaceable class="parameter">default</replaceable>默认是空值
+       返回<replaceable class="parameter">value</replaceable>，
+       它在分区内当前行的之前<replaceable class="parameter">offset</replaceable>个位置的行上计算；如果没有这样的行，返回<replaceable class="parameter">default</replaceable>替代。
+       (作为<replaceable class="parameter">value</replaceable>必须是相同类型)。
+       <replaceable class="parameter">offset</replaceable>和<replaceable class="parameter">default</replaceable>都是根据当前行计算的结果。如果忽略它们，则<replaceable class="parameter">offset</replaceable>默认是1，<replaceable class="parameter">default</replaceable>默认是空值
       </entry>
      </row>
 
@@ -11362,16 +11787,16 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
         <primary>lead</primary>
        </indexterm>
        <function>
-         lead(<replaceable class="parameter">value</replaceable> <type>any</>
+          lead(<replaceable class="parameter">value</replaceable> <type>anyelement</>
               [, <replaceable class="parameter">offset</replaceable> <type>integer</>
-              [, <replaceable class="parameter">default</replaceable> <type>any</> ]])
+              [, <replaceable class="parameter">default</replaceable> <type>anyelement</> ]])
        </function>
       </entry>
       <entry>
        <type>和<replaceable class="parameter">value</replaceable>类型相同</type>
       </entry>
       <entry>
-       返回<replaceable class="parameter">value</replaceable>，它在分区内当前行的之后<replaceable class="parameter">offset</replaceable>个位置的行上计算；如果没有这样的行，返回<replaceable class="parameter">default</replaceable>替代。<replaceable class="parameter">offset</replaceable>和<replaceable class="parameter">default</replaceable>都是根据当前行计算的结果。如果忽略它们，则<replaceable class="parameter">offset</replaceable>默认是1，<replaceable class="parameter">default</replaceable>默认是空值
+       返回<replaceable class="parameter">value</replaceable>，它在分区内当前行的之后<replaceable class="parameter">offset</replaceable>个位置的行上计算；如果没有这样的行，返回<replaceable class="parameter">default</replaceable>替代。(作为<replaceable class="parameter">value</replaceable>必须是相同类型)。<replaceable class="parameter">offset</replaceable>和<replaceable class="parameter">default</replaceable>都是根据当前行计算的结果。如果忽略它们，则<replaceable class="parameter">offset</replaceable>默认是1，<replaceable class="parameter">default</replaceable>默认是空值
       </entry>
      </row>
 
@@ -11942,8 +12367,8 @@ AND
     <tbody>
      <row>
       <entry><literal><function>generate_series(<parameter>start</parameter>, <parameter>stop</parameter>)</function></literal></entry>
-      <entry><type>int</type>或<type>bigint</type></entry>
-      <entry><type>setof int</type>或<type>setof bigint</type>（与参数类型相同）</entry>
+      <entry><type>int</type>，<type>bigint</type>或者<type>numeric</type></entry>
+      <entry><type>setof int</type>，<type>setof bigint</type>或者<type>setof numeric</type> (与参数类型相同)</entry>
       <entry>
        产生一系列值，从<parameter>start</parameter>到<parameter>stop</parameter>，步长为 1
       </entry>
@@ -11951,8 +12376,8 @@ AND
 
      <row>
       <entry><literal><function>generate_series(<parameter>start</parameter>, <parameter>stop</parameter>, <parameter>step</parameter>)</function></literal></entry>
-      <entry><type>int</type>或<type>bigint</type></entry>
-      <entry><type>setof int</type>或<type>setof bigint</type>（和参数类型相同）</entry>
+      <entry><type>int</type>，<type>bigint</type>或者<type>numeric</type></entry>
+      <entry><type>setof int</type>，<type>setof bigint</type>或者<type>setof numeric</type> (与参数类型相同)</entry>
       <entry>
        产生一系列值，从<parameter>start</parameter>到<parameter>stop</parameter>，步长为<parameter>step</parameter>
       </entry>
@@ -11994,6 +12419,14 @@ SELECT * FROM generate_series(4,3);
  generate_series
 -----------------
 (0 rows)
+
+SELECT generate_series(1.1, 4, 1.3);
+ generate_series 
+-----------------
+             1.1
+             2.4
+             3.7
+(3 rows)
 
 -- 这个例子依赖于日期+整数操作符
 SELECT current_date + s.a AS dates FROM generate_series(0,14,7) AS s(a);
@@ -12288,7 +12721,7 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry><literal><function>version()</function></literal></entry>
        <entry><type>text</type></entry>
-       <entry><productname>PostgreSQL</>版本信息</entry>
+       <entry><productname>PostgreSQL</>版本信息。参阅<xref linkend="guc-server-version-num">获取机器可读版本。</entry>
       </row>
      </tbody>
     </tgroup>
@@ -12429,7 +12862,12 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
    </indexterm>
 
    <para>
-    <function>version</function>返回一个描述<productname>PostgreSQL</productname>服务器版本的字符串。
+    <function>version</function>返回一个描述
+    <productname>PostgreSQL</productname>服务器版本的字符串。
+    你也可以从<xref linkend="guc-server-version">获取机器
+    可读版本<xref linkend="guc-server-version-num">信息，
+    软件开发者应该使用<literal>server_version_num</literal>
+    (8.2可用)或者<xref linkend="libpq-pqserverversion">解析文本版本。
    </para>
 
   <indexterm>
@@ -12631,6 +13069,14 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
        <entry><type>boolean</type></entry>
        <entry>当前用户有没有角色上的权限</entry>
       </row>
+      
+      <row>
+       <entry><literal><function>row_security_active</function>(<parameter>table</parameter>)</literal>
+       </entry>
+       <entry><type>boolean</type></entry>
+       <entry>当前用户有没有表上的行级安全性</entry>
+      </row>
+      
      </tbody>
     </tgroup>
    </table>
@@ -12671,7 +13117,11 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
    <indexterm>
     <primary>pg_has_role</primary>
    </indexterm>
-
+   <indexterm>
+    <primary>row_security_active</primary>
+   </indexterm>
+   
+   
    <para>
     <function>has_table_privilege</function>判断一个用户是否可以用某种特定的方式访问一个表。 该用户可以通过名字或者 OID （<literal>pg_authid.oid</literal>） 来指定，也可以用<literal>public</>表示 PUBLIC 伪角色。如果省略该参数，则使用<function>current_user</function>。 该表可以通过名字或者 OID 指定（因此，实际上有六种 <function>has_table_privilege</function>的变体，我们可以通过它们的参数数目和类型来区分它们） 。如果用名字指定，那么在必要时该名字可以是模式限定的。 所希望的权限类型是用一个文本串来指定的，它必须是下面的几个值之一： <literal>SELECT</literal>、<literal>INSERT</literal>、<literal>UPDATE</literal>、<literal>DELETE</literal>、<literal>TRUNCATE</>、<literal>REFERENCES</literal>或<literal>TRIGGER</literal>。<literal>WITH GRANT OPTION</>可以被选择增加到一个权限类型来测试是否该权限是使用转授选项得到。另外，可以使用逗号分隔来列出多个权限类型，在这种情况下只要具有其中之一的权限则结果为<literal>真</>（权限字符串的大小写并不重要，可以在权限名称之间出现额外的空白，但是在权限名内部不能有空白）。一些例子：
 <programlisting>
@@ -12727,6 +13177,12 @@ SELECT has_function_privilege('joeuser', 'myfunc(int, text)', 'execute');
     <function>pg_has_role</function>检查一个用户是否可以以某种特定的方式访问一个角色。其参数可能性类似 <function>has_table_privilege</function>，除了<literal>public</>不能被允许作为一个用户名。希望的访问权限类型必须是下列值的某种组合：<literal>MEMBER</literal>或<literal>USAGE</literal>。<literal>MEMBER</literal>表示该角色中的直接或间接成员关系（即使用<command>SET ROLE</>的权力），而<literal>USAGE</literal>表示不做<command>SET ROLE</>的情况下该角色的权限是否立即可用。
    </para>
 
+   <para>
+    <function>row_security_active</function>检查行级安全是否对
+    <function>current_user</function>以及环境上下文中的指定表是活跃的。
+    通过名称或者OID指定表。    
+   </para>
+   
   <para>
    <xref linkend="functions-info-schema-table">展示了决定是否一个特定对象在当前模式搜索路径中<firstterm>可见</>的函数。例如，如果一个表所在的模式在当前搜索路径中并且在它之前没有出现过相同的名字，这个表就被说是可见的。这等价于在语句中表可以被用名称引用但不加显式的模式限定。要列出所有可见表的名字：
 <programlisting>
@@ -12861,7 +13317,11 @@ SELECT relname FROM pg_class WHERE pg_table_is_visible(oid);
    </indexterm>
 
    <para>
-    每一个函数对一种数据库对象执行可见性检查。注意<function>pg_table_is_visible</function>也可被用于视图、索引和序列，<function>pg_type_is_visible</function>也可以被用于域。对于函数和操作符，如果在路径中更早的地方没有出现具有相同名称<emphasis>和参数数据类型</>的对象，该对象在搜索路径中是可见的。对于操作符类，名称和相关的索引访问方法都要考虑。
+    每一个函数对一种数据库对象执行可见性检查。
+    注意<function>pg_table_is_visible</function>也可被用于视图、索引和序列以及外表，
+    <function>pg_type_is_visible</function>也可以被用于域。对于函数和操作符，
+    如果在路径中更早的地方没有出现具有相同名称<emphasis>和参数数据类型</>的对象，
+    该对象在搜索路径中是可见的。对于操作符类，名称和相关的索引访问方法都要考虑。
    </para>
 
    <para>
@@ -12874,14 +13334,6 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
 
    <indexterm>
     <primary>format_type</primary>
-   </indexterm>
-
-   <indexterm>
-    <primary>pg_describe_object</primary>
-   </indexterm>
-
-   <indexterm>
-    <primary>pg_identify_object</primary>
    </indexterm>
 
    <indexterm>
@@ -12956,6 +13408,38 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
     <primary>collation for</primary>
    </indexterm>
 
+   <indexterm>
+    <primary>to_regclass</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regproc</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regprocedure</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regoper</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regoperator</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regtype</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regnamespace</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>to_regrole</primary>
+   </indexterm>
+   
   <para>
    <xref linkend="functions-info-catalog-table">列出了从系统目录抽取信息的函数。
   </para>
@@ -12973,16 +13457,7 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
        <entry><type>text</type></entry>
        <entry>获得一个数据类型的 SQL 名字</entry>
       </row>
-      <row>
-       <entry><literal><function>pg_describe_object(<parameter>catalog_id</parameter>, <parameter>object_id</parameter>, <parameter>object_sub_id</parameter>)</function></literal></entry>
-       <entry><type>text</type></entry>
-       <entry>获得一个数据库对象的描述</entry>
-      </row>
-      <row>
-       <entry><literal><function>pg_identify_object(<parameter>catalog_id</parameter> <type>oid</>, <parameter>object_id</parameter> <type>oid</>, <parameter>object_sub_id</parameter> <type>integer</>)</function></literal></entry>
-       <entry><parameter>type</> <type>text</>, <parameter>schema</> <type>text</>, <parameter>name</> <type>text</>, <parameter>identity</> <type>text</></entry>
-       <entry>获得一个数据库对象的标识</entry>
-      </row>
+      
       <row>
        <entry><literal><function>pg_get_constraintdef(<parameter>constraint_oid</parameter>)</function></literal></entry>
        <entry><type>text</type></entry>
@@ -13121,32 +13596,43 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
       <row>
        <entry><literal><function>to_regclass(<parameter>rel_name</parameter>)</function></literal></entry>
        <entry><type>regclass</type></entry>
-       <entry>get the OID of the named relation</entry>
+       <entry>获得命名关系的OID</entry>
       </row>
       <row>
        <entry><literal><function>to_regproc(<parameter>func_name</parameter>)</function></literal></entry>
        <entry><type>regproc</type></entry>
-       <entry>get the OID of the named function</entry>
+       <entry>获得命名函数的OID</entry>
       </row>
       <row>
        <entry><literal><function>to_regprocedure(<parameter>func_name</parameter>)</function></literal></entry>
        <entry><type>regprocedure</type></entry>
-       <entry>get the OID of the named function</entry>
+       <entry>获得命名函数的OID</entry>
       </row>
       <row>
        <entry><literal><function>to_regoper(<parameter>operator_name</parameter>)</function></literal></entry>
        <entry><type>regoper</type></entry>
-       <entry>get the OID of the named operator</entry>
+       <entry>获得命名操作符的OID</entry>
       </row>
       <row>
        <entry><literal><function>to_regoperator(<parameter>operator_name</parameter>)</function></literal></entry>
        <entry><type>regoperator</type></entry>
-       <entry>get the OID of the named operator</entry>
+       <entry>获得命名操作符的OID</entry>
       </row>
       <row>
        <entry><literal><function>to_regtype(<parameter>type_name</parameter>)</function></literal></entry>
        <entry><type>regtype</type></entry>
-       <entry>get the OID of the named type</entry>
+       <entry>获得命名类型的OID</entry>
+      </row>
+      
+      <row>
+       <entry><literal><function>to_regnamespace(<parameter>schema_name</parameter>)</function></literal></entry>
+       <entry><type>regnamespace</type></entry>
+       <entry>获得命名模式的OID</entry>
+      </row>
+      <row>
+       <entry><literal><function>to_regrole(<parameter>role_name</parameter>)</function></literal></entry>
+       <entry><type>regrole</type></entry>
+       <entry>获得命名角色的OID</entry>
       </row>
      </tbody>
     </tgroup>
@@ -13184,13 +13670,6 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    <function>pg_tablespace_databases</function>允许一个表空间被检查。它返回一组数据库的 OID，这些数据库都有对象存储在该表空间中。如果这个函数返回任何行，则该表空间为非空并且不能被删除。为了显示该表空间中的指定对象，你将需要连接到<function>pg_tablespace_databases</function>标识的数据库并且查询它们的<structname>pg_class</>目录。
   </para>
 
-  <para>
-   <function>pg_describe_object</function>返回一个数据库对象的文本描述，该数据库对象由目录 OID、对象 OID 和一个（可能为零）子对象 ID 指定。这个描述会是人类可读的，并且可能是被翻译过的，具体情况取决于服务器配置。这在判断存储在<structname>pg_depend</structname>目录中的一个对象的身份有用。
-  </para>
-
-  <para>
-   <function>pg_identify_object</function>返回一行，其中包含足够的信息来唯一地标识数据库对象，该数据库对象由目录 OID、对象 OID 和一个（可能为零）子对象 ID 指定。这个信息是机器可读的，并且永远不会被翻译。<parameter>type</>标识数据库对象的类型；<parameter>schema</>是对象所属的模式的名称，如果对象类型不属于模式则为<literal>NULL</>；<parameter>name</>是对象的名称，必要时要加上引号，只在能被用作对象的唯一标识符时出现（和模式名称一起，如果相关），否则为<literal>NULL</>；<parameter>identity</>是完整的对象身份，确切格式取决于对象类型，并且格式中的每一部分都是模式限定的并且按照需要被加上了引号。
-  </para>
 
   <para>
    <function>pg_typeof</function>返回传递给它的值的数据类型的 OID。这在检修或者动态构建 SQL 查询时有用。函数被声明为返回<type>regtype</>，它是一个 OID 别名类型（见<xref linkend="datatype-oid">）；这表明它和一个用于比较目的的 OID 相同，但是作为一个类型名称显示。例如：
@@ -13200,7 +13679,7 @@ SELECT pg_typeof(33);
  pg_typeof 
 -----------
  integer
-(1 row)
+(1 row) 
 
 SELECT typlen FROM pg_type WHERE oid = pg_typeof(33);
  typlen 
@@ -13229,19 +13708,113 @@ SELECT collation for ('foo' COLLATE "de_DE");
   </para>
   
   <para>
-   The <function>to_regclass</function>, <function>to_regproc</function>,
-   <function>to_regprocedure</function>, <function>to_regoper</function>,
-   <function>to_regoperator</function>, and <function>to_regtype</function>
-   functions translate relation, function, operator, and type names to objects
-   of type <type>regclass</>, <type>regproc</>, <type>regprocedure</type>,
-   <type>regoper</>, <type>regoperator</type>, and <type>regtype</>,
-   respectively.  These functions differ from a cast from
-   text in that they don't accept a numeric OID, and that they return null
-   rather than throwing an error if the name is not found (or, for
-   <function>to_regproc</function> and <function>to_regoper</function>, if
-   the given name matches multiple objects).
+   <function>to_regclass</function>，<function>to_regproc</function>，
+   <function>to_regprocedure</function>，<function>to_regoper</function>，
+   <function>to_regoperator</function>，<function>to_regtype</function>，
+   <function>to_regnamespace</function>以及<function>to_regrole</function>
+   函数各自转换关系，函数，操作符，类型，模式以及角色名称为
+   <type>regclass</>，<type>regproc</>，<type>regprocedure</type>，
+   <type>regoper</>，<type>regoperator</type>，<type>regtype</>，
+   <type>regnamespace</>以及<type>regrole</>类型对象。
+   这些函数不同于来自不接受数字OID的文本映射，并返回空而不是抛出一个错误。
+   如果没有找到名称（或<function>to_regproc</function>和<function>to_regoper</function>，
+   如果给定的名称匹配多个对象）。
   </para>
 
+  <indexterm>
+    <primary>pg_describe_object</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>pg_identify_object</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>pg_identify_object_as_address</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>pg_get_object_address</primary>
+   </indexterm>
+
+  <para>
+   <xref linkend="functions-info-object-table">列出与数据库对象标识和寻址有关的函数。
+  </para>
+
+   <table id="functions-info-object-table">
+    <title>对象信息和地址函数</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>名称</entry> <entry>返回类型</entry> <entry>描述</entry></row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry><literal><function>pg_describe_object(<parameter>catalog_id</parameter>, <parameter>object_id</parameter>, <parameter>object_sub_id</parameter>)</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry>获取数据库对象的描述</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_identify_object(<parameter>catalog_id</parameter> <type>oid</>, <parameter>object_id</parameter> <type>oid</>, <parameter>object_sub_id</parameter> <type>integer</>)</function></literal></entry>
+       <entry><parameter>type</> <type>text</>, <parameter>schema</> <type>text</>, <parameter>name</> <type>text</>, <parameter>identity</> <type>text</></entry>
+       <entry>获取数据库对象标识</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_identify_object_as_address(<parameter>catalog_id</parameter> <type>oid</>, <parameter>object_id</parameter> <type>oid</>, <parameter>object_sub_id</parameter> <type>integer</>)</function></literal></entry>
+       <entry><parameter>type</> <type>text</>, <parameter>name</> <type>text[]</>, <parameter>args</> <type>text[]</></entry>
+       <entry>获取数据库对象地址的外部表征</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_get_object_address(<parameter>type</parameter> <type>text</>, <parameter>name</parameter> <type>text[]</>, <parameter>args</parameter> <type>text[]</>)</function></literal></entry>
+       <entry><parameter>catalog_id</> <type>oid</>, <parameter>object_id</> <type>oid</>, <parameter>object_sub_id</> <type>int32</></entry>
+       <entry>从外部表征中获取数据库对象地址</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+  <para>
+   <function>pg_describe_object</function>返回一个数据库对象的文本描述，
+      该数据库对象由目录 OID、对象 OID 和一个（可能为零）子对象 ID 指定。
+      这个描述会是人类可读的，并且可能是被翻译过的，具体情况取决于服务器配置。
+      这在判断存储在<structname>pg_depend</structname>目录中的一个对象的身份有用。
+  </para>
+
+  <para>
+   <function>pg_identify_object</function>返回一行，
+      其中包含足够的信息来唯一地标识数据库对象，
+      该数据库对象由目录 OID、对象 OID 和一个（可能为零）子对象 ID 指定。
+      这个信息是机器可读的，并且永远不会被翻译。<parameter>type</>标识数据库对象的类型；
+      <parameter>schema</>是对象所属的模式的名称，
+      如果对象类型不属于模式则为<literal>NULL</>；
+      <parameter>name</>是对象的名称，必要时要加上引号，
+      只在能被用作对象的唯一标识符时出现（和模式名称一起，如果相关），
+      否则为<literal>NULL</>；<parameter>identity</>是完整的对象身份，
+      确切格式取决于对象类型，并且格式中的每一部分都是模式限定的并且按照需要被加上了引号。
+  </para>
+
+  <para>
+   <function>pg_identify_object_as_address</function>返回一行，
+   其中包含足够的信息来唯一地标识数据库对象，
+   该数据库对象由目录 OID、对象 OID 和一个（可能为零）子对象 ID 指定。
+   返回的信息是独立于当前服务器的，也就是说，
+   它可以用于标识另一个服务器中同一个命名对象。
+   <parameter>type</>标识数据库对象的类型；
+   <parameter>name</>和<parameter>args</>是形成对象引用的文本数组。 
+   传递三列到<function>pg_get_object_address</>获取对象的外部地址。
+   这个函数是<function>pg_get_object_address</function>的逆函数。
+  </para>
+
+  <para>
+   <function>pg_get_object_address</function>返回行，
+   包含足够信息来唯一地标识数据库对象，该数据库对象由类型和对象名称以及参数数组指定。
+   返回值是在系统目录中使用的比如<structname>pg_depend</>，并且可以传递给其它系统函数
+   比如<function>pg_identify_object</>或者<function>pg_describe_object</>。
+   <parameter>catalog_id</>是包含对象的系统目录OID； 
+   <parameter>object_id</>是对象本身的OID，<parameter>object_sub_id</>是对象的子ID，
+   如果没有则为零。这个函数是<function>pg_identify_object_as_address</function>的逆函数。
+  </para>
+  
    <indexterm>
     <primary>col_description</primary>
    </indexterm>
@@ -13346,7 +13919,7 @@ SELECT collation for ('foo' COLLATE "de_DE");
       <row>
        <entry><literal><function>txid_current()</function></literal></entry>
        <entry><type>bigint</type></entry>
-       <entry>获得当前事务 ID</entry>
+       <entry>获得当前事务ID，如果当前事务没有则分配一个新的</entry>
       </row>
       <row>
        <entry><literal><function>txid_current_snapshot()</function></literal></entry>
@@ -13421,6 +13994,43 @@ SELECT collation for ('foo' COLLATE "de_DE");
    <para>
     <type>txid_snapshot</>的文本表示是<literal><replaceable>xmin</>:<replaceable>xmax</>:<replaceable>xip_list</></literal>。例如<literal>10:20:10,14,15</literal>表示<literal>xmin=10, xmax=20, xip_list=10, 14, 15</literal>。
    </para>
+   
+   <para>
+    在<xref linkend="functions-commit-timestamp">中显示的函数
+    提供了已提交事务的信息。这些函数主要提供关于事务提交的信息。
+    当<xref linkend="guc-track-commit-timestamp">配置选项启用的时候，
+    并且只有启用后提交的事务，它们只提供有用的数据。
+   </para>
+
+   <table id="functions-commit-timestamp">
+    <title>已提交事务信息</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>名称</entry> <entry>返回类型</entry> <entry>描述</entry></row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry>
+        <indexterm><primary>pg_xact_commit_timestamp</primary></indexterm>
+        <literal><function>pg_xact_commit_timestamp(<parameter>xid</parameter>)</function></literal>
+       </entry>
+       <entry><type>timestamp with time zone</type></entry>
+       <entry>事务提交的时间戳</entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm><primary>pg_last_committed_xact</primary></indexterm>
+        <literal><function>pg_last_committed_xact()</function></literal>
+       </entry>
+       <entry><parameter>xid</> <type>xid</>, <parameter>timestamp</> <type>timestamp with time zone</></entry>
+       <entry>最近提交事务的事务ID以及提交时间戳</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+   
   </sect1>
 
   <sect1 id="functions-admin">
@@ -13550,7 +14160,9 @@ SELECT set_config('log_statement_stats', 'off', false);
         <literal><function>pg_cancel_backend(<parameter>pid</parameter> <type>int</>)</function></literal>
         </entry>
        <entry><type>boolean</type></entry>
-       <entry>取消一个后端的当前查询。你可以对另一个后端执行这个函数，只要该后端的角色正好和调用该函数的用户相同。在所有其他情况下，你都必须是一个超级用户。
+       <entry>取消一个后端的当前查询。
+        如果调用角色是其后端正在被取消的角色的成员，
+        然而只有超级用户可以取消超级用户的后端。这也是允许的。
         </entry>
       </row>
       <row>
@@ -13572,7 +14184,9 @@ SELECT set_config('log_statement_stats', 'off', false);
         <literal><function>pg_terminate_backend(<parameter>pid</parameter> <type>int</>)</function></literal>
         </entry>
        <entry><type>boolean</type></entry>
-       <entry>中止一个后端。你可以对另一个后端执行这个函数，只要该后端的角色正好和调用该函数的用户相同。在所有其他情况下，你都必须是一个超级用户。
+       <entry>中止一个后端。
+        如果调用角色是其后端被终止的角色成员，
+        然而只有超级用户可以终止超级用户的后端。这也是允许的。
        </entry>
       </row>
      </tbody>
@@ -13733,7 +14347,15 @@ SELECT set_config('log_statement_stats', 'off', false);
    </table>
 
    <para>
-    <function>pg_start_backup</>接受一个参数，这个参数可以是备份的任意用户定义的标签（通常这是备份转储文件将被存储的名字）。该函数向数据库集簇的数据目录写入一个备份标签文件（<filename>backup_label</>），执行一个检查点，然后以文本方式返回备份的起始事务日志位置。用户可以忽略这个结果值，但是为了可能需要的场合我们还是提供该值。
+    <function>pg_start_backup</>接受一个参数，
+    这个参数可以是备份的任意用户定义的标签
+    （通常这是备份转储文件将被存储的名字）。
+    该函数写入一个备份标签文件（<filename>backup_label</>），
+    如果在<filename>pg_tblspc/</>目录中有任何链接，
+    表空间映射文件(<filename>tablespace_map</>)到数据库集群的数据目录中，
+    执行一个检查点，然后以文本方式返回备份的起始事务日志位置。
+    用户可以忽略这个结果值，但是为了可能需要的场合我们还是提供该值。
+  
 <programlisting>
 postgres=# select pg_start_backup('label_goes_here');
  pg_start_backup
@@ -13745,7 +14367,14 @@ postgres=# select pg_start_backup('label_goes_here');
    </para>
 
    <para>
-    <function>pg_stop_backup</>删除<function>pg_start_backup</>创建的标签文件， 并且在事务日志归档区里创建一个备份历史文件。这个历史文件包含给予<function>pg_start_backup</>的标签、备份的起始与终止事务日志位置以及备份的起始和终止时间。返回值是备份的终止事务日志位置（同样也可以被忽略）。在记录结束位置之后，当前事务日志插入点被自动地推进到下一个事务日志文件，这样结束的事务日志文件可以立即被归档来结束备份。
+    <function>pg_stop_backup</>删除通过<function>pg_start_backup</>创建的<filename>tablespace_map</>标签文件， 
+    并且在事务日志归档区里创建一个备份历史文件。
+    这个历史文件包含给予<function>pg_start_backup</>的标签、
+    备份的起始与终止事务日志位置以及备份的起始和终止时间。
+    返回值是备份的终止事务日志位置（同样也可以被忽略）。
+    在记录结束位置之后，
+    当前事务日志插入点被自动地推进到下一个事务日志文件，
+    这样结束的事务日志文件可以立即被归档来结束备份。
    </para>
 
    <para>
@@ -13960,32 +14589,31 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    <title>Replication Functions</title>
 
    <para>
-    The functions shown in <xref linkend="functions-replication-table"> are
-    for controlling and interacting with replication features.
-    See <xref linkend="streaming-replication">
-    and <xref linkend="streaming-replication-slots"> for information about the
-    underlying features.  Use of these functions is restricted to superusers.
+    <xref linkend="functions-replication-table">中显示的函数为了控制和交互复制功能。
+    参阅<xref linkend="streaming-replication">，
+    <xref linkend="streaming-replication-slots">以及
+    <xref linkend="replication-origins">获取基本功能信息。这些函数的使用受制于超级用户。
    </para>
 
    <para>
-    Many of these functions have equivalent commands in the replication
-    protocol; see <xref linkend="protocol-replication">.
+    在复制协议中有许多这些函数的相等命令；
+    参阅<xref linkend="protocol-replication">。
    </para>
 
    <para>
-    The functions described in <xref linkend="functions-snapshot-synchronization">, <xref
-    linkend="functions-recovery-control">, and <xref
-    linkend="functions-admin-backup"> are also relevant for replication.
+    <xref linkend="functions-snapshot-synchronization">，
+    <xref linkend="functions-recovery-control">以及
+    <xref linkend="functions-admin-backup">中的函数也是与复制有关的。
    </para>
 
    <table id="functions-replication-table">
-    <title>Replication <acronym>SQL</acronym> Functions</title>
+    <title>复制<acronym>SQL</acronym>函数</title>
     <tgroup cols="3">
      <thead>
       <row>
        <entry>函数</entry>
-       <entry>Return Type</entry>
-       <entry>Description</entry>
+       <entry>返回类型</entry>
+       <entry>描述</entry>
       </row>
      </thead>
      <tbody>
@@ -14109,6 +14737,181 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         即在未来的调用中还会返回这些改变。
        </entry>
       </row>
+      
+      <row>
+       <entry id="pg-replication-origin-create">
+        <indexterm>
+         <primary>pg_replication_origin_create</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_create(<parameter>node_name</parameter> <type>text</type>)</function></literal>
+       </entry>
+       <entry>
+        <type>oid</type>
+       </entry>
+       <entry>
+        创建具有给定外部名称的复制源，并返回分配给它的内部标识。
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-replication-origin-drop">
+        <indexterm>
+         <primary>pg_replication_origin_drop</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_drop(<parameter>node_name</parameter> <type>text</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        删除之前创建的复制源，包含任何相关的回放进程。
+       </entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
+         <primary>pg_replication_origin_oid</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_oid(<parameter>node_name</parameter> <type>text</type>)</function></literal>
+       </entry>
+       <entry>
+        <type>oid</type>
+       </entry>
+       <entry>
+        通过名称查找复制源并返回内部标识。
+        如果没有发现相应的复制源，则抛出一个错误。
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-replication-origin-session-setup">
+        <indexterm>
+         <primary>pg_replication_origin_session_setup</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_session_setup(<parameter>node_name</parameter> <type>text</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        标记当前会话从给定源开始回放，允许跟踪重播进度。如果没有配置之前的源，
+        使用<function>pg_replication_origin_session_reset</function>恢复。
+       </entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
+         <primary>pg_replication_origin_session_reset</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_session_reset()</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        取消<function>pg_replication_origin_session_setup()</function>的影响。
+       </entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
+         <primary>pg_replication_origin_session_is_setup</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_session_is_setup()</function></literal>
+       </entry>
+       <entry>
+        <type>bool</type>
+       </entry>
+       <entry>
+        在当前会话中已经配置复制源吗？
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-replication-origin-session-progress">
+        <indexterm>
+         <primary>pg_replication_origin_session_progress</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_session_progress(<parameter>flush</parameter> <type>bool</type>)</function></literal>
+       </entry>
+       <entry>
+        <type>pg_lsn</type>
+       </entry>
+       <entry>
+        返回当前会话中配置的复制源的重播位置。
+        参数<parameter>flush</parameter>决定是否相应的本地事务将被刷新到磁盘或者不刷新。
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-replication-origin-xact-setup">
+        <indexterm>
+         <primary>pg_replication_origin_xact_setup</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_xact_setup(<parameter>origin_lsn</parameter> <type>pg_lsn</type>, <parameter>origin_timestamp</parameter> <type>timestamptz</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        标记当前事务为回放给定<acronym>LSN</acronym>和时间戳点提交的事务。
+        当使用<function>pg_replication_origin_session_setup()</function>配置
+        复制源时，调用它。
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-replication-origin-xact-reset">
+        <indexterm>
+         <primary>pg_replication_origin_xact_reset</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_xact_reset()</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        取消<function>pg_replication_origin_xact_setup()</function>的影响。
+       </entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
+         <primary>pg_replication_origin_advance</primary>
+        </indexterm>
+        <literal>pg_replication_origin_advance<function>(<parameter>node_name</parameter> <type>text</type>, <parameter>pos</parameter> <type>pg_lsn</type>)</function></literal>
+       </entry>
+       <entry>
+        void
+       </entry>
+       <entry>
+        为给定节点到给定位置设置复制进度。
+        这主要是用于设置配置更改后的初始位置或新位置。
+        要知道这个函数使用不当会导致不一致的复制数据。
+       </entry>
+      </row>
+
+      <row>
+       <entry id="pg-replication-origin-progress">
+        <indexterm>
+         <primary>pg_replication_origin_progress</primary>
+        </indexterm>
+        <literal><function>pg_replication_origin_progress(<parameter>node_name</parameter> <type>text</type>, <parameter>flush</parameter> <type>bool</type>)</function></literal>
+       </entry>
+       <entry>
+        <type>pg_lsn</type>
+       </entry>
+       <entry>
+        返回给定复制源的重放位置。
+        参数<parameter>flush</parameter>确定是
+        否相应的本地事务将被保证刷新到磁盘或不刷新。
+       </entry>
+      </row>
+      
      </tbody>
     </tgroup>
    </table>
@@ -14398,6 +15201,45 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
 
   </sect2>
 
+   <sect2 id="functions-admin-index">
+   <title>索引维护函数</title>
+
+   <indexterm>
+    <primary>brin_summarize_new_values</primary>
+   </indexterm>
+
+   <para>
+    <xref linkend="functions-admin-index-table">显示可用于索引维护功能的函数。
+   </para>
+
+   <table id="functions-admin-index-table">
+    <title>Index Maintenance Functions</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>名称</entry> <entry>返回类型</entry> <entry>描述</entry></row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry>
+        <literal><function>brin_summarize_new_values(<parameter>index_oid</> <type>regclass</>)</function></literal>
+       </entry>
+       <entry><type>integer</type></entry>
+       <entry>总结尚未汇总的页面范围</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>
+    <function>brin_summarize_new_values</>接收BRIN索引OID作为参数，
+    并检查索引以查找基表中的页范围，它不是目前所总结的索引；
+    对于任何这样的范围，它通过扫描表页创建一个新的汇总索引元组。
+    它返回插入索引的新页范围汇总的数量。
+   </para>
+
+  </sect2>
+  
   <sect2 id="functions-admin-genfile">
    <title>通用文件访问函数</title>
 
@@ -14416,41 +15258,60 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
      <tbody>
       <row>
        <entry>
-        <literal><function>pg_ls_dir(<parameter>dirname</> <type>text</>)</function></literal>
+        <literal><function>pg_ls_dir(<parameter>dirname</> <type>text</> [, <parameter>missing_ok</> <type>boolean</>, <parameter>include_dot_dirs</> <type>boolean</>])</function></literal>
        </entry>
        <entry><type>setof text</type></entry>
-       <entry>列出目录中的内容</entry>
+       <entry>
+        列出目录内容。
+       </entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_read_file(<parameter>filename</> <type>text</> [, <parameter>offset</> <type>bigint</>, <parameter>length</> <type>bigint</>])</function></literal>
+        <literal><function>pg_read_file(<parameter>filename</> <type>text</> [, <parameter>offset</> <type>bigint</>, <parameter>length</> <type>bigint</> [, <parameter>missing_ok</> <type>boolean</>] ])</function></literal>
        </entry>
        <entry><type>text</type></entry>
-       <entry>返回一个文本文件的内容</entry>
+       <entry>
+        返回文本文件的内容。
+       </entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_read_binary_file(<parameter>filename</> <type>text</> [, <parameter>offset</> <type>bigint</>, <parameter>length</> <type>bigint</>])</function></literal>
+        <literal><function>pg_read_binary_file(<parameter>filename</> <type>text</> [, <parameter>offset</> <type>bigint</>, <parameter>length</> <type>bigint</> [, <parameter>missing_ok</> <type>boolean</>] ])</function></literal>
        </entry>
        <entry><type>bytea</type></entry>
-       <entry>返回一个文件的内容</entry>
+       <entry>
+        返回一个文件的内容。
+       </entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_stat_file(<parameter>filename</> <type>text</>)</function></literal>
+        <literal><function>pg_stat_file(<parameter>filename</> <type>text</>[, <parameter>missing_ok</> <type>boolean</type>])</function></literal>
        </entry>
        <entry><type>record</type></entry>
-       <entry>返回关于一个文件的信息</entry>
+       <entry>
+        返回文件信息。
+       </entry>
       </row>
      </tbody>
     </tgroup>
    </table>
+   
+   <para>
+    所有这些函数接受可选的<parameter>missing_ok</>参数，
+    当文件或目录不存在时，指定操作。
+    如果<literal>true</literal>，那么函数返回NULL
+    除了<function>pg_ls_dir</>，将返回空结果集）。如果<literal>false</>，则抛出错误。默认为<literal>false</>。
+   </para>
 
    <indexterm>
     <primary>pg_ls_dir</primary>
    </indexterm>
    <para>
-    <function>pg_ls_dir</>返回指定目录中所有的名称，除了特殊的项<quote><literal>.</></>和<quote><literal>..</></>。
+    <function>pg_ls_dir</>返回所有指定目录中的文件名称（目录以及其它指定文件）。
+    <parameter>include_dot_dirs</>显示<quote>.</>和<quote>..</>是否包含在结果集中。
+    缺省排除它们(<literal>false</>)，
+    但是当<parameter>missing_ok</>是<literal>true</literal>时，
+    包含它们从非存在目录中区分空目录是非常有用的。
    </para>
 
    <indexterm>
@@ -14763,13 +15624,105 @@ FOR EACH ROW EXECUTE PROCEDURE suppress_redundant_updates_trigger();
   <sect1 id="functions-event-triggers">
    <title>事件触发器函数</title>
 
+   <para>
+    <productname>PostgreSQL</>提供这些帮助函数用以从事件触发器中检索信息。
+   </para>
+
+   <para>
+    关于事件触发器的更多信息，参见<xref linkend="event-triggers">。
+   </para>
+
+  <sect2 id="pg-event-trigger-ddl-command-end-functions">
+   <title>捕获命令结尾的改变</title>
+
+   <indexterm>
+    <primary>pg_event_trigger_ddl_commands</primary>
+   </indexterm>
+
+   <para>
+    <function>pg_event_trigger_ddl_commands</>返回通过
+    每个用户操作执行的<acronym>DDL</acronym>命令列表，
+    当调用函数中<literal>ddl_command_end</>事件触发器，
+    如果在任何其它上下文中调用，则抛出一个错误。
+    <function>pg_event_trigger_ddl_commands</>返回每个基本执行命令的每一行；
+    单独SQL语句的命令可能返回多个行。此函数返回以下列：
+
+    <informaltable>
+     <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>名称</entry>
+        <entry>类型</entry>
+        <entry>描述</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry><literal>classid</literal></entry>
+        <entry><type>Oid</type></entry>
+        <entry>对象从属的系统OID</entry>
+       </row>
+       <row>
+        <entry><literal>objid</literal></entry>
+        <entry><type>Oid</type></entry>
+        <entry>系统中对象的OID</entry>
+       </row>
+       <row>
+        <entry><literal>objsubid</literal></entry>
+        <entry><type>integer</type></entry>
+        <entry>对象子ID(比如列的属性数)</entry>
+       </row>
+       <row>
+        <entry><literal>command_tag</literal></entry>
+        <entry><type>text</type></entry>
+        <entry>命令标签</entry>
+       </row>
+       <row>
+        <entry><literal>object_type</literal></entry>
+        <entry><type>text</type></entry>
+        <entry>对象类型</entry>
+       </row>
+       <row>
+        <entry><literal>schema_name</literal></entry>
+        <entry><type>text</type></entry>
+        <entry>
+         对象从属模式名，如果没有；否则为<literal>NULL</>。没有应用引用。
+        </entry>
+       </row>
+       <row>
+        <entry><literal>object_identity</literal></entry>
+        <entry><type>text</type></entry>
+        <entry>
+         对象身份的文本表现，模式限定的。每一个以及所有身份中出现的标识符在必要时加引号。
+        </entry>
+       </row>
+       <row>
+        <entry><literal>in_extension</literal></entry>
+        <entry><type>bool</type></entry>
+        <entry>命令是否是扩展脚本的一部分</entry>
+       </row>
+       <row>
+        <entry><literal>command</literal></entry>
+        <entry><type>pg_ddl_command</type></entry>
+        <entry>
+         内部格式中命令的完整表示。这不能直接输出，
+         但它可以传递给其它函数用来获取该命令的不同信息。
+        </entry>
+       </row>
+      </tbody>
+     </tgroup>
+    </informaltable>
+   </para>
+  </sect2>
+
+  <sect2 id="pg-event-trigger-sql-drop-functions">
+   <title>通过DDL命令删除处理的对象</title>
+
    <indexterm>
      <primary>pg_event_trigger_dropped_objects</primary>
    </indexterm>
 
-   <para>
-    当前<productname>PostgreSQL</>提供了一个内建的事件触发器助手函数<function>pg_event_trigger_dropped_objects</>。
-   </para>
 
    <para>
     <function>pg_event_trigger_dropped_objects</>返回其<literal>sql_drop</>事件中命令所删除的所有对象的列表。如果在任何其他环境中被调用，<function>pg_event_trigger_dropped_objects</>将抛出一个错误。<function>pg_event_trigger_dropped_objects</>返回下列列：
@@ -14800,6 +15753,27 @@ FOR EACH ROW EXECUTE PROCEDURE suppress_redundant_updates_trigger();
         <entry><type>int32</type></entry>
         <entry>对象的子ID（如列的属性号）</entry>
        </row>
+       
+       <row>
+        <entry><literal>original</literal></entry>
+        <entry><type>bool</type></entry>
+        <entry>用于标识删除的根对象的标志</entry>
+       </row>
+       <row>
+        <entry><literal>normal</literal></entry>
+        <entry><type>bool</type></entry>
+        <entry>
+         标志表明在导致这个对象的依赖关系图中有一个正常的依赖关系
+        </entry>
+       </row>
+       <row>
+        <entry><literal>is_temporary</literal></entry>
+        <entry><type>bool</type></entry>
+        <entry>
+         标志表明该对象是临时对象。
+        </entry>
+       </row>
+       
        <row>
         <entry><literal>object_type</literal></entry>
         <entry><type>text</type></entry>
@@ -14826,6 +15800,23 @@ FOR EACH ROW EXECUTE PROCEDURE suppress_redundant_updates_trigger();
          对象身份的文本表现，模式限定的。每一个以及所有身份中出现的标识符在必要时加引号。
         </entry>
        </row>
+       
+       <row>
+        <entry><literal>address_names</literal></entry>
+        <entry><type>text[]</type></entry>
+        <entry>
+         一个数组，连同<literal>object_type</literal>和<literal>address_args</literal>，
+         可以用于<function>pg_get_object_address()</function>在包含相同命
+         名对象的远程服务器中重新创建对象地址。
+        </entry>
+       </row>
+       <row>
+        <entry><literal>address_args</literal></entry>
+        <entry><type>text[]</type></entry>
+        <entry>
+         <literal>address_names</literal>的补充。
+        </entry>
+       </row>
       </tbody>
      </tgroup>
     </informaltable>
@@ -14845,20 +15836,79 @@ BEGIN
                      tg_tag,
                      obj.object_type,
                      obj.schema_name,
-                     obj.object_name,
+                     obj.object_name, 
                      obj.object_identity;
     END LOOP;
-END
-$$;
+END 
+$$; 
 CREATE EVENT TRIGGER test_event_trigger_for_drops
    ON sql_drop
    EXECUTE PROCEDURE test_event_trigger_for_drops();
 </programlisting>
-    </para>
+    </para> 
 
-     <para>
-       关于事件触发器的更多信息请见<xref linkend="event-triggers">。
-    </para>
-  </sect1>
+ </sect2>
+
+  <sect2 id="pg-event-trigger-table-rewrite-functions">
+   <title>处理表重写事件</title>
+
+   <para>
+
+   显示在<xref linkend="functions-event-trigger-table-rewrite">中的函数提供关于表的信息，
+    其中<literal>table_rewrite</>事件刚刚被调用。如果在任何其它上下文中调用，则抛出错误。
+   </para>
+
+   <table id="functions-event-trigger-table-rewrite">
+    <title>表重写信息</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>名称</entry> <entry>返回类型</entry> <entry>描述</entry></row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry>
+        <indexterm><primary>pg_event_trigger_table_rewrite_oid</primary></indexterm>
+        <literal><function>pg_event_trigger_table_rewrite_oid()</function></literal>
+       </entry>
+       <entry><type>Oid</type></entry>
+       <entry>关于被改写的表的OID。</entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm><primary>pg_event_trigger_table_rewrite_reason</primary></indexterm>
+        <literal><function>pg_event_trigger_table_rewrite_reason()</function></literal>
+       </entry>
+       <entry><type>int</type></entry>
+       <entry>
+        原因代码解释重写的原因。代码的确切意义是释放依赖。
+       </entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table> 
+
+   <para>
+    在下面这样的事件触发器中使用<function>pg_event_trigger_table_rewrite_oid</>函数：
+<programlisting>
+CREATE FUNCTION test_event_trigger_table_rewrite_oid()
+ RETURNS event_trigger
+ LANGUAGE plpgsql AS  
+$$ 
+BEGIN 
+  RAISE NOTICE 'rewriting table % for reason %',
+                pg_event_trigger_table_rewrite_oid()::regclass,
+                pg_event_trigger_table_rewrite_reason();
+END;
+$$;
+
+CREATE EVENT TRIGGER test_table_rewrite_oid
+                  ON table_rewrite
+   EXECUTE PROCEDURE test_event_trigger_table_rewrite_oid();
+</programlisting>
+    </para> 
+  </sect2> 
+  </sect1>   
 
 </chapter>
