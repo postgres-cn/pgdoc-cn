@@ -189,19 +189,41 @@ CREATE TYPE complex (
  </para>
 
  <para>
+如果数据类型的内部表示是可变长度的，
+   内部表示必须遵循可变长度的标准布局数据：前四个字节必须是<type> char [4] </type>字段
+   从不直接访问（通常命名为<structfield> vl_len _ </>）。 
+   你必须使用<function> SET_VARSIZE（）</function>宏来存储
+   此字段中的数据的总大小（包括长度字段本身）
+   并用<function> VARSIZE（）</function>来检索它。 （这些宏存在的原因是
+   因为长度字段可能根据平台来编码。）
+ </para>
+
+ <para>
+  有关详细信息，请参阅
+  <xref linkend="sql-createtype"> 命令.
+ </para>
+
+ <sect2 id="xtypes-toast">
+  <title>TOAST 注意事项</title>
    <indexterm>
     <primary>TOAST</primary>
     <secondary>以及用户定义的类型</secondary>
    </indexterm>
-  如果你的数据类型值的尺寸（内部形式）是可变的，你应该让该数据类型变成可<acronym>TOAST</>的（见<xref linkend="storage-toast">）。即便数据总是很小不会被压缩或者线外存储你也应该这样做，因为<acronym>TOAST</>也能通过减少头部负荷来为小数据减少空间。
+
+ <para>
+  如果你的数据类型值的尺寸（内部形式）是可变的，
+通常希望让该数据类型是可<acronym>TOAST</>的（见<xref linkend="storage-toast">）。
+即便值总是很小不会被压缩或者线外存储你也应该这样做，因为<acronym>TOAST</>也能通过减少头部负荷来为小数据减少空间。
  </para>
 
  <para>
-  要这样做，内部表达必须遵循用于变长数据的标准布局：头四个字节必须是一个<type>char[4]</type>域，它从来不会被直接访问（习惯上被命名为<structfield>vl_len_</>）。你必须使用<function>SET_VARSIZE()</function>来存储这个域中数据的尺寸，并且用<function>VARSIZE()</function>来检索它。在该数据类型上操作的 C 函数必须总是要使用<function>PG_DETOAST_DATUM</>解包任何交给它们的被 TOAST 过的值（习惯上这些细节都通过定义类型相关的<function>GETARG_DATATYPE_P</function>宏隐藏起来）。然后，在运行<command>CREATE TYPE</command>命令时，指定内部长度为<literal>variable</>并且选择适当的存储选项。
+为了支持<acronym> TOAST </>存储，对这个数据类型操作的C函数必须小心地使用<function> PG_DETOAST_DATUM </>来解开任何所传递的toasted值。
+   通常通过定义特定于类型的<function> GETARG_DATATYPE_P </function>宏来隐藏此详细信息。）
+ 然后，在运行<command>CREATE TYPE</command>命令时，指定内部长度为<literal>variable</>并且选择除<literal> plain </>之外的适当的存储选项。
  </para>
 
  <para>
-  如果对齐无关紧要（不管是为一个特定函数或者因为数据类型指定了字节对齐），那么有可能避免<function>PG_DETOAST_DATUM</>的一些开销。你可以转而使用<function>PG_DETOAST_DATUM_PACKED</>（习惯上通过定义一个<function>GETARG_DATATYPE_PP</>宏隐藏）并且使用宏<function>VARSIZE_ANY_EXHDR</>以及<function>VARDATA_ANY</>来访问一个可能包装过的数据。此外，即使数据类型定义指定了一种对齐方式，这些宏返回的数据也不是对齐过的。如果对齐对你很重要，你必须使用常规的<function>PG_DETOAST_DATUM</>接口。
+  如果数据对齐无关紧要（不管是为一个特定函数或者因为数据类型指定了字节对齐），那么有可能避免<function>PG_DETOAST_DATUM</>的一些开销。你可以转而使用<function>PG_DETOAST_DATUM_PACKED</>（习惯上通过定义一个<function>GETARG_DATATYPE_PP</>宏隐藏）并且使用宏<function>VARSIZE_ANY_EXHDR</>以及<function>VARDATA_ANY</>来访问一个可能包装过的数据。此外，即使数据类型定义指定了一种对齐方式，这些宏返回的数据也不是对齐过的。如果对齐对你很重要，你必须使用常规的<function>PG_DETOAST_DATUM</>接口。
  </para>
 
  <note>
@@ -211,6 +233,39 @@ CREATE TYPE complex (
  </note>
 
  <para>
-  进一步的细节可以参考<xref linkend="sql-createtype">命令的描述。
+由<acronym> TOAST </>支持启用的另一个功能是具有<firstterm>扩展的</>内存数据表示的可能性，比存储在磁盘上的格式更方便。 
+常规或<quote>平面</> varlena存储格式最终只是一个字节块; 例如它不能包含指针，因为它可能被复制到存储器中的其他位置。
+   对于复杂数据类型，平面格式可能非常昂贵，因此<productname> PostgreSQL </>提供了一种将平面格式<quote>扩展</>为更适合计算的表示的方法，然后在该数据类型的函数之间传递这个内存中的格式。
  </para>
+
+ <para>
+要使用扩展存储，数据类型必须定义遵循<filename> src/include/utils/expandeddatum.h </>中给出的规则的扩展格式，
+并提供<quote> 扩展</>一个flat varlena值为扩展格式，和<quote>平面化</>扩展格式回到常规varlena表示的函数。 
+然后确保该数据类型的所有C函数可以接受任一表示，可能通过在接收时立即将其转换为另一个。 
+这不需要立即修复数据类型的所有现有函数，因为定义了标准<function> PG_DETOAST_DATUM </>宏，可以将扩展输入转换为常规平面格式。 
+因此，使用平面varlena格式的现有函数将继续工作，尽管效率稍低，直到需要更好的性能，使用扩展输入; 它们不需要被转换
+ </para>
+
+ <para>
+知道如何使用扩展表示的C函数通常分为两类：只能处理扩展格式的函数，以及可以处理扩展或平面varlena输入的函数。
+前者更容易书写，但整体效率可能较低，因为将平面输入转换为扩展形式以供单个功能使用可能比通过在扩展格式上操作节省的成本更高。
+当只需要处理扩展格式时，平面输入到扩展形式的转换可以隐藏在参数获取宏中，以使该函数不会比使用传统varlena输入的函数复杂。
+要处理这两种类型的输入，请编写一个参数获取函数，该函数将detoast外部，short-header和压缩的varlena输入，但不扩展输入。这样的函数可以被定义为返回指向平面varlena格式和扩展格式的联合的指针。
+调用者可以使用<function> VARATT_IS_EXPANDED_HEADER（）</>宏来确定它们接收的格式。
+ </para>
+
+ <para>
+<acronym> TOAST </>基础设施不仅允许将常规varlena 值与扩展值区分开，也能区分指向扩展值的<quote>读写</>和<quote>只读</>指针。 
+C函数只需要检查扩展的值，或者将只以安全和非语义可见的方式更改它们，不需要关心它们接收哪种类型的指针。
+ 如果产生输入值的修改版本的C函数接收到读写指针，则允许就地修改扩展输入值，但是如果它们接收到只读指针，则不能修改输入; 
+在这种情况下，他们必须首先复制该值，产生一个新的值来修改。 已经构造了新的扩展值的C函数应该总是返回一个读写指针。
+ 此外，正在修改读写扩展值的C函数应该注意，如果该值在中途失败，则应该将该值保持在正常状态。
+ </para>
+
+ <para>
+有关使用扩展值的示例，请参见标准数组基础设施，特别是
+  <filename>src/backend/utils/adt/array_expanded.c</>.
+ </para>
+
+ </sect2>
 </sect1>
