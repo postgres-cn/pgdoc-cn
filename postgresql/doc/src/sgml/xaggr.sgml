@@ -1,151 +1,84 @@
 <!-- doc/src/sgml/xaggr.sgml -->
 
  <sect1 id="xaggr">
-  <!-- <title>User-defined Aggregates</title> -->
-<title>用户定义聚合</title>
+  <title>用户定义的聚集</title>
+
   <indexterm zone="xaggr">
-   <primary>aggregate function</primary>
-   <secondary>user-defined</secondary>
+   <primary>聚集函数</primary>
+   <secondary>用户定义的</secondary>
   </indexterm>
 
-<!-- 
   <para>
-   Aggregate functions  in <productname>PostgreSQL</productname>
-   are expressed in terms of <firstterm>state values</firstterm>
-   and <firstterm>state transition functions</firstterm>.
-   That is, an aggregate operates using a state value that is updated
-   as each successive input row is processed.
-   To define a new aggregate
-   function, one selects a data type for the state value,
-   an initial value for the state, and a state transition
-   function.  The state transition function is just an
-   ordinary function that could also be used outside the
-   context of the aggregate.  A <firstterm>final function</firstterm>
-   can also be specified, in case the desired result of the aggregate
-   is different from the data that needs to be kept in the running
-   state value.
-  </para> 
--->
-<para>
-在<productname>PostgreSQL</productname>里的聚合是用<firstterm>状态值</firstterm>
-和<firstterm>状态转换函数</firstterm>表达的。
-也就是说，聚合操作使用一个随着每个输入行被处理而变化的状态值。
-要定义一个新的聚合函数，就要选择表示状态值的数据类型、状态初始值、状态转换函数。
-该状态转换函数只是一个普通函数，也可以用于聚合的环境之外。
-还可以声明一个<firstterm>最终处理函数</firstterm>，
-用于对付期望的聚合结果不同于需要保留在状态值中数据的情况。
-</para>
-<!-- 
+   <productname>PostgreSQL</productname>中的聚集函数用
+   <firstterm>状态值</firstterm>和<firstterm>状态转换函数
+   </firstterm>定义。也就是，一个聚集操作使用一个状态值，它在每
+   一个后续输入行被处理时被更新。要定义一个新的聚集函数，我们要
+   为状态值选择一种数据类型、一个状态的初始值和一个状态转换函数。
+   状态转换函数接收前一个状态值和该聚集当前行的输入值，并且返回
+   一个新的状态值。万一该聚集的预期结果与需要保存在运行状态之
+   中的数据不同，还能指定一个<firstterm>最终函数</firstterm>。
+   最终函数接受最后的状态值并且返回作为聚集结果的任何东西。
+   原则上，转换函数和最终函数只是也可以在聚集环境之外使用的普通
+   函数（实际上，通常出于性能的原因，会创建特殊的只能作为聚集的
+   一部分工作的转换函数）。
+  </para>
+
   <para>
-   Thus, in addition to the argument and result data types seen by a user
-   of the aggregate, there is an internal state-value data type that
-   might be different from both the argument and result types.
-  </para> 
--->
-<para>
-因此，除了被聚合用户看到的参数和结果数据类型外，还有一种内部状态值数据类型，
-这种类型可能与参数和结果类型都不一样。
-</para>
+   因此，除了该聚集的用户所见的参数和结果数据类型之外，还有一种
+   可能不同于参数和结果状态的内部状态值数据类型。
+  </para>
+
   <para>
-<!-- 
-   If we define an aggregate that does not use a final function,
-   we have an aggregate that computes a running function of
-   the column values from each row.  <function>sum</>  is  an
-   example  of  this  kind  of aggregate.  <function>sum</> starts at
-   zero and always adds the current  row's  value  to
-   its  running  total.  For example, if we want to make a <function>sum</>
-   aggregate to work on a data type for complex numbers,
-   we only need the addition function for that data type.
-   The aggregate definition would be: 
--->
-如果定义了一个不使用最终处理函数的聚合，那么聚合就是对每条记录的字段值进行函数计算。
-<function>sum</>(求和)是这类聚合的例子。它从零开始，
-依次向"总和"状态值追加当前的记录值。比如，如果要把<function>sum</>聚合用于复数，
-只需要该数据类型的加法函数就行了。该聚合可以这样定义：
-<screen>
+   如果我们定义一个聚集但不使用一个最终函数，我们就得到了一个从
+   每一行的列值计算一个运行函数的聚集。<function>sum</>是这
+   类聚集的一个例子。<function>sum</>从零开始，并且总是把当前
+   行的值加到它的运行总和上。例如，如果我们希望让一个
+   <function>sum</>聚集能工作在复数数据类型上，我们只需要该
+   数据类型的加法函数。聚集定义是：
+
+<programlisting>
 CREATE AGGREGATE sum (complex)
 (
     sfunc = complex_add,
     stype = complex,
     initcond = '(0,0)'
 );
+</programlisting>
 
+   我们可以这样使用：
+
+<programlisting>
 SELECT sum(a) FROM test_complex;
 
    sum
 -----------
  (34,53.9)
-</screen>
+</programlisting>
 
-<!-- 
-   (Notice that we are relying on function overloading: there is more than
-    one aggregate named <function>sum</>, but
-   <productname>PostgreSQL</productname> can figure out which kind
-   of sum applies to a column of type <type>complex</type>.) 
--->
-请注意，上述依赖于函数重载：有多个名为<function>sum</>的聚合函数，
-但是<productname>PostgreSQL</productname>能够正确选出作用于<type>complex</type>列类型的那个。
+   （注意我们依赖于函数重载：有多于一个名为<function>sum</>的聚集，但是<productname>PostgreSQL</productname>能够找出哪种 sum 适用于一个类型为<type>complex</type>的列）。
   </para>
 
-<!-- 
   <para>
-   The above definition of <function>sum</function> will return zero (the initial
-   state condition) if there are no nonnull input values.
-   Perhaps we want to return null in that case instead &mdash; the SQL standard
-   expects <function>sum</function> to behave that way.  We can do this simply by
-   omitting the <literal>initcond</literal> phrase, so that the initial state
-   condition is null.  Ordinarily this would mean that the <literal>sfunc</literal>
-   would need to check for a null state-condition input.  But for
-   <function>sum</function> and some other simple aggregates like
-   <function>max</> and <function>min</>,
-   it is sufficient to insert the first nonnull input value into
-   the state variable and then start applying the transition function
-   at the second nonnull input value.  <productname>PostgreSQL</productname>
-   will do that automatically if the initial condition is null and
-   the transition function is marked <quote>strict</> (i.e., not to be called
-   for null inputs).
-  </para> 
--->
-<para>
-如果不存在非 NULL 输入值，上面的<function>sum</function>定义将返回零值(初始状态条件)。
-要按照 SQL 标准的要求返回 NULL 只需忽略<literal>initcond</literal>
-段就可以实现(这样初始状态条件将变为 NULL)。
-通常这也意味着<literal>sfunc</literal>需要检查 NULL 状态条件输入，不过对于<function>sum</function>，
-<function>max</>，<function>min</>这类的简单聚合来说，把第一个非空输入插入到状态值里面，
-然后从第二个非空输入状态值开始使用转换函数就足够了。
-如果初始条件是 NULL 并且转换函数被标记为<quote>strict</>(不能对 NULL 输入调用)，
-<productname>PostgreSQL</productname>就会自动处理这些内容。
-</para>
-<!-- 
+   如果没有非空输入值，上述的<function>sum</function>定义将
+   返回零（初始状态值）。也许我们想要在这种情况下返回空 &mdash; 
+   SQL 标准期望<function>sum</function>以这种方式行事。
+   我们可以通过忽略<literal>initcond</literal>阶段简单地做到这一点，
+   这样初始状态值就为空。通常这表示<literal>sfunc</literal>将需要
+   检查一个空状态值输入。但是对于<function>sum</function>和一些其他
+   简单聚集（如<function>max</>和<function>min</>），
+   把第一个非空输入值插入到状态变量中并且接着在第二个非空输入值上
+   开始应用转换函数就足够了。如果初始状态值为空并且转换函数被标记为
+   <quote>strict</>（即不为空输入调用），
+   <productname>PostgreSQL</productname>会自动这样做。
+  </para>
+
   <para>
-   Another bit of default behavior for a <quote>strict</> transition function
-   is that the previous state value is retained unchanged whenever a
-   null input value is encountered.  Thus, null values are ignored.  If you
-   need some other behavior for null inputs, do not declare your
-   transition function as strict; instead code it to test for null inputs and
-   do whatever is needed.
-  </para> 
--->
-<para>
-另外一个<quote>strict</>转换函数的缺省特性是：当碰到一个 NULL 输入的时候，
-前面一个状态值会被保留下来不做改动。这样，就忽略了 NULL 。
-如果你希望对 NULL 输入进行其它处理，只需要别把你的转换函数定义为"strict"，
-并在编写代码的时候测试 NULL 并做相应处理即可。
-</para>
+   <quote>strict</>转换函数的另一点默认行为是只要碰到了一个空输入值，之前的状态值就保持不变。因此，空值会被忽略。如果你需要某些其他用于空输入的行为，不要把你的转换函数声明为 strict，而是把它编码为测试空输入并且做所需要的事情。
+  </para>
+
   <para>
-<!-- 
-   <function>avg</> (average) is a more complex example of an aggregate.
-   It requires
-   two pieces of running state: the sum of the inputs and the count
-   of the number of inputs.  The final result is obtained by dividing
-   these quantities.  Average is typically implemented by using an
-   array as the state value.  For example,
-   the built-in implementation of <function>avg(float8)</function>
-   looks like: 
--->
-<function>avg</>(平均)是聚合更复杂一点的例子。它需要两个运行时状态：
-输入的总和以及输入的数量。最终结果是通过把两者相除得到的。
-平均的典型实现是用一个数组做状态值。比如，内建的<function>avg(float8)</function>实现是这样的：
+   <function>avg</>（均值）是一种更复杂的聚集例子。它要求两份运行状态：输入的总和以及输入的计数。最终结果通过将这些量相除而得到。均值是使用一个数组作为状态值的典型实现。例如，内建的<function>avg(float8)</function>实现看起来像：
+
 <programlisting>
 CREATE AGGREGATE avg (float8)
 (
@@ -155,34 +88,144 @@ CREATE AGGREGATE avg (float8)
     initcond = '{0,0,0}'
 );
 </programlisting>
+   </para>
 
-<!-- 
-   (<function>float8_accum</> requires a three-element array, not just
-   two elements, because it accumulates the sum of squares as well as
-   the sum and count of the inputs.  This is so that it can be used for
-   some other aggregates besides <function>avg</>.) 
--->
-（<function>float8_accum</>要求一个三元素数组，而不是两元素，
-因为它累积平方和和输入的总和和计数。这样它就可以在一些除了<function>avg</>
-之外的聚合中使用了。）
+   <note>
+   <para>
+   （<function>float8_accum</>要求一个三元素的数组，而不只是两个元素，因为它累积平方和以及输入的总和以及计数。因此它也可以被用于其他聚集函数以及<function>avg</>）。
+  </para>
+  </note>
+
+  <para>
+   SQL 中的聚集函数调用允许用<literal>DISTINCT</>和
+   <literal>ORDER BY</>选项控制以什么顺序把行传递给该聚集的转换函数。
+   这些选项的实现不需要该聚集的支持函数关心。
   </para>
 
   <para>
-<!-- 
-   Aggregate functions can use polymorphic
-   state transition functions or final functions, so that the same functions
-   can be used to implement multiple aggregates.
-   See <xref linkend="extend-types-polymorphic">
-   for an explanation of polymorphic functions.
-   Going a step further, the aggregate function itself can be specified
-   with polymorphic input type(s) and state type, allowing a single
-   aggregate definition to serve for multiple input data types.
-   Here is an example of a polymorphic aggregate: 
--->
-聚合函数可以使用多态转换函数或者最终处理函数，这样，同一个函数就可以用于实现多个聚合。
-参阅<xref linkend="extend-types-polymorphic">获取多态函数的解释。再进一步，
-聚合函数本身可以用多态的基本类型和状态类型来声明，
-这样就允许一个聚合定义用于多种输入数据类型。下面是一个多态聚合的例子：
+   进一步的细节可见<xref linkend="sql-createaggregate">命令。   
+  </para>
+
+ <sect2 id="xaggr-moving-aggregates">
+  <title>移动聚集模式</title>
+
+  <indexterm>
+   <primary>移动聚集模式</primary>
+  </indexterm>
+
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>移动聚集</secondary>
+  </indexterm>
+
+  <para>
+   聚集函数可以选择性地支持<firstterm>移动聚集模式</>，这种模式允许
+   很大程度上提高在具有移动帧起点的窗口中执行的聚集函数的速度（有关
+   把聚集函数用作窗口函数请见<xref linkend="tutorial-window">和
+   <xref linkend="syntax-window-functions">）。基本思想是在通常的
+   <quote>前向</>转换函数之外，聚集提供一个
+   <firstterm>逆向转换函数</>，该函数允许当行退出窗口帧时从聚集的运
+   行状态值中移除它们的值。例如一个<function>sum</>聚集使用加法作
+   为前向转换函数，它可以使用减法作为逆向转换函数。如果没有一个逆向
+   转换函数，每一次帧起点移动时，窗口函数机制必须重新从头计算该聚集，
+   这会导致运行时间与输入行的数量乘以平均帧长度成比例。如果有一个逆向
+   转换函数，运行时间只与输入行的数量成比例。
+  </para>
+
+  <para>
+   当前状态值和包含在当前状态中最早的行的聚集输入值被传递给逆向转换
+   函数。它必须重新构建出如果给定的输入行不再被聚集（只聚集其后的行
+   ）时状态值会是什么样。这有时要求前向转换函数保存比普通聚集模式下
+   更多的状态。因此，移动聚集模式使用一种完全不同于普通模式的实现：
+   它有自己的状态数据类型、自己的前向转换函数以及自己的状态函数（如
+   果需要）。如果不需要额外的状态，这些可以和普通模式的数据类型和函
+   数相同。
+  </para>
+
+  <para>
+   作为一个例子，我们可以把上面给定的<function>sum</>聚集扩展成
+   支持移动聚集模式：
+
+<programlisting>
+CREATE AGGREGATE sum (complex)
+(
+    sfunc = complex_add,
+    stype = complex,
+    initcond = '(0,0)',
+    msfunc = complex_add,
+    minvfunc = complex_sub,
+    mstype = complex,
+    minitcond = '(0,0)'
+);
+</programlisting>
+
+   名称以<literal>m</>开始的参数定义移动聚集实现。除了逆向转换函数
+   <literal>minvfunc</>，它们都对应于没有<literal>m</>的普通聚集参数。
+  </para>
+
+  <para>
+   用于移动聚集模式的前向转换函数不允许返回空值作为新状态值。如果逆向转换
+   函数返回空值，这被当作一种指示，它表明该逆向函数无法为这个特定输入逆转
+   状态计算，因此该聚集计算将根据当前的帧开始位置重新从头计算。这种习惯允
+   许移动聚集模式被用在一些不适合逆转运行状态值的少数情况下。逆向转换函数
+   在这些情况下可以<quote>撒手不管</>，然后在它能够工作的大部分情况中再
+   出来干活。例如，一个浮点数的聚集可能会在必须从运行状态值中移除一个
+   <literal>NaN</>（不是一个数字）输入时撒手不管。
+  </para>
+
+  <para>
+   在编写移动聚集支持函数时，很重要的是确保逆向转换函数能够准确地重构正确
+   的状态值。否则会导致用不用移动聚集模式时结果中产生用户可见的差别。为一
+   个聚集增加一个逆向转换函数的例子最初看起来很简单，但是却无法满足
+   <type>float4</>或者<type>float8</>输入上的<function>sum</>的要求。
+   <function>sum(<type>float8</>)</function>的一种未经考虑的定义可以是
+
+<programlisting>
+CREATE AGGREGATE unsafe_sum (float8)
+(
+    stype = float8,
+    sfunc = float8pl,
+    mstype = float8,
+    msfunc = float8pl,
+    minvfunc = float8mi
+);
+</programlisting>
+
+   但是，这个聚集可能给出与没有逆向转换函数时很不同的结果。例如，考虑
+
+<programlisting>
+SELECT
+  unsafe_sum(x) OVER (ORDER BY n ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)
+FROM (VALUES (1, 1.0e20::float8),
+             (2, 1.0::float8)) AS v (n,x);
+</programlisting>
+
+   这个查询返回<literal>0</>作为它的第二个结果，而不是我们期待的
+   <literal>1</>。其原因是浮点值的有限精度：把<literal>1</>加到
+   <literal>1e20</>还是会得到<literal>1e20</>，因此从中减去
+   <literal>1e20</>会得到<literal>0</>而不是<literal>1</>。这是
+   对于浮点计算的一种一般性限制，而不是
+   <productname>PostgreSQL</>的限制。
+  </para>
+
+ </sect2>
+
+ <sect2 id="xaggr-polymorphic-aggregates">
+  <title>多态和可变聚集</title>
+
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>多态</secondary>
+  </indexterm>
+
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>可变</secondary>
+  </indexterm>
+
+  <para>
+   聚集函数可以使用多态状态转换函数或最终函数，这样同样的函数能被用来实现多个聚集。关于多态函数的解释可参见<xref linkend="extend-types-polymorphic">。更进一步，聚集函数本身可以被指定为具有多态输入类型和状态类型，允许一个聚集函数服务于多种输入数据类型。这里是一个多态聚集的例子：
+
 <programlisting>
 CREATE AGGREGATE array_accum (anyelement)
 (
@@ -192,23 +235,12 @@ CREATE AGGREGATE array_accum (anyelement)
 );
 </programlisting>
 
-<!-- 
-   Here, the actual state type for any aggregate call is the array type
-   having the actual input type as elements.  The behavior of the aggregate
-   is to concatenate all the inputs into an array of that type.
-   (Note: the built-in aggregate <function>array_agg</> provides similar
-   functionality, with better performance than this definition would have.) 
--->
-这里，任意聚合调用的实际状态类型是和元素输入类型相同的数组类型。
-聚合的特征是连接所有的输入到那个类型的数组里。（注意：
-内建的聚合<function>array_agg</>支持相同的功能，并且有比这个定义更好的性能。）
+   这里，每一次给定聚集调用的实际状态类型是把实际输入类型作为元素的数组类型。该聚集的行为是串接所有输入成一个该类型的数组（注意：内建的聚集<function>array_agg</>提供了相似的功能，但是具有比上述定义更好的性能）。
   </para>
 
   <para>
-   <!-- 
-   Here's the output using two different actual data types as arguments: 
-   -->
-下面的例子使用两个不同实际数据类型作为参数输出：
+   这里是使用两种不同实际数据类型作为参数的输出：
+
 <programlisting>
 SELECT attrelid::regclass, array_accum(attname)
     FROM pg_attribute
@@ -231,45 +263,175 @@ SELECT attrelid::regclass, array_accum(atttypid::regtype)
 (1 row)
 </programlisting>
   </para>
+  
+  <para>
+   如上述例子所示，通常一个具有多态结果类型的聚集函数有一个多态状态类型。
+   这是必须的，因为否则就无法有意义地声明最终函数：它会需要有一个多态结果
+   类型但是不能有多态参数类型，<command>CREATE FUNCTION</>将当场
+   拒绝那些无法从调用中推断结果类型的函数。但是使用一个多态状态类型有时并
+   不方便。最常见的情况是，聚集支持函数使用 C 编写并且状态类型应该被声明
+   为<type>internal</>，因为在 SQL 层面上没有与它等效的类型。为了表述这
+   种情况，可以声明最终函数为接受额外的匹配该聚集输入参数的
+   <quote>dummy</>参数。这种假参数总是被传递为空值，因为当最终函数被
+   调用时没有特定的值可用。它们的唯一用途是允许一个多态最终函数的结果类型
+   被连接到该聚集的输入类型。例如，内建聚集<function>array_agg</>的定义
+   等效于：
+
+<programlisting>
+CREATE FUNCTION array_agg_transfn(internal, anyelement)
+  RETURNS internal ...;
+CREATE FUNCTION array_agg_finalfn(internal, anyelement)
+  RETURNS anyarray ...;
+
+CREATE AGGREGATE array_agg (anyelement)
+(
+    sfunc = array_agg_transfn,
+    stype = internal,
+    finalfunc = array_agg_finalfn,
+    finalfunc_extra
+);
+</programlisting>
+
+   这里，<literal>finalfunc_extra</>选项指定该最终函数接收除了状态值
+   之外，还接收对应于该聚集输入参数的额外假参数。额外的
+   <type>anyelement</>参数允许<function>array_agg_finalfn</>的
+   声明成为合法。
+  </para>
 
   <para>
-<!-- 
-   A function written in C can detect that it is being called as an
-   aggregate transition or final function by calling
-   <function>AggCheckCallContext</>, for example:
--->
-一个用 C 写的函数可以判断它是被当作一个聚合转换函数调用还是通过调用<function>AggCheckCallContext</>
-作为最终的函数，例如：
+   与常规函数的习惯大致相同，可以通过把一个聚集函数的最后一个参数
+   声明为一个<literal>VARIADIC</>数组，这样可以让该函数接受可变
+   数量的参数（见<xref linkend="xfunc-sql-variadic-functions">）。
+   该聚集的转换函数也必须有相同的数组类型作为它们的最后一个参数。
+   通常这类转换函数也会被标上<literal>VARIADIC</>，但这不被严格
+   要求。
+  </para>
+
+  <note>
+   <para>
+    可变聚集最容易被误用的情况是与<literal>ORDER BY</>选项（
+    见<xref linkend="syntax-aggregates">）一起使用，因为解析器无
+    法在这样一种组合中是否给出了错误的实际参数数量。要记住在
+    <literal>ORDER BY</>右侧的任何东西都是一个排序键，而不是一个
+    聚集的参数。例如，在
+<programlisting>
+SELECT myaggregate(a ORDER BY a, b, c) FROM ...
+</programlisting>
+    中，解析器将认为看到的是一个聚集函数参数和三个排序键。但是，用户
+    可能想要的是
+<programlisting>
+SELECT myaggregate(a, b, c ORDER BY a) FROM ...
+</programlisting>
+    如果<literal>myaggregate</>是可变的，两种调用都是合法的。
+   </para>
+
+   <para>
+    出于相同的原因，在创建具有相同名称以及不同数量的常规参数的
+    聚集函数时一定要三思而后行。
+   </para>
+  </note>
+
+ </sect2>
+
+ <sect2 id="xaggr-ordered-set-aggregates">
+  <title>有序集聚集</title>
+
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>有序集</secondary>
+  </indexterm>
+
+  <para>
+   目前为止我们已经描述的聚集都是<quote>普通</>聚集。
+   <productname>PostgreSQL</>还支持<firstterm>有序集聚集</>，
+   它和普通聚集在两个关键点上相区别。首先，除了对每个输入行都要计算
+   一次的普通聚集参数之外，一个有序集聚集可以有<quote>直接</>参数，
+   这类参数针对每次聚集操作只计算一次。其次，用于普通聚集参数的语法
+   需要显式地为它们指定一个排序顺序。一个有续集聚集通常被用来实现一
+   种依赖于特定行序的计算（例如排名或者百分位数），因此排序是任何调用
+   都要求的。例如，<function>percentile_disc</>的内建定义等效于：
+
+<programlisting>
+CREATE FUNCTION ordered_set_transition(internal, anyelement)
+  RETURNS internal ...;
+CREATE FUNCTION percentile_disc_final(internal, float8, anyelement)
+  RETURNS anyelement ...;
+
+CREATE AGGREGATE percentile_disc (float8 ORDER BY anyelement)
+(
+    sfunc = ordered_set_transition,
+    stype = internal,
+    finalfunc = percentile_disc_final,
+    finalfunc_extra
+);
+</programlisting>
+   这个聚集接受一个<type>float8</>直接参数（百分位数分数）以及一个
+   可以是任意可排序数据类型的聚集输入。它可以用来得到一个家庭收入的
+   中位数：
+
+<programlisting>
+SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
+ percentile_disc
+-----------------
+           50489
+</programlisting>
+
+   这里<literal>0.5</>是一个直接参数，它对于要作为一个在行之间
+   变化的百分位数分数没有意义。
+  </para>
+
+  <para>
+   和普通聚集的情况不同，用于有序集聚集的输入行排序<emphasis>不是</>在
+   幕后完成的，而是由该聚集的支持函数负责完成。典型的实现方法是在该聚集的
+   状态值中保持对于一个<quote>tuplesort</>对象的引用，把到来的行输入给
+   该对象，然后完成排序并且在最终函数中读出该数据。这种设计允许最终函数能
+   够执行特殊操作，例如把附加的<quote>假想</>行注入到被排序的数据中。
+   虽然用由<application>PL/pgSQL</application>或另一种 PL 语言编写的支持
+   函数通常能够实现普通聚集，但是有序集聚集通常必须用 C 编写，因为它们的状
+   态值无法用任何 SQL 数据类型来定义（在上面的例子中，注意状态值被声明为类
+   型<type>internal</> &mdash; 这很典型）。
+  </para>
+
+  <para>
+   用于一个有序集聚集的状态转移函数接收当前状态值外加对于每一行的聚集输入值，
+   并且返回更新后的状态值。这和普通聚集的定义相同，但是注意没有提供直接参数
+   （如果有）。最终函数接收最后的状态值、直接参数（如果有）的值以及对应于聚
+   集输入的空值（如果指定了<literal>finalfunc_extra</>）。正如普通聚集，
+   只有聚集是多态时<literal>finalfunc_extra</>才真正有用，那时就需要额外的假
+   参数把最终函数的结果类型连接到该聚集的输入类型。
+  </para>
+
+  <para>
+   当前，有序集聚集不能被用做窗口函数，并且因此没有必要让它们支持移动聚集
+   模式。
+  </para>
+
+ </sect2>
+
+ <sect2 id="xaggr-support-functions">
+  <title>聚集的支持函数</title>
+
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>support functions for</secondary>
+  </indexterm>
+
+  <para>
+   用 C 编写的函数能够通过调用<function>AggCheckCallContext</>检测它是作为聚集转换函数还是最终函数调用的，例如：
 <programlisting>
 if (AggCheckCallContext(fcinfo, NULL))
 </programlisting>
-<!-- 
-   One reason for checking this is that when it is true for a transition
-   function, the first input
-   must be a temporary transition value and can therefore safely be modified
-   in-place rather than allocating a new copy.
-   See <literal>int8inc()</> for an example.
-   (This is the <emphasis>only</>
-   case where it is safe for a function to modify a pass-by-reference input.
-   In particular, aggregate final functions should not modify their inputs in
-   any case, because in some cases they will be re-executed on the same
-   final transition value.) 
--->
-检查这个的一个原因是，在它对于一个转换函数为真的时候，左边的输入必须是一个临时的转换值，
-因此可以安全地现场修改，而不用分配新的拷贝。参阅<literal>int8inc()</>的例子。
-（这是函数里<emphasis>唯一</>可以修改输入的传递引用的地方。特别的，
-聚合最终的函数不应该在任何情况下修改他们的输入，
-因为在某些情况下它们将在相同的最终转换值下重复执行。）
+   检查这个区别的原因是当它为真（即一个转换函数）时，第一个输入必须是一个临时状态值并且可以因此安全地被就地修改而不是分配一个新的副本。例子可见<literal>int8inc()</>（这是一个函数能够安全地修改一个传引用输入的<emphasis>唯一</>情况。特别地，任何情况下用于普通聚集的最终函数不能修改它们的输入，因为在某些情况下它们将会在相同的最终状态值上被重新执行）。
   </para>
 
-<!-- 
   <para>
-   For further details see the
-   <xref linkend="sql-createaggregate">
-   command.
-  </para> 
--->
-<para>
-更详细的信息请参考<xref linkend="sql-createaggregate">命令。
-</para>
+   另一种可用于由 C 编写的聚集函数的支持例程是
+   <function>AggGetAggref</>，它返回定义该聚集调用的
+   <literal>Aggref</>解析节点。这主要对有序集聚集有用，它能检查
+   <literal>Aggref</>的子结构来找出它们本应实现的排序顺序。在
+   <productname>PostgreSQL</>源代码的<filename>orderedsetaggs.c</>
+   中可以找到例子。
+  </para>
+
+ </sect2>
  </sect1>

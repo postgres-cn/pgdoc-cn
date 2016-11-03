@@ -1,79 +1,31 @@
 <!-- doc/src/sgml/planstats.sgml -->
 
 <chapter id="planner-stats-details">
-<!--
- <title>How the Planner Uses Statistics</title>
--->
-  <title>规划器如何使用统计信息</title>
+ <title>规划器如何使用统计信息</title>
 
-  <!-- 
-<para>
-   This chapter builds on the material covered in <xref
-   linkend="using-explain"> and <xref linkend="planner-stats"> to show some
-   additional details about how the planner uses the
-   system statistics to estimate the number of rows each part of a query might
-   return. This is a significant part of the planning process,
-   providing much of the raw material for cost calculation.
+  <para>
+   本章建立在<xref linkend="using-explain">和<xref linkend="planner-stats">中讨论的材料之上，展示了关于规划器如何使用系统统计信息来估计一个查询的各个部分可能返回的行数。这是规划处理中的一个重要的部分，它提供了代价计算中的很多原始材料。
   </para>
--->
-<para>
-  本章基于
-  <xref linkend="using-explain">和<xref linkend="planner-stats">
-  中讨论的内容，
-  介绍更多关于规划器如何使用系统统计信息预估一个查询的各部分可能返回行数的细节。
-  这是规划过程中一个重要的部分，
-  因为它提供了代价计算所需的大部分原始信息。
-</para>
 
-  <!--
-<para>
-   The intent of this chapter is not to document the code in detail,
-   but to present an overview of how it works.
-   This will perhaps ease the learning curve for someone who subsequently
-   wishes to read the code.
+  <para>
+   本章的目的不是详细地解释代码，而是给出一个规划器如何使用统计信息的概述。这样可能可以降低那些想以后阅读这部份代码的人的学习曲线。
   </para>
--->
-<para>
-  本章的目的不是记录代码的细节(代码本身就是文档)，
-  而是给出一个规划器如何使用统计信息的概述。
-  这样也许可以降低那些以后想阅读这部分代码的人的学习难度。
-</para>
 
  <sect1 id="row-estimation-examples">
- <!--
-  <title>Row Estimation Examples</title>
-  -->
-  <title>行预估的例子</title>
+  <title>行估计例子</title>
 
   <indexterm zone="row-estimation-examples">
-   <primary>row estimation</primary>
-   <secondary>planner</secondary>
+   <primary>行估计</primary>
+   <secondary>规划器</secondary>
   </indexterm>
 
-  <!--
-<para>
-   The examples shown below use tables in the <productname>PostgreSQL</>
-   regression test database.
-   The outputs shown are taken from version 8.3.
-   The behavior of earlier (or later) versions might vary.
-   Note also that since <command>ANALYZE</> uses random sampling
-   while producing statistics, the results will change slightly after
-   any new <command>ANALYZE</>.
+  <para>
+   下面展示的例子使用<productname>PostgreSQL</>回归测试数据库中的表。输出结果是从版本 8.3 获得。之前（或之后）版本的动作可能会有所变化。同时还要注意的是，由于<command>ANALYZE</>使用随机采样来产生统计信息，在任何新的<command>ANALYZE</>之后结果将有轻微改变。
   </para>
--->
-<para>
-   下面的例子使用<productname>PostgreSQL</>回归测试数据库中的表。
-   输出结果是从8.3版获得的。之前或之后版本的动作可能会有所变化。
-   同时需要注意的是，在产生统计信息时，<command>ANALYZE</>使用的是随机采样，
-   再次执行<command>ANALYZE</>命令，结果可能会发生轻微的改变。
-</para>
 
-  
-<para>
-   <!--
-   Let's start with a very simple query:
-   -->
-   让我们以一个很简单的查询开始：
+  <para>
+   让我们从一个很简单的查询开始：
+
 <programlisting>
 EXPLAIN SELECT * FROM tenk1;
 
@@ -81,16 +33,9 @@ EXPLAIN SELECT * FROM tenk1;
 -------------------------------------------------------------
  Seq Scan on tenk1  (cost=0.00..458.00 rows=10000 width=244)
 </programlisting>
-   <!--
-   How the planner determines the cardinality of <structname>tenk1</structname>
-   is covered in <xref linkend="planner-stats">, but is repeated here for
-   completeness. The number of pages and rows is looked up in
-   <structname>pg_class</structname>:
-   -->
-   规划器如何判断<structname>tenk1</structname>里面行的基数
-   在<xref linkend="planner-stats">介绍，
-   但为了完整，在这里重复一下。行数或页数是从<structname>pg_class</structname>中查出来的：
-   
+
+   规划器如何判断<structname>tenk1</structname>的势在<xref linkend="planner-stats">中介绍，但为了完整还会在这里重复介绍。行数或页数是从<structname>pg_class</structname>中查出来的：
+
 <programlisting>
 SELECT relpages, reltuples FROM pg_class WHERE relname = 'tenk1';
 
@@ -98,33 +43,13 @@ SELECT relpages, reltuples FROM pg_class WHERE relname = 'tenk1';
 ----------+-----------
       358 |     10000
 </programlisting>
-    <!--
-    These numbers are current as of the last <command>VACUUM</> or
-    <command>ANALYZE</> on the table.  The planner then fetches the
-    actual current number of pages in the table (this is a cheap operation,
-    not requiring a table scan).  If that is different from
-    <structfield>relpages</structfield> then
-    <structfield>reltuples</structfield> is scaled accordingly to
-    arrive at a current number-of-rows estimate.  In this case the value of
-    <structfield>relpages</structfield> is up-to-date so the rows estimate is
-    the same as <structfield>reltuples</structfield>.
--->
-这些数字表示当前最近的<command>VACUUM</>或者<command>ANALYZE</>。
-之后，表的块数和元组数。规划器随即取出表中当前实际的块数
-（这个操作的开销很小，不需要扫描全表），如果实际的块数与
-<structfield>relpages</structfield>不同，为估算当前的行数，
-会对<structfield>reltuples</structfield>进行一定的缩放。
-在这种情况下，<structfield>relpages</structfield>的值是最新的，
-因此估计的行与<structfield>reltuples</structfield>相同。 
+
+    这些数字是在表上的最后一次<command>VACUUM</>或<command>ANALYZE</>以来的当前值。之后，规划器取出该表中实际的当前页数（这个操作的开销很小，不需要扫描全表）。如果与<structfield>relpages</structfield>不同，则对<structfield>reltuples</structfield>进行相应的缩放以得到一个当前的行数估计。在这种情况下，<structfield>relpages</structfield>的值是最新的，因此行估计与<structfield>reltuples</structfield>相同。
   </para>
 
-  
-<para>
-   <!--
-   Let's move on to an example with a range condition in its
-   <literal>WHERE</literal> clause:
-   -->
-   换一个WHERE子句是范围条件的例子：
+  <para>
+   换一个在<literal>WHERE</literal>子句中带有范围条件的例子：
+
 <programlisting>
 EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 1000;
 
@@ -135,25 +60,9 @@ EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 1000;
    -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..23.80 rows=1007 width=0)
          Index Cond: (unique1 &lt; 1000)
 </programlisting>
-   <!--
-   The planner examines the <literal>WHERE</literal> clause condition
-   and looks up the selectivity function for the operator
-   <literal>&lt;</literal> in <structname>pg_operator</structname>.
-   This is held in the column <structfield>oprrest</structfield>,
-   and the entry in this case is <function>scalarltsel</function>.
-   The <function>scalarltsel</function> function retrieves the histogram for
-   <structfield>unique1</structfield> from
-   <structname>pg_statistics</structname>.  For manual queries it is more
-   convenient to look in the simpler <structname>pg_stats</structname>
-   view:
-   -->
-   规划器检查<literal>WHERE</literal>子句条件，
-   并在<structname>pg_operator</structname>中查找操作符<literal>&lt;</literal>的选择性函数（selectivity function），
-   选择性函数在<structfield>oprrest</structfield>列中记录， 
-   在本例中，对应的条目是<function>scalarltsel</function>。 
-   <function>scalarltsel</function>函数从 <structname>pg_statistics</structname>中获取
-   <structfield>unique1</structfield>的直方图。 
-   对于手工查询来说，在<structname>pg_stats</structname>视图中查找更方便：
+
+   规划器检查<literal>WHERE</literal>子句条件，并在<structname>pg_operator</structname>中查找<literal>&lt;</literal>操作符的选择度函数。这被保持在<structfield>oprrest</structfield>列中， 并且在这个例子中的项是<function>scalarltsel</function>。 <function>scalarltsel</function>函数从<structname>pg_statistics</structname>为<structfield>unique1</structfield>检索直方图。 对于手工查询来说，查看更简单的<structname>pg_stats</structname>视图会更方便：
+
 <programlisting>
 SELECT histogram_bounds FROM pg_stats
 WHERE tablename='tenk1' AND attname='unique1';
@@ -162,35 +71,17 @@ WHERE tablename='tenk1' AND attname='unique1';
 ------------------------------------------------------
  {0,993,1997,3050,4040,5036,5957,7057,8029,9016,9995}
 </programlisting>
-   <!--
-   Next the fraction of the histogram occupied by <quote>&lt; 1000</quote>
-   is worked out. This is the selectivity. The histogram divides the range
-   into equal frequency buckets, so all we have to do is locate the bucket
-   that our value is in and count <emphasis>part</emphasis> of it and
-   <emphasis>all</emphasis> of the ones before. The value 1000 is clearly in
-   the second bucket (993-1997).  Assuming a linear distribution of
-   values inside each bucket, we can calculate the selectivity as:
-   -->
-   然后，把直方图中<quote>&lt; 1000</quote>的部分找出来。这就是选择性。
-   直方图把范围分隔成等频的桶， 所以我们要做的是将我们的数值所在的桶找出来，
-   然后计算它的<emphasis>部分</emphasis>以及<emphasis>所有</emphasis>该值之前的部分。 
-   值1000很明显在第二个桶(993-1997)里，因此，假设每个桶里面的分布是线性的，
-   那么就可以计算出选择性：
-   
+
+   然后，把直方图里面被<quote>&lt; 1000</quote>占据的部分找出来。这就是选择度。直方图把范围分隔成等频的桶， 所以我们要做的只是把我们的值所在的桶找出来，然后计数其中的<emphasis>部分</emphasis>以及<emphasis>所有</emphasis>该值之前的部分。值 1000 很明显在第二个桶（970-1943）中。假设每个桶中的值是线性分布，那么就可以计算出选择度：
+
 <programlisting>
 selectivity = (1 + (1000 - bucket[2].min)/(bucket[2].max - bucket[2].min))/num_buckets
             = (1 + (1000 - 993)/(1997 - 993))/10
             = 0.100697
 </programlisting>
-   <!--
-   that is, one whole bucket plus a linear fraction of the second, divided by
-   the number of buckets. The estimated number of rows can now be calculated as
-   the product of the selectivity and the cardinality of
-   <structname>tenk1</structname>:
-   -->
-   也就是一个桶加上第二个桶的线性部分，除以总的桶数。
-   那么估计的行数现在可以用选择性和<structname>tenk1</structname>的基数之积计算：
-   
+
+   也就是一整个桶加上第二个桶的线性部分，除以桶数。那么估计的行数现在可以用选择度乘以<structname>tenk1</structname>的势来计算：
+
 <programlisting>
 rows = rel_cardinality * selectivity
      = 10000 * 0.100697
@@ -198,13 +89,9 @@ rows = rel_cardinality * selectivity
 </programlisting>
   </para>
 
-  
-<para>
-   <!--
-   Next let's consider an example with an equality condition in its
-   <literal>WHERE</literal> clause:
-   -->
-   然后考虑一个<literal>WHERE</literal>子句是等于条件的例子：
+  <para>
+   然后让我们考虑一个在<literal>WHERE</literal>子句有等于条件的例子：
+
 <programlisting>
 EXPLAIN SELECT * FROM tenk1 WHERE stringu1 = 'CRAAAA';
 
@@ -213,20 +100,9 @@ EXPLAIN SELECT * FROM tenk1 WHERE stringu1 = 'CRAAAA';
  Seq Scan on tenk1  (cost=0.00..483.00 rows=30 width=244)
    Filter: (stringu1 = 'CRAAAA'::name)
 </programlisting>
-   <!--
-   Again the planner examines the <literal>WHERE</literal> clause condition
-   and looks up the selectivity function for <literal>=</literal>, which is
-   <function>eqsel</function>.  For equality estimation the histogram is
-   not useful; instead the list of <firstterm>most
-   common values</> (<acronym>MCV</acronym>s) is used to determine the
-   selectivity. Let's have a look at the MCVs, with some additional columns
-   that will be useful later:
-   -->
-   规划器再次检查<literal>WHERE</literal>子句条件，并为<literal>=</literal>查找选择性函数（是<function>eqsel</function>）。 
-   对于等价估计而言，直方图并没什么用；相反，
-   <firstterm>最常用值 most common values</>(<acronym>MCV</acronym>)表可以用于计算选择性。
-   让我们来看一下MCV，带有一些额外的列会很有效：
-   
+
+   规划器还是检查<literal>WHERE</literal>子句条件，并为<literal>=</literal>查找选择度函数（这次是<function>eqsel</function>）。对于等值估计而言，直方图是没用的；相反，<firstterm>最常见值</>（<acronym>MCV</acronym>）列表可以用来决定选择度。让我们来看一下 MCV，以及一些额外的后面用得上的列：
+
 <programlisting>
 SELECT null_frac, n_distinct, most_common_vals, most_common_freqs FROM pg_stats
 WHERE tablename='tenk1' AND attname='stringu1';
@@ -237,35 +113,25 @@ most_common_vals  | {EJAAAA,BBAAAA,CRAAAA,FCAAAA,FEAAAA,GSAAAA,JOAAAA,MCAAAA,NAA
 most_common_freqs | {0.00333333,0.003,0.003,0.003,0.003,0.003,0.003,0.003,0.003,0.003}
 
 </programlisting>
-   <!--
-   Since <literal>CRAAAA</> appears in the list of MCVs, the selectivity is
-   merely the corresponding entry in the list of most common frequencies
-   (<acronym>MCF</acronym>s):
-   -->
-   因为MCV中有<literal>CRAAAA</>，那么选择性只是<acronym>MCF</acronym>中的一个对应条目：
+
+   因为<literal>CRAAAA</>出现在 MCV 列表中，那么选择度只是最常见频度（<acronym>MCF</acronym>）列表中的一个对应项：
+
 <programlisting>
 selectivity = mcf[3]
             = 0.003
 </programlisting>
-   <!--
-   As before, the estimated number of rows is just the product of this with the
-   cardinality of <structname>tenk1</structname>:
-   -->
-   像之前一样，行的估计数用<structname>tenk1</structname>的基数乘以选择性：
+
+   像之前一样，行数的估计只是和前面一样用<structname>tenk1</structname>的势乘以选择度：
+
 <programlisting>
 rows = 10000 * 0.003
      = 30
 </programlisting>
   </para>
 
+  <para>
+   现在看看同样的查询，但是常量不在<acronym>MCV</acronym>列表中：
 
-  
-<para>
-   <!--
-   Now consider the same query, but with a constant that is not in the
-   <acronym>MCV</acronym> list:
-   -->
-   现在看看同样的查询，但是字符串常量不在<acronym>MCV</acronym>列表中的情况:
 <programlisting>
 EXPLAIN SELECT * FROM tenk1 WHERE stringu1 = 'xxx';
 
@@ -274,79 +140,27 @@ EXPLAIN SELECT * FROM tenk1 WHERE stringu1 = 'xxx';
  Seq Scan on tenk1  (cost=0.00..483.00 rows=15 width=244)
    Filter: (stringu1 = 'xxx'::name)
 </programlisting>
-   <!--
-   This is quite a different problem: how to estimate the selectivity when the
-   value is <emphasis>not</emphasis> in the <acronym>MCV</acronym> list.
-   The approach is to use the fact that the value is not in the list,
-   combined with the knowledge of the frequencies for all of the
-   <acronym>MCV</acronym>s:
-   -->
-   这是一个完全不同的问题：在数值<emphasis>不在</emphasis> <acronym>MCV</acronym>中时，
-   如何估计选择性。解决方法是利用该值不在MCV中的事实，
-   结合所有已知的<acronym>MCV</acronym>出现的频率，用减法得出：
-   
+
+   这是完全不同的一个问题：当值<emphasis>不</emphasis>在<acronym>MCV</acronym>列表中时， 如何估计选择度。解决方法是利用该值不在列表中的事实，结合所有<acronym>MCV</acronym>出现的频率的知识：
+
 <programlisting>
 selectivity = (1 - sum(mvf))/(num_distinct - num_mcv)
             = (1 - (0.00333333 + 0.003 + 0.003 + 0.003 + 0.003 + 0.003 +
                     0.003 + 0.003 + 0.003 + 0.003))/(676 - 10)
             = 0.0014559
 </programlisting>
-   <!--
-   That is, add up all the frequencies for the <acronym>MCV</acronym>s and
-   subtract them from one, then
-   divide by the number of <emphasis>other</emphasis> distinct values.
-   This amounts to assuming that the fraction of the column that is not any
-   of the MCVs is evenly distributed among all the other distinct values.
-   Notice that there are no null values so we don't have to worry about those
-   (otherwise we'd subtract the null fraction from the numerator as well).
-   The estimated number of rows is then calculated as usual:
-    -->
-也就是说，将<acronym>MCV</acronym>中对应项的所有频率相加，并且将其从1减去，然后除以<emphasis>其它</emphasis>不重复值的个数。
-这相当于假设不在MCV中的列在所有其他不重复值中是均匀分布的。
-需要注意的是，没有NULL值，因此不需要担心这些（否则需要从分子中减去NULL的部分）。
-按照往常的方式估算行数：
+
+   也就是，把所有<acronym>MCV</acronym>的频度加起来并从 1 减去，然后除以<emphasis>其他</emphasis>可区分值的个数。这相当于假设不是 MCV 中的列的部分均匀分布在所有其他可区分值上。 需要注意的是，这里没有空值，因此我们不需要担心这些（否则需要从分子中减去空值的部分）。估计的行数然后按照常规计算：
 
 <programlisting>
 rows = 10000 * 0.0014559
      = 15  (rounding off)
 </programlisting>
   </para>
-  
-  
-<para>
-   <!--
-   The previous example with <literal>unique1 &lt; 1000</> was an
-   oversimplification of what <function>scalarltsel</function> really does;
-   now that we have seen an example of the use of MCVs, we can fill in some
-   more detail.  The example was correct as far as it went, because since
-   <structfield>unique1</> is a unique column it has no MCVs (obviously, no
-   value is any more common than any other value).  For a non-unique
-   column, there will normally be both a histogram and an MCV list, and
-   <emphasis>the histogram does not include the portion of the column
-   population represented by the MCVs</>.  We do things this way because
-   it allows more precise estimation.  In this situation
-   <function>scalarltsel</function> directly applies the condition (e.g.,
-   <quote>&lt; 1000</>) to each value of the MCV list, and adds up the
-   frequencies of the MCVs for which the condition is true.  This gives
-   an exact estimate of the selectivity within the portion of the table
-   that is MCVs.  The histogram is then used in the same way as above
-   to estimate the selectivity in the portion of the table that is not
-   MCVs, and then the two numbers are combined to estimate the overall
-   selectivity.  For example, consider
-   -->
-   
-   之前带有<literal>unique1 &lt; 1000</>的例子对<function>scalarltsel</function>的实际执行过于简化了。
-   既然已经看过了使用MCV的例子，现在添加一些具体细节。
-   这个例子这样子是正确的，因为<structfield>unique1</>是一个唯一属性列，
-   那么它没有MCV（显然，没有一个值能比其它值更常用）。
-   对一个非唯一属性列而言，通常会有直方图和MCV列表，
-   并且直方图不包括MCV表示的那部分列。在这种情况下，
-   <function>scalarltsel</function>直接在每个 MCV列表的值上应用这些条件（如<quote>&lt; 1000</>），
-   并且增加那些条件判断为真的MCV的频率，这对于表中位于MCV的部分给出一个准确的选择性估计。
-   直方图用于使用上述相同的方法估算表中不在MCV中的部分的选择性，
-   最终将这两个数字组合起来估计总的选择性。例如，考虑
-   
-   
+
+  <para>
+   之前带有<literal>unique1 &lt; 1000</>的例子是<function>scalarltsel</function>实际工作的过度简化。 现在我们已经看过了使用 MCV 的例子，可以增加一些具体细节了。 这个例子到目前为止是正确的，因为<structfield>unique1</>是一个唯一列，它没有 MCV（显然， 没有一个值能比其他值更通用）。对一个非唯一列而言，通常会有直方图和 MCV 列表， 并且<emphasis>直方图不包括由 MCV 表示的那部分列</>。之所以这样做是因为可以得到更精确的估计。在这种情况下，<function>scalarltsel</function>直接应用条件（如<quote>&lt; 1000</>）到 MCV 列表中的每个值，并且把那些条件判断为真的 MCV 的频度加起来。这对表中是 MCV 的那一部分给出了准确的选择度估计。然后以上述同样的方式使用直方图估计表中不是 MCV 的那部分的选择度，并且组合这两个数字来估计总的选择读。例如，考虑：
+
 <programlisting>
 EXPLAIN SELECT * FROM tenk1 WHERE stringu1 &lt; 'IAAAAA';
 
@@ -355,11 +169,9 @@ EXPLAIN SELECT * FROM tenk1 WHERE stringu1 &lt; 'IAAAAA';
  Seq Scan on tenk1  (cost=0.00..483.00 rows=3077 width=244)
    Filter: (stringu1 &lt; 'IAAAAA'::name)
 </programlisting>
-   <!--
-   We already saw the MCV information for <structfield>stringu1</>,
-   and here is its histogram:
-   -->
-   我们已看到关于stringu1的MCV信息，这里是它的直方图：
+
+   我们已看到<structfield>stringu1</>的 MCV 信息，这里是它的直方图：
+
 <programlisting>
 SELECT histogram_bounds FROM pg_stats
 WHERE tablename='tenk1' AND attname='stringu1';
@@ -368,68 +180,32 @@ WHERE tablename='tenk1' AND attname='stringu1';
 --------------------------------------------------------------------------------
  {AAAAAA,CQAAAA,FRAAAA,IBAAAA,KRAAAA,NFAAAA,PSAAAA,SGAAAA,VAAAAA,XLAAAA,ZZAAAA}
 </programlisting>
-   
-   <!--
-   Checking the MCV list, we find that the condition <literal>stringu1 &lt;
-   'IAAAAA'</> is satisfied by the first six entries and not the last four,
-   so the selectivity within the MCV part of the population is
-   -->
-   检查MCV列表，我们发现前6项满足条件<literal>stringu1 &lt;'IAAAAA'</>，而最后4项不满足，
-   所以在MCV中的选择性是
-   
+
+   检查 MCV 列表，我们发现前 6 项满足条件<literal>stringu1 &lt; 'IAAAAA'</>，而最后 4 项不满足， 所以 MCV 部分的选择度是：
+
 <programlisting>
 selectivity = sum(relevant mvfs)
             = 0.00333333 + 0.003 + 0.003 + 0.003 + 0.003 + 0.003
             = 0.01833333
 </programlisting>
-   <!--
-   Summing all the MCFs also tells us that the total fraction of the
-   population represented by MCVs is 0.03033333, and therefore the
-   fraction represented by the histogram is 0.96966667 (again, there
-   are no nulls, else we'd have to exclude them here).  We can see
-   that the value <literal>IAAAAA</> falls nearly at the end of the
-   third histogram bucket.  Using some rather cheesy assumptions
-   about the frequency of different characters, the planner arrives
-   at the estimate 0.298387 for the portion of the histogram population
-   that is less than <literal>IAAAAA</>.  We then combine the estimates
-   for the MCV and non-MCV populations:
-   -->
-   累加所有的MCF，也告诉我们由 MCV表示的成员的总比例是0.03033333，
-   而由直方图表示的比例是0.96966667
-   （同样没有NULL，否则这里我们必须去掉它们）。我们可以看到<literal>IAAAAA</>值落在直方图第三个桶的结尾部分。
-   关于不同字符串的频率，使用较普通的假设，规划器对于 
-   直方图中小于<literal>IAAAAA</>的部分估计为0.298387，然后组合MCV部分和非MCV部分的估计值:
-   
+
+   累加所有的 MCF 也告诉我们由 MCV 表示的群体中的比例是 0.03033333，并且因此由直方图表示的 比例是 0.96966667（同样，没有空值，否则我们在这里必须排除它们）。我们可以看到值<literal>IAAAAA</>差不多落在第三个直方图桶的结尾。通过使用一些关于不同字符频率的相当漂亮的假设，规划器对小于<literal>IAAAAA</>的直方图群体部分得到估计值 0.298387。我们然后组合 MCV 和非 MCV 群体的估计：
+
 <programlisting>
 selectivity = mcv_selectivity + histogram_selectivity * histogram_fraction
             = 0.01833333 + 0.298387 * 0.96966667
             = 0.307669
 
 rows        = 10000 * 0.307669
-            = 3077  (四舍五入)
+            = 3077  (rounding off)
 </programlisting>
-   <!--
-   In this particular example, the correction from the MCV list is fairly
-   small, because the column distribution is actually quite flat (the
-   statistics showing these particular values as being more common than
-   others are mostly due to sampling error).  In a more typical case where
-   some values are significantly more common than others, this complicated
-   process gives a useful improvement in accuracy because the selectivity
-   for the most common values is found exactly.
-   -->
-   在这个例子中，MCV列表的纠正很小，因为实际上列分布很平坦
-   （统计分析显示，这些特殊值往往比其它的更常见，大部分由于抽样误差造成的）。
-   在更典型的情况下，有些值很明显的比其它的更常见，这种复杂的过程有利于提高准确度，因为那些最常见的值的选择性可以被精确的找到。
-   
+
+   在这个特别的例子中，来自 MCV 列表的纠正相当小，因为列分布实际上很平坦（统计显示这些特殊值比其它值更常见的原因大部分是由于抽样误差）。 在更典型的情况下某些值显著地比其它的更常见，这种复杂的处理过程有助于提高准确度，因为那些最常见值的选择度可以被准确地找到。
   </para>
 
-  
-<para>
-   <!--
-   Now let's consider a case with more than one
-   condition in the <literal>WHERE</literal> clause:
-   -->
+  <para>
    现在考虑一个<literal>WHERE</literal>子句中带有多个条件的情况：
+
 <programlisting>
 EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 1000 AND stringu1 = 'xxx';
 
@@ -441,36 +217,24 @@ EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 1000 AND stringu1 = 'xxx';
    -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..23.80 rows=1007 width=0)
          Index Cond: (unique1 &lt; 1000)
 </programlisting>
-   <!--
-   The planner assumes that the two conditions are independent, so that
-   the individual selectivities of the clauses can be multiplied together:
-   -->
-   规划器假定这两个条件是独立的，因此子句各自的选择性可以相乘在一起：
+
+   规划器假定这两个条件是独立的，因此子句各自的选择度可以被乘在一起：
+
 <programlisting>
 selectivity = selectivity(unique1 &lt; 1000) * selectivity(stringu1 = 'xxx')
             = 0.100697 * 0.0014559
             = 0.0001466
 
 rows        = 10000 * 0.0001466
-            = 1  (四舍五入)
+            = 1  (rounding off)
 </programlisting>
-   <!--
-   Notice that the number of rows estimated to be returned from the bitmap
-   index scan reflects only the condition used with the index; this is
-   important since it affects the cost estimate for the subsequent heap
-   fetches.
-   -->
-   需要注意的是，从位图索引扫描中返回的行数估计值仅反映使用索引的条件；
-   这一点很重要，因为它会影响之后获取堆的开销估计。
-   
+
+   需要注意的是，从位图索引扫描中返回的估计行数只反映和索引一起使用的条件； 这一点很重要，因为它会影响后续取堆元组的代价估计。
   </para>
 
-  
-<para>
-   <!--
-   Finally we will examine a query that involves a join:
-   -->
-   最后来看一个包含连接的查询：
+  <para>
+   最后我们将检查一个涉及连接的查询：
+
 <programlisting>
 EXPLAIN SELECT * FROM tenk1 t1, tenk2 t2
 WHERE t1.unique1 &lt; 50 AND t1.unique2 = t2.unique2;
@@ -485,39 +249,20 @@ WHERE t1.unique1 &lt; 50 AND t1.unique2 = t2.unique2;
    -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.00..6.27 rows=1 width=244)
          Index Cond: (unique2 = t1.unique2)
 </programlisting>
-   <!--
-   The restriction on <structname>tenk1</structname>,
-   <literal>unique1 &lt; 50</literal>,
-   is evaluated before the nested-loop join.
-   This is handled analogously to the previous range example.  This time the
-   value 50 falls into the first bucket of the
-   <structfield>unique1</structfield> histogram:
-   -->
-   <structname>tenk1</structname>上的约束，<literal>unique1 &lt; 50</literal>，在嵌套循环连接之前计算，
-   这个条件是用类似上面的那个范围例子的方法处理的，这次数值50落在<structfield>unique1</structfield>直方图的第一个桶：
-   
+
+   在<structname>tenk1</structname>上的限制<literal>unique1 &lt; 50</literal>在嵌套循环连接之前被计算。它的处理类似之前的那个范围查询例子。但是这次值 50 落在<structfield>unique1</structfield>直方图的第一个桶内：
+
 <programlisting>
 selectivity = (0 + (50 - bucket[1].min)/(bucket[1].max - bucket[1].min))/num_buckets
             = (0 + (50 - 0)/(993 - 0))/10
             = 0.005035
 
 rows        = 10000 * 0.005035
-            = 50  (四舍五入)
+            = 50  (rounding off)
 </programlisting>
-   <!--
-   The restriction for the join is <literal>t2.unique2 = t1.unique2</>.
-   The operator is just
-   our familiar <literal>=</literal>, however the selectivity function is
-   obtained from the <structfield>oprjoin</structfield> column of
-   <structname>pg_operator</structname>, and is <function>eqjoinsel</function>.
-   <function>eqjoinsel</function> looks up the statistical information for both
-   <structname>tenk2</structname> and <structname>tenk1</structname>:
-   -->
-  这个连接的约束是<literal>t2.unique2 = t1.unique2</>，操作符是我们熟悉的<literal>=</literal>，
-   从<structname>pg_operator</structname>的<structfield>oprjoin</structfield>字段获得的选择性函数是<function>eqjoinsel</function>。
-   <function>eqjoinsel</function>为<structname>tenk2</structname>和
-   <structname>tenk1</structname>查找统计信息：
-   
+
+   连接的限制是<literal>t2.unique2 = t1.unique2</>。操作符是我们熟悉的<literal>=</literal>，然而选择度函数是从<structname>pg_operator</structname>的<structfield>oprjoin</structfield>列获得的，并且是<function>eqjoinsel</function>。<function>eqjoinsel</function>为<structname>tenk2</structname>和<structname>tenk1</structname>查找统计信息：
+
 <programlisting>
 SELECT tablename, null_frac,n_distinct, most_common_vals FROM pg_stats
 WHERE tablename IN ('tenk1', 'tenk2') AND attname='unique2';
@@ -527,32 +272,17 @@ tablename  | null_frac | n_distinct | most_common_vals
  tenk1     |         0 |         -1 |
  tenk2     |         0 |         -1 |
 </programlisting>
-   <!--
-   In this case there is no <acronym>MCV</acronym> information for
-   <structfield>unique2</structfield> because all the values appear to be
-   unique, so we use an algorithm that relies only on the number of
-   distinct values for both relations together with their null fractions:
-   -->
-   在这个例子中，没有<structfield>unique2</structfield>的<acronym>MCV</acronym>信息，
-   因为所有数值看上去都是唯一的，
-   因此可以使用一个只依赖唯一数值数目和NULL数目百分比的算法来计算选择性：
-   
+
+   在这种情况中，没有<structfield>unique2</structfield>的<acronym>MCV</acronym>信息，因为所有值看上去都是唯一的，因此我们可以为关系和它们的空值部分使用一个只依赖可区分值数目的算法：
+
 <programlisting>
 selectivity = (1 - null_frac1) * (1 - null_frac2) * min(1/num_distinct1, 1/num_distinct2)
             = (1 - 0) * (1 - 0) / max(10000, 10000)
             = 0.0001
 </programlisting>
-   <!--
-   This is, subtract the null fraction from one for each of the relations,
-   and divide by the maximum of the numbers of distinct values.
-   The number of rows
-   that the join is likely to emit is calculated as the cardinality of the
-   Cartesian product of the two inputs, multiplied by the
-   selectivity:
-   -->
-   也就是说，把每个表都减去里面NULL的比例，然后除以不同数值的最大数量。
-   连接可能选出来的行数是以两个输入的笛卡尔积作为基数，乘以选择性计算出来的：
-   
+
+   也就是说，从 1 中减去每个表的空值部分，并且除以可区分值的最大数目。连接可能发出的行数的计算是：嵌套循环里的两个输入值的笛卡尔积的势乘以选择度：
+
 <programlisting>
 rows = (outer_cardinality * inner_cardinality) * selectivity
      = (50 * 10000) * 0.0001
@@ -560,56 +290,17 @@ rows = (outer_cardinality * inner_cardinality) * selectivity
 </programlisting>
   </para>
 
-  <!--
-<para>
-   Had there been MCV lists for the two columns,
-   <function>eqjoinsel</function> would have used direct comparison of the MCV
-   lists to determine the join selectivity within the part of the column
-   populations represented by the MCVs.  The estimate for the remainder of the
-   populations follows the same approach shown here.
+  <para>
+   这里有两列的 MCV 列表，<function>eqjoinsel</function>将使用 MCV 列表的直接比较来决定在由 MCV 表示的列群体部分中的连接选择度。群体剩下部分的估计遵循这里展示的相同方法。
   </para>
--->
-<para>
-   这里有两列的MCV列表，
-   <function>eqjoinsel</function>将直接使用MCV列表比较来决定由MCV列表表示的列成员的连接选择性。
- 其余成员的估计值使用这里介绍的方法即可。
-</para>
 
-  <!--
-<para>
-   Notice that we showed <literal>inner_cardinality</> as 10000, that is,
-   the unmodified size of <structname>tenk2</>.  It might appear from
-   inspection of the <command>EXPLAIN</> output that the estimate of
-   join rows comes from 50 * 1, that is, the number of outer rows times
-   the estimated number of rows obtained by each inner index scan on
-   <structname>tenk2</>.  But this is not the case: the join relation size
-   is estimated before any particular join plan has been considered.  If
-   everything is working well then the two ways of estimating the join
-   size will produce about the same answer, but due to round-off error and
-   other factors they sometimes diverge significantly.
+  <para>
+   需要注意的是，我们把<literal>inner_cardinality</>显示为 10000，也就是未修改的<structname>tenk2</>尺寸。它可能出现于EXPLAIN输出检查，连接行的估计来自 50 * 1，即由 outer 行数乘以由<structname>tenk2</>上每个 inner 索引扫描的估计行数。但是这不是那种情况： 连接关系尺寸的估计在任何特定的连接计划被考虑之前进行。如果一切顺利，那么两种方式估计的连接尺寸将产生 大概同样的答案，但是由于舍入误差和其它因素它们有时差别显著。
   </para>
--->
-<para>
-  需要注意的是，<literal>inner_cardinality</>是10000，即未修改的<structname>tenk2</>大小。
-  它可能出现在<command>EXPLAIN</>的输出，其连接行的估计值为50 * 1，也就是，外部行的数量乘以<structname>tenk2</>上每个内部索引扫描获取的行的估计数。还有一种情况是在考虑任何特定的连接计划之前就估计连接关系大小。如果一切都正常工作，那么两种方式估计的连接大小将是相同的，但由于四舍五入的误差和其它因素，它们有时会有较明显的差异。
-</para>
 
-  <!--
-<para>
-   For those interested in further details, estimation of the size of
-   a table (before any <literal>WHERE</> clauses) is done in
-   <filename>src/backend/optimizer/util/plancat.c</filename>. The generic
-   logic for clause selectivities is in
-   <filename>src/backend/optimizer/path/clausesel.c</filename>.  The
-   operator-specific selectivity functions are mostly found
-   in <filename>src/backend/utils/adt/selfuncs.c</filename>.
+  <para>
+   如果对更进一步的细节感兴趣，一个表的尺寸（在任何<literal>WHERE</>子句之前）的估计在<filename>src/backend/optimizer/util/plancat.c</filename>中完成。子句选择度的一般逻辑在<filename>src/backend/optimizer/path/clausesel.c</filename>中。操作符相关的选择度函数大部分可以在<filename>src/backend/utils/adt/selfuncs.c</filename>中找到。
   </para>
--->
-<para>
-   在<filename>src/backend/optimizer/util/plancat.c</filename>中有对一个表（在任何<literal>WHERE</>子句之前）大小估计的细节；
-   在<filename>src/backend/optimizer/path/clausesel.c</filename>中有子句选择性的通用逻辑；
-   在<filename>src/backend/utils/adt/selfuncs.c</filename>中有特定操作符的选择性函数。
-</para>
 
  </sect1>
 

@@ -1,7 +1,11 @@
 #!/usr/bin/perl
 #
 # Generate the errcodes-table.sgml file from errcodes.txt
+<<<<<<< HEAD
 # Copyright (c) 2000-2014, PostgreSQL Global Development Group
+=======
+# Copyright (c) 2000-2015, PostgreSQL Global Development Group
+>>>>>>> upstream/master
 
 use warnings;
 use strict;
