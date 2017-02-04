@@ -218,6 +218,15 @@
         ((string=? (gi nd) (normalize "chapter")) 2)
         (else 1)))
 
+<<<<<<< HEAD
+;; Put a horizontal line in the set TOC (just like the book TOC looks)
+(define (set-titlepage-separator side)
+  (if (equal? side 'recto)
+      (make empty-element gi: "HR")
+      (empty-sosofo)))
+
+=======
+>>>>>>> upstream/master
 ;; change encoding from ISO-8859-1 to gbk for pgdoccn
 ;; Add character encoding and time of creation into HTML header
 (define %html-header-tags%

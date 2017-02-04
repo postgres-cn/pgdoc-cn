@@ -271,6 +271,15 @@ htmlhelp: stylesheet-hh.xsl postgres.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) $^
 
 %-A4.fo.tmp: stylesheet-fo.xsl %.xml
+<<<<<<< HEAD
+	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type A4 -o $@ $^
+
+%-US.fo.tmp: stylesheet-fo.xsl %.xml
+	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type USletter -o $@ $^
+
+FOP = fop
+XMLLINT = xmllint
+=======
 	$(XMLLINT) --noout --valid $*.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type A4 -o $@ $^
 
@@ -279,6 +288,7 @@ htmlhelp: stylesheet-hh.xsl postgres.xml
 	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type USletter -o $@ $^
 
 FOP = fop
+>>>>>>> upstream/master
 
 # reformat FO output so that locations of errors are easier to find
 %.fo: %.fo.tmp
