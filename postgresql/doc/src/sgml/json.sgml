@@ -225,29 +225,32 @@ SELECT '{"reading": 1.230e-5}'::json, '{"reading": 1.230e-5}'::jsonb;
   </para>
 <programlisting>
 -- 简单的标量/基本值只包含相同的值：
-SELECT '"foo"'::jsonb @> '"foo"'::jsonb;
+SELECT '"foo"'::jsonb @&gt; '"foo"'::jsonb;
 
 -- 右边的数字被包含在左边的数组中：
-SELECT '[1, 2, 3]'::jsonb @> '[1, 3]'::jsonb;
+SELECT '[1, 2, 3]'::jsonb @&gt; '[1, 3]'::jsonb;
 
 -- 数组元素的顺序没有意义，因此这个例子也返回真：
-SELECT '[1, 2, 3]'::jsonb @> '[3, 1]'::jsonb;
+SELECT '[1, 2, 3]'::jsonb @&gt; '[3, 1]'::jsonb;
 
 -- 重复的数组元素也没有关系：
-SELECT '[1, 2, 3]'::jsonb @> '[1, 2, 2]'::jsonb;
+SELECT '[1, 2, 3]'::jsonb @&gt; '[1, 2, 2]'::jsonb;
 
 -- 右边具有一个单一键值对的对象被包含在左边的对象中：
-SELECT '{"product": "PostgreSQL", "version": 9.4, "jsonb":true}'::jsonb @> '{"version":9.4}'::jsonb;
+SELECT '{"product": "PostgreSQL", "version": 9.4, "jsonb":true}'::jsonb @&gt; '{"version":9.4}'::jsonb;
 
 -- 右边的数组<emphasis>不</>会被认为包含在左边的数组中，
 -- 即使其中嵌入了一个相似的数组：
-SELECT '[1, 2, [1, 3]]'::jsonb @> '[1, 3]'::jsonb;  -- 得到假
+SELECT '[1, 2, [1, 3]]'::jsonb @&gt; '[1, 3]'::jsonb;  -- 得到假
 
 -- 但是如果同样也有嵌套，包含就成立：
-SELECT '[1, 2, [1, 3]]'::jsonb @> '[[1, 3]]'::jsonb;
+SELECT '[1, 2, [1, 3]]'::jsonb @&gt; '[[1, 3]]'::jsonb;
 
 -- 类似的，这个例子也不会被认为是包含：
-SELECT '{"foo": {"bar": "baz"}}'::jsonb @> '{"bar": "baz"}'::jsonb;  -- 得到假
+SELECT '{"foo": {"bar": "baz"}}'::jsonb @&gt; '{"bar": "baz"}'::jsonb;  -- 得到假
+
+-- <!-- A top-level key and an empty object is contained: -->包含一个顶级键和一个空对象
+SELECT '{"foo": {"bar": "baz"}}'::jsonb @&gt; '{"foo": {}}'::jsonb;
 </programlisting>
 
   <para>
@@ -262,10 +265,10 @@ SELECT '{"foo": {"bar": "baz"}}'::jsonb @> '{"bar": "baz"}'::jsonb;  -- 得到�
   </para>
 <programlisting>
 -- 这个数组包含基本字符串值：
-SELECT '["foo", "bar"]'::jsonb @> '"bar"'::jsonb;
+SELECT '["foo", "bar"]'::jsonb @&gt; '"bar"'::jsonb;
 
 -- 反之不然，下面的例子会报告“不包含”：
-SELECT '"bar"'::jsonb @> '["bar"]'::jsonb;  -- 得到假
+SELECT '"bar"'::jsonb @&gt; '["bar"]'::jsonb;  -- 得到假
 </programlisting>
 
   <para>
@@ -295,7 +298,54 @@ SELECT '"foo"'::jsonb ? 'foo';
     当涉及很多键或元素时，JSON 对象比数组更适合于做包含或存在测试，
     因为它们不像数组，进行搜索时会进行内部优化，并且不需要被线性搜索。
   </para>
+  
+  <tip>
+   <para>
+    <!-- 
+    Because JSON containment is nested, an appropriate query can skip
+    explicit selection of sub-objects.  As an example, suppose that we have
+    a <structfield>doc</> column containing objects at the top level, with
+    most objects containing <literal>tags</> fields that contain arrays of
+    sub-objects.  This query finds entries in which sub-objects containing
+    both <literal>"term":"paris"</> and <literal>"term":"food"</> appear,
+    while ignoring any such keys outside the <literal>tags</> array:
+    -->
+    因为JSON包含是嵌套的，所以适当的查询可以跳过对子对象的显式选择。例如，
+    假设我们有一个包含顶级对象的<structfield>doc</>列，大多数对象包含
+    <literal>tags</>字段，其中包含子对象数组。此查询查找其中子对象同时包含
+    <literal>"term":"paris"</>和<literal>"term":"food"</>出现的项，
+    而忽略<literal>tags</>数组之外的这样的键：
+<programlisting>
+SELECT doc-&gt;'site_name' FROM websites
+  WHERE doc @&gt; '{"tags":[{"term":"paris"}, {"term":"food"}]}';
+</programlisting>
+    <!-- 
+    One could accomplish the same thing with, say,
+    -->
+    下面语句可以完成同样的事情：
+<programlisting>
+SELECT doc-&gt;'site_name' FROM websites
+  WHERE doc-&gt;'tags' @&gt; '[{"term":"paris"}, {"term":"food"}]';
+</programlisting>
+    <!-- 
+    but that approach is less flexible, and often less efficient as well.
+    -->
+    但这种方法是不灵活的，而且经常效率较低。
+   </para>
 
+   <!-- 
+   <para>
+    On the other hand, the JSON existence operator is not nested: it will
+    only look for the specified key or array element at top level of the
+    JSON value.
+   </para>
+   -->
+   <para>
+    另一方面，JSON存在运算符不是嵌套的：
+    它将仅在JSON值的顶级查找指定的键或数组元素。
+   </para>
+  </tip>
+  
   <para>
     <xref linkend="functions-json">中记录了多个包含和存在操作符，以及
     所有其他 JSON 操作符和函数。
@@ -315,17 +365,27 @@ SELECT '"foo"'::jsonb ? 'foo';
     性方面做出了不同的平衡。
   </para>
   <para>
-    <type>jsonb</>的默认 GIN 操作符类支持使用<literal>@&gt;</>、
-    <literal>?</>、<literal>?&amp;</>以及<literal>?|</>操作符的查询（这些
+    <!-- 
+    The default GIN operator class for <type>jsonb</> supports queries with
+    top-level key-exists operators <literal>?</>, <literal>?&amp;</>
+    and <literal>?|</> operators and path/value-exists operator
+    <literal>@&gt;</>.
+    (For details of the semantics that these operators
+    implement, see <xref linkend="functions-jsonb-op-table">.)
+    An example of creating an index with this operator class is:
+    -->
+    <type>jsonb</>的默认 GIN 操作符类支持使用顶层键存在运算符
+    <literal>?</>、<literal>?&amp;</>以及<literal>?|</>
+    操作符和路径/值存在运算符<literal>@&gt;</>的查询（这些
     操作符实现的详细语义请见<xref linkend="functions-jsonb-op-table">）。
     使用这种操作符类创建一个索引的例子：
 <programlisting>
-CREATE INDEX idxgin ON api USING gin (jdoc);
+CREATE INDEX idxgin ON api USING GIN (jdoc);
 </programlisting>
     非默认的 GIN 操作符类<literal>jsonb_path_ops</>只支持索引
     <literal>@&gt;</>操作符。使用这种操作符类创建一个索引的例子：
 <programlisting>
-CREATE INDEX idxginp ON api USING gin (jdoc jsonb_path_ops);
+CREATE INDEX idxginp ON api USING GIN (jdoc jsonb_path_ops);
 </programlisting>
   </para>
 
@@ -366,7 +426,7 @@ SELECT jdoc-&gt;'guid', jdoc-&gt;'name' FROM api WHERE jdoc -&gt; 'tags' ? 'qui'
     如果对<literal>"tags"</>键中的特定项的查询很常见，可能值得
     定义一个这样的索引：
 <programlisting>
-CREATE INDEX idxgintags ON api USING gin ((jdoc -&gt; 'tags'));
+CREATE INDEX idxgintags ON api USING GIN ((jdoc -&gt; 'tags'));
 </programlisting>
     现在，<literal>WHERE</> 子句 <literal>jdoc -&gt; 'tags' ? 'qui'</>
     将被识别为可索引操作符<literal>?</>在索引表达式<literal>jdoc -&gt; 'tags'</>
