@@ -305,16 +305,47 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
      保存成员列表，它也使用一个 32 位计数器并且也应被管理。
     </para>
 
+    <!-- 
+    <para>
+     During a <command>VACUUM</> table scan, either partial or of the whole
+     table, any multixact ID older than
+     <xref linkend="guc-vacuum-multixact-freeze-min-age">
+     is replaced by a different value, which can be the zero value, a single
+     transaction ID, or a newer multixact ID.  For each table,
+     <structname>pg_class</>.<structfield>relminmxid</> stores the oldest
+     possible multixact ID still appearing in any tuple of that table.
+     If this value is older than
+     <xref linkend="guc-vacuum-multixact-freeze-table-age">, a whole-table
+     scan is forced.  <function>mxid_age()</> can be used on
+     <structname>pg_class</>.<structfield>relminmxid</> to find its age.
+    </para>
+    -->
     <para>
      在一次<command>VACUUM</>表扫描（部分或者全部）期间，任何比
-     <xref linkend="guc-vacuum-multixact-freeze-min-age">要老的多事务 ID 会被
-     替换为一个不同的值，该值可以是零值、一个单一事务 ID 或者一个更新的多事务 ID。
-     对于每一个表，<structname>pg_class</>.<structfield>relminmxid</>存储了在
-     该表任意元组中仍然存在的最老可能多事务 ID。如果这个值比
+     <xref linkend="guc-vacuum-multixact-freeze-min-age">
+     要老的多事务 ID 会被替换为一个不同的值，该值可以是零值、
+     一个单一事务 ID 或者一个更新的多事务 ID。
+     对于每一个表，<structname>pg_class</>.<structfield>relminmxid</>
+     存储了在该表任意元组中仍然存在的最老可能多事务 ID。如果这个值比
      <xref linkend="guc-vacuum-multixact-freeze-table-age">老，
-     将强制一次全表扫描。全表<command>VACUUM</>扫描（不管是什么导
-     致它们）将为表推进该值。最后，当所有数据库中的所有表被扫描并且它们的最老多事
-     务值被推进，较老的多事务的磁盘存储可以被移除。
+     将强制一次全表扫描。可以在
+     <structname>pg_class</>.<structfield>relminmxid</>
+     上使用<function>mxid_age()</>来找到它的年龄。
+    </para>
+
+    <!-- 
+    <para>
+     Whole-table <command>VACUUM</> scans, regardless of
+     what causes them, enable advancing the value for that table.
+     Eventually, as all tables in all databases are scanned and their
+     oldest multixact values are advanced, on-disk storage for older
+     multixacts can be removed.
+    </para>
+    -->    
+    <para> 
+     全表<command>VACUUM</>扫描（不管是什么导致它们）将为表推进该值。
+     最后，当所有数据库中的所有表被扫描并且它们的最老多事务值被推进，
+     较老的多事务的磁盘存储可以被移除。
     </para>
 
     <para>
@@ -338,8 +369,42 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
     <productname>PostgreSQL</productname>有一个可选的但是被高度推荐的特性<firstterm>autovacuum</firstterm>，它的目的是自动执行<command>VACUUM</command>和<command>ANALYZE </command>命令。当它被启用时，自动清理会检查被大量插入、更新或删除元组的表。这些检查会利用统计信息收集功能，因此除非<xref linkend="guc-track-counts">被设置为<literal>true</literal>，自动清理不能被使用。在默认配置下，自动清理是被启用的并且相关配置参数已被正确配置。
    </para>
 
+   <!-- 
    <para>
-    <quote>自动清理后台进程</>实际上由多个进程组成。有一个称为<firstterm>自动清理启动器</firstterm>的常驻后台进程， 它负责为所有数据库启动<firstterm>自动清理工作者</firstterm>进程。启动器将把工作散布在一段时间上，它每隔<xref linkend="guc-autovacuum-naptime">秒尝试在每个数据库中启动一个工作者（因此，如果安装中有<replaceable>N</>个数据库，则每 <varname>autovacuum_naptime</>/<replaceable>N</>秒将启动一个新的工作者）。在同一时间只允许最多<xref linkend="guc-autovacuum-max-workers">个工作者进程运行。如果有超过<varname>autovacuum_max_workers</>个数据库需要被处理，下一个数据库将在第一个工作者结束后马上被处理。每一个工作者进程将检查其数据库中的每一个表并且在需要时执行<command>VACUUM</>和/或<command>ANALYZE</>。<varname>log_autovacuum_min_duration</varname>可以被用来监控自动清理活动。
+    The <quote>autovacuum daemon</> actually consists of multiple processes.
+    There is a persistent daemon process, called the
+    <firstterm>autovacuum launcher</firstterm>, which is in charge of starting
+    <firstterm>autovacuum worker</firstterm> processes for all databases. The
+    launcher will distribute the work across time, attempting to start one
+    worker within each database every <xref linkend="guc-autovacuum-naptime">
+    seconds.  (Therefore, if the installation has <replaceable>N</> databases,
+    a new worker will be launched every
+    <varname>autovacuum_naptime</>/<replaceable>N</> seconds.)
+    A maximum of <xref linkend="guc-autovacuum-max-workers"> worker processes
+    are allowed to run at the same time. If there are more than
+    <varname>autovacuum_max_workers</> databases to be processed,
+    the next database will be processed as soon as the first worker finishes.
+    Each worker process will check each table within its database and
+    execute <command>VACUUM</> and/or <command>ANALYZE</> as needed.
+    <xref linkend="guc-log-autovacuum-min-duration"> can be set to monitor
+    autovacuum workers' activity.
+   </para>
+   -->
+   <para>
+    <quote>自动清理后台进程</>实际上由多个进程组成。有一个称为
+    <firstterm>自动清理启动器</firstterm>的常驻后台进程，
+    它负责为所有数据库启动<firstterm>自动清理工作者</firstterm>进程。
+    启动器将把工作散布在一段时间上，它每隔
+    <xref linkend="guc-autovacuum-naptime">秒尝试在每个数据库中启动一个工作者
+    （因此，如果安装中有<replaceable>N</>个数据库，则每
+    <varname>autovacuum_naptime</>/<replaceable>N</>秒将启动一个新的工作者）。
+    在同一时间只允许最多<xref linkend="guc-autovacuum-max-workers">
+    个工作者进程运行。如果有超过<varname>autovacuum_max_workers</>
+    个数据库需要被处理，下一个数据库将在第一个工作者结束后马上被处理。
+    每一个工作者进程将检查其数据库中的每一个表并且在需要时执行
+    <command>VACUUM</>和/或<command>ANALYZE</>。
+    可以设置<xref linkend="guc-log-autovacuum-min-duration">
+    来监控自动清理工作者的活动。
    </para>
 
    <para>
@@ -369,25 +434,49 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
     临时表不能被自动清理访问。因此，临时表的清理和分析操作必须通过会话期间的SQL命令来执行。
    </para>
 
+   <!-- 
    <para>
-    默认的阈值和缩放系数都取自于<filename>postgresql.conf</filename>，但是可以为每一个表重写它们，详情参见<xref linkend="sql-createtable-storage-parameters"  endterm="sql-createtable-storage-parameters-title">。如果一个设置被通过存储参数修改，则使用该值，否则使用全局设置。全局设置请参阅<xref linkend="runtime-config-autovacuum">。
+    The default thresholds and scale factors are taken from
+    <filename>postgresql.conf</filename>, but it is possible to override them
+    (and many other autovacuum control parameters) on a per-table basis; see
+    <xref linkend="sql-createtable-storage-parameters"
+    endterm="sql-createtable-storage-parameters-title"> for more information.
+    If a setting has been changed via a table's storage parameters, that value
+    is used when processing that table; otherwise the global settings are
+    used. See <xref linkend="runtime-config-autovacuum"> for more details on
+    the global settings.
+   </para> 
+   -->
+   <para>
+    默认的阈值和缩放系数都取自于<filename>postgresql.conf</filename>，
+    但是可以为每一个表重写它们(和许多其他自动清理控制参数)，
+    详情参见<xref linkend="sql-createtable-storage-parameters"  
+    endterm="sql-createtable-storage-parameters-title">。
+    如果一个设置已经通过一个表的存储参数修改，那么在处理该表时使用该值，
+    否则使用全局设置。全局设置请参阅<xref linkend="runtime-config-autovacuum">。
    </para>
 
+   <!-- 
    <para>
-    除了基本阈值和缩放系数，还有6个可以通过表的存储参数设置的自动清理参数。第一个参数是<literal>autovacuum_enabled</>，它可以被设置为<literal>false</literal>来指示自动清理后台进程整个跳过特定的表。在这种情况中自动清理只会在需要防止事务ID回卷时清理该表。另外两个参数是<varname>autovacuum_vacuum_cost_delay</>和<varname>autovacuum_vacuum_cost_limit</>，它们被用来设置表相关的基于代价的清理延迟特性的值（参见<xref linkend="runtime-config-resource-vacuum-cost">）。
-    <varname>autovacuum_freeze_min_age</>、
-    <varname>autovacuum_freeze_max_age</>和
-    <varname>autovacuum_freeze_table_age</>被分别用来设置<xref linkend="guc-vacuum-freeze-min-age">、
-    <xref linkend="guc-autovacuum-freeze-max-age">和
-    <xref linkend="guc-vacuum-freeze-table-age">的值。
+    When multiple workers are running, the autovacuum cost delay parameters
+    (see <xref linkend="runtime-config-resource-vacuum-cost">) are
+    <quote>balanced</quote> among all the running workers, so that the
+    total I/O impact on the system is the same regardless of the number
+    of workers actually running.  However, any workers processing tables whose
+    per-table <literal>autovacuum_vacuum_cost_delay</> or
+    <literal>autovacuum_vacuum_cost_limit</> storage parameters have been set
+    are not considered in the balancing algorithm.
    </para>
+   -->
 
    <para>
-    当多个工作者运行时，在所有运行着的工作者之间代价延迟参数是
+    当多个工作者运行时，在所有运行着的工作者之间自动清理代价延迟参数
+    (参阅<xref linkend="runtime-config-resource-vacuum-cost">)是
     <quote>平衡的</quote>，这样不管实际运行的工作者数量是多少，
-    对于系统的总体 I/O 影响总是相同的。不过，<literal>autovacuum_vacuum_cost_delay</>
-    或<literal>autovacuum_vacuum_cost_limit</>被设置的任何正在处理表的工作者不会
-    被考虑在均衡算法之中。
+    对于系统的总体 I/O 影响总是相同的。不过，任何正在处理已经设置了每表
+    <literal>autovacuum_vacuum_cost_delay</>或
+    <literal>autovacuum_vacuum_cost_limit</>
+    存储参数的表的工作者不会被考虑在均衡算法中。
    </para>
   </sect2>
  </sect1>
