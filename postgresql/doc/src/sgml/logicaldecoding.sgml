@@ -1,11 +1,24 @@
 <!-- doc/src/sgml/logicaldecoding.sgml -->
  <chapter id="logicaldecoding">
+  <!-- 
+  <title>Logical Decoding</title>
+  -->
   <title>逻辑解码</title>
   <indexterm zone="logicaldecoding">
+   <!-- 
+   <primary>Logical Decoding</primary>
+   -->
    <primary>逻辑解码</primary>
   </indexterm>
+  <!-- 
   <para>
-   PostgreSQL 提供了方法将所执行的修改通过 SQL 以流的方式传送给外部消费者。
+   PostgreSQL provides infrastructure to stream the modifications performed
+   via SQL to external consumers.  This functionality can be used for a
+   variety of purposes, including replication solutions and auditing.
+  </para>
+  -->
+  <para>
+  PostgreSQL提供基础架构，将通过SQL执行的修改流式传输到外部使用者。
    这种功能可以被用于多种目的，包括复制方案以及审计。
   </para>
 
@@ -54,10 +67,10 @@ postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', '
  regression_slot | 0/16B1970
 (1 row)
 
-postgres=# SELECT * FROM pg_replication_slots;
-    slot_name    |    plugin     | slot_type | datoid | database | active |  xmin  | catalog_xmin | restart_lsn
------------------+---------------+-----------+--------+----------+--------+--------+--------------+-------------
- regression_slot | test_decoding | logical   |  12052 | postgres | f      |        |          684 | 0/16A4408
+postgres=# SELECT slot_name, plugin, slot_type, database, active, restart_lsn FROM pg_replication_slots;
+    slot_name    |    plugin     | slot_type | database | active | restart_lsn
+-----------------+---------------+-----------+----------+--------+-------------
+ regression_slot | test_decoding | logical   | postgres | f      | 0/16A4408
 (1 row)
 
 postgres=# -- 目前还看不到更改
@@ -134,6 +147,18 @@ postgres=# SELECT pg_drop_replication_slot('regression_slot');
 (1 row)
 </programlisting>
 
+   <!-- 
+   <para>
+    The following example shows how logical decoding is controlled over the
+    streaming replication protocol, using the
+    program <xref linkend="app-pgrecvlogical"> included in the PostgreSQL
+    distribution.  This requires that client authentication is set up to allow
+    replication connections
+    (see <xref linkend="streaming-replication-authentication">) and
+    that <varname>max_wal_senders</varname> is set sufficiently high to allow
+    an additional connection.
+   </para>
+   -->
    <para>
     下面的例子展示了如何在流复制协议上使用 PostgreSQL 发布所包括的程序
     <xref linkend="app-pgrecvlogical">来控制逻辑解码。这要求设置客户端
@@ -253,7 +278,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
     命令
     <itemizedlist>
      <listitem>
-      <para><literal>CREATE_REPLICATION_SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>options</replaceable></literal></para>
+      <para><literal>CREATE_REPLICATION_SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>output_plugin</replaceable></literal></para>
      </listitem>
 
      <listitem>
@@ -261,7 +286,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
      </listitem>
 
      <listitem>
-      <para><literal>START_REPLICATION SLOT <replaceable>slot_name</replaceable> LOGICAL <replaceable>options</replaceable></literal></para>
+      <para><literal>START_REPLICATION SLOT <replaceable>slot_name</replaceable> LOGICAL ...</literal></para>
      </listitem>
     </itemizedlist>
     被用来创建、删除以及流式传送一个复制槽。这些命令只能在一个复制连接上使用。
@@ -291,8 +316,18 @@ $ pg_recvlogical -d postgres --slot test --drop-slot
   <sect1 id="logicaldecoding-catalogs">
    <title>与逻辑解码相关的系统目录</title>
 
+   <!-- 
    <para>
-    <link linkend="catalog-pg-replication-slots"><structname>pg_replication_slots</structname></link>
+    The <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link>
+    view and the
+    <link linkend="monitoring-stats-views-table"><structname>pg_stat_replication</structname></link>
+    view provide information about the current state of replication slots and
+    streaming replication connections respectively. These views apply to both physical and
+    logical replication.
+   </para>
+   -->
+   <para>
+    <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link>
     视图和
     <link linkend="monitoring-stats-views-table"><structname>pg_stat_replication</structname></link>
     视图分别提供了有关复制槽和流复制连接的当前状态的信息。这些视图适用于物理和逻辑复制。
@@ -325,14 +360,23 @@ typedef struct OutputPluginCallbacks
     LogicalDecodeBeginCB begin_cb;
     LogicalDecodeChangeCB change_cb;
     LogicalDecodeCommitCB commit_cb;
+    LogicalDecodeFilterByOriginCB filter_by_origin_cb;
     LogicalDecodeShutdownCB shutdown_cb;
 } OutputPluginCallbacks;
 
 typedef void (*LogicalOutputPluginInit)(struct OutputPluginCallbacks *cb);
 </programlisting>
+     <!-- 
+     The <function>begin_cb</function>, <function>change_cb</function>
+     and <function>commit_cb</function> callbacks are required,
+     while <function>startup_cb</function>,
+     <function>filter_by_origin_cb</function>
+     and <function>shutdown_cb</function> are optional.
+     -->
      回调函数<function>begin_cb</function>、<function>change_cb</function>
      以及<function>commit_cb</function>是必需的，而
-     <function>startup_cb</function>和<function>shutdown_cb</function>是可选的。
+     <function>startup_cb</function>、<function>filter_by_origin_cb</function>
+     和<function>shutdown_cb</function>是可选的。
     </para>
    </sect2>
 
@@ -506,6 +550,58 @@ typedef void (*LogicalDecodeChangeCB) (
       </para>
      </note>
     </sect3>
+
+     <sect3 id="logicaldecoding-output-plugin-filter-origin">
+     <!-- 
+     <title>Origin Filter Callback</title>
+     -->
+     <title>原始过滤器回调</title>
+
+     <para>
+       <!-- 
+       The optional <function>filter_by_origin_cb</function> callback
+       is called to determine whether data that has been replayed
+       from <parameter>origin_id</parameter> is of interest to the
+       output plugin.
+       -->
+       调用可选的<function>filter_by_origin_cb</function>
+       回调来确定输出插件是否对从<parameter>origin_id</parameter>
+       重放的数据感兴趣。
+<programlisting>
+typedef bool (*LogicalDecodeFilterByOriginCB) (
+    struct LogicalDecodingContext *ctx,
+    RepNodeId origin_id
+);
+</programlisting>
+      <!-- 
+      The <parameter>ctx</parameter> parameter has the same contents
+      as for the other callbacks. No information but the origin is
+      available. To signal that changes originating on the passed in
+      node are irrelevant, return true, causing them to be filtered
+      away; false otherwise. The other callbacks will not be called
+      for transactions and changes that have been filtered away.
+      -->
+      <parameter>ctx</parameter>参数具有与其他回调相同的内容。没有信息，
+      但来源是可用的。要表明源自传入的节点的更改是不相关的，返回true，
+      导致它们被过滤掉；否则为假。对于已被过滤掉的事务和更改，
+      不会调用其他回调。
+     </para>
+     <!-- 
+     <para>
+       This is useful when implementing cascading or multidirectional
+       replication solutions. Filtering by the origin allows to
+       prevent replicating the same changes back and forth in such
+       setups.  While transactions and changes also carry information
+       about the origin, filtering via this callback is noticeably
+       more efficient.
+     </para>
+     -->
+     <para>
+       这在实现级联或多向复制解决方案时很有用。
+       通过原点过滤允许防止在这样的设置中来回复制相同的改变。
+       虽然事务和更改还包含有关原点的信息，通过此回调进行过滤显然更有效。
+     </para>
+     </sect3>
    </sect2>
 
    <sect2 id="logicaldecoding-output-plugin-output">
@@ -548,9 +644,22 @@ OutputPluginWrite(ctx, true);
   <sect1 id="logicaldecoding-synchronous">
    <title>逻辑解码的同步复制支持</title>
 
+   <!-- 
+   <para>
+    Logical decoding can be used to build
+    <link linkend="synchronous-replication">synchronous
+    replication</link> solutions with the same user interface as synchronous
+    replication for <link linkend="streaming-replication">streaming
+    replication</link>.  To do this, the streaming replication interface
+    (see <xref linkend="logicaldecoding-walsender">) must be used to stream out
+    data. Clients have to send <literal>Standby status update (F)</literal>
+    (see <xref linkend="protocol-replication">) messages, just like streaming
+    replication clients do.
+   </para>
+   -->
    <para>
     逻辑解码可以被用来构建
-    <link linkend="synchronous-replication">同步复制</link>方案，该方案
+    <link linkend="synchronous-replication">同步复制</link>解决方案，该方案
     具有和<link linkend="streaming-replication">流复制</link>的同步复制
     相同的用户接口。要这样做，流复制接口（见
     <xref linkend="logicaldecoding-walsender">）必须被用来流式传出数据。
