@@ -93,6 +93,31 @@
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry>
+      <term>
+       <!-- 
+       serialization anomaly
+       -->
+       序列化异常
+       <!--
+       <indexterm><primary>serialization anomaly</primary></indexterm>
+       -->
+       <indexterm><primary>序列化异常</primary></indexterm>
+      </term>
+     <listitem>
+      <!-- 
+      <para>
+        The result of successfully committing a group of transactions
+        is inconsistent with all possible orderings of running those
+        transactions one at a time.
+       </para>
+       -->
+       <para>
+        成功提交一组事务的结果与一次运行这些事务的所有可能顺序不一致。
+       </para>
+      </listitem>
+     </varlistentry>
     </variablelist>
    </para>
 
@@ -100,12 +125,19 @@
     <indexterm>
      <primary>事务隔离级别</primary>
     </indexterm>
-    四种隔离级别和对应的行为在<xref linkend="mvcc-isolevel-table">中描述。
+    <!-- 
+    The SQL standard and PostgreSQL-implemented transaction isolation levels
+    are described in <xref linkend="mvcc-isolevel-table">.
+    -->
+    SQL标准和PostgreSQL实现的事务隔离级别在<xref linkend="mvcc-isolevel-table">中描述。
    </para>
 
     <table tocentry="1" id="mvcc-isolevel-table">
-     <title>标准<acronym>SQL</acronym>事务隔离级别</title>
-     <tgroup cols="4">
+     <!-- 
+     <title>Transaction Isolation Levels</title>
+     -->
+     <title>事务隔离级别</title>
+     <tgroup cols="5">
       <thead>
        <row>
         <entry>
@@ -120,12 +152,20 @@
         <entry>
          幻读
         </entry>
+        <entry>
+         <!-- Serialization Anomaly -->
+         序列化异常
+        </entry>
        </row>
       </thead>
       <tbody>
        <row>
         <entry>
          读未提交
+        </entry>
+        <entry>
+         <!-- Allowed, but not in PG -->
+         允许，但不是在PG中
         </entry>
         <entry>
          可能
@@ -151,6 +191,10 @@
         <entry>
          可能
         </entry>
+        <entry>
+         <!-- Possible -->
+         可能
+        </entry>
        </row>
 
        <row>
@@ -162,6 +206,10 @@
         </entry>
         <entry>
          不可能
+        </entry>
+        <entry>
+         <!-- Allowed, but not in PG -->
+         允许，但不是在PG中
         </entry>
         <entry>
          可能
@@ -181,13 +229,45 @@
         <entry>
          不可能
         </entry>
+        <entry>
+         <!-- Not possible -->
+         不可能
+        </entry>
        </row>
       </tbody>
      </tgroup>
     </table>
 
+   <!-- 
    <para>
-    在<productname>PostgreSQL</productname>中，你可以请求四种标准事务隔离级别中的任意一种。 但是在内部，实际上只有三种不同的隔离级别，分别对应级别读已提交、可重复读和可串行化。但你你选择了读未提交级别，实际上你得到的是读已提交，并且在<productname>PostgreSQL</productname>的可重复读实现中幻读是不可能出现的，所以实际的隔离级别可能比你选择的更严格。这是 SQL 标准允许的： 四种隔离级别只定义了哪种现像不能发生，但是没有定义哪种现像一定发生。<productname>PostgreSQL</productname>只提供三种隔离级别的原因是， 这是把标准的隔离级别映射到多版本并发控制架构的唯一合理方法。 可用的隔离级别的行为在下面小节中详细描述。
+    In <productname>PostgreSQL</productname>, you can request any of
+    the four standard transaction isolation levels, but internally only
+    three distinct isolation levels are implemented, i.e. PostgreSQL's
+    Read Uncommitted mode behaves like Read Committed.  This is because
+    it is the only sensible way to map the standard isolation levels to
+    PostgreSQL's multiversion concurrency control architecture.
+   </para>
+   -->
+   <para>
+    在<productname>PostgreSQL</productname>中，你可以请求四种标准事务隔离级别中的任意一种。
+    但是在内部，只实现了三种不同的隔离级别，即：PostgreSQL的读未提交模式的行为类似于读已提交。
+    这是因为这是把标准的隔离级别映射到PostgreSQL的多版本并发控制架构的唯一合理方法。
+   </para>
+   
+   <!-- 
+   <para>
+    The table also shows that PostgreSQL's Repeatable Read implementation
+    does not allow phantom reads.  Stricter behavior is permitted by the
+    SQL standard: the four isolation levels only define which phenomena
+    must not happen, not which phenomena <emphasis>must</> happen.
+    The behavior of the available isolation levels is detailed in the
+    following subsections.
+   </para>
+   -->
+   <para>
+    该表还显示了PostgreSQL的重复读不允许幻读。SQL 标准允许更严格的行为：
+    四种隔离级别只定义了哪种现像不能发生，没有定义哪种现像<emphasis>一定</>发生。
+    可用的隔离级别的行为在下面小节中详细描述。
    </para>
 
    <para>
@@ -220,8 +300,57 @@
     <command>UPDATE</command>、<command>DELETE</command>、<command>SELECT FOR UPDATE</command>和<command>SELECT FOR SHARE</command>命令在搜索目标行时的行为和<command>SELECT</command>一样： 它们将只找到在命令开始时已经被提交的行。 不过，在被找到时，这样的目标行可能已经被其它并发事务更新（或删除或锁住）。在这种情况下， 即将进行的更新将等待第一个更新事务提交或者回滚（如果它还在进行中）。 如果第一个更新事务回滚，那么它的作用将被忽略并且第二个事务可以继续更新最初发现的行。 如果第一个更新事务提交，若该行被第一个更新者删除，则第二个更新事务将忽略该行，否则第二个更新者将试图在该行的已被更新的版本上应用它的操作。该命令的搜索条件（<literal>WHERE</>子句）将被重新计算来看该行被更新的版本是否仍然符合搜索条件。如果符合，则第二个更新者使用该行的已更新版本继续其操作。在<command>SELECT FOR UPDATE</command>和<command>SELECT FOR SHARE</command>的情况下，这意味着把该行的已更新版本锁住并返回给客户端。
    </para>
 
+   <!-- 
    <para>
-    因为上面的规则，正在更新的命令可能会看到一个不一致的快照： 它们可以看到并发更新命令在它尝试更新的相同行上的作用，但是却看不到那些命令对数据库里其它行的作用。 这样的行为令读已提交模式不适合用于涉及复杂搜索条件的命令。不过，它对于更简单的情况是正确的。 例如，考虑用这样的命令更新银行余额：
+    <command>INSERT</command> with an <literal>ON CONFLICT DO UPDATE</> clause
+    behaves similarly. In Read Committed mode, each row proposed for insertion
+    will either insert or update. Unless there are unrelated errors, one of
+    those two outcomes is guaranteed.  If a conflict originates in another
+    transaction whose effects are not yet visible to the <command>INSERT
+    </command>, the <command>UPDATE</command> clause will affect that row,
+    even though possibly <emphasis>no</> version of that row is
+    conventionally visible to the command.
+   </para>
+   -->
+   <para>
+    带有<literal>ON CONFLICT DO UPDATE</>子句的<command>INSERT</command>的行为类似。
+    在读已提交模式下，建议插入的每一行都将插入或更新。除非有无关的错误，
+    否则这两个结果中的一个是有保证的。如果冲突源于另一个其影响对于
+    <command>INSERT</command>不可见的事务，则将对该行使用<command>UPDATE</command>子句，
+    即使可能<emphasis>没有</>命令常规可见的该行的版本。
+   </para>
+
+   <!-- 
+   <para>
+    <command>INSERT</command> with an <literal>ON CONFLICT DO
+    NOTHING</> clause may have insertion not proceed for a row due to
+    the outcome of another transaction whose effects are not visible
+    to the <command>INSERT</command> snapshot.  Again, this is only
+    the case in Read Committed mode.
+   </para>
+   -->
+   <para>
+    带有<literal>ON CONFLICT DO NOTHING</>子句的<command>INSERT</command>
+    可能由于其影响对<command>INSERT</command>快照不可见的另一事务的结果而不插入行。
+    同样，只有在读已提交模式下才是这种情况。
+   </para>
+   
+   <para>
+    <!-- 
+    Because of the above rules, it is possible for an updating command to see
+    an inconsistent snapshot: it can see the effects of concurrent updating
+    commands on the same rows it is trying to update, but it
+    does not see effects of those commands on other rows in the database.
+    This behavior makes Read Committed mode unsuitable for commands that
+    involve complex search conditions; however, it is just right for simpler
+    cases.  For example, consider updating bank balances with transactions
+    like:
+    -->
+    因为上面的规则，正在更新的命令可能会看到一个不一致的快照：
+    它们可以看到并发更新命令在它尝试更新的相同行上的作用，
+    但是却看不到那些命令对数据库里其它行的作用。
+    这样的行为令读已提交模式不适合用于涉及复杂搜索条件的命令。不过，
+    它对于更简单的情况是正确的。例如，考虑用这样的命令更新银行余额：
 
 <screen>
 BEGIN;
@@ -271,8 +400,24 @@ COMMIT;
     <firstterm>可重复读</firstterm>隔离级别只看到在事务开始之前被提交的数据；它从来看不到未提交的数据或者并行事务在本事务执行期间提交的修改（不过，查询能够看见在它的事务中之前执行的更新，即使它们还没有被提交）。这是比<acronym>SQL</acronym>标准对此隔离级别所要求的更强的保证，并且阻止<xref linkend="mvcc-isolevel-table">中描述的所有现象。如上面所提到的，这是标准特别允许的，标准只描述了每种隔离级别必须提供的<emphasis>最小</emphasis>保护。
    </para>
 
+   <!-- 
    <para>
-    这个级别与读已提交不同之处在于，一个可重复读事务中的查询可以看见在<emphasis>事务</>开始时的一个快照，而不是事务中当前查询开始时的快照。因此，在一个<emphasis>单一</>事务中的后续<command>SELECT</command>命令看到的是相同的数据，即它们看不到其他事务在本事务启动后提交的修改。
+    This level is different from Read Committed in that a query in a
+    repeatable read transaction sees a snapshot as of the start of the
+    first non-transaction-control statement in the
+    <emphasis>transaction</>, not as of the start
+    of the current statement within the transaction.  Thus, successive
+    <command>SELECT</command> commands within a <emphasis>single</>
+    transaction see the same data, i.e., they do not see changes made by
+    other transactions that committed after their own transaction started.
+   </para>
+   -->
+   <para>
+    这个级别与读已提交不同之处在于，一个可重复读事务中的查询看到
+    <emphasis>事务</>中第一个非事务控制语句开始时的一个快照，
+    而不是事务中当前语句开始时的快照。
+    因此，在一个<emphasis>单一</>事务中的后续<command>SELECT</command>
+    命令看到的是相同的数据，即它们看不到其他事务在本事务启动后提交的修改。
    </para>
 
    <para>
@@ -417,11 +562,6 @@ ERROR:  could not serialize access due to read/write dependencies among transact
     </itemizedlist>
    </para>
 
-   <warning>
-    <para>
-     对可序列化事务隔离级别的支持还没有被增加到热备复制目标（在<xref linkend="hot-standby">中描述）中。目前在热备模式中支持的最严格的隔离级别是可重复读。虽然在主控机上的可序列化事务中执行所有持久化数据库写入将保证所有后备机将最终达到一个一致的状态，一个运行在后备机上的可重复读事务有时候能够看到一个短暂的与主控机上可序列化事务的任何序列化执行都不一致的状态。
-    </para>
-   </warning>
   </sect2>
  </sect1>
 
@@ -536,9 +676,16 @@ ERROR:  could not serialize access due to read/write dependencies among transact
         <para>
          与<literal>ROW EXCLUSIVE</literal>、<literal>SHARE UPDATE EXCLUSIVE</literal>、<literal>SHARE</literal>、<literal>SHARE ROW EXCLUSIVE</literal>、<literal>EXCLUSIVE</literal>和<literal>ACCESS EXCLUSIVE</literal>锁模式冲突。这种模式保护一个表不受并发数据修改所影响，并且是自排他的，这样在一个时刻只能有一个会话持有它。
         </para>
-
+        
+        <!-- 
         <para>
-         这种锁模式不被任何一个<productname>PostgreSQL</productname>命令自动取得。
+         Acquired by <command>CREATE TRIGGER</command> and many forms of
+         <command>ALTER TABLE</command> (see <xref linkend="SQL-ALTERTABLE">).
+        </para>
+        -->
+        <para>
+         通过<command>CREATE TRIGGER</command>和许多形式的<command>ALTER TABLE</command>
+         获得（参阅<xref linkend="SQL-ALTERTABLE">）。
         </para>
        </listitem>
       </varlistentry>
@@ -567,8 +714,25 @@ ERROR:  could not serialize access due to read/write dependencies among transact
          与所有模式的锁冲突（<literal>ACCESS SHARE</literal>、<literal>ROW SHARE</literal>、<literal>ROW EXCLUSIVE</literal>、<literal>SHARE UPDATE EXCLUSIVE</literal>、<literal>SHARE</literal>、<literal>SHARE ROW EXCLUSIVE</literal>、<literal>EXCLUSIVE</literal>和<literal>ACCESS EXCLUSIVE</literal>）。这种模式保证持有者是访问该表的唯一事务。
         </para>
 
+        <!-- 
         <para>
-         由<command>ALTER TABLE</>、<command>DROP TABLE</>、<command>TRUNCATE</command>、<command>REINDEX</command>、<command>CLUSTER</command>和<command>VACUUM FULL</command>命令获取。<command>ALTER TABLE</>的很多形式也在这个层面上获得锁（见<xref linkend="SQL-ALTERTABLE">）。这也是未显式指定模式的<command>LOCK TABLE</command>命令的默认锁模式。
+         Acquired by the <command>DROP TABLE</>,
+         <command>TRUNCATE</command>, <command>REINDEX</command>,
+         <command>CLUSTER</command>, <command>VACUUM FULL</command>,
+         and <command>REFRESH MATERIALIZED VIEW</command> (without
+         <option>CONCURRENTLY</option>)
+         commands. Many forms of <command>ALTER TABLE</> also acquire
+         a lock at this level. This is also the default lock mode for
+         <command>LOCK TABLE</command> statements that do not specify
+         a mode explicitly.
+        </para>
+        -->
+        <para>
+         由<command>ALTER TABLE</>、<command>DROP TABLE</>、<command>TRUNCATE</command>、
+         <command>REINDEX</command>、<command>CLUSTER</command>、<command>VACUUM FULL</command>
+         和<command>REFRESH MATERIALIZED VIEW</command>（不带<option>CONCURRENTLY</option>）
+         命令获取。<command>ALTER TABLE</>的很多形式也在这个级别上获得锁。
+         在<command>LOCK TABLE</command>命令没有明确声明锁模式时，它是缺省锁模式。
         </para>
        </listitem>
       </varlistentry>
@@ -1008,6 +1172,62 @@ SELECT pg_advisory_lock(q.id) FROM
      还要注意如果某人正在依赖显式锁定来避免并发更改，那么他应该使用读已提交模式， 或者是在可重复读模式里在执行命令之前小心地获取锁。 在可重复读事务里获取的锁保证了不会有其它修改该表的事务正在运行，但是如果事务看到的快照在获取锁之前， 那么它可能早于表中一些现在已经提交的更改。 一个可重复读事务的快照实际上是在它的第一个查询或者数据修改命令（<literal>SELECT</>、<literal>INSERT</>、<literal>UPDATE</>或<literal>DELETE</>）开始的时候冻结的，因此我们可以在快照冻结之前显式地获取锁。
     </para>
    </sect2>
+  </sect1>
+
+  <sect1 id="mvcc-caveats">
+   <!-- 
+   <title>Caveats</title>
+   -->
+   <title>警告</title>
+
+   <!-- 
+   <para>
+    Some DDL commands, currently only <xref linkend="sql-truncate"> and the
+    table-rewriting forms of <xref linkend="sql-altertable">, are not
+    MVCC-safe.  This means that after the truncation or rewrite commits, the
+    table will appear empty to concurrent transactions, if they are using a
+    snapshot taken before the DDL command committed.  This will only be an
+    issue for a transaction that did not access the table in question
+    before the DDL command started &mdash; any transaction that has done so
+    would hold at least an <literal>ACCESS SHARE</literal> table lock,
+    which would block the DDL command until that transaction completes.
+    So these commands will not cause any apparent inconsistency in the
+    table contents for successive queries on the target table, but they
+    could cause visible inconsistency between the contents of the target
+    table and other tables in the database.
+   </para>
+   -->
+   <para>
+    一些DDL命令（目前只有<xref linkend="sql-truncate">和表重写形式<xref linkend="sql-altertable">）
+    不是MVCC安全的。这意味着如果并发事务使用在提交DDL命令之前创建的快照，则在截断或重写提交后，
+    表对于并发事务将显示为空。这将只是在DDL命令启动之前没有访问所讨论的表的事务的问题;
+    任何已经这样做的事务将至少保持一个<literal>ACCESS SHARE</literal>表锁，
+    这将阻塞DDL命令直到该事务完成。因此，
+    这些命令将不会导致目标表上的连续查询的表内容中的任何明显不一致，
+    但是它们可能导致目标表的内容和数据库中的其他表之间的可见不一致。
+   </para>
+
+   <!-- 
+   <para>
+    Support for the Serializable transaction isolation level has not yet
+    been added to Hot Standby replication targets (described in
+    <xref linkend="hot-standby">).  The strictest isolation level currently
+    supported in hot standby mode is Repeatable Read.  While performing all
+    permanent database writes within Serializable transactions on the
+    master will ensure that all standbys will eventually reach a consistent
+    state, a Repeatable Read transaction run on the standby can sometimes
+    see a transient state that is inconsistent with any serial execution
+    of the transactions on the master.
+   </para>
+   -->
+   <para>
+    对可序列化事务隔离级别的支持还没有添加到热备复制目标中
+    （在<xref linkend="hot-standby">中描述）。
+    当前在热备用模式下支持的最严格的隔离级别是可重复读。
+    当在主机上的可序列化事务内执行所有永久性数据库写入操作时，
+    将确保所有备用数据库最终将达到一致的状态，
+    在备用数据库上运行的可重复读事务有时可以看到与主数据库上的事务的任何序列执行不一致的瞬时状态。
+   </para>
   </sect1>
 
   <sect1 id="locking-indexes">
