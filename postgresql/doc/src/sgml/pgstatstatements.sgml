@@ -14,16 +14,46 @@
  <para>
   该模块必须通过在<filename>postgresql.conf</>的<xref linkend="guc-shared-preload-libraries">中增加<literal>pg_stat_statements</>来载入，因为它需要额外的共享内存。这意味着增加或移除该模块需要一次服务器重启。
  </para>
+ 
+ <!-- 
+ <para>
+   When <filename>pg_stat_statements</filename> is loaded, it tracks
+   statistics across all databases of the server.  To access and manipulate
+   these statistics, the module provides a view, <structname>pg_stat_statements</>,
+   and the utility functions <function>pg_stat_statements_reset</> and
+   <function>pg_stat_statements</>.  These are not available globally but
+   can be enabled for a specific database with
+   <command>CREATE EXTENSION pg_stat_statements</>.
+ </para>
+ -->
+ <para>
+   当加载<filename>pg_stat_statements</filename>时，
+   它跟踪服务器所有数据库的统计信息。为了访问和操纵这些统计，
+   该模块提供了一个视图<structname>pg_stat_statements</>和工具函数
+   <function>pg_stat_statements_reset</>和<function>pg_stat_statements</>。
+   这些不是全局可用的，但可以使用<command>CREATE EXTENSION pg_stat_statements</>
+   为特定数据库启用。
+ </para>
 
  <sect2>
   <title><structname>pg_stat_statements</structname>视图</title>
 
+  <!-- 
   <para>
-   由该模块收集的统计信息通过一个名为
-   <structname>pg_stat_statements</>的系统视图可用。这个视图为每
-   一个可区分的数据库 ID、用户 ID 和查询 ID（最多到该模块可以追
-   踪的可区分语句的数量）的组合都包含一行。该视图的列如
-   <xref linkend="pgstatstatements-columns">中所示。
+   The statistics gathered by the module are made available via a
+   view named <structname>pg_stat_statements</>.  This view
+   contains one row for each distinct database ID, user ID and query
+   ID (up to the maximum number of distinct statements that the module
+   can track).  The columns of the view are shown in
+   <xref linkend="pgstatstatements-columns">.
+  </para>
+  -->
+  <para>
+   该模块收集的统计信息通过一个名为
+   <structname>pg_stat_statements</>的系统视图提供。
+   这个视图为每个不同的数据库 ID、用户 ID 和查询 ID
+   （最多到该模块可以追踪的不同语句的最大数量）包含一行。该视图的列显示在
+   <xref linkend="pgstatstatements-columns">中。
   </para>
 
   <table id="pgstatstatements-columns">
@@ -79,6 +109,46 @@
       <entry><type>double precision</type></entry>
       <entry></entry>
       <entry>在该语句中花费的总时间，以毫秒计</entry>
+     </row>
+
+     <row>
+      <entry><structfield>min_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry></entry>
+      <!-- 
+      <entry>Minimum time spent in the statement, in milliseconds</entry>
+      -->
+      <entry>在语句中花费的最短时间，以毫秒为单位</entry>
+     </row>
+
+     <row>
+      <entry><structfield>max_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry></entry>
+      <!-- 
+      <entry>Maximum time spent in the statement, in milliseconds</entry>
+      -->
+      <entry>在语句中花费的最长时间，以毫秒为单位</entry>
+     </row>
+
+     <row>
+      <entry><structfield>mean_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry></entry>
+      <!-- 
+      <entry>Mean time spent in the statement, in milliseconds</entry>
+      -->
+      <entry>在语句中花费的平均时间，以毫秒为单位</entry>
+     </row>
+
+     <row>
+      <entry><structfield>stddev_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry></entry>
+      <!-- 
+      <entry>Population standard deviation of time spent in the statement, in milliseconds</entry>
+      -->
+      <entry>在语句中花费的人口标准偏差时间，以毫秒为单位</entry>
      </row>
 
      <row>
@@ -180,21 +250,18 @@
    </tgroup>
   </table>
 
+  <!-- 
   <para>
-   只有在通过安装<literal>pg_stat_statements</>扩展明确地安装
-   了这个视图以及函数
-   <function>pg_stat_statements_reset</>和
-   <function>pg_stat_statements</>的数据库中，这个视图
-   以及函数才有效。不过，只要
-   <filename>pg_stat_statements</filename>被载入到服务器，
-   就会在服务器的所有数据库上跟踪统计信息，不管该视图是否存在。
-  </para>
-
+   For security reasons, non-superusers are not allowed to see the SQL
+   text or <structfield>queryid</structfield> of queries executed by other users.
+   They can see the statistics, however, if the view has been installed in their
+   database.
+  </para> 
+  -->
   <para>
-   由于安全性原因，非超级用户不被允许看到其他用户执行的查询
-   的 SQL 文本或者<structfield>queryid</structfield>。
-   不过，如果该视图被安装在他们的数据库中，他们就能够看见统
-   计信息。
+   出于安全原因，不允许非超级用户查看其它用户执行的 SQL 文本或者
+   <structfield>queryid</structfield>。
+   不过，如果视图已经安装到他们的数据库中，他们就可以查看统计信息。
   </para>
 
   <para>
@@ -214,12 +281,38 @@
   </para>
   
   <para>
-   <literal>pg_stat_statements</>的使用者可能希望使用
-   <structfield>queryid</>（也许会与<structfield>dbid</>和<structfield>userid</>组合）作为一个项比查询文本更稳定和可靠的标识符。但是，有一点很重要的是，对于<structfield>queryid</>哈希值稳定性只有有限的保障。因为该标识符是从解析分析后的树得来的，它的值是以这种形式出现的内部对象标识符的函数。这有一些违背直觉的含义。例如，如果有两个查询引用了同一个表，但是该表在两次查询之间被删除并且重建，显然这两个查询是完全一致的，但是<literal>pg_stat_statements</>将把它们认为是不同的。哈希处理也对机器架构以及平台的其他方面的差别很敏感。更进一步，认为<productname>PostgreSQL</>的不同主版本之间<structfield>queryid</>将会保持稳定是不安全的。
+   <structname>pg_stat_statements</>的使用者可能希望使用
+   <structfield>queryid</>（也许会与<structfield>dbid</>和<structfield>userid</>组合）作为一个项比查询文本更稳定和可靠的标识符。但是，有一点很重要的是，对于<structfield>queryid</>哈希值稳定性只有有限的保障。因为该标识符是从解析分析后的树得来的，它的值是以这种形式出现的内部对象标识符的函数。这有一些违背直觉的含义。例如，如果有两个查询引用了同一个表，但是该表在两次查询之间被删除并且重建，显然这两个查询是完全一致的，但是<filename>pg_stat_statements</>将把它们认为是不同的。哈希处理也对机器架构以及平台的其他方面的差别很敏感。更进一步，认为<productname>PostgreSQL</>的不同主版本之间<structfield>queryid</>将会保持稳定是不安全的。
   </para>
 
   <para>
    根据经验，只有在底层服务器版本以及目录元数据细节保持完全相同时，<structfield>queryid</>值才能被假定为稳定并且可比。两台参与到基于物理 WAL 重放的复制中的服务器会对相同的查询给出一样的<structfield>queryid</>值。但是，逻辑复制模式并不保证在所有相关细节上都保持完全一样的复制，因此在逻辑复制机之间计算代价时，<structfield>queryid</>并非是一个有用的标识符。如果有疑问，推荐直接进行测试。
+  </para>
+
+  <!-- 
+  <para>
+   The representative query texts are kept in an external disk file, and do
+   not consume shared memory.  Therefore, even very lengthy query texts can
+   be stored successfully.  However, if many long query texts are
+   accumulated, the external file might grow unmanageably large.  As a
+   recovery method if that happens, <filename>pg_stat_statements</> may
+   choose to discard the query texts, whereupon all existing entries in
+   the <structname>pg_stat_statements</> view will show
+   null <structfield>query</> fields, though the statistics associated with
+   each <structfield>queryid</> are preserved.  If this happens, consider
+   reducing <varname>pg_stat_statements.max</varname> to prevent
+   recurrences.
+  </para>
+  -->
+  <para>
+   代表性查询文本保存在外部磁盘文件中，并且不消耗共享内存。因此，
+   即使非常冗长的查询文本也可以成功存储。然而，如果许多长的查询文本被累积，
+   则外部文件可能变得不可管理地大。如果发生这种情况，作为恢复方法，
+   <filename>pg_stat_statements</>可以选择丢弃查询文本，其中
+   <structname>pg_stat_statements</>视图中的所有现有条目将显示空的
+   <structfield>query</>字段，尽管与每个<structfield>queryid</>
+   相关联的统计信息被保留。如果发生这种情况，请考虑减少
+   <varname>pg_stat_statements.max</varname>以防止重现。
   </para>
  </sect2>
 
