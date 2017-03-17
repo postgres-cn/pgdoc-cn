@@ -59,18 +59,23 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     ENABLE RULE <replaceable class="PARAMETER">rewrite_rule_name</replaceable>
     ENABLE REPLICA RULE <replaceable class="PARAMETER">rewrite_rule_name</replaceable>
     ENABLE ALWAYS RULE <replaceable class="PARAMETER">rewrite_rule_name</replaceable>
+    DISABLE ROW LEVEL SECURITY
+    ENABLE ROW LEVEL SECURITY
+    FORCE ROW LEVEL SECURITY
+    NO FORCE ROW LEVEL SECURITY
     CLUSTER ON <replaceable class="PARAMETER">index_name</replaceable>
     SET WITHOUT CLUSTER
     SET WITH OIDS
     SET WITHOUT OIDS
+    SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
+    SET { LOGGED | UNLOGGED }
     SET ( <replaceable class="PARAMETER">storage_parameter</replaceable> = <replaceable class="PARAMETER">value</replaceable> [, ... ] )
     RESET ( <replaceable class="PARAMETER">storage_parameter</replaceable> [, ... ] )
     INHERIT <replaceable class="PARAMETER">parent_table</replaceable>
     NO INHERIT <replaceable class="PARAMETER">parent_table</replaceable>
     OF <replaceable class="PARAMETER">type_name</replaceable>
     NOT OF
-    OWNER TO <replaceable class="PARAMETER">new_owner</replaceable>
-    SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable>
+    OWNER TO { <replaceable class="PARAMETER">new_owner</replaceable> | CURRENT_USER | SESSION_USER }
     REPLICA IDENTITY {DEFAULT | USING INDEX <replaceable class="PARAMETER">index_name</replaceable> | FULL | NOTHING}
 
 <phrase>并且 <replaceable class="PARAMETER">table_constraint_using_index</replaceable> 是：</phrase>
@@ -110,15 +115,6 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       于该列，你将需要用到<literal>CASCADE</>。如果指定了
       <literal>IF EXISTS</literal>但该列不存在，则不会抛出错误。
       这种情况中会发出一个提示。
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-    <term><literal>IF EXISTS</literal></term>
-    <listitem>
-     <para>
-      如果该表不存在，不要抛出一个错误。这种情况中会发出一个提示。
      </para>
     </listitem>
    </varlistentry>
@@ -171,7 +167,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       信息的内容可见<xref linkend="planner-stats">。
      </para>
      <para>
-      SET STATISTICS 要求一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+      <literal>SET STATISTICS</literal>要求一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
      </para>
     </listitem>
    </varlistentry>
@@ -351,6 +347,14 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       <literal>ENABLE ALWAYS</literal>的触发器的触发不会考虑当前复制
       模式。
      </para>
+     <!-- 
+     <para>
+      This command acquires a <literal>SHARE ROW EXCLUSIVE</literal> lock.
+     </para>
+     -->
+     <para>
+      这条命令要求一个<literal>SHARE ROW EXCLUSIVE</literal>锁。
+     </para>
     </listitem>
    </varlistentry>
 
@@ -362,6 +366,52 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       存在，但在查询重写时不会应用它。其语义与禁用的/启用的触发器的一样。
       对于<literal>ON SELECT</literal>规则会忽略这个配置，即使当前会话处于
       一种非默认的复制角色，这类规则总是会被应用以保持视图工作正常。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE</literal>/<literal>ENABLE ROW LEVEL SECURITY</literal></term>
+    <listitem>
+     <!-- 
+     <para>
+      These forms control the application of row security policies belonging
+      to the table.  If enabled and no policies exist for the table, then a
+      default-deny policy is applied.  Note that policies can exist for a table
+      even if row level security is disabled - in this case, the policies will
+      NOT be applied and the policies will be ignored.
+      See also
+      <xref linkend="SQL-CREATEPOLICY">.
+     </para>
+     -->
+     <para>
+      这些形式控制属于该表的行安全性策略的应用。如果被启用并且该表上不存在策略，
+      则将应用一个默认否定的策略。注意即使行级安全性被禁用，
+      在表上还是可以存在策略。在这种情况下，这些策略将不会被应用并且会被忽略。
+      另见<xref linkend="SQL-CREATEPOLICY">。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NO FORCE</literal>/<literal>FORCE ROW LEVEL SECURITY</literal></term>
+    <listitem>
+     <!-- 
+     <para>
+      These forms control the application of row security policies belonging
+      to the table when the user is the table owner.  If enabled, row level
+      security policies will be applied when the user is the table owner.  If
+      disabled (the default) then row level security will not be applied when
+      the user is the table owner.
+      See also
+      <xref linkend="SQL-CREATEPOLICY">.
+     </para>
+     -->
+     <para>
+      这些形式控制当用户是表拥有者时表上的行安全性策略的应用。如果被启用，
+      当用户是表拥有者时，行级安全性策略将被应用。如果被禁用（默认），
+      则当用户是表拥有者时，行级安全性将不会被应用。
+      另见<xref linkend="SQL-CREATEPOLICY">。
      </para>
     </listitem>
    </varlistentry>
@@ -416,6 +466,44 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
       这种形式从该表移除<literal>oid</literal>系统列。这完全等效于
       <literal>DROP COLUMN oid RESTRICT</literal>，不过如果没有
       <literal>oid</literal>列它不会抱怨。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET TABLESPACE</literal></term>
+    <listitem>
+     <para>
+      这种形式把该表的表空间改为指定的表空间并且把该表相关的数据文件移动到
+      新表空间中。如果表上有索引，则索引不会被移动。但是可以用额外的
+      <literal>SET TABLESPACE</literal>命令单独移动它们。用
+      <literal>ALL IN TABLESPACE</literal>形式可以用来移动当前数据库中处于
+      一个表空间中的所有表，这将首先锁住所有要移动的表并且接着挨个移动。这
+      种形式也支持<literal>OWNED BY</literal>，它将只移动指定角色拥有的表。
+      如果<literal>NOWAIT</literal>选项被指定，在无法立刻获得所有所需的锁
+      时该命令将会失败。注意系统目录不会被这个命令移动，如果需要可以使用
+      <command>ALTER DATABASE</command>或者显式的
+      <command>ALTER TABLE</command>调用来替代。
+      <literal>information_schema</literal>关系不会被认为是系统目录的部分，
+      它们将被移动。另见
+      <xref linkend="SQL-CREATETABLESPACE">。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET { LOGGED | UNLOGGED }</literal></term>
+    <listitem>
+     <!-- 
+     <para>
+      This form changes the table from unlogged to logged or vice-versa
+      (see <xref linkend="SQL-CREATETABLE-UNLOGGED">).  It cannot be applied
+      to a temporary table.
+     </para>
+     -->
+     <para>
+      这种形式将表从未记录更改为已记录，反之亦然
+      (参阅<xref linkend="SQL-CREATETABLE-UNLOGGED">)。它不能应用于临时表。
      </para>
     </listitem>
    </varlistentry>
@@ -519,27 +607,6 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     </listitem>
    </varlistentry>
 
-   <varlistentry>
-    <term><literal>SET TABLESPACE</literal></term>
-    <listitem>
-     <para>
-      这种形式把该表的表空间改为指定的表空间并且把该表相关的数据文件移动到
-      新表空间中。如果表上有索引，则索引不会被移动。但是可以用额外的
-      <literal>SET TABLESPACE</literal>命令单独移动它们。用
-      <literal>ALL IN TABLESPACE</literal>形式可以用来移动当前数据库中处于
-      一个表空间中的所有表，这将首先锁住所有要移动的表并且接着挨个移动。这
-      种形式也支持<literal>OWNED BY</literal>，它将只移动指定角色拥有的表。
-      如果<literal>NOWAIT</literal>选项被指定，在无法立刻获得所有所需的锁
-      时该命令将会失败。注意系统目录不会被这个命令移动，如果需要可以使用
-      <command>ALTER DATABASE</command>或者显式的
-      <command>ALTER TABLE</command>调用来替代。
-      <literal>information_schema</literal>关系不会被认为是系统目录的部分，
-      它们将被移动。另见
-      <xref linkend="SQL-CREATETABLESPACE">。
-     </para>
-    </listitem>
-   </varlistentry>
-
    <varlistentry id="SQL-CREATETABLE-REPLICA-IDENTITY">
     <term><literal>REPLICA IDENTITY</literal></term>
     <listitem>
@@ -604,6 +671,21 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
   <title>参数</title>
 
     <variablelist>
+
+    <varlistentry>
+      <term><literal>IF EXISTS</literal></term>
+      <listitem>
+       <!-- 
+       <para>
+        Do not throw an error if the table does not exist. A notice is issued
+        in this case.
+       </para>
+       -->
+       <para>
+        如果表不存在则不要抛出一个错误。这种情况下会发出一个提示。
+       </para>
+      </listitem>
+     </varlistentry>
 
      <varlistentry>
       <term><replaceable class="PARAMETER">name</replaceable></term>
@@ -809,9 +891,16 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     并且会临时要求差不多两倍的磁盘空间。
    </para>
 
+   <!-- 
    <para>
-    增加一个<literal>CHECK</>或者<literal>NOT NULL</>约束要求扫描
-    表以验证现有行符合该约束。
+    Adding a <literal>CHECK</> or <literal>NOT NULL</> constraint requires
+    scanning the table to verify that existing rows meet the constraint,
+    but does not require a table rewrite.
+   </para>
+   -->
+   <para>
+    增加一个<literal>CHECK</>或者<literal>NOT NULL</>约束要求扫描表，
+    以验证现有行符合该约束，但是不要求一次表重写。
    </para>
 
    <para>
@@ -828,6 +917,33 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     使用重写来完成）。
    </para>
 
+   <!-- 
+   <para>
+    To force immediate reclamation of space occupied by a dropped column,
+    you can execute one of the forms of <command>ALTER TABLE</> that
+    performs a rewrite of the whole table.  This results in reconstructing
+    each row with the dropped column replaced by a null value.
+   </para>
+   -->
+   <para>
+    要强制立即回收被已删除列占据的空间，你可以执行一种能导致全表重写的
+    <command>ALTER TABLE</>形式。
+    这会导致重新构造每一个行，并将被删除列替换为空值。
+   </para>
+
+   <!-- 
+   <para>
+    The rewriting forms of <command>ALTER TABLE</> are not MVCC-safe.
+    After a table rewrite, the table will appear empty to concurrent
+    transactions, if they are using a snapshot taken before the rewrite
+    occurred.  See <xref linkend="mvcc-caveats"> for more details.
+   </para>
+   -->
+   <para>
+    <command>ALTER TABLE</>的重写形式对于 MVCC 是不安全的。
+    在一次表重写之后，如果并发事务使用的是一个在重写发生前取得的快照，
+    该表将对这些并发事务呈现出空表的形态。详见<xref linkend="mvcc-caveats">。
+   </para>
    <para>
     要强制该表的一次立即重写，你可以使用
     <link linkend="SQL-VACUUM">VACUUM FULL</>、
@@ -907,7 +1023,7 @@ ALTER TABLE distributors
   </para>
 
   <para>
-   通过一个<literal>USING</literal>子句更改一个包含 UNIX 时间戳的整数列为
+   通过一个<literal>USING</literal>子句更改一个包含 Unix 时间戳的整数列为
    <type>timestamp with time zone</type>：
 <programlisting>
 ALTER TABLE foo
