@@ -124,12 +124,14 @@ CREATE DOMAIN <replaceable class="parameter">name</replaceable> [ AS ] <replacea
      <varlistentry>
       <term><literal>NOT NULL</></term>
       <listitem>
+       <!-- 
        <para>
-        这个域的值通常不能为空值。不过，如果带有这种约束的域
-        被赋值了一个已经成为空值的相匹配的域类型，仍有可能让
-        它接受空值，例如通过 LEFT OUTER JOIN 或者
-        <command>INSERT INTO tab (domcol) VALUES ((SELECT domcol FROM
-        tab WHERE false))</command>。
+        Values of this domain are prevented from being null
+        (but see notes below).
+       </para>
+       -->
+       <para>
+        这个域的值通常不能为空值（但是看看下面的注意）。
        </para>
       </listitem>
      </varlistentry>
@@ -151,14 +153,42 @@ CREATE DOMAIN <replaceable class="parameter">name</replaceable> [ AS ] <replacea
    <varlistentry>
     <term><literal>CHECK (<replaceable class="PARAMETER">expression</replaceable>)</literal></term>
     <listitem>
-     <para><literal>CHECK</>子句指定该域的值必须满足的完整性
-     约束或者测试。每一个约束必须是一个产生布尔结果的表达式。
-     它应该使用关键词<literal>VALUE</>来引用要被测试的值。
+     <!-- 
+     <para><literal>CHECK</> clauses specify integrity constraints or tests
+      which values of the domain must satisfy.
+      Each constraint must be an expression
+      producing a Boolean result.  It should use the key word <literal>VALUE</>
+      to refer to the value being tested.  Expressions evaluating
+      to TRUE or UNKNOWN succeed.  If the expression produces a FALSE result,
+      an error is reported and the value is not allowed to be converted
+      to the domain type.
+     </para>
+     -->
+     <para><literal>CHECK</>子句指定该域的值必须满足的完整性约束或者测试。
+     每一个约束必须是一个产生布尔结果的表达式。它应该使用关键词
+     <literal>VALUE</>来引用要被测试的值。计算为 TRUE 或者UNKNOWN 的表达式成功。
+     如果该表达式产生一个 FALSE 结果，会报告一个错误，
+     并且该值不允许被转换成该域类型。
      </para>
 
      <para>
       当前，<literal>CHECK</literal>表达式不能包含子查询，也不能
       引用除<literal>VALUE</>之外的其他变量。
+     </para>
+     
+     <!-- 
+     <para>
+      When a domain has multiple <literal>CHECK</literal> constraints,
+      they will be tested in alphabetical order by name.
+      (<productname>PostgreSQL</> versions before 9.5 did not honor any
+      particular firing order for <literal>CHECK</literal> constraints.)
+     </para>
+     -->
+     <para>
+      当一个域有多个<literal>CHECK</literal>约束，
+      将按照其名字的字母顺序测试它们（版本 9.5 之前的
+      <productname>PostgreSQL</>不遵循任何用于<literal>CHECK</literal>
+      约束的特定触发顺序）。
      </para>
     </listitem>
    </varlistentry>
@@ -166,7 +196,54 @@ CREATE DOMAIN <replaceable class="parameter">name</replaceable> [ AS ] <replacea
  </refsect1>
 
  <refsect1>
-  <title>示例</title>
+  <!-- 
+  <title>Notes</title>
+  -->
+  <title>注意</title>
+
+  <para>
+   <!-- 
+   Domain constraints, particularly <literal>NOT NULL</>, are checked when
+   converting a value to the domain type.  It is possible for a column that
+   is nominally of the domain type to read as null despite there being such
+   a constraint.  For example, this can happen in an outer-join query, if
+   the domain column is on the nullable side of the outer join.  A more
+   subtle example is
+   -->
+   在把一个值转换成域类型时会检查域约束（特别是<literal>NOT NULL</>）。
+   即使有一个这样的约束，有可能一个名义上属于该域类型的列也会被读成空值。
+   例如，如果在一次外连接查询中，属于该域的列出现在外连接的可为空值的一侧。
+   下面是一个更精细的例子：
+<programlisting>
+INSERT INTO tab (domcol) VALUES ((SELECT domcol FROM tab WHERE false));
+</programlisting>
+   <!-- 
+   The empty scalar sub-SELECT will produce a null value that is considered
+   to be of the domain type, so no further constraint checking is applied
+   to it, and the insertion will succeed.
+   -->
+   空的标量子-SELECT 将产生一个空值，它被认为是该域类型的值，
+   因此不会在其上应用任何进一步的约束检查，并且插入将会成功。
+  </para>
+
+  <!-- 
+  <para>
+   It is very difficult to avoid such problems, because of SQL's general
+   assumption that a null value is a valid value of every data type.  Best practice
+   therefore is to design a domain's constraints so that a null value is allowed,
+   and then to apply column <literal>NOT NULL</> constraints to columns of
+   the domain type as needed, rather than directly to the domain type.
+  </para>
+  -->
+  <para>
+   要避免这类问题很难，因为 SQL 的一般假设是空值也是每一种数据类型的合法值。
+   因此，最好的方法是设计一个允许空值的域约束，
+   然后根据需要在该域类型的列上应用列的<literal>NOT NULL</>约束。
+  </para>
+ </refsect1>
+
+ <refsect1>
+ <title>示例</title>
 
   <para>
    这个例子创建<type>us_postal_code</type>数据类型并且把它用在
