@@ -1145,15 +1145,15 @@ SELECT mleast(VARIADIC ARRAY[]::numeric[]);
 可以使用命名参数(<xref linkend="sql-syntax-calling-funcs">)调用一个可变参数函数，
 除非你指定<literal>VARIADIC</>。例如，这项工作：
 <screen>
-SELECT mleast(VARIADIC arr := ARRAY[10, -1, 5, 4.4]);
+SELECT mleast(VARIADIC arr => ARRAY[10, -1, 5, 4.4]);
 </screen>
     <!--
      but not these:
      -->
  但不是这些：
 <screen>
-SELECT mleast(arr := 10);
-SELECT mleast(arr := ARRAY[10, -1, 5, 4.4]);
+SELECT mleast(arr => 10);
+SELECT mleast(arr => ARRAY[10, -1, 5, 4.4]);
 </screen>
     </para>
 
@@ -2915,24 +2915,15 @@ typedef struct
 <programlisting>
 typedef struct {
     int32 length;
-    char data[1];
+    char data[FLEXIBLE_ARRAY_MEMBER];
 } text;
 </programlisting>
      <!--
-     Obviously,  the  data  field declared here is not long enough to hold
-     all possible strings.  Since it's impossible to declare a variable-size
-     structure in <acronym>C</acronym>, we rely on the knowledge that the
-     <acronym>C</acronym> compiler won't range-check array subscripts.  We
-     just allocate the necessary amount of space and then access the array as
-     if it were declared the right length.  (This is a common trick, which
-     you can read about in many textbooks about C.)
+     The <literal>[FLEXIBLE_ARRAY_MEMBER]</> notation means that the actual
+     length of the data part is not specified by this declaration.
  -->
  
- 显然，上面声明的数据域长度不足以存储任何可能的字符串。
- 因为在<acronym>C</acronym>中不可能声明变长结构，所以我们倚赖这样的知识：
- <acronym>C</acronym>编译器不会对数组下标进行范围检查。只需要分配足够的空间，
- 然后把数组当做已经声明为合适长度的变量访问。这是一个常用的技巧，
- 你可以在许多C教科书中读到。
+ <literal>[FLEXIBLE_ARRAY_MEMBER]</>意味着该数据部分的实际长度不是通过该声明指定的。
 
     </para>
 
@@ -3026,6 +3017,11 @@ memcpy(destination->data, buffer, 40);
          <entry><filename>utils/nabstime.h</filename></entry>
         </row>
         <row>
+        <row>
+         <entry><type>bigint</type> (<type>int8</type>)</entry>
+         <entry><type>int64</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
          <entry><type>boolean</type></entry>
          <entry><type>bool</type></entry>
  <!--
@@ -4734,7 +4730,29 @@ SRF_RETURN_DONE(funcctx)
 <acronym>SRF</>结束前都存活的数据。在大多数情况下，
 这意味着你在第一次调用设置的时候应该切换到<structfield>multi_call_memory_ctx</>。
 </para>
-
+    <warning>
+     <!-- 
+     <para>
+      While the actual arguments to the function remain unchanged between
+      calls, if you detoast the argument values (which is normally done
+      transparently by the
+      <function>PG_GETARG_<replaceable>xxx</replaceable></function> macro)
+      in the transient context then the detoasted copies will be freed on
+      each cycle. Accordingly, if you keep references to such values in
+      your <structfield>user_fctx</>, you must either copy them into the
+      <structfield>multi_call_memory_ctx</> after detoasting, or ensure
+      that you detoast the values only in that context.
+     </para>
+     -->
+     <para>
+      虽然函数的实参在多次调用之间保持不变，但如果在瞬时上下文中detoast
+      了参数值（通常由<function>PG_GETARG_<replaceable>xxx</replaceable></function>
+      宏完成），那么detoast的拷贝将在每次循环中被释放。相应地，
+      如果你把这些值的引用保存在<structfield>user_fctx</>中，
+      你也必须在detoast之后把它们拷贝到<structfield>multi_call_memory_ctx</>中，
+      或者确保你只在那个上下文中detoast这些值。
+     </para>
+    </warning>
     
 <para>
      <!--

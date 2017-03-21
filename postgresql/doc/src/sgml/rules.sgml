@@ -836,6 +836,45 @@ SELECT word FROM words ORDER BY word <-> 'caterpiler' LIMIT 10;
     第二，它们不是就地修改查询树，而是创建零个或多个新查询树并且可能把原始的那个查询树扔掉。
 </para>
 
+<caution>
+ <!-- 
+ <para>
+  In many cases, tasks that could be performed by rules
+  on <command>INSERT</>/<command>UPDATE</>/<command>DELETE</> are better done
+  with triggers.  Triggers are notationally a bit more complicated, but their
+  semantics are much simpler to understand.  Rules tend to have surprising
+  results when the original query contains volatile functions: volatile
+  functions may get executed more times than expected in the process of
+  carrying out the rules.
+ </para>
+ -->
+ <para>
+  在很多情况下，由<command>INSERT</>/<command>UPDATE</>/<command>DELETE</>
+  上的规则执行的任务用触发器能做得更好。触发器在记法上要更复杂些，
+  但是它们的语义理解起来更简单些。当原始查询包含不稳定函数时，
+  规则容易产生令人惊讶的结果：
+  在执行规则的过程中不稳定函数的执行次数可能比预期中的更多。
+ </para>
+
+ <!-- 
+ <para>
+  Also, there are some cases that are not supported by these types of rules at
+  all, notably including <literal>WITH</> clauses in the original query and
+  multiple-assignment sub-<literal>SELECT</>s in the <literal>SET</> list
+  of <command>UPDATE</> queries.  This is because copying these constructs
+  into a rule query would result in multiple evaluations of the sub-query,
+  contrary to the express intent of the query's author.
+ </para>
+ -->
+ <para>
+  还有，有些情况根本无法用这些类型的规则支持，典型的是在原始查询中包括
+  <literal>WITH</>子句以及在<command>UPDATE</>查询的<literal>SET</>
+  列表中包括多个赋值的子<literal>SELECT</>。
+  这是因为把这些结构复制到一个规则查询中可能导致子查询的多次计算，
+  这与查询的作者表达的意图相悖。
+ </para>
+</caution>
+
 <sect2>
 <title>更新规则如何工作</title>
 
@@ -1558,16 +1597,52 @@ SELECT * FROM phone_number WHERE tricky(person, phone);
 </para>
 
 <para>
-    当需要对一个视图提供行级安全时，<literal>security_barrier</literal>属性应该被应用到该视图。这会阻止恶意选择的函数和操作符在行上被调用，直到视图完成其工作。例如，如果前文所示的视图被创建成这样，它就是安全的：
+    <!-- 
+    When it is necessary for a view to provide row level security, the
+    <literal>security_barrier</literal> attribute should be applied to
+    the view.  This prevents maliciously-chosen functions and operators from
+    being passed values from rows until after the view has done its work.  For
+    example, if the view shown above had been created like this, it would
+    be secure:
+    -->
+    当需要对一个视图提供行级安全时，<literal>security_barrier</literal>
+    属性应该被应用到该视图。这会阻止恶意选择的函数和操作符通过行传递值，
+    直到视图完成其工作。例如，如果前文所示的视图被创建成这样，它就是安全的：
 <programlisting>
 CREATE VIEW phone_number WITH (security_barrier) AS
     SELECT person, phone FROM phone_data WHERE phone NOT LIKE '412%';
 </programlisting>
-    Views created with the 使用<literal>security_barrier</literal>创建的视图的性能会远差于没有使用该选项的视图。通常，没有办法来避免这种现状：如果最快的候选计划可能在安全性上折衷，它就必须被拒绝。出于该原因，这个选在在默认情况下是没有启用的。
+    使用<literal>security_barrier</literal>创建的视图的性能会远差于没有使用该选项的视图。通常，没有办法来避免这种现状：如果最快的候选计划可能在安全性上折衷，它就必须被拒绝。出于该原因，这个选在在默认情况下是没有启用的。
 </para>
 
+<!-- 
 <para>
-    当处理没有副作用的函数时，查询规划器有更多的灵活性。这类函数被称为<literal>LEAKPROOF</literal>，并且包括很多简单常用的操作符，例如很多等于操作符。查询规划器可以安全地允许这类函数在查询执行过程中的任何点被计算，因为在用户不可见的行上调用它们将不会泄露关于不可见行的任何信息。相反，一个可能会基于接收到的参数值抛出错误的函数（例如在溢出或被零除事件中抛出错误的函数）不是防泄漏的，并且如果它被应用在安全性视图的行过滤器之前，它可能会提供有关不可见行的有效信息。
+    The query planner has more flexibility when dealing with functions that
+    have no side effects.  Such functions are referred to as <literal>LEAKPROOF</literal>, and
+    include many simple, commonly used operators, such as many equality
+    operators.  The query planner can safely allow such functions to be evaluated
+    at any point in the query execution process, since invoking them on rows
+    invisible to the user will not leak any information about the unseen rows.
+    Further, functions which do not take arguments or which are not passed any
+    arguments from the security barrier view do not have to be marked as
+    <literal>LEAKPROOF</literal> to be pushed down, as they never receive data
+    from the view.  In contrast, a function that might throw an error depending
+    on the values received as arguments (such as one that throws an error in the
+    event of overflow or division by zero) is not leak-proof, and could provide
+    significant information about the unseen rows if applied before the security
+    view's row filters.
+</para>
+ -->
+<para>
+    当处理没有副作用的函数时，查询规划器有更多的灵活性。这类函数被称为
+    <literal>LEAKPROOF</literal>，并且包括很多简单常用的操作符，例如很多等于操作符。
+    查询规划器可以安全地允许这类函数在查询执行过程中的任何点被计算，
+    因为在用户不可见的行上调用它们将不会泄露关于不可见行的任何信息。
+    还有，不接收参数或者不从安全屏障视图得到任何参数的函数不必被标记为
+    <literal>LEAKPROOF</literal>以便被下推，因为它们从来不会从该视图接收数据。
+    相反，一个可能会基于接收到的参数值抛出错误的函数
+    （例如在溢出或被零除事件中抛出错误的函数）不是防泄漏的，
+    并且如果它被应用在安全性视图的行过滤器之前，它可能会提供有关不可见行的重要信息。
 </para>
 
 <para>
