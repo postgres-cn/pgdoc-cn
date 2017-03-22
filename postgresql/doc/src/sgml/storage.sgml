@@ -54,6 +54,14 @@
 </row>
 
 <row>
+ <entry><filename>pg_commit_ts</></entry>
+ <!-- 
+ <entry>Subdirectory containing transaction commit timestamp data</entry>
+ -->
+ <entry>包含事务提交时间戳数据的子目录</entry>
+</row>
+
+<row>
  <entry><filename>pg_clog</></entry>
  <entry>包含事务提交状态数据的子目录</entry>
 </row>
@@ -197,36 +205,184 @@ linkend="storage-fsm">），它存储关系中可用空闲空间的信息。空�
 本节提供<acronym>TOAST</>的概述（超尺寸属性存储技术－The Oversized-Attribute Storage Technique）。
 </para>
 
+<!-- 
 <para>
-<productname>PostgreSQL</productname>使用固定的页面尺寸（通常是8kB)，并且不允许元组跨越多个额页面。因此不可能直接存储非常大的域值。为了克服这个限制，大的域值会被压缩并/或分解成多个物理行。这些处理对用户都是透明的，只是在大部分的后端代码上有一些小的影响。这个技术的昵称是<acronym>TOAST</>（或者<quote>切片面包之后的最好的东西</>）。
+<productname>PostgreSQL</productname> uses a fixed page size (commonly
+8 kB), and does not allow tuples to span multiple pages.  Therefore, it is
+not possible to store very large field values directly.  To overcome
+this limitation, large field values are compressed and/or broken up into
+multiple physical rows.  This happens transparently to the user, with only
+small impact on most of the backend code.  The technique is affectionately
+known as <acronym>TOAST</> (or <quote>the best thing since sliced bread</>).
+The <acronym>TOAST</> infrastructure is also used to improve handling of
+large data values in-memory.
+</para>
+ -->
+<para>
+<productname>PostgreSQL</productname>使用固定的页面尺寸（通常是8kB)，
+并且不允许元组跨越多个页面。因此不可能直接存储非常大的域值。
+为了克服这个限制，大的域值会被压缩并/或分解成多个物理行。
+这些处理对用户都是透明的，只是在大部分的后端代码上有一些小的影响。
+这个技术的昵称是<acronym>TOAST</>（或者<quote>从切片面包以来最好的事情</>）。
+<acronym>TOAST</>机制也被用来提升内存中大型数据值的处理。
+</para>
+
+<!-- 
+<para>
+Only certain data types support <acronym>TOAST</> &mdash; there is no need to
+impose the overhead on data types that cannot produce large field values.
+To support <acronym>TOAST</>, a data type must have a variable-length
+(<firstterm>varlena</>) representation, in which, ordinarily, the first
+four-byte word of any stored value contains the total length of the value in
+bytes (including itself).  <acronym>TOAST</> does not constrain the rest
+of the data type's representation.  The special representations collectively
+called <firstterm><acronym>TOAST</>ed values</firstterm> work by modifying or
+reinterpreting this initial length word.  Therefore, the C-level functions
+supporting a <acronym>TOAST</>-able data type must be careful about how they
+handle potentially <acronym>TOAST</>ed input values: an input might not
+actually consist of a four-byte length word and contents until after it's
+been <firstterm>detoasted</>.  (This is normally done by invoking
+<function>PG_DETOAST_DATUM</> before doing anything with an input value,
+but in some cases more efficient approaches are possible.
+See <xref linkend="xtypes-toast"> for more detail.)
+</para>
+ -->
+<para>
+只有特定的数据类型支持<acronym>TOAST</> &mdash; 
+我们没必要在那些不可能生成大域值的数据类型上强加这种负担。要支持<acronym>TOAST</>，
+数据类型必须有变长（<firstterm>varlena</>）的表现形式，
+通常在存储的值中，头四个字节包含值的总字节长度（包括值本身）。<acronym>TOAST</>
+并不约束该数据类型的表达的剩余部分。这种特殊的表达被统称为<firstterm><acronym>TOAST</>
+过的值</firstterm>，对它们的操作都必须通过修改或者重新解释这个初始长度字来进行。
+因此，支持一种可<acronym>TOAST</>数据类型的 C 级函数必须要小心它们怎样处理潜在被
+<acronym>TOAST</>过的输入值：一个输入值可能并不真正由一个四字节长度和内容构成，
+直到它被<firstterm>detoasted</>（通常是在对一个输入值做任何事情之前，先调用
+<function>PG_DETOAST_DATUM</>；但是在某些情况下也存在更高效的方法，
+详见<xref linkend="xtypes-toast">）。
+</para>
+
+<!-- 
+<para>
+<acronym>TOAST</> usurps two bits of the varlena length word (the high-order
+bits on big-endian machines, the low-order bits on little-endian machines),
+thereby limiting the logical size of any value of a <acronym>TOAST</>-able
+data type to 1 GB (2<superscript>30</> - 1 bytes).  When both bits are zero,
+the value is an ordinary un-<acronym>TOAST</>ed value of the data type, and
+the remaining bits of the length word give the total datum size (including
+length word) in bytes.  When the highest-order or lowest-order bit is set,
+the value has only a single-byte header instead of the normal four-byte
+header, and the remaining bits of that byte give the total datum size
+(including length byte) in bytes.  This alternative supports space-efficient
+storage of values shorter than 127 bytes, while still allowing the data type
+to grow to 1 GB at need.  Values with single-byte headers aren't aligned on
+any particular boundary, whereas values with four-byte headers are aligned on
+at least a four-byte boundary; this omission of alignment padding provides
+additional space savings that is significant compared to short values.
+As a special case, if the remaining bits of a single-byte header are all
+zero (which would be impossible for a self-inclusive length), the value is
+a pointer to out-of-line data, with several possible alternatives as
+described below.  The type and size of such a <firstterm>TOAST pointer</>
+are determined by a code stored in the second byte of the datum.
+Lastly, when the highest-order or lowest-order bit is clear but the adjacent
+bit is set, the content of the datum has been compressed and must be
+decompressed before use.  In this case the remaining bits of the four-byte
+length word give the total size of the compressed datum, not the
+original data.  Note that compression is also possible for out-of-line data
+but the varlena header does not tell whether it has occurred &mdash;
+the content of the <acronym>TOAST</> pointer tells that, instead.
+</para>
+ -->
+<para>
+<acronym>TOAST</>占用使用变长类型的长度字的最高两个二进制位
+（大端机器上的高位，小端机器上的低位），这样就把任何可<acronym>TOAST</>
+数据类型值的逻辑长度限制在1GB（2<superscript>30</> - 1字节）。如果两个位都是零，
+那么数值是该数据类型一个普通的未<acronym>TOAST</>的值，
+并且长度字的剩余位给出整个数据以字节计的大小（包括长度字）
+当最高位或者最低位被设置时，该值只是有一个单字节头部而不是通常的四字节头部，
+并且该字节的剩余位数给出了以字节计的总数据尺寸（包括长度字节）。
+此替代方案支持空间有效的存储小于127个字节的值，
+不过需要时仍然允许数据类型增长到 1GB。
+带有单字节头部的值不会按照任何特别的边界对齐，
+反之带有四字节头部的值会按照至少一个四字节边界对齐。
+这种对齐填充的省略额外地节省了空间，这种节省比起短值来说更加显著。
+作为一种特殊情况，如果一个单字节头部的剩余位全是零
+（对于一个自包含的长度来说是不可能的），该值就是一个线外数据的指针，
+这就可能有下文所述的几种可能的情况。这样一个<firstterm>TOAST 指针</>
+的类型和尺寸由该数据的第二个字节中存储的一个代码决定。最后，
+如果最高位或最低位被清除而相邻位被设置，
+则表示该数据的内容被压缩过并且在使用前必须先解压。
+在这种情况中四字节长度字的剩余位指出了压缩过的数据的大小，
+而不是原始数据的大小。注意对于线外数据也可能存在压缩，
+但是变长数据的头部不会告诉我们压缩是否发生 &mdash; <acronym>TOAST</>
+指针的内容将说明这个问题。
+</para>
+
+<!-- 
+<para>
+As mentioned, there are multiple types of <acronym>TOAST</> pointer datums.
+The oldest and most common type is a pointer to out-of-line data stored in
+a <firstterm><acronym>TOAST</> table</firstterm> that is separate from, but
+associated with, the table containing the <acronym>TOAST</> pointer datum
+itself.  These <firstterm>on-disk</> pointer datums are created by the
+<acronym>TOAST</> management code (in <filename>access/heap/tuptoaster.c</>)
+when a tuple to be stored on disk is too large to be stored as-is.
+Further details appear in <xref linkend="storage-toast-ondisk">.
+Alternatively, a <acronym>TOAST</> pointer datum can contain a pointer to
+out-of-line data that appears elsewhere in memory.  Such datums are
+necessarily short-lived, and will never appear on-disk, but they are very
+useful for avoiding copying and redundant processing of large data values.
+Further details appear in <xref linkend="storage-toast-inmemory">.
+</para>
+ -->
+<para>
+如前所述，有多种类型的<acronym>TOAST</>指针数据。
+最古老且最常见的类型是指向存储在一个<firstterm><acronym>TOAST</>表</firstterm>
+中的线外数据的指针，<acronym>TOAST</>表与包含该<acronym>TOAST</>
+指针数据本身的表是相关的，但两者又是被分离存储的。
+当一个要被存储在磁盘上的元组过大时，这些<firstterm>磁盘上</>的指针数据由
+<acronym>TOAST</>管理代码（在<filename>access/heap/tuptoaster.c</>中）所创建。
+<xref linkend="storage-toast-ondisk">中给出了更多的细节。或者，一个
+<acronym>TOAST</>指针数据能够包含一个指向出现在内存中某处的线外数据的指针。
+这种数据必定是短命的并且将不会出现在磁盘上，
+但是它们对于避免大型数据值的复制和冗余处理非常有用。
+详见<xref linkend="storage-toast-inmemory">。
+</para>
+
+<!-- 
+<para>
+The compression technique used for either in-line or out-of-line compressed
+data is a fairly simple and very fast member
+of the LZ family of compression techniques.  See
+<filename>src/common/pg_lzcompress.c</> for the details.
+</para>
+ -->
+<para>
+线内或者线外压缩数据所使用的压缩技术是 LZ 
+压缩技术家族中一种相对简单且非常快速的成员。详见
+<filename>src/common/pg_lzcompress.c</>。
+</para>
+
+<sect2 id="storage-toast-ondisk">
+ <!-- 
+ <title>Out-of-line, on-disk TOAST storage</title>
+ -->
+ <title>线外磁盘上 TOAST 存储</title>
+
+<para>
+如果一个表中有任何一个列是可以<acronym>TOAST</>的， 那么该表将有一个与之关联的<acronym>TOAST</>表，其 OID 存储在表的<structname>pg_class</>.<structfield>reltoastrelid</>项中。磁盘上的被<acronym>TOAST</>过的值保存在<acronym>TOAST</>表里，下文有更详细的描述。
+</para>
+
+
+<para>
+线外值被分裂成（如果压缩过，在压缩之后分裂）最大为<symbol>TOAST_MAX_CHUNK_SIZE</>（默认情况下该值应选为使得四个块（chunk）行能放在一个页面中，这个数值大约为2000 字节）字节的块。每个块都作为独立的行存储在属于所属表的TOAST表中。每个<acronym>TOAST</>表都有列<structfield>chunk_id</>（一个表示特定的被<acronym>TOAST</>过的数据的OID）、<structfield>chunk_seq</>（一个序列号，存储该块在值中的位置）和一个<structfield>chunk_data</>（该块的实际数据）。在<structfield>chunk_id</>和<structfield>chunk_seq</>上有一个唯一索引， 提供对值的快速检索。因此，一个表示线外磁盘上<acronym>TOAST</>过的值的指针数据应存储要查看的<acronym>TOAST</>表的OID以及 指定值的OID（它的<structfield>chunk_id</>）。为了方便， 指针数据还存储逻辑数据的尺寸（原始的未压缩的数据长度）以及物理存储的尺寸（如果应用了压缩，则两者不同）。 加上变长数据头部的字节，一个磁盘上<acronym>TOAST</>指针数据的总尺寸是18字节，不管它代表的值的实际长度是多大。
 </para>
 
 <para>
-只有特定的数据类型支持<acronym>TOAST</> &mdash; 我们没必要在那些不可能生成大域值的数据类型上强加这种负担。要支持<acronym>TOAST</>，数据类型必须有变长（<firstterm>varlena</>）的表现形式， 在其中任何存储值的头32位字都包含以字节记的值的总长度（包括长度本身）。<acronym>TOAST</>并不约束剩下的表现形式。所有支持可<acronym>TOAST</>数据类型的C级别的函数都必须仔细处理<acronym>TOAST</>过的输入值（通常是在对一个输入值做任何事情之前，先调用<function>PG_DETOAST_DATUM</>； 但是在某些情况下也存在更高效的方法）。
+<acronym>TOAST</>管理代码只有在准备向一个表中存储超过<symbol>TOAST_TUPLE_THRESHOLD</>字节（通常是2kB）的行值的时候才会触发。<acronym>TOAST</>代码将压缩和/或线外存储域值，直到行值比<symbol>TOAST_TUPLE_TARGET</>字节（通常也是2kB）短，或者无法得到更好的结果的时候才停止。在一个 UPDATE 操作过程中，未改变的域的值通常原样保存； 所以，如果 UPDATE 一个带有线外值的行时，假如线外值没有变化，那么将不会产生<acronym>TOAST</>开销。
 </para>
 
 <para>
-<acronym>TOAST</>占用使用变长类型的长度字的最高两个二进制位（大端法机器上的高位，小端法机器上的低位）， 这样就把任何可TOAST值的逻辑长度限制在1GB（2<superscript>30</> - 1字节）。如果两个位都是零，那么数值是该数据类型一个普通的未TOAST的值，并且长度字的剩余位给出整个数据以字节计的大小（包括长度字）。作为一种特殊情况，如果剩余的字节也都是0（它不可能时一个自包含的长度），该值是一个指向存放在独立TOAST表中的线外数据的指针（TOAST指针的大小由数据的第二个字节给定）。只有单字节头部的值也不会按照任何边界对齐。最后，如果最高位或最低位被清除而另一位被设置，则表示该数据的内容被压缩过并且在使用前必须先解压。在这种情况中长度字的剩余位指出了压缩过的数据的大小，而不是原始数据的大小。注意对于线外数据也可能存在压缩，但是变长数据的头部不会告诉我们压缩是否发生 &mdash; TOAST指针的内容将说明这个问题。
-</para>
-
-<para>
-如果一个表中有任何一个列是可以<acronym>TOAST</>的， 那么该表将有一个与之关联的<acronym>TOAST</>表，其 OID 存储在表的<structname>pg_class</>.<structfield>reltoastrelid</>项中。线外的被<acronym>TOAST</>过的值保存在<acronym>TOAST</>表里，下文有更详细的描述。
-</para>
-
-<para>
-这里使用的压缩技术是相当简单并且快速的 LZ 族压缩技术。更多细节请参考<filename>src/backend/utils/adt/pg_lzcompress.c</>。
-</para>
-
-<para>
-线外值被分裂成（如果压缩过，在压缩之后分裂）最大为<symbol>TOAST_MAX_CHUNK_SIZE</>（默认情况下该值应选为使得四个块（chunk）行能放在一个页面中，这个数值大约为2000 字节）字节的块。每个块都作为独立的行存储在所属表的TOAST表中。每个<acronym>TOAST</>表都有列<structfield>chunk_id</>（一个表示特定的被<acronym>TOAST</>过的数据的OID）、<structfield>chunk_seq</>（一个序列号，存储该块在值中的位置）和一个<structfield>chunk_data</>（该块的实际数据）。在<structfield>chunk_id</>和<structfield>chunk_seq</>上有一个唯一索引， 提供对值的快速检索。因此，一个表示线外<acronym>TOAST</>过的值的指针数据应存储要查看的<acronym>TOAST</>表的OID以及 指定值的OID（它的<structfield>chunk_id</>）。为了方便， 指针数据还存储逻辑数据的尺寸（原始的未压缩的数据长度）以及实际存储的尺寸（如果应用了压缩，则两者不同）。 加上变长数据头部的字节，一个<acronym>TOAST</>指针数据的总尺寸是18字节，不管它代表的值的实际长度是多大。
-</para>
-
-<para>
-<acronym>TOAST</>代码只有在准备向一个表中存储超过<symbol>TOAST_TUPLE_THRESHOLD</>字节（通常是2kB）的行值的时候才会触发。<acronym>TOAST</>代码将压缩和/或线外存储域值，直到行值比<symbol>TOAST_TUPLE_TARGET</>字节（通常也是2kB）短，或者无法得到更好的结果的时候才停止。在一个 UPDATE 操作过程中，未改变的域的值通常原样保存； 所以，如果 UPDATE 一个带有线外值的行时，假如线外值没有变化，那么将不会产生<acronym>TOAST</>开销。
-</para>
-
-<para>
-<acronym>TOAST</>代码识别四种不同的存储可<acronym>TOAST</>列的策略：
+<acronym>TOAST</>管理代码识别四种不同的在磁盘上存储可<acronym>TOAST</>列的策略：
 
    <itemizedlist>
     <listitem>
@@ -257,6 +413,136 @@ linkend="storage-fsm">），它存储关系中可用空闲空间的信息。空�
 <para>
 这个方法比那些更直接的方法（比如允许行值跨越多个页面）有更多优点。 假设查询通常是用相对比较短的键值进行匹配的，那么执行器的大多数工作都将使用主行项完成。<acronym>TOAST</>过的属性的大值只是在把结果集发送给客户端的时候才被抽出来（如果它被选中）。 因此，主表要小得多，并且它的能放入到共享缓冲区中的行要比没有任何线外存储的方案更多。 排序集也缩小了，并且排序将更多地在内存里完成。一个小测试表明，一个典型的保存 HTML 页面以及它们的 URL 的表占用的存储（包括<acronym>TOAST</>表在内）大约只有裸数据的一半，而主表只包含全部数据的 10%（URL和一些小的 HTML 页面）。与在一个非<acronym>TOAST</>的对照表里面存储（把全部 HTML 页面裁剪成 7Kb 以匹配页面大小）同样的数据相比，运行时没有任何区别。
 </para>
+</sect2>
+
+<sect2 id="storage-toast-inmemory">
+ <!-- 
+ <title>Out-of-line, in-memory TOAST storage</title>
+ -->
+ <title>线外内存中 TOAST 存储</title>
+
+<!-- 
+<para>
+<acronym>TOAST</> pointers can point to data that is not on disk, but is
+elsewhere in the memory of the current server process.  Such pointers
+obviously cannot be long-lived, but they are nonetheless useful.  There
+are currently two sub-cases:
+pointers to <firstterm>indirect</> data and
+pointers to <firstterm>expanded</> data.
+</para>
+ -->
+<para>
+<acronym>TOAST</>指针可以指向不在磁盘上但在当前服务器进程内存中的数据。
+这样的指针显然不是长期存在的，但是它们是有用的。当前有两种子情况：
+指向<firstterm>间接</>数据的指针以及指向<firstterm>扩展</>数据的指针.
+</para>
+
+<!-- 
+<para>
+Indirect <acronym>TOAST</> pointers simply point at a non-indirect varlena
+value stored somewhere in memory.  This case was originally created merely
+as a proof of concept, but it is currently used during logical decoding to
+avoid possibly having to create physical tuples exceeding 1 GB (as pulling
+all out-of-line field values into the tuple might do).  The case is of
+limited use since the creator of the pointer datum is entirely responsible
+that the referenced data survives for as long as the pointer could exist,
+and there is no infrastructure to help with this.
+</para>
+ -->
+<para>
+间接<acronym>TOAST</>指针指向存储在内存中某个地方的非间接 varlena 值。
+这种情况起初仅仅作为一种概念验证而创建，
+但是当前它被用来在逻辑解码期间避免创建超过 1GB 的物理元组
+（把所有线外域值都拉入元组就会这样）。这种情况用处有限，
+因为该指针数据的创建者需要完全负责确保只要指针存在，被引用数据就应该存在，
+并且没有其他设施来帮助它。
+</para>
+
+<!-- 
+<para>
+Expanded <acronym>TOAST</> pointers are useful for complex data types
+whose on-disk representation is not especially suited for computational
+purposes.  As an example, the standard varlena representation of a
+<productname>PostgreSQL</> array includes dimensionality information, a
+nulls bitmap if there are any null elements, then the values of all the
+elements in order.  When the element type itself is variable-length, the
+only way to find the <replaceable>N</>'th element is to scan through all the
+preceding elements.  This representation is appropriate for on-disk storage
+because of its compactness, but for computations with the array it's much
+nicer to have an <quote>expanded</> or <quote>deconstructed</>
+representation in which all the element starting locations have been
+identified.  The <acronym>TOAST</> pointer mechanism supports this need by
+allowing a pass-by-reference Datum to point to either a standard varlena
+value (the on-disk representation) or a <acronym>TOAST</> pointer that
+points to an expanded representation somewhere in memory.  The details of
+this expanded representation are up to the data type, though it must have
+a standard header and meet the other API requirements given
+in <filename>src/include/utils/expandeddatum.h</>.  C-level functions
+working with the data type can choose to handle either representation.
+Functions that do not know about the expanded representation, but simply
+apply <function>PG_DETOAST_DATUM</> to their inputs, will automatically
+receive the traditional varlena representation; so support for an expanded
+representation can be introduced incrementally, one function at a time.
+</para>
+-->
+<para>
+扩展的<acronym>TOAST</>指针对于复杂数据类型有用，
+这些数据类型在盘上的表示形式不是特别适合计算性的目的。例如，
+一个<productname>PostgreSQL</>数组的标准 varlena 表达包括了维度信息、
+一个空值位图（如果有任何空值元素），然后是按顺序的所有元素的值。
+当元素类型本身是变长时，找到第<replaceable>N</>
+个元素的唯一方式是扫描所有在它前面的元素。这种表达适合于磁盘上的存储，
+因为它的紧凑性。但是为了对该数组进行计算，则<quote>扩展</>或者<quote>结构</>
+表达会更好，这些表达中所有元素的开始位置都会被标记出来。<acronym>TOAST</>
+指针机制支持这种需要，通过允许通过引用传递的数据指向一个标准 varlena 值
+（磁盘上的表达）或者一个<acronym>TOAST</>指针指向内存中某处的一个扩展表达。
+这种扩展表达的细节取决于数据类型，不过它必须具有一个标准的头部并且符合
+<filename>src/include/utils/expandeddatum.h</>中给定的其他 API 要求。
+该数据类型的 C-级别函数可以选择处理任一表达。
+不了解扩展表达但简单地在其输入上应用<function>PG_DETOAST_DATUM</>
+的函数将自动地接收到传统的 varlena 表达。
+因此对于一种扩展表达的支持可以被增量式地引入，一次一个函数。
+</para>
+
+<!-- 
+<para>
+<acronym>TOAST</> pointers to expanded values are further broken down
+into <firstterm>read-write</> and <firstterm>read-only</> pointers.
+The pointed-to representation is the same either way, but a function that
+receives a read-write pointer is allowed to modify the referenced value
+in-place, whereas one that receives a read-only pointer must not; it must
+first create a copy if it wants to make a modified version of the value.
+This distinction and some associated conventions make it possible to avoid
+unnecessary copying of expanded values during query execution.
+</para>
+-->
+<para>
+扩展值的<acronym>TOAST</>指针会被进一步分解成<firstterm>read-write</>
+和<firstterm>read-only</>指针。两种方式指向的表达是相同的，
+但是收到一个读写指针的函数被允许就地修改被引用值，
+而接收到只读指针的函数则不能。如果后者想要做一个该值的被修改的版本，
+它必须先创建一个副本。
+这种区分和一些相关的惯例使得可以在查询执行期间避免不必要的扩展值副本。
+</para>
+
+<!-- 
+<para>
+For all types of in-memory <acronym>TOAST</> pointer, the <acronym>TOAST</>
+management code ensures that no such pointer datum can accidentally get
+stored on disk.  In-memory <acronym>TOAST</> pointers are automatically
+expanded to normal in-line varlena values before storage &mdash; and then
+possibly converted to on-disk <acronym>TOAST</> pointers, if the containing
+tuple would otherwise be too big.
+</para>
+-->
+<para>
+对于所有内存中<acronym>TOAST</>指针的类型，<acronym>TOAST</>
+管理代码会确保这类指针数据不会意外地被存储在磁盘上。
+在存储之前内存中<acronym>TOAST</>指针会被自动地扩展成通常的线内 varlena 值
+&mdash;然后可能会被转换成磁盘上的<acronym>TOAST</>指针（如果包含的元组不是太大）。
+</para>
+
+</sect2>
 
 </sect1>
 
@@ -395,7 +681,11 @@ linkend="storage-fsm">），它存储关系中可用空闲空间的信息。空�
 
  <para>
 
-  每个页面的头24个字节组成页头（PageHeaderData）。它的格式在<xref linkend="pageheaderdata-table">里详细介绍。 头两个字节跟踪与此页面相关的最近的 WAL 项。接下来一个2字节的域包含标志位。此后跟随着三个 2 字节的整数域 （<structfield>pd_lower</structfield>、<structfield>pd_upper</structfield>和<structfield>pd_special</structfield>）。 这些域包含从页面开始位置到未分配空间开头的字节偏移、到未分配空间结尾的字节偏移以及到特殊空间开头的字节偏移。页面头中再接下来的 2 字节（<structfield>pd_pagesize_version</structfield>）存储页面尺寸和一个版本指示器。从<productname>PostgreSQL</productname> 8.3开始的版本号为4；<productname>PostgreSQL</productname> 8.1和8.2使用版本号3；<productname>PostgreSQL</productname> 8.0 使用版本号 2；<productname>PostgreSQL</productname> 7.3 和 7.4 使用版本号 1； 更早的版本使用版本号 0（基本页面布局和头格式在大部分这些版本里都没有改变，但是堆的行头部布局有所变化）。 页面大小主要用于交叉检查；目前在一次安装里，还不能支持多于一种页面大小。最后的域是一个提示，它显示删除该页是否可能获益：它跟踪在页面上最老的未删除的XMAX。
+  每个页面的头24个字节组成页头（<structname>PageHeaderData</>）。
+  它的格式在<xref linkend="pageheaderdata-table">里详细介绍。
+  第一个域跟踪与此页面相关的最近的 WAL 项。
+  第二个域包含该页面的校验码（如果<xref linkend="app-initdb-data-checksums">
+  被启用）。接下来一个2字节的域包含标志位。此后跟随着三个 2 字节的整数域 （<structfield>pd_lower</structfield>、<structfield>pd_upper</structfield>和<structfield>pd_special</structfield>）。 这些域包含从页面开始位置到未分配空间开头的字节偏移、到未分配空间结尾的字节偏移以及到特殊空间开头的字节偏移。页面头中再接下来的 2 字节（<structfield>pd_pagesize_version</structfield>）存储页面尺寸和一个版本指示器。从<productname>PostgreSQL</productname> 8.3开始的版本号为4；<productname>PostgreSQL</productname> 8.1和8.2使用版本号3；<productname>PostgreSQL</productname> 8.0 使用版本号 2；<productname>PostgreSQL</productname> 7.3 和 7.4 使用版本号 1； 更早的版本使用版本号 0（基本页面布局和头格式在大部分这些版本里都没有改变，但是堆的行头部布局有所变化）。 页面大小主要用于交叉检查；目前在一次安装里，还不能支持多于一种页面大小。最后的域是一个提示，它显示删除该页是否可能获益：它跟踪在页面上最老的未删除的XMAX。
 
  </para>
 
@@ -414,7 +704,7 @@ linkend="storage-fsm">），它存储关系中可用空闲空间的信息。空�
  <tbody>
   <row>
    <entry>pd_lsn</entry>
-   <entry>XLogRecPtr</entry>
+   <entry>PageXLogRecPtr</entry>
    <entry>8 bytes</entry>
    <entry>LSN: 最后修改这个页面的 xlog 记录最后一个字节后面的第一个字节</entry>
   </row>
@@ -558,7 +848,7 @@ linkend="storage-fsm">），它存储关系中可用空闲空间的信息。空�
  </table>
 
  <para>
-   所有细节都可以在<filename>src/include/access/htup.h</filename>中找到。
+   所有细节都可以在<filename>src/include/access/htup_details.h</filename>中找到。
  </para>
 
  <para>

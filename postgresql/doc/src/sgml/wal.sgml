@@ -211,34 +211,183 @@
    检查点对于刷写所有脏数据页到磁盘的要求可能会导致可观的I/O负载。出于这一原因，检查点活动是被有所限制的，这样I/O在检查点开始时开始并且能在下一个检查点将要开始之间完成，这使得检查点期间的性能下降被最小化。
   </para>
 
+  <!-- 
   <para>
-   服务器的检查点进程自动地偶尔执行一个检查点。检查点在每<xref linkend="guc-checkpoint-segments">个日志段或者每<xref linkend="guc-checkpoint-timeout">秒开始，以先达到的为准。默认的设置分别是3个段和300秒（5分钟）。如果从前一个检查点以来没有WAL被写入，则即使过了<varname>checkpoint_timeout</>新的检查点也会被跳过（如果正在使用WAL归档并且你想对文件被归档频率设置一个较低的限制来约束潜在的数据丢失，你应该调整<xref linkend="guc-archive-timeout">参数而不是检查点参数）。也可以使用SQL命令<command>CHECKPOINT</command>来强制一个检查点。
+   The server's checkpointer process automatically performs
+   a checkpoint every so often.  A checkpoint is begun every <xref
+   linkend="guc-checkpoint-timeout"> seconds, or if
+   <xref linkend="guc-max-wal-size"> is about to be exceeded,
+   whichever comes first.
+   The default settings are 5 minutes and 1 GB, respectively.
+   If no WAL has been written since the previous checkpoint, new checkpoints
+   will be skipped even if <varname>checkpoint_timeout</> has passed.
+   (If WAL archiving is being used and you want to put a lower limit on how
+   often files are archived in order to bound potential data loss, you should
+   adjust the <xref linkend="guc-archive-timeout"> parameter rather than the
+   checkpoint parameters.)
+   It is also possible to force a checkpoint by using the SQL
+   command <command>CHECKPOINT</command>.
+  </para>
+  -->
+  <para>
+   服务器的检查点进程每隔一段时间自动地执行一个检查点。检查点在每
+   检查点在每<xref linkend="guc-checkpoint-timeout">秒开始，或者在快要超过
+   <xref linkend="guc-max-wal-size">时开始。默认的设置分别是 5 分钟和 1 GB。
+   如果从前一个检查点以来没有WAL被写入，则即使过了<varname>checkpoint_timeout</>
+   新的检查点也会被跳过
+   （如果正在使用WAL归档并且你想对文件被归档的频率设置一个较低的限制来约束潜在的数据丢失，
+   你应该调整<xref linkend="guc-archive-timeout">参数而不是检查点参数）。
+   也可以使用SQL命令<command>CHECKPOINT</command>来强制一个检查点。
   </para>
 
   <para>
-   降低<varname>checkpoint_segments</varname>和/或<varname>checkpoint_timeout</varname>会导致检查点更频繁地发生。这使得崩溃后恢复更快，因为需要重做的工作更少。但是，我们必须在这一点和增多的刷写脏数据页开销之间做出平衡。如果<xref linkend="guc-full-page-writes">被设置（默认情况），则还有一个因素需要考虑。为了确保数据页一致性，在每个检查点之后对一个数据页的第一次修改将导致整个页面内容被日志记录。在这情况下，一个较小的检查点间隔会增加输出到WAL日志的容量，这让使用较小间隔的效果打了折扣并且将导致更多的磁盘I/O。
+   降低<varname>checkpoint_timeout</varname>和/或<varname>max_wal_size</varname>会导致检查点更频繁地发生。这使得崩溃后恢复更快，因为需要重做的工作更少。但是，我们必须在这一点和增多的刷写脏数据页开销之间做出平衡。如果<xref linkend="guc-full-page-writes">被设置（默认情况），则还有一个因素需要考虑。为了确保数据页一致性，在每个检查点之后对一个数据页的第一次修改将导致整个页面内容被日志记录。在这情况下，一个较小的检查点间隔会增加输出到WAL日志的容量，这让使用较小间隔的效果打了折扣并且将导致更多的磁盘I/O。
   </para>
 
   <para>
-   检查点的代价相对比较昂贵，首先是因为它们要求写出所有当前为脏的缓冲区，正如以上讨论的，第二个原因是它们会导致额外的WAL流量。因此比较明智的做法是将检查点参数设置得足够高，这样检查点就不会过于频繁地发生。你可以设置<xref linkend="guc-checkpoint-warning">参数作为对于你的检查点参数的一种简单完整性检查。如果检查点的发生时间间隔比<varname>checkpoint_warning</>秒还要接近，一个消息将会被发送到服务器日志来推荐你增加<varname>checkpoint_segments</varname>。偶尔出现的这样的消息并不会导致警报，但是如果它出现得太频繁，那么就应该增加检查点控制参数。 如果你没有把<varname>checkpoint_segments</>设置得足够高， 那么在进行如大型<command>COPY</>传输等批量操作的时候可能会导致出现大量类似的警告消息。
+   检查点的代价相对比较昂贵，首先是因为它们要求写出所有当前为脏的缓冲区，正如以上讨论的，第二个原因是它们会导致额外的WAL流量。因此比较明智的做法是将检查点参数设置得足够高，这样检查点就不会过于频繁地发生。你可以设置<xref linkend="guc-checkpoint-warning">参数作为对于你的检查点参数的一种简单完整性检查。如果检查点的发生时间间隔比<varname>checkpoint_warning</>秒还要接近，一个消息将会被发送到服务器日志来推荐你增加<varname>max_wal_size</varname>。偶尔出现的这样的消息并不会导致警报，但是如果它出现得太频繁，那么就应该增加检查点控制参数。 如果你没有把<varname>max_wal_size</varname>设置得足够高， 那么在进行如大型<command>COPY</>传输等批量操作的时候可能会导致出现大量类似的警告消息。
+  </para>
+
+  <!-- 
+  <para>
+   To avoid flooding the I/O system with a burst of page writes,
+   writing dirty buffers during a checkpoint is spread over a period of time.
+   That period is controlled by
+   <xref linkend="guc-checkpoint-completion-target">, which is
+   given as a fraction of the checkpoint interval.
+   The I/O rate is adjusted so that the checkpoint finishes when the
+   given fraction of
+   <varname>checkpoint_timeout</varname> seconds have elapsed, or before
+   <varname>max_wal_size</varname> is exceeded, whichever is sooner.
+   With the default value of 0.5,
+   <productname>PostgreSQL</> can be expected to complete each checkpoint
+   in about half the time before the next checkpoint starts.  On a system
+   that's very close to maximum I/O throughput during normal operation,
+   you might want to increase <varname>checkpoint_completion_target</varname>
+   to reduce the I/O load from checkpoints.  The disadvantage of this is that
+   prolonging checkpoints affects recovery time, because more WAL segments
+   will need to be kept around for possible use in recovery.  Although
+   <varname>checkpoint_completion_target</varname> can be set as high as 1.0,
+   it is best to keep it less than that (perhaps 0.9 at most) since
+   checkpoints include some other activities besides writing dirty buffers.
+   A setting of 1.0 is quite likely to result in checkpoints not being
+   completed on time, which would result in performance loss due to
+   unexpected variation in the number of WAL segments needed.
+  </para>
+  -->
+  <para>
+   为了避免大批页面写入对I/O系统产生的冲击，
+   一个检查点期间对脏缓冲区的写出操作被散布到一段时间上。这个时间段由
+   <xref linkend="guc-checkpoint-completion-target">控制，
+   其作为检查点间隔的一部分给出。I/O率将被调整，以便在<varname>checkpoint_timeout</varname>
+   给定部分的秒数已经过去，或者<varname>max_wal_size</varname>被超过之前完成检查点。
+   默认值为0.5，<productname>PostgreSQL</>
+   被期望能够在下一个检查点启动之前的大约一半时间内完成每个检查点。
+   在正常运行期间非常接近最大I/O吞吐量的系统上，你可能希望增加<varname>checkpoint_completion_target</varname>
+   来降低检查点的I/O负载。但这种做法的缺点是被延长的检查点将会影响恢复时间，
+   因为需要保留更多的WAL段以便可能在恢复中使用。尽管<varname>checkpoint_completion_target</varname>
+   可以最高可被设置为1.0，但最好还是让它小于1.0（也许最多0.9），
+   因为检查点还包含除了写出脏缓冲区之外的其他一些动作。
+   1.0的设置极有可能导致检查点不能按时被完成，
+   这可能由于所需的WAL段数量意外变化导致性能损失。
+  </para>
+
+  <!-- 
+  <para>
+   The number of WAL segment files in <filename>pg_xlog</> directory depends on
+   <varname>min_wal_size</>, <varname>max_wal_size</> and
+   the amount of WAL generated in previous checkpoint cycles. When old log
+   segment files are no longer needed, they are removed or recycled (that is,
+   renamed to become future segments in the numbered sequence). If, due to a
+   short-term peak of log output rate, <varname>max_wal_size</> is
+   exceeded, the unneeded segment files will be removed until the system
+   gets back under this limit. Below that limit, the system recycles enough
+   WAL files to cover the estimated need until the next checkpoint, and
+   removes the rest. The estimate is based on a moving average of the number
+   of WAL files used in previous checkpoint cycles. The moving average
+   is increased immediately if the actual usage exceeds the estimate, so it
+   accommodates peak usage rather average usage to some extent.
+   <varname>min_wal_size</> puts a minimum on the amount of WAL files
+   recycled for future usage; that much WAL is always recycled for future use,
+   even if the system is idle and the WAL usage estimate suggests that little
+   WAL is needed.
+  </para>
+  -->
+  <para>
+   <filename>pg_xlog</>目录中的 WAL 段文件数量取决于<varname>min_wal_size</>、
+   <varname>max_wal_size</>以及在之前的检查点周期中产生的 WAL 数量。
+   当旧的日志段文件不再被需要时，它们将被移除或者被再利用
+   （也就是被重命名变成数列中未来的段）。如果由于日志输出率的短期峰值导致超过
+   <varname>max_wal_size</>，不需要的段文件将被移除直到系统回到这个限制以下。
+   低于该限制时，系统会循环足够的WAL文件以覆盖估计的需要，直到下一个检查点，
+   并删除其余的。该估计基于在先前检查点循环中使用的WAL文件的数目的移动平均值。
+   如果实际用量超过估计值，移动平均数会立即增加，
+   因此它能在一定程度上适应峰值用量而不是平均用量。<varname>min_wal_size</>
+   对回收给未来使用的 WAL 文件的量设置了一个最小值，
+   这个参数指定数量的 WAL 将总是被回收给未来使用，
+   即便系统很闲并且 WAL 用量估计建议只需要一点点WAL 时也是如此。
+  </para>
+  
+  <!-- 
+  <para>
+   Independently of <varname>max_wal_size</varname>,
+   <xref linkend="guc-wal-keep-segments"> + 1 most recent WAL files are
+   kept at all times. Also, if WAL archiving is used, old segments can not be
+   removed or recycled until they are archived. If WAL archiving cannot keep up
+   with the pace that WAL is generated, or if <varname>archive_command</varname>
+   fails repeatedly, old WAL files will accumulate in <filename>pg_xlog</>
+   until the situation is resolved. A slow or failed standby server that
+   uses a replication slot will have the same effect (see
+   <xref linkend="streaming-replication-slots">).
+  </para>
+  -->
+  <para>
+   独立于<varname>max_wal_size</varname>之外，<xref linkend="guc-wal-keep-segments"> + 1 
+   个最近的 WAL 文件将总是被保留。还有，如果使用了 WAL 归档，
+   旧的段在被归档之前不能被移除或者再利用。如果 WAL 归档无法跟上产生 WAL 的步伐，
+   或者如果<varname>archive_command</varname>重复失败，旧的 WAL 文件将累积在
+   <filename>pg_xlog</>中，直到该情况被解决。
+   一个使用了复制槽的较慢或者失败的后备服务器也会带来同样的效果
+   （见<xref linkend="streaming-replication-slots">）。
+  </para>
+
+  <!-- 
+  <para>
+   In archive recovery or standby mode, the server periodically performs
+   <firstterm>restartpoints</>,<indexterm><primary>restartpoint</></>
+   which are similar to checkpoints in normal operation: the server forces
+   all its state to disk, updates the <filename>pg_control</> file to
+   indicate that the already-processed WAL data need not be scanned again,
+   and then recycles any old log segment files in the <filename>pg_xlog</>
+   directory.
+   Restartpoints can't be performed more frequently than checkpoints in the
+   master because restartpoints can only be performed at checkpoint records.
+   A restartpoint is triggered when a checkpoint record is reached if at
+   least <varname>checkpoint_timeout</> seconds have passed since the last
+   restartpoint, or if WAL size is about to exceed
+   <varname>max_wal_size</>. However, because of limitations on when a
+   restartpoint can be performed, <varname>max_wal_size</> is often exceeded
+   during recovery, by up to one checkpoint cycle's worth of WAL.
+   (<varname>max_wal_size</> is never a hard limit anyway, so you should
+   always leave plenty of headroom to avoid running out of disk space.)
+  </para>
+  -->
+  <para>
+   在归档恢复模式或后备模式，服务器周期性地执行<firstterm>重启点</>。
+   <indexterm><primary>重启点</></>和正常操作时的检查点相似：
+   服务器强制它所有的状态到磁盘，更新<filename>pg_control</>文件
+   来指示已被处理的WAL数据不需要被再次扫描，并且接着回收<filename>pg_xlog</>
+   目录中的任何旧日志段文件。重启点的执行频率不能高于主机中检查点的执行频率，
+   因为重启点只有在检查点记录处才能被执行。如果从最后一个重启点之后过去了至少
+   <varname>checkpoint_timeout</>秒或者WAL大小快要超过<varname>max_wal_size</>，
+   则会到达一个检查点，这时会触发一个重启点。不过，
+   因为对于何时可以执行一个重启点有限制，在恢复期间<varname>max_wal_size</>
+   常常被超过，最多会超过一个检查点周期间的 WAL值（不管怎样，<varname>max_wal_size</>
+   从来不是一个硬限制，因此你应该总是应该留出充足的空间来避免耗尽磁盘空间。）
   </para>
 
   <para>
-   为了避免大批页面写入对I/O系统产生的冲击，一个检查点中对脏缓冲区的写出操作被散布到一段时间上。这个时间段由<xref linkend="guc-checkpoint-completion-target">控制，它用检查点间隔的一个分数表示。I/O率将被调整，以便能按照要求完成检查点：当从检查点开始后一定数量（由<varname>checkpoint_segments</varname>的分数指定）的WAL段被消耗时完成检查点，或者过去一段指定的时间（由<varname>checkpoint_timeout</varname>的分数指定），以两种要求先达到的为准。默认值为0.5，<productname>PostgreSQL</>被期望能够在下一个检查点启动之前的大约一半时间内完成每个检查点。在一个接近于正常操作期间最大I/O的系统上，你可能希望增加<varname>checkpoint_completion_target</varname>来降低检查点的I/O负载。但这种做法的缺点是被延长的检查点将会影响恢复时间，因为需要保留更多WAL段来用于可能的恢复操作。尽管<varname>checkpoint_completion_target</varname>可以被设置为高于1.0，但最好还是让它小于1.0（也许最多0.9），因为检查点还包含除了写出脏缓冲区之外的其他一些动作。1.0的设置极有可能导致检查点不能按时被完成，这可能由于所需的WAL段数量意外变化导致性能损失。
-  </para>
-
-  <para>
-   总会有一个WAL段文件，并且通常最多不会超过 (2 + <varname>checkpoint_completion_target</varname>) * <varname>checkpoint_segments</varname> + 1 或者  <varname>checkpoint_segments</> + <xref linkend="guc-wal-keep-segments"> + 1 个文件。每一个段文件通常是16MB（在构建服务器时可以修改这个大小）。你可以使用这些信息来估计<acronym>WAL</acronym>所需的空间。通常，当旧的日志段文件不再需要时，它们将被回收（即，被重名用于编号序列中将来的段）。如果由于短时间的日志输出高峰造成多于 3 * <varname>checkpoint_segments</varname> + 1 个段文件，多余的不需要的段文件将直接被删除而不是回收，直到系统回到上面所说的限制之下。
-  </para>
-
-  <para>
-   在归档恢复模式或后备模式，服务器周期性地执行<firstterm>重启点</>。<indexterm><primary>重启点</></>和正常操作时的检查点相似：服务器强制它所有的状态到磁盘，更新<filename>pg_control</>来指示已被处理的WAL数据不需要被再次扫描，并且接着回收<filename>pg_xlog</>中的任何旧日志段文件。重启点的执行频率不能高于主机中检查点的执行频率，因为重启点只有在检查点记录处才能被执行。
-   
-   如果从最后一个重启点之后过去了至少<varname>checkpoint_timeout</>则会到达一个检查点，这时会触发一个重启点。在后备模式下，如果从最后一个重启点之后重放了至少<varname>checkpoint_segments</>个日志段，则也会触发一个重启点。
-  </para>
-
-  <para>
-   有两个常用的内部<acronym>WAL</acronym>函数：<function>XLogInsert</function>和<function>XLogFlush</function>。 <function>XLogInsert</function>用于向共享内存中的<acronym>WAL</acronym>缓冲区里放置一个新记录。如果没有空间存放新记录， 那么<function>XLogInsert</function>就不得不写出（向内核缓存里写）一些填满了的<acronym>WAL</acronym>缓冲区。 这并非我们所期望的，因为<function>XLogInsert</function>用于每次数据库低层修改（比如，记录插入）时都要在受影响的数据页上持有一个排它锁，因为该操作需要越快越好。但糟糕的是， 写<acronym>WAL</acronym>缓冲可能还会强制创建新的日志段，这花的时间甚至更多。通常，<acronym>WAL</acronym>缓冲区应该由一个<function>XLogFlush</function>请求来写和刷出， 在大部分时候它都是发生在事务提交的时候以确保事务记录被刷写到永久存储。在那些日志输出量比较大的系统上，<function>XLogFlush</function>请求可能不够频繁，这样就不能避免<function>XLogInsert</function>进行写操作。在这样的系统上，我们应该通过修改配置参数 <xref linkend="guc-full-page-writes">的值来增加<acronym>WAL</acronym>缓冲区的数量。如果设置了 <xref linkend="guc-full-page-writes">并且系统相当繁忙， 把<varname>wal_buffers</>设置得更高一些将有助于在紧随每个检查点之后的时间段里得到平滑的响应时间。
+   有两个常用的内部<acronym>WAL</acronym>函数：<function>XLogInsertRecord</function>和<function>XLogFlush</function>。 <function>XLogInsertRecord</function>用于向共享内存中的<acronym>WAL</acronym>缓冲区里放置一个新记录。如果没有空间存放新记录， 那么<function>XLogInsertRecord</function>就不得不写出（向内核缓存里写）一些填满了的<acronym>WAL</acronym>缓冲区。 这并非我们所期望的，因为<function>XLogInsertRecord</function>用于每次数据库低层修改（比如，记录插入）时都要在受影响的数据页上持有一个排它锁，因为该操作需要越快越好。但糟糕的是， 写<acronym>WAL</acronym>缓冲可能还会强制创建新的日志段，这花的时间甚至更多。通常，<acronym>WAL</acronym>缓冲区应该由一个<function>XLogFlush</function>请求来写和刷出， 在大部分时候它都是发生在事务提交的时候以确保事务记录被刷写到永久存储。在那些日志输出量比较大的系统上，<function>XLogFlush</function>请求可能不够频繁，这样就不能避免<function>XLogInsertRecord</function>进行写操作。在这样的系统上，我们应该通过修改配置参数 <xref linkend="guc-full-page-writes">的值来增加<acronym>WAL</acronym>缓冲区的数量。如果设置了 <xref linkend="guc-full-page-writes">并且系统相当繁忙， 把<varname>wal_buffers</>设置得更高一些将有助于在紧随每个检查点之后的时间段里得到平滑的响应时间。
   </para>
 
   <para>
@@ -258,7 +407,7 @@
   </para>
 
   <para>
-   启用<xref linkend="guc-wal-debug">配置参数（前提是<productname>PostgreSQL</productname>编译的时候打开了这个支持） 将导致每次<function>XLogInsert</function>和<function>XLogFlush</function> <acronym>WAL</acronym>调用都被记录到服务器日志。这个选项以后可能会被更通用的机制取代。
+   启用<xref linkend="guc-wal-debug">配置参数（前提是<productname>PostgreSQL</productname>编译的时候打开了这个支持） 将导致每次<function>XLogInsertRecord</function>和<function>XLogFlush</function> <acronym>WAL</acronym>调用都被记录到服务器日志。这个选项以后可能会被更通用的机制取代。
   </para>
  </sect1>
 
@@ -270,7 +419,7 @@
   </para>
 
   <para>
-   <acronym>WAL</acronym>日志被存放在数据目录的<filename>pg_xlog</filename>目录里，它是作为一个文件段的集合存储的，通常每个段16MB大（但是可以在构建服务器时通过修改<option>--with-wal-segsize</>配置选项来修改段的大小）。每个段分割成多个页，通常每个页为8K（该尺寸可以通过<option>--with-wal-blocksize</>配置选项来修改）。日志记录头部在<filename>access/xlog.h</filename>里描述；日志内容取决于它记录的事件类型。段文件的名字是不断增长的数字，从<filename>000000010000000000000000</filename>开始。目前这些数字不能回卷，不过要把所有可用的数字都用光也需要非常非常长的时间。
+   <acronym>WAL</acronym>日志被存放在数据目录的<filename>pg_xlog</filename>目录里，它是作为一个文件段的集合存储的，通常每个段16MB大（但是可以在构建服务器时通过修改<option>--with-wal-segsize</>配置选项来修改段的大小）。每个段分割成多个页，通常每个页为8K（该尺寸可以通过<option>--with-wal-blocksize</>配置选项来修改）。日志记录头部在<filename>access/xlogrecord.h</filename>里描述；日志内容取决于它记录的事件类型。段文件的名字是不断增长的数字，从<filename>000000010000000000000000</filename>开始。目前这些数字不能回卷，不过要把所有可用的数字都用光也需要非常非常长的时间。
   </para>
 
   <para>
