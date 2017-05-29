@@ -1,5 +1,5 @@
 # PostgreSQL中文手册翻译计划   
-PostgreSQL官方手册是PostgreSQL非常重要的学习和参考资料。为促进PostgreSQL在国内的普及，2013年12月PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3中文手册的基础上开启了9.3.1版本的手册翻译工作并于2015年7月翻译完成。之后又于2016年4月完成了9.4.4的翻译，绝大部分翻译工作由翰高的韩悦悦和另一名同事完成。9.5及以后的翻译工作基于武汉大学的彭煜玮教授独自翻译的PostgreSQL 9.4.4中文手册和社区之前翻译的《PostgreSQL9.4.4中文手册》。
+PostgreSQL官方手册是PostgreSQL非常重要的学习和参考资料。为促进PostgreSQL在国内的普及，2013年12月PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3中文手册的基础上开启了9.3.1版本的手册翻译工作并于2015年7月翻译完成。之后又于2016年4月完成了9.4.4的翻译，绝大部分翻译工作由翰高的韩悦悦和另一名同事完成。9.5的翻译工作基于武汉大学的彭煜玮教授独自翻译的《PostgreSQL 9.4.4文档》和社区之前翻译的《PostgreSQL9.4.4中文手册》。9.6基于彭煜玮教授翻译的《PostgreSQL 9.6.0 文档》，Release Notes中9.6和9.5未变化的部分来自上一版的社区中文手册《PostgreSQL 9.5.3 中文手册》]。
 
 ## 文档翻译QQ群
 QQ:309292849
@@ -16,7 +16,7 @@ https://github.com/postgres-cn/pgdoc-cn
 https://github.com/postgres-cn/pgdoc-cn/wiki
 
 ## 分支管理
-Master分支对于正在翻译的版本，当前是9.5.3；9.3分支对应于9.3.1；9.4分支对应于9.4.4。后面的说明均以9.3.1为例。
+master分支对于正在翻译的版本，当前是9.6.0；9.3分支对应于9.3.1；9.4分支对应于9.4.4；9.5分支对应于9.5.3。后面的说明均以9.3.1为例。
 
 
 ## 文档的编译
@@ -89,6 +89,7 @@ http://www.postgres.cn/docs/9.3
 http://www.postgres.cn/docs/9.3.4  
 http://www.postgres.cn/docs/9.4  
 http://www.postgres.cn/docs/9.5  
+http://www.postgres.cn/docs/9.6
 
 通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
 
