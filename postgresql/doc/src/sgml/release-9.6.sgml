@@ -1,0 +1,3773 @@
+<!-- doc/src/sgml/release-9.6.sgml -->
+<!-- See header comment in release.sgml about typical markup -->
+
+ <sect1 id="release-9-6">
+  <title>Release 9.6</title>
+
+  <note>
+   <title>Release Date</title>
+   <simpara>2016-09-29</simpara>
+  </note>
+
+  <sect2>
+   <title>Overview</title>
+
+   <para>
+    Major enhancements in <productname>PostgreSQL</> 9.6 include:
+   </para>
+
+   <!-- Items in this list summarize one or more items below -->
+
+   <itemizedlist>
+
+    <listitem>
+     <para>
+      Parallel execution of sequential scans, joins and aggregates
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Avoid scanning pages unnecessarily during vacuum freeze operations
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Synchronous replication now allows multiple standby servers for
+      increased reliability
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Full-text search can now search for phrases (multiple adjacent words)
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <filename>postgres_fdw</> now supports remote joins, sorts,
+      <command>UPDATE</>s, and <command>DELETE</>s
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Substantial performance improvements, especially in the area of
+      scalability on multi-<acronym>CPU</>-socket servers
+     </para>
+    </listitem>
+
+   </itemizedlist>
+
+   <para>
+    The above items are explained in more detail in the sections below.
+   </para>
+
+  </sect2>
+
+  <sect2>
+
+  <title>Migration to Version 9.6</title>
+
+   <para>
+    A dump/restore using <xref linkend="app-pg-dumpall">, or use of <xref
+    linkend="pgupgrade">, is required for those wishing to migrate data
+    from any previous release.
+   </para>
+
+   <para>
+    Version 9.6 contains a number of changes that may affect compatibility
+    with previous releases.  Observe the following incompatibilities:
+   </para>
+
+   <itemizedlist>
+
+      <listitem>
+<!--
+2016-03-10 [53be0b1ad] Provide much better wait information in pg_stat_activity
+-->
+       <para>
+        Improve the <link
+        linkend="pg-stat-activity-view"><structname>pg_stat_activity</></link>
+        view's information about what a process is waiting for (Amit
+        Kapila, Ildus Kurbangaliev)
+       </para>
+
+       <para>
+        Historically a process has only been shown as waiting if it was
+        waiting for a heavyweight lock.  Now waits for lightweight locks
+        and buffer pins are also shown in <structname>pg_stat_activity</>.
+        Also, the type of lock being waited for is now visible.
+        These changes replace the <structfield>waiting</> column with
+        <structfield>wait_event_type</> and <structfield>wait_event</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-05 [2d87eedc1] to_char(): Do not count negative sign as a digit for tim
+-->
+       <para>
+        In <link
+        linkend="functions-formatting-table"><function>to_char()</></>,
+        do not count a minus sign (when needed) as part of the field
+        width for time-related fields (Bruce Momjian)
+       </para>
+
+       <para>
+        For example, <literal>to_char('-4 years'::interval, 'YY')</>
+        now returns <literal>-04</>, rather than <literal>-4</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-21 [647d87c56] Make extract() do something more reasonable with infinit
+-->
+       <para>
+        Make <link
+        linkend="functions-datetime-table"><function>extract()</></> behave
+        more reasonably with infinite inputs (Vitaly Burovoy)
+       </para>
+
+       <para>
+        Historically the <function>extract()</> function just returned
+        zero given an infinite timestamp, regardless of the given
+        field name.  Make it return <literal>infinity</literal>
+        or <literal>-infinity</literal> as appropriate when the
+        requested field is one that is monotonically increasing (e.g,
+        <literal>year</>, <literal>epoch</>), or <literal>NULL</> when
+        it is not (e.g., <literal>day</>, <literal>hour</>).  Also,
+        throw the expected error for bad field names.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-05 [0426f349e] Rearrange the handling of error context reports.
+This commit is also listed under libpq and psql
+-->
+       <para>
+        Remove PL/pgSQL's <quote>feature</> that suppressed the
+        innermost line of <literal>CONTEXT</> for messages emitted by
+        <command>RAISE</> commands (Pavel Stehule)
+       </para>
+
+       <para>
+        This ancient backwards-compatibility hack was agreed to have
+        outlived its usefulness.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-29 [61d66c44f] Fix support of digits in email/hostnames.
+-->
+       <para>
+        Fix the default text search parser to allow leading digits
+        in <literal>email</> and <literal>host</> tokens (Artur Zakirov)
+       </para>
+
+       <para>
+        In most cases this will result in few changes in the parsing of
+        text.  But if you have data where such addresses occur frequently,
+        it may be worth rebuilding dependent <type>tsvector</> columns
+        and indexes so that addresses of this form will be found properly
+        by text searches.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-04 [1bbd52cb9] Make unaccent handle all diacritics known to Unicode, an
+2016-03-16 [9a206d063] Improve script generating unaccent rules
+-->
+       <para>
+        Extend <link linkend="unaccent"><filename>contrib/unaccent</></>'s
+        standard <filename>unaccent.rules</> file to handle all diacritics
+        known to Unicode, and to expand ligatures correctly (Thomas Munro,
+        L&eacute;onard Benedetti)
+       </para>
+
+       <para>
+        The previous version neglected to convert some less-common letters
+        with diacritic marks.  Also, ligatures are now expanded into
+        separate letters.  Installations that use this rules file may wish
+        to rebuild <type>tsvector</> columns and indexes that depend on the
+        result.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-22 [d371bebd3] Remove redundant CREATEUSER/NOCREATEUSER options in CREA
+-->
+       <para>
+        Remove the long-deprecated
+        <literal>CREATEUSER</>/<literal>NOCREATEUSER</> options from
+        <command>CREATE ROLE</> and allied commands (Tom Lane)
+       </para>
+
+       <para>
+        <literal>CREATEUSER</> actually meant <literal>SUPERUSER</>,
+        for ancient backwards-compatibility reasons.  This has been a
+        constant source of confusion for people who (reasonably) expect
+        it to mean <literal>CREATEROLE</>.  It has been deprecated for
+        ten years now, so fix the problem by removing it.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [293007898] Reserve the "pg_" namespace for roles
+2016-05-06 [a89505fd2] Remove various special checks around default roles
+2016-05-08 [7df974ee0] Disallow superuser names starting with 'pg_' in initdb
+-->
+       <para>
+        Treat role names beginning with <literal>pg_</> as reserved
+        (Stephen Frost)
+       </para>
+
+       <para>
+        User creation of such role names is now disallowed.  This prevents
+        conflicts with built-in roles created by <application>initdb</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-08-07 [d8710f18f] Correct column name in information schema
+-->
+       <para>
+        Change a column name in the
+        <structname>information_schema</>.<structname>routines</>
+        view from <structfield>result_cast_character_set_name</>
+        to <structfield>result_cast_char_set_name</> (Cl&eacute;ment
+        Pr&eacute;vost)
+       </para>
+
+       <para>
+        The SQL:2011 standard specifies the longer name, but that appears
+        to be a mistake, because adjacent column names use the shorter
+        style, as do other <structname>information_schema</> views.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-08 [d5563d7df] psql: Support multiple -c and -f options, and allow mixi
+-->
+       <para>
+        <application>psql</>'s <option>-c</option> option no longer implies
+        <option>--no-psqlrc</option>
+        (Pavel Stehule, Catalin Iacob)
+       </para>
+
+       <para>
+        Write <option>--no-psqlrc</option> (or its
+        abbreviation <option>-X</option>) explicitly to obtain the old
+        behavior.  Scripts so modified will still work with old
+        versions of <application>psql</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-02 [5671aaca8] Improve pg_restore's -t switch to match all types of rel
+-->
+       <para>
+        Improve <application>pg_restore</>'s <option>-t</option> option to
+        match all types of relations, not only plain tables (Craig Ringer)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-12 [59a884e98] Change delimiter used for display of NextXID
+-->
+       <para>
+        Change the display format used for <literal>NextXID</> in
+        <application>pg_controldata</> and related places (Joe Conway,
+        Bruce Momjian)
+       </para>
+
+       <para>
+        Display epoch-and-transaction-ID values in the format
+        <replaceable>number</><literal>:</><replaceable>number</>.
+        The previous format
+        <replaceable>number</><literal>/</><replaceable>number</> was
+        confusingly similar to that used for <acronym>LSN</>s.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-06-07 [a89b4b1be] Update citext extension for parallel query.
+and many others in the same vein
+-->
+       <para>
+        Update extension functions to be marked parallel-safe where
+        appropriate (Andreas Karlsson)
+       </para>
+
+       <para>
+        Many of the standard extensions have been updated to allow their
+        functions to be executed within parallel query worker processes.
+        These changes will not take effect in
+        databases <application>pg_upgrade</>'d from prior versions unless
+        you apply <command>ALTER EXTENSION UPDATE</> to each such extension
+        (in each database of a cluster).
+       </para>
+      </listitem>
+
+   </itemizedlist>
+
+  </sect2>
+
+  <sect2>
+   <title>Changes</title>
+
+   <para>
+    Below you will find a detailed account of the changes between
+    <productname>PostgreSQL</productname> 9.6 and the previous major
+    release.
+   </para>
+
+   <sect3>
+    <title>Server</title>
+
+    <sect4>
+     <title>Parallel Queries</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-09-18 [4a4e6893a] Glue layer to connect the executor to the shm_mq mechani
+2015-09-23 [a0d9f6e43] Add readfuncs.c support for plan nodes.
+2015-09-28 [d1b7c1ffe] Parallel executor support.
+2015-09-30 [3bd909b22] Add a Gather executor node.
+2015-10-16 [ee7ca559f] Add a C API for parallel heap scans.
+2015-10-16 [bfc78d719] Rewrite interaction of parallel mode with parallel execu
+2015-10-16 [a53c06a13] Prohibit parallel query when the isolation level is seri
+2015-11-02 [1efc7e538] Fix problems with ParamListInfo serialization mechanism.
+2015-11-06 [6e71dd7ce] Modify tqueue infrastructure to support transient record
+2015-11-11 [f0661c4e8] Make sequential scans parallel-aware.
+2015-11-11 [80558c1f5] Generate parallel sequential scan plans in simple cases.
+2015-12-09 [b287df70e] Allow EXPLAIN (ANALYZE, VERBOSE) to display per-worker s
+2016-01-20 [45be99f8c] Support parallel joins, and make related improvements.
+2016-02-03 [69d34408e] Allow parallel custom and foreign scans.
+2016-02-07 [a1c1af2a1] Introduce group locking to prevent parallel processes fr
+2016-02-07 [7c944bd90] Introduce a new GUC force_parallel_mode for testing purp
+2016-02-25 [57a6a72b6] Enable parallelism for prepared statements and extended
+2016-02-26 [7bea19d0a] On second thought, disable parallelism for prepared stat
+2016-03-21 [e06a38965] Support parallel aggregation.
+2016-04-05 [11c8669c0] Add parallel query support functions for assorted aggreg
+2016-04-08 [25fe8b5f1] Add a 'parallel_degree' reloption.
+2016-04-27 [59eb55127] Fix EXPLAIN VERBOSE output for parallel aggregate.
+2016-06-09 [c9ce4a1c6] Eliminate "parallel degree" terminology.
+2016-06-16 [75be66464] Invent min_parallel_relation_size GUC to replace a hard-
+2016-08-16 [f85b1a841] Disable parallel query by default.
+2016-09-15 [72ce78162] Make min_parallel_relation_size's default value platform
+-->
+       <para>
+        Parallel queries (Robert Haas, Amit Kapila, David Rowley,
+        many others)
+       </para>
+
+       <para>
+        With 9.6, <productname>PostgreSQL</> introduces initial support
+        for parallel execution of large queries.  Only strictly read-only
+        queries where the driving table is accessed via a sequential scan
+        can be parallelized.  Hash joins and nested loops can be performed
+        in parallel, as can aggregation (for supported aggregates).
+        Much remains to be done, but this is already a useful set of
+        features.
+       </para>
+
+       <para>
+        Parallel query execution is not (yet) enabled by default.
+        To allow it, set the new configuration
+        parameter <xref linkend="guc-max-parallel-workers-per-gather"> to a
+        value larger than zero.  Additional control over use of parallelism
+        is available through other new configuration parameters
+        <xref linkend="guc-force-parallel-mode">,
+        <xref linkend="guc-parallel-setup-cost">, <xref
+        linkend="guc-parallel-tuple-cost">, and <xref
+        linkend="guc-min-parallel-relation-size">.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-16 [7aea8e4f2] Determine whether it's safe to attempt a parallel plan f
+-->
+       <para>
+        Provide infrastructure for marking the parallel-safety status of
+        functions (Robert Haas, Amit Kapila)
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Indexes</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-09-02 [30bb26b5e] Allow usage of huge maintenance_work_mem for GIN build.
+-->
+       <para>
+        Allow <link linkend="GIN"><acronym>GIN</></> index builds to
+        make effective use of <xref linkend="guc-maintenance-work-mem">
+        settings larger than 1 GB (Robert Abraham, Teodor Sigaev)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-07 [e95680832] Add pages deleted from pending list to FSM
+2015-09-23 [dc943ad95] Allow autoanalyze to add pages deleted from pending list
+-->
+       <para>
+        Add pages deleted from a GIN index's pending list to the free space
+        map immediately
+        (Jeff Janes, Teodor Sigaev)
+       </para>
+
+       <para>
+        This reduces bloat if the table is not vacuumed often.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-28 [7f46eaf03] Add gin_clean_pending_list function to clean up GIN pend
+-->
+       <para>
+        Add <link
+        linkend="functions-admin-index"><function>gin_clean_pending_list()</></>
+        function to allow manual invocation of pending-list cleanup for a
+        GIN index (Jeff Janes)
+       </para>
+
+       <para>
+        Formerly, such cleanup happened only as a byproduct of vacuuming or
+        analyzing the parent table.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-09 [013ebc0a7] Microvacuum for GIST
+2015-09-17 [22f519c92] Fix bug introduced by microvacuum for GiST
+-->
+       <para>
+        Improve handling of dead index tuples in <link
+        linkend="GiST">GiST</> indexes (Anastasia Lubennikova)
+       </para>
+
+       <para>
+        Dead index tuples are now marked as such when an index scan notices
+        that the corresponding heap tuple is dead.  When inserting tuples,
+        marked-dead tuples will be removed if needed to make space on
+        the page.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-30 [acdf2a8b3] Introduce SP-GiST operator class over box.
+-->
+       <para>
+        Add an <link linkend="SPGiST">SP-GiST</link> operator class for
+        type <type>box</> (Alexander Lebedev)
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Sorting</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-08 [071180377] Use quicksort, not replacement selection, for external s
+2016-03-17 [0011c0091] Improve memory management for external sorts.
+2016-09-06 [96ba40c0f] Guard against possible memory allocation botch in batchm
+-->
+       <para>
+        Improve sorting performance by using quicksort, not replacement
+        selection sort, when performing external sort steps (Peter
+        Geoghegan)
+       </para>
+
+       <para>
+        The new approach makes better use of the <acronym>CPU</> cache
+        for typical cache sizes and data volumes.  Where necessary,
+        the behavior can be adjusted via the new configuration parameter
+        <xref linkend="guc-replacement-sort-tuples">.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-09 [0e57b4d8b] Speed up text sorts where the same strings occur multipl
+2015-10-20 [5be94a9eb] Be a bit more rigorous about how we cache strcoll and st
+-->
+       <para>
+        Speed up text sorts where the same string occurs multiple times
+        (Peter Geoghegan)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-06 [a76ef15d9] Add sort support routine for the UUID data type.
+2016-02-03 [b47b4dbf6] Extend sortsupport for text to more opclasses.
+2016-02-17 [f1f5ec1ef] Reuse abbreviated keys in ordered [set] aggregates.
+-->
+       <para>
+        Speed up sorting of <type>uuid</>, <type>bytea</>, and
+        <type>char(n)</> fields by using <quote>abbreviated</> keys
+        (Peter Geoghegan)
+       </para>
+
+       <para>
+        Support for abbreviated keys has also been
+        added to the non-default operator classes <link
+        linkend="indexes-opclass"><literal>text_pattern_ops</></>,
+        <literal>varchar_pattern_ops</>, and
+        <literal>bpchar_pattern_ops</>.  Processing of ordered-set
+        aggregates can also now exploit abbreviated keys.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-16 [b648b7034] Speed up CREATE INDEX CONCURRENTLY's TID sort.
+-->
+       <para>
+        Speed up <command>CREATE INDEX CONCURRENTLY</> by treating
+        <acronym>TID</>s as 64-bit integers during sorting (Peter
+        Geoghegan)
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Locking</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-08-06 [0e141c0fb] Reduce ProcArrayLock contention by removing backends in
+2015-09-03 [4aec49899] Assorted code review for recent ProcArrayLock patch.
+-->
+       <para>
+        Reduce contention for the <literal>ProcArrayLock</> (Amit Kapila,
+        Robert Haas)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-15 [6150a1b08] Move buffer I/O and content LWLocks out of the main tran
+-->
+       <para>
+        Improve performance by moving buffer content locks into the buffer
+        descriptors (Andres Freund, Simon Riggs)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-10 [48354581a] Allow Pin/UnpinBuffer to operate in a lockfree manner.
+-->
+       <para>
+        Replace shared-buffer header spinlocks with atomic operations to
+        improve scalability (Alexander Korotkov, Andres Freund)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-10 [008608b9d] Avoid the use of a separate spinlock to protect a LWLock
+-->
+       <para>
+        Use atomic operations, rather than a spinlock, to protect an
+        <literal>LWLock</>'s wait queue (Andres Freund)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-23 [44ca4022f] Partition the freelist for shared dynahash tables.
+-->
+       <para>
+        Partition the shared hash table freelist to reduce contention on
+        multi-<acronym>CPU</>-socket servers (Aleksander Alekseev)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-09 [687f2cd7a] Avoid pin scan for replay of XLOG_BTREE_VACUUM
+2016-04-03 [3e4b7d879] Avoid pin scan for replay of XLOG_BTREE_VACUUM in all ca
+-->
+       <para>
+        Reduce interlocking on standby servers during the replay of btree
+        index vacuuming operations (Simon Riggs)
+       </para>
+
+       <para>
+        This change avoids substantial replication delays that sometimes
+        occurred while replaying such operations.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Optimizer Statistics</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-01 [be4b4dc75] Omit null rows when applying the Haas-Stokes estimator f
+2016-04-01 [3d3bf62f3] Omit null rows when setting the threshold for what's a m
+2016-04-04 [391159e03] Partially revert commit 3d3bf62f30200500637b24fdb7b992a9
+-->
+       <para>
+        Improve <command>ANALYZE</>'s estimates for columns with many nulls
+        (Tomas Vondra, Alex Shulgin)
+       </para>
+
+       <para>
+        Previously <command>ANALYZE</> tended to underestimate the number
+        of non-<literal>NULL</> distinct values in a column with many
+        <literal>NULL</>s, and was also inaccurate in computing the
+        most-common values.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-04 [84f9a35e3] Improve estimate of distinct values in estimate_num_grou
+-->
+       <para>
+        Improve planner's estimate of the number of distinct values in
+        a query result (Tomas Vondra)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [137805f89] Use Foreign Key relationships to infer multi-column join
+2016-06-07 [77ba61080] Revert "Use Foreign Key relationships to infer multi-col
+2016-06-18 [100340e2d] Restore foreign-key-aware estimation of join relation si
+-->
+       <para>
+        Use foreign key relationships to infer selectivity for join
+        predicates (Tomas Vondra, David Rowley)
+       </para>
+
+       <para>
+        If a table <literal>t</> has a foreign key restriction, say
+        <literal>(a,b) REFERENCES r (x,y)</>, then a <literal>WHERE</>
+        condition such as <literal>t.a = r.x AND t.b = r.y</> cannot
+        select more than one <literal>r</> row per <literal>t</> row.
+        The planner formerly considered these <literal>AND</> conditions
+        to be independent and would often drastically misestimate
+        selectivity as a result.  Now it compares the <literal>WHERE</>
+        conditions to applicable foreign key constraints and produces
+        better estimates.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title><command>VACUUM</></title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-03-01 [a892234f8] Change the format of the VM fork to add a second bit per
+2016-03-08 [77a1d1e79] Department of second thoughts: remove PD_ALL_FROZEN.
+2016-03-10 [fd31cd265] Don't vacuum all-frozen pages.
+2016-03-11 [7087166a8] pg_upgrade: Convert old visibility map format to new for
+2016-06-17 [ede62e56f] Add VACUUM (DISABLE_PAGE_SKIPPING) for emergencies.
+2016-07-18 [eca0f1db1] Clear all-frozen visibilitymap status when locking tuple
+2016-08-04 [e7caacf73] Fix hard to hit race condition in heapam's tuple locking
+-->
+       <para>
+        Avoid re-vacuuming pages containing only frozen tuples (Masahiko
+        Sawada, Robert Haas, Andres Freund)
+       </para>
+
+       <para>
+        Formerly, anti-wraparound vacuum had to visit every page of
+        a table, even pages where there was nothing to do.  Now, pages
+        containing only already-frozen tuples are identified in the table's
+        visibility map, and can be skipped by vacuum even when doing
+        transaction wraparound prevention.  This should greatly reduce the
+        cost of maintaining large tables containing mostly-unchanging data.
+       </para>
+
+       <para>
+        If necessary, vacuum can be forced to process all-frozen
+        pages using the new <literal>DISABLE_PAGE_SKIPPING</> option.
+        Normally this should never be needed, but it might help in
+        recovering from visibility-map corruption.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-30 [e84290823] Avoid useless truncation attempts during VACUUM.
+-->
+       <para>
+        Avoid useless heap-truncation attempts during <command>VACUUM</>
+        (Jeff Janes, Tom Lane)
+       </para>
+
+       <para>
+        This change avoids taking an exclusive table lock in some cases
+        where no truncation is possible.  The main benefit comes from
+        avoiding unnecessary query cancellations on standby servers.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>General Performance</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-08 [848ef42bb] Add the "snapshot too old" feature
+2016-05-06 [2cc41acd8] Fix hash index vs "snapshot too old" problemms
+2016-05-06 [7e3da1c47] Mitigate "snapshot too old" performance regression on NU
+2016-08-03 [3e2f3c2e4] Prevent "snapshot too old" from trying to return pruned
+2016-08-07 [9ee1cf04a] Fix TOAST access failure in RETURNING queries.
+-->
+       <para>
+        Allow old <acronym>MVCC</> snapshots to be invalidated after a
+        configurable timeout (Kevin Grittner)
+       </para>
+
+       <para>
+        Normally, deleted tuples cannot be physically removed by
+        vacuuming until the last transaction that could <quote>see</>
+        them is gone.  A transaction that stays open for a long
+        time can thus cause considerable table bloat because
+        space cannot be recycled.  This feature allows setting
+        a time-based limit, via the new configuration parameter
+        <xref linkend="guc-old-snapshot-threshold">, on how long an
+        <acronym>MVCC</> snapshot is guaranteed to be valid.  After that,
+        dead tuples are candidates for removal.  A transaction using an
+        outdated snapshot will get an error if it attempts to read a page
+        that potentially could have contained such data.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-11 [d4c3a156c] Remove GROUP BY columns that are functionally dependent
+-->
+       <para>
+        Ignore <literal>GROUP BY</> columns that are
+        functionally dependent on other columns (David Rowley)
+       </para>
+
+       <para>
+        If a <literal>GROUP BY</> clause includes all columns of a
+        non-deferred primary key, as well as other columns of the same
+        table, those other columns are redundant and can be dropped
+        from the grouping.  This saves computation in many common cases.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-31 [f9aefcb91] Support using index-only scans with partial indexes in m
+-->
+       <para>
+        Allow use of an <link linkend="indexes-index-only-scans">index-only
+        scan</link> on a partial index when the index's <literal>WHERE</>
+        clause references columns that are not indexed (Tomas Vondra,
+        Kyotaro Horiguchi)
+       </para>
+
+       <para>
+        For example, an index defined by <command>CREATE INDEX tidx_partial
+        ON t(b) WHERE a &gt; 0</> can now be used for an index-only scan by
+        a query that specifies <literal>WHERE a &gt; 0</> and does not
+        otherwise use <literal>a</>.  Previously this was disallowed
+        because <literal>a</> is not listed as an index column.
+       </para>
+
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-10 [9cd00c457] Checkpoint sorting and balancing.
+-->
+       <para>
+        Perform checkpoint writes in sorted order (Fabien Coelho,
+        Andres Freund)
+       </para>
+
+       <para>
+        Previously, checkpoints wrote out dirty pages in whatever order
+        they happen to appear in shared buffers, which usually is nearly
+        random.  That performs poorly, especially on rotating media.
+        This change causes checkpoint-driven writes to be done in order
+        by file and block number, and to be balanced across tablespaces.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-10 [428b1d6b2] Allow to trigger kernel writeback after a configurable n
+2016-04-13 [fa11a09fe] Fix assorted portability issues with using msync() for d
+2016-04-24 [8f91d87d4] Fix documentation & config inconsistencies around 428b1d
+2016-04-26 [72a98a639] Don't open formally non-existent segments in _mdfd_getse
+2016-05-04 [a71248708] Fix transient mdsync() errors of truncated relations due
+2016-02-16 [7975c5e0a] Allow the WAL writer to flush WAL at a reduced rate.
+2016-06-10 [4bc0f165c] Change default of backend_flush_after GUC to 0 (disabled
+-->
+       <para>
+        Where feasible, trigger kernel writeback after a configurable
+        number of writes, to prevent accumulation of dirty data in kernel
+        disk buffers (Fabien Coelho, Andres Freund)
+       </para>
+
+       <para>
+        <productname>PostgreSQL</> writes data to the kernel's disk cache,
+        from where it will be flushed to physical storage in due time.
+        Many operating systems are not smart about managing this and allow
+        large amounts of dirty data to accumulate before deciding to flush
+        it all at once, causing long delays for new I/O requests until the
+        flushing finishes.
+        This change attempts to alleviate this problem by explicitly
+        requesting data flushes after a configurable interval.
+       </para>
+
+       <para>
+        On Linux, <function>sync_file_range()</> is used for this purpose,
+        and the feature is on by default on Linux because that function has
+        few downsides.  This flushing capability is also available on other
+        platforms if they have <function>msync()</>
+        or <function>posix_fadvise()</>, but those interfaces have some
+        undesirable side-effects so the feature is disabled by default on
+        non-Linux platforms.
+       </para>
+
+       <para>
+        The new configuration parameters <xref
+        linkend="guc-backend-flush-after">, <xref
+        linkend="guc-bgwriter-flush-after">, <xref
+        linkend="guc-checkpoint-flush-after">, and <xref
+        linkend="guc-wal-writer-flush-after"> control this behavior.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-04 [804163bc2] Share transition state between different aggregates when
+-->
+       <para>
+        Improve aggregate-function performance by sharing calculations
+        across multiple aggregates if they have the same arguments and
+        transition functions (David Rowley)
+       </para>
+
+       <para>
+        For example, <command>SELECT AVG(x), VARIANCE(x) FROM tab</> can use
+        a single per-row computation for both aggregates.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-26 [8a7d07018] Speed up HeapTupleSatisfiesMVCC() by replacing the XID-i
+-->
+       <para>
+        Speed up visibility tests for recently-created tuples by checking
+        the current transaction's snapshot, not <structname>pg_clog</>, to
+        decide if the source transaction should be considered committed
+        (Jeff Janes, Tom Lane)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-15 [db76b1efb] Allow SetHintBits() to succeed if the buffer's LSN is ne
+-->
+       <para>
+        Allow tuple hint bits to be set sooner than before (Andres Freund)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-20 [978b2f65a] Speedup 2PC by skipping two phase state files in normal
+2016-03-10 [e0694cf9c] Reduce size of two phase file header
+-->
+       <para>
+        Improve performance of short-lived prepared transactions (Stas
+        Kelvich, Simon Riggs, Pavan Deolasee)
+       </para>
+
+       <para>
+        Two-phase commit information is now written only to <acronym>WAL</>
+        during <command>PREPARE TRANSACTION</>, and will be read back from
+        <acronym>WAL</> during <command>COMMIT PREPARED</> if that happens
+        soon thereafter.  A separate state file is created only if the
+        pending transaction does not get committed or aborted by the time
+        of the next checkpoint.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-08 [25c539233] Improve performance in freeing memory contexts
+-->
+       <para>
+        Improve performance of memory context destruction (Jan Wieck)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-26 [cc988fbb0] Improve ResourceOwners' behavior for large numbers of ow
+-->
+       <para>
+        Improve performance of resource owners with many tracked objects
+        (Aleksander Alekseev)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-06 [aa2387e2f] Improve speed of timestamp/time/date output functions.
+-->
+       <para>
+        Improve speed of the output functions for <type>timestamp</>,
+        <type>time</>, and <type>date</> data types (David Rowley,
+        Andres Freund)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-10 [37c54863c] Rework wait for AccessExclusiveLocks on Hot Standby
+-->
+       <para>
+        Avoid some unnecessary cancellations of hot-standby queries
+        during replay of actions that take <literal>AccessExclusive</>
+        locks (Jeff Janes)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [719c84c1b] Extend relations multiple blocks at a time to improve sc
+-->
+       <para>
+        Extend relations multiple blocks at a time when there is contention
+        for the relation's extension lock (Dilip Kumar)
+       </para>
+
+       <para>
+        This improves scalability by decreasing contention.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [5364b357f] Increase maximum number of clog buffers.
+-->
+       <para>
+        Increase the number of clog buffers for better scalability (Amit
+        Kapila, Andres Freund)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-05 [6c82d8d1f] Further reduce overhead for passing plpgsql variables to
+-->
+       <para>
+        Speed up expression evaluation in <application>PL/pgSQL</> by
+        keeping <literal>ParamListInfo</> entries for simple variables
+        valid at all times (Tom Lane)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-06 [4f33621f3] Don't set SO_SNDBUF on recent Windows versions that have
+-->
+       <para>
+        Avoid reducing the <literal>SO_SNDBUF</> setting below its default
+        on recent Windows versions (Chen Huajun)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-08-17 [9b33c7e80] Disable update_process_title by default on Windows
+-->
+       <para>
+        Disable <xref linkend="guc-update-process-title"> by default on
+        Windows (Takayuki Tsunakawa)
+       </para>
+
+       <para>
+        The overhead of updating the process title is much larger on Windows
+        than most other platforms, and it is also less useful to do it since
+        most Windows users do not have tools that can display process titles.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Monitoring</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-03-15 [c16dc1aca] Add simple VACUUM progress reporting.
+-->
+       <para>
+        Add <link
+        linkend="pg-stat-progress-vacuum-view"><structname>pg_stat_progress_vacuum</></link>
+        system view to provide progress reporting for <command>VACUUM</>
+        operations (Amit Langote, Robert Haas, Vinayak Pokale, Rahila Syed)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-05 [dc7d70ea0] Expose control file data via SQL accessible functions.
+-->
+       <para>
+        Add <link
+        linkend="functions-controldata"><function>pg_control_system()</></>,
+        <function>pg_control_checkpoint()</>,
+        <function>pg_control_recovery()</>, and
+        <function>pg_control_init()</> functions to expose fields of
+        <filename>pg_control</> to <acronym>SQL</> (Joe Conway, Michael
+        Paquier)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-17 [a5c43b886] Add new system view, pg_config
+-->
+       <para>
+        Add <link linkend="view-pg-config"><structname>pg_config</></link>
+        system view (Joe Conway)
+       </para>
+
+       <para>
+        This view exposes the same information available from
+        the <application>pg_config</> comand-line utility,
+        namely assorted compile-time configuration information for
+        <productname>PostgreSQL</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-10 [3f811c2d6] Add confirmed_flush column to pg_replication_slots.
+-->
+       <para>
+        Add a <structfield>confirmed_flush_lsn</> column to the <link
+        linkend="view-pg-replication-slots"><structname>pg_replication_slots</></link>
+        system view (Marko Tiikkaja)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-07 [b1a9bad9e] pgstat: add WAL receiver status view & SRF
+2016-06-29 [9ed551e0a] Add conninfo to pg_stat_wal_receiver
+2016-07-07 [60d50769b] Rename pg_stat_wal_receiver.conn_info to conninfo.
+-->
+       <para>
+        Add <link
+        linkend="pg-stat-wal-receiver-view"><structname>pg_stat_wal_receiver</></link>
+        system view to provide information about the state of a hot-standby
+        server's <acronym>WAL</> receiver process (Michael Paquier)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-22 [52f5d578d] Create a function to reliably identify which sessions bl
+-->
+       <para>
+        Add <link
+        linkend="functions-info-session-table"><function>pg_blocking_pids()</></>
+        function to reliably identify which sessions block which others
+        (Tom Lane)
+       </para>
+
+       <para>
+        This function returns an array of the process IDs of any
+        sessions that are blocking the session with the given process ID.
+        Historically users have obtained such information using a self-join
+        on the <structname>pg_locks</> view.  However, it is unreasonably
+        tedious to do it that way with any modicum of correctness, and
+        the addition of parallel queries has made the old approach entirely
+        impractical, since locks might be held or awaited by child worker
+        processes rather than the session's main process.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-12 [e63bb4549] Add new user fn pg_current_xlog_flush_location()
+-->
+       <para>
+        Add function <link
+        linkend="functions-admin-backup-table"><function>pg_current_xlog_flush_location()</></>
+        to expose the current transaction log flush location (Tomas Vondra)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-17 [a04bb65f7] Add new function pg_notification_queue_usage.
+-->
+       <para>
+        Add function <link
+        linkend="functions-info-session-table"><function>pg_notification_queue_usage()</></>
+        to report how full the <command>NOTIFY</> queue is (Brendan Jurd)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-25 [7b5ef8f2d] Limit the verbosity of memory context statistics dumps.
+-->
+       <para>
+        Limit the verbosity of memory context statistics dumps (Tom Lane)
+       </para>
+
+       <para>
+        The memory usage dump that is output to the postmaster log during an
+        out-of-memory failure now summarizes statistics when there are a
+        large number of memory contexts, rather than possibly generating
+        a very large report.  There is also a <quote>grand total</>
+        summary line now.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title><acronym>Authentication</></title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-08 [34c33a1f0] Add BSD authentication method.
+-->
+       <para>
+        Add a <link linkend="auth-bsd"><acronym>BSD</> authentication
+        method</link> to allow use of
+        the <systemitem class="osname">BSD</> Authentication service for
+        <productname>PostgreSQL</> client authentication (Marisa Emerson)
+       </para>
+
+       <para>
+        BSD Authentication is currently only available on <systemitem
+        class="osname">OpenBSD</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [2f1d2b7a7] Set PAM_RHOST item for PAM authentication
+-->
+       <para>
+        When using <link linkend="auth-pam"><acronym>PAM</>
+        authentication</link>, provide the client IP address or host name
+        to <acronym>PAM</> modules via the <literal>PAM_RHOST</> item
+        (Grzegorz Sampolski)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-07 [5e0b5dcab] Provide more detail in postmaster log for password authe
+-->
+       <para>
+        Provide detail in the postmaster log for more types of password
+        authentication failure (Tom Lane)
+       </para>
+
+       <para>
+        All ordinarily-reachable password authentication failure cases
+        should now provide specific <literal>DETAIL</> fields in the log.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-06 [643beffe8] Support RADIUS passwords up to 128 characters
+-->
+       <para>
+        Support <link linkend="auth-radius"><acronym>RADIUS</> passwords</>
+        up to 128 characters long (Marko Tiikkaja)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [35e2e357c] Add authentication parameters compat_realm and upn_usena
+-->
+       <para>
+        Add new <link linkend="sspi-auth"><acronym>SSPI</>
+        authentication</link> parameters
+        <varname>compat_realm</> and <varname>upn_username</> to control
+        whether <productname>NetBIOS</> or <productname>Kerberos</>
+        realm names and user names are used during <acronym>SSPI</>
+        authentication (Christian Ullrich)
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Server Configuration</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-03-16 [c6dda1f48] Add idle_in_transaction_session_timeout.
+-->
+       <para>
+        Allow sessions to be terminated automatically if they are in
+        idle-in-transaction state for too long (Vik Fearing)
+       </para>
+
+       <para>
+        This behavior is controlled by the new configuration parameter
+        <xref linkend="guc-idle-in-transaction-session-timeout">.  It can
+        be useful to prevent forgotten transactions from holding locks
+        or preventing vacuum cleanup for too long.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-09-11 [f2dba881a] Raise max setting of checkpoint_timeout to 1d
+-->
+       <para>
+        Raise the maximum allowed value
+        of <xref linkend="guc-checkpoint-timeout"> to 24 hours (Simon Riggs)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-08 [1aba62ec6] Allow per-tablespace effective_io_concurrency
+-->
+       <para>
+        Allow <varname>effective_io_concurrency</> to be set per-tablespace
+        to support cases where different tablespaces have different I/O
+        characteristics (Julien Rouhaud)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-07 [f828654e1] Add log_line_prefix option 'n' for Unix epoch.
+2015-09-07 [b1e1862a1] Coordinate log_line_prefix options 'm' and 'n' to share
+-->
+       <para>
+        Add <xref linkend="guc-log-line-prefix"> option <literal>%n</> to
+        print the current time in Unix epoch form, with milliseconds (Tomas
+        Vondra, Jeff Davis)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-16 [f4c454e9b] Add syslog_sequence_numbers parameter
+2016-03-16 [fc201dfd9] Add syslog_split_messages parameter
+-->
+       <para>
+        Add <xref linkend="guc-syslog-sequence-numbers"> and <xref
+        linkend="guc-syslog-split-messages"> configuration parameters
+        to provide more control over the message format when logging to
+        <systemitem>syslog</> (Peter Eisentraut)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-18 [b555ed810] Merge wal_level "archive" and "hot_standby" into new nam
+-->
+       <para>
+        Merge the <literal>archive</> and <literal>hot_standby</> values
+        of the <xref linkend="guc-wal-level"> configuration parameter
+        into a single new value <literal>replica</> (Peter Eisentraut)
+       </para>
+
+       <para>
+        Making a distinction between these settings is no longer useful,
+        and merging them is a step towards a planned future simplification
+        of replication setup.  The old names are still accepted but are
+        converted to <literal>replica</> internally.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-02 [7d17e683f] Add support for systemd service notifications
+-->
+       <para>
+        Add configure option <option>--with-systemd</> to enable
+        calling <function>sd_notify()</> at server start and stop (Peter
+        Eisentraut)
+       </para>
+
+       <para>
+        This allows the use of <application>systemd</> service units of
+        type <literal>notify</>, which greatly simplifies the management
+        of <productname>PostgreSQL</> under <application>systemd</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-19 [9a83564c5] Allow SSL server key file to have group read access if o
+-->
+       <para>
+        Allow the server's <acronym>SSL</> key file to have group read
+        access if it is owned by <literal>root</> (Christoph Berg)
+       </para>
+
+       <para>
+        Formerly, we insisted the key file be owned by the
+        user running the <productname>PostgreSQL</> server, but
+        that is inconvenient on some systems (such as <systemitem
+        class="osname">Debian</>) that are configured to manage
+        certificates centrally.  Therefore, allow the case where the key
+        file is owned by <literal>root</> and has group read access.
+        It is up to the operating system administrator to ensure that
+        the group does not include any untrusted users.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title>Reliability</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-11-12 [ac1d7945f] Make idle backends exit if the postmaster dies.
+-->
+       <para>
+        Force backends to exit if the postmaster dies (Rajeev Rastogi,
+        Robert Haas)
+       </para>
+
+       <para>
+        Under normal circumstances the postmaster should always outlive
+        its child processes.  If for some reason the postmaster dies,
+        force backend sessions to exit with an error.  Formerly, existing
+        backends would continue to run until their clients disconnect,
+        but that is unsafe and inefficient.  It also prevents a new
+        postmaster from being started until the last old backend has
+        exited.  Backends will detect postmaster death when waiting for
+        client I/O, so the exit will not be instantaneous, but it should
+        happen no later than the end of the current query.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-07 [fcff8a575] Detect SSI conflicts before reporting constraint violati
+-->
+       <para>
+        Check for serializability conflicts before reporting
+        constraint-violation failures (Thomas Munro)
+       </para>
+
+       <para>
+        When using serializable transaction isolation, it is desirable
+        that any error due to concurrent transactions should manifest
+        as a serialization failure, thereby cueing the application that
+        a retry might succeed.  Unfortunately, this does not reliably
+        happen for duplicate-key failures caused by concurrent insertions.
+        This change ensures that such an error will be reported as a
+        serialization error if the application explicitly checked for
+        the presence of a conflicting key (and did not find it) earlier
+        in the transaction.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+XXX this is pending backpatch, may need to remove
+2016-04-26 [c6ff84b06] Emit invalidations to standby for transactions without x
+-->
+       <para>
+        Ensure that invalidation messages are recorded in <acronym>WAL</>
+        even when issued by a transaction that has no <acronym>XID</>
+        assigned (Andres Freund)
+       </para>
+
+       <para>
+        This fixes some corner cases in which transactions on standby
+        servers failed to notice changes, such as new indexes.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+XXX this is pending backpatch, may need to remove
+2016-04-28 [e2c79e14d] Prevent multiple cleanup process for pending list in GIN
+-->
+       <para>
+        Prevent multiple processes from trying to clean a <acronym>GIN</>
+        index's pending list concurrently (Teodor Sigaev, Jeff Janes)
+       </para>
+
+       <para>
+        This had been intentionally allowed, but it causes race conditions
+        that can result in vacuum missing index entries it needs to delete.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+   </sect3>
+
+   <sect3>
+    <title>Replication and Recovery</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-06 [989be0810] Support multiple synchronous standby servers.
+2016-04-27 [4c804fbdf] Clean up parsing of synchronous_standby_names GUC variab
+2016-04-30 [17d5db352] Remove warning about num_sync being too large in synchro
+-->
+       <para>
+        Allow synchronous replication to support multiple simultaneous
+        synchronous standby servers, not just one (Masahiko Sawada,
+        Beena Emerson, Michael Paquier, Fujii Masao, Kyotaro Horiguchi)
+       </para>
+
+       <para>
+        The number of standby servers that must acknowledge a commit
+        before it is considered complete is now configurable as part of
+        the <xref linkend="guc-synchronous-standby-names"> parameter.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-29 [314cbfc5d] Add new replication mode synchronous_commit = 'remote_ap
+-->
+       <para>
+        Add new setting <literal>remote_apply</> for configuration
+        parameter <xref linkend="guc-synchronous-commit"> (Thomas Munro)
+       </para>
+
+       <para>
+        In this mode, the master waits for the transaction to be
+        <emphasis>applied</> on the standby server, not just written
+        to disk.  That means that you can count on a transaction started
+        on the standby to see all commits previously acknowledged by
+        the master.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-11 [6fcd88511] Allow pg_create_physical_replication_slot() to reserve W
+2015-09-06 [c314ead5b] Add ability to reserve WAL upon slot creation via replic
+-->
+       <para>
+        Add a feature to the replication
+        protocol, and a corresponding option to <link
+        linkend="functions-replication-table"><function>pg_create_physical_replication_slot()</></>,
+        to allow reserving <acronym>WAL</> immediately when creating a
+        replication slot (Gurjeet Singh, Michael Paquier)
+       </para>
+
+       <para>
+        This allows the creation of a replication slot to guarantee
+        that all the <acronym>WAL</> needed for a base backup will be
+        available.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-28 [0dc848b03] pg_basebackup: Add -slot option
+-->
+       <para>
+        Add a <option>--slot</option> option to
+        <link linkend="app-pgbasebackup"><application>pg_basebackup</></>
+        (Peter Eisentraut)
+       </para>
+
+       <para>
+        This lets <application>pg_basebackup</> use a replication
+        slot defined for <acronym>WAL</> streaming.  After the base
+        backup completes, selecting the same slot for regular streaming
+        replication allows seamless startup of the new standby server.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-05 [711768546] Implement backup API functions for non-exclusive backups
+2016-07-11 [87d84d67b] Fix start WAL filename for concurrent backups from stand
+-->
+       <para>
+        Extend <link
+        linkend="functions-admin-backup-table"><function>pg_start_backup()</></>
+        and <function>pg_stop_backup()</> to support non-exclusive backups
+        (Magnus Hagander)
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Queries</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-07-26 [d8411a6c8] Allow functions that return sets of tuples to return sim
+-->
+       <para>
+        Allow functions that return sets of tuples to return simple
+        <literal>NULL</>s (Andrew Gierth, Tom Lane)
+       </para>
+
+       <para>
+        In the context of <literal>SELECT FROM function(...)</>, a function
+        that returned a set of composite values was previously not allowed
+        to return a plain <literal>NULL</> value as part of the set.
+        Now that is allowed and interpreted as a row of <literal>NULL</>s.
+        This avoids corner-case errors with, for example, unnesting an
+        array of composite values.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-08-03 [a3c7a993d] Make INSERT-from-multiple-VALUES-rows handle targetlist
+-->
+       <para>
+        Fully support array subscripts and field selections in the
+        target column list of an <command>INSERT</> with multiple
+        <literal>VALUES</> rows (Tom Lane)
+       </para>
+
+       <para>
+        Previously, such cases failed if the same target column was
+        mentioned more than once, e.g., <literal>INSERT INTO tab (x[1],
+        x[2]) VALUES (...)</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-11 [9118d03a8] When appropriate, postpone SELECT output expressions til
+2016-03-25 [d543170f2] Don't split up SRFs when choosing to postpone SELECT out
+-->
+       <para>
+        When appropriate, postpone evaluation of <command>SELECT</>
+        output expressions until after an <literal>ORDER BY</> sort
+        (Konstantin Knizhnik)
+       </para>
+
+       <para>
+        This change ensures that volatile or expensive functions in the
+        output list are executed in the order suggested by <literal>ORDER
+        BY</>, and that they are not evaluated more times than required
+        when there is a <literal>LIMIT</> clause.  Previously, these
+        properties held if the ordering was performed by an index scan or
+        pre-merge-join sort, but not if it was performed by a top-level
+        sort.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-12 [23a27b039] Widen query numbers-of-tuples-processed counters to uint
+2016-03-14 [74a379b98] Use repalloc_huge() to enlarge a SPITupleTable's tuple p
+-->
+       <para>
+        Widen counters recording the number of tuples processed to 64 bits
+        (Andreas Scherbaum)
+       </para>
+
+       <para>
+        This change allows command tags, e.g. <command>SELECT</>, to
+        correctly report tuple counts larger than 4 billion.  This also
+        applies to PL/pgSQL's <command>GET DIAGNOSTICS ... ROW_COUNT</>
+        command.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-28 [8d32717b6] Avoid doing encoding conversions by double-conversion vi
+-->
+       <para>
+        Avoid doing encoding conversions by converting through the
+        <literal>MULE_INTERNAL</> encoding (Tom Lane)
+       </para>
+
+       <para>
+        Previously, many conversions for Cyrillic and Central
+        European single-byte encodings were done by converting to a
+        related <literal>MULE_INTERNAL</> coding scheme and then to the
+        destination encoding.  Aside from being inefficient, this meant
+        that when the conversion encountered an untranslatable character,
+        the error message would confusingly complain about failure to
+        convert to or from <literal>MULE_INTERNAL</>, rather than the
+        user-visible encoding.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-28 [fbe5a3fb7] Only try to push down foreign joins if the user mapping
+2016-07-15 [45639a052] Avoid invalidating all foreign-join cached plans when us
+-->
+       <para>
+        Consider performing joins of foreign tables remotely only when the
+        tables will be accessed under the same role ID (Shigeru Hanada,
+        Ashutosh Bapat, Etsuro Fujita)
+       </para>
+
+       <para>
+        Previously, the foreign join pushdown infrastructure left the
+        question of security entirely up to individual foreign data
+        wrappers, but that made it too easy for an <acronym>FDW</> to
+        inadvertently create subtle security holes.  So, make it the core
+        code's job to determine which role ID will access each table,
+        and do not attempt join pushdown unless the role is the same for
+        all relevant relations.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Utility Commands</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-11-27 [92e38182d] COPY (INSERT/UPDATE/DELETE .. RETURNING ..)
+-->
+       <para>
+        Allow <command>COPY</> to copy the output of an
+        <literal>INSERT</>/<literal>UPDATE</>/<literal>DELETE</>
+        ... <literal>RETURNING</> query (Marko Tiikkaja)
+       </para>
+
+       <para>
+        Previously, an intermediate <acronym>CTE</> had to be written to
+        get this result.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-05 [f2fcad27d] Support ALTER THING .. DEPENDS ON EXTENSION
+-->
+       <para>
+        Introduce <command>ALTER <replaceable>object</> DEPENDS ON
+        EXTENSION</command> (Abhijit Menon-Sen)
+       </para>
+
+       <para>
+        This command allows a database object to be marked as depending
+        on an extension, so that it will be dropped automatically if
+        the extension is dropped (without needing <literal>CASCADE</>).
+        However, the object is not part of the extension, and thus will
+        be dumped separately by <application>pg_dump</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-19 [bc4996e61] Make ALTER .. SET SCHEMA do nothing, instead of throwing
+-->
+       <para>
+        Make <command>ALTER <replaceable>object</> SET SCHEMA</> do nothing
+        when the object is already in the requested schema, rather than
+        throwing an error as it historically has for most object types
+        (Marti Raudsepp)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-14 [321eed5f0] Add ALTER OPERATOR command, for changing selectivity est
+2015-12-31 [0dab5ef39] Fix ALTER OPERATOR to update dependencies properly.
+-->
+       <para>
+        Add options to <command>ALTER OPERATOR</command> to allow changing
+        the selectivity functions associated with an existing operator
+        (Yury Zhuravlev)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-29 [2cd40adb8] Add IF NOT EXISTS processing to ALTER TABLE ADD COLUMN
+-->
+       <para>
+        Add an <option>IF NOT EXISTS</> option to <command>ALTER TABLE
+        ADD COLUMN</> (Fabr&iacute;zio de Royes Mello)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-14 [47167b790] Reduce lock levels for ALTER TABLE SET autovacuum storag
+2016-03-10 [fcb4bfddb] Reduce lock level for altering fillfactor
+-->
+       <para>
+        Reduce the lock strength needed by <command>ALTER TABLE</>
+        when setting fillfactor and autovacuum-related relation options
+        (Fabr&iacute;zio de Royes Mello, Simon Riggs)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-23 [473b93287] Support CREATE ACCESS METHOD
+-->
+       <para>
+        Introduce <link linkend="sql-create-access-method"><command>CREATE
+        ACCESS METHOD</></> to allow extensions to create index access
+        methods (Alexander Korotkov, Petr Jel&iacute;nek)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-03 [b67aaf21e] Add CASCADE support for CREATE EXTENSION.
+-->
+       <para>
+        Add a <literal>CASCADE</> option to <command>CREATE
+        EXTENSION</command> to automatically create any extensions the
+        requested one depends on (Petr Jel&iacute;nek)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-05 [b943f502b] Have CREATE TABLE LIKE add OID column if any LIKEd table
+-->
+       <para>
+        Make <command>CREATE TABLE ... LIKE</> include an <type>OID</>
+        column if any source table has one (Bruce Momjian)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-16 [f27a6b15e] Mark CHECK constraints declared NOT VALID valid if creat
+-->
+       <para>
+        If a <literal>CHECK</> constraint is declared <literal>NOT VALID</>
+        in a table creation command, automatically mark it as valid
+        (Amit Langote, Amul Sul)
+       </para>
+
+       <para>
+        This is safe because the table has no existing rows.  This matches
+        the longstanding behavior of <literal>FOREIGN KEY</> constraints.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-25 [c94959d41] Fix DROP OPERATOR to reset oprcom/oprnegate links to the
+-->
+       <para>
+        Fix <command>DROP OPERATOR</> to clear
+        <structname>pg_operator</>.<structfield>oprcom</> and
+        <structname>pg_operator</>.<structfield>oprnegate</> links to
+        the dropped operator (Roma Sokolov)
+       </para>
+
+       <para>
+        Formerly such links were left as-is, which could pose a problem
+        in the somewhat unlikely event that the dropped operator's
+        <type>OID</> was reused for another operator.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-07-11 [4d042999f] Print a given subplan only once in EXPLAIN.
+-->
+       <para>
+        Do not show the same subplan twice in <command>EXPLAIN</> output
+        (Tom Lane)
+       </para>
+
+       <para>
+        In certain cases, typically involving SubPlan nodes in index
+        conditions, <command>EXPLAIN</> would print data for the same
+        subplan twice.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-16 [c34df8a00] Disallow creation of indexes on system columns (except f
+-->
+       <para>
+        Disallow creation of indexes on system columns, except for
+        <type>OID</> columns (David Rowley)
+       </para>
+
+       <para>
+        Such indexes were never considered supported, and would very
+        possibly misbehave since the system might change the system-column
+        fields of a tuple without updating indexes.  However, previously
+        there were no error checks to prevent them from being created.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Permissions Management</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-06 [1574783b4] Use GRANT system to manage access to sensitive functions
+-->
+       <para>
+        Use the privilege system to manage access to sensitive functions
+        (Stephen Frost)
+       </para>
+
+       <para>
+        Formerly, many security-sensitive functions contained hard-wired
+        checks that would throw an error if they were called by a
+        non-superuser.  This forced the use of superuser roles for
+        some relatively pedestrian tasks.  The hard-wired error checks
+        are now gone in favor of making <application>initdb</> revoke the
+        default public <literal>EXECUTE</> privilege on these functions.
+        This allows installations to choose to grant usage of such
+        functions to trusted roles that do not need all superuser
+        privileges.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [7a542700d] Create default roles
+-->
+       <para>
+        Create some <link linkend="default-roles">built-in roles</link>
+        that can be used to grant access to what were previously
+        superuser-only functions (Stephen Frost)
+       </para>
+
+       <para>
+        Currently the only such role is <literal>pg_signal_backend</>,
+        but more are expected to be added in future.
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Data Types</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-07 [bb140506d] Phrase full text search.
+2016-06-27 [028350f61] Make exact distance match for FTS phrase operator
+2016-06-27 [3dbbd0f02] Do not fallback to AND for FTS phrase operator.
+2016-06-27 [6734a1cac] Change predecence of phrase operator.
+-->
+       <para>
+        Improve <link linkend="textsearch">full-text search</> to support
+        searching for phrases, that is, lexemes appearing adjacent to each
+        other in a specific order, or with a specified distance between
+        them (Teodor Sigaev, Oleg Bartunov, Dmitry Ivanov)
+       </para>
+
+       <para>
+        A phrase-search query can be specified in <type>tsquery</>
+        input using the new operators <literal>&lt;-&gt;</> and
+        <literal>&lt;<replaceable>N</>&gt;</literal>.  The former means
+        that the lexemes before and after it must appear adjacent to
+        each other in that order.  The latter means they must be exactly
+        <replaceable>N</> lexemes apart.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-22 [6efbded6e] Allow omitting one or both boundaries in an array slice
+-->
+       <para>
+        Allow omitting one or both boundaries in an array slice specifier,
+        e.g. <literal>array_col[3:]</> (Yury Zhuravlev)
+       </para>
+
+       <para>
+        Omitted boundaries are taken as the upper or lower limit of the
+        corresponding array subscript.  This allows simpler specification
+        for many common use-cases.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-16 [a70e13a39] Be more careful about out-of-range dates and timestamps.
+-->
+       <para>
+        Be more careful about out-of-range dates and timestamps (Vitaly
+        Burovoy)
+       </para>
+
+       <para>
+        This change prevents unexpected out-of-range errors for
+        <type>timestamp with time zone</> values very close to the
+        implementation limits.  Previously, the <quote>same</> value might
+        be accepted or not depending on the <varname>timezone</> setting,
+        meaning that a dump and reload could fail on a value that had been
+        accepted when presented.  Now the limits are enforced according
+        to the equivalent <acronym>UTC</> time, not local time, so as to
+        be independent of <varname>timezone</>.
+       </para>
+
+       <para>
+        Also, <productname>PostgreSQL</> is now more careful to detect
+        overflow in operations that compute new date or timestamp values,
+        such as <type>date</> <literal>+</> <type>integer</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-30 [50861cd68] Improve portability of I/O behavior for the geometric ty
+-->
+       <para>
+        For geometric data types, make sure <literal>infinity</> and
+        <literal>NaN</> component values are treated consistently during
+        input and output (Tom Lane)
+       </para>
+
+       <para>
+        Such values will now always print the same as they would in
+        a simple <type>float8</> column, and be accepted the same way
+        on input.  Previously the behavior was platform-dependent.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-04 [d78a7d9c7] Improve support of Hunspell in ispell dictionary.
+2016-03-11 [8829af47e] Fix merge affixes for numeric ones
+2016-03-17 [f4ceed6ce] Improve support of Hunspell
+-->
+       <para>
+        Upgrade
+        the <link linkend="textsearch-ispell-dictionary"><literal>ispell</></>
+        dictionary type to handle modern <productname>Hunspell</> files and
+        support more languages (Artur Zakirov)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-30 [12c9a0400] Implement lookbehind constraints in our regular-expressi
+-->
+       <para>
+        Implement look-behind constraints
+        in <link linkend="functions-posix-regexp">regular expressions</>
+        (Tom Lane)
+       </para>
+
+       <para>
+        A look-behind constraint is like a lookahead constraint in that it
+        consumes no text; but it checks for existence (or nonexistence)
+        of a match ending at the current point in the string, rather
+        than one starting at the current point.  Similar features exist
+        in many other regular-expression engines.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-16 [b44d92b67] Sync regex code with Tcl 8.6.4.
+-->
+       <para>
+        In regular expressions, if an apparent three-digit octal escape
+        <literal>\</><replaceable>nnn</> would exceed 377 (255 decimal),
+        assume it is a two-digit octal escape instead (Tom Lane)
+       </para>
+
+       <para>
+        This makes the behavior match current <application>Tcl</> releases.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-07 [c5e86ea93] Add "xid <> xid" and "xid <> int4" operators.
+-->
+       <para>
+        Add transaction ID operators <type>xid</> <literal>&lt;&gt;</>
+        <type>xid</> and <type>xid</> <literal>&lt;&gt;</> <type>int4</>,
+        for consistency with the corresponding equality operators
+        (Michael Paquier)
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Functions</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-04-06 [0b62fd036] Add jsonb_insert
+-->
+       <para>
+        Add <link
+        linkend="functions-json-processing-table"><function>jsonb_insert()</></>
+        function to insert a new element into a <type>jsonb</> array,
+        or a not-previously-existing key into a <type>jsonb</> object
+        (Dmitry Dolgov)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-14 [7d9a4737c] Improve type numeric's calculations for ln(), log(), exp
+2016-05-05 [18a02ad2a] Fix corner-case loss of precision in numeric pow() calcu
+-->
+       <para>
+        Improve the accuracy of the <function>ln()</>, <function>log()</>,
+        <function>exp()</>, and <function>pow()</> functions for type
+        <type>numeric</> (Dean Rasheed)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-05 [abb173392] Add scale(numeric)
+-->
+       <para>
+        Add a <link
+        linkend="functions-math-func-table"><function>scale(numeric)</></>
+        function to extract the display scale of a <type>numeric</> value
+        (Marko Tiikkaja)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-22 [e1bd684a3] Add trigonometric functions that work in degrees.
+-->
+       <para>
+        Add trigonometric functions that work in degrees (Dean Rasheed)
+       </para>
+
+       <para>
+        For example, <link
+        linkend="functions-math-trig-table"><function>sind()</></>
+        measures its argument in degrees, whereas <function>sin()</>
+        measures in radians.  These functions go to some lengths to
+        deliver exact results for values where an exact result can be
+        expected, for instance <literal>sind(30) = 0.5</literal>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-22 [fd5200c3d] Improve cross-platform consistency of Inf/NaN handling i
+-->
+       <para>
+        Ensure that trigonometric functions handle <literal>infinity</>
+        and <literal>NaN</> inputs per the <acronym>POSIX</> standard
+        (Dean Rasheed)
+       </para>
+
+       <para>
+        The <acronym>POSIX</> standard says that these functions should
+        return <literal>NaN</> for <literal>NaN</> input, and should throw
+        an error for out-of-range inputs including <literal>infinity</>.
+        Previously our behavior varied across platforms.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-29 [e511d878f] Allow to_timestamp(float8) to convert float infinity to
+-->
+       <para>
+        Make <link
+        linkend="functions-datetime-table"><function>to_timestamp(float8)</></>
+        convert float <literal>infinity</> to
+        timestamp <literal>infinity</> (Vitaly Burovoy)
+       </para>
+
+       <para>
+        Formerly it just failed on an infinite input.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-11 [6943a946c] Tsvector editing functions
+2016-05-05 [0b9a23443] Rename tsvector delete() to ts_delete(), and filter() to
+-->
+       <para>
+        Add new functions for <type>tsvector</> data (Stas Kelvich)
+       </para>
+
+       <para>
+        The new functions are <link
+        linkend="textsearch-functions-table"><function>ts_delete()</></>,
+        <function>ts_filter()</>, <function>unnest()</>,
+        <function>tsvector_to_array()</>, <function>array_to_tsvector()</>,
+        and a variant of <function>setweight()</> that sets the weight
+        only for specified lexeme(s).
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-17 [9acb9007d] Fix oversight in tsearch type check
+-->
+       <para>
+        Allow <link linkend="textsearch-statistics"><function>ts_stat()</></>
+        and <link linkend="textsearch-update-triggers"><function>tsvector_update_trigger()</></>
+        to operate on values that are of types binary-compatible with the
+        expected argument type, not just exactly that type; for example
+        allow <type>citext</> where <type>text</> is expected (Teodor
+        Sigaev)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-04 [6819514fc] Add num_nulls() and num_nonnulls() to count NULL argumen
+-->
+       <para>
+        Add variadic functions <link
+        linkend="functions-comparison-func-table"><function>num_nulls()</></>
+        and <function>num_nonnulls()</> that count the number of their
+        arguments that are null or non-null (Marko Tiikkaja)
+       </para>
+
+       <para>
+        An example usage is <literal>CHECK(num_nonnulls(a,b,c) = 1)</>
+        which asserts that exactly one of a,b,c is not <literal>NULL</>.
+        These functions can also be used to count the number of null or
+        nonnull elements in an array.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-18 [3187d6de0] Introduce parse_ident()
+-->
+       <para>
+        Add function <link
+        linkend="functions-string-other"><function>parse_ident()</></>
+        to split a qualified, possibly quoted <acronym>SQL</> identifier
+        into its parts (Pavel Stehule)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-05 [28b3a3d41] to_number():  allow 'V' to divide by 10^(the number of d
+-->
+       <para>
+        In <link
+        linkend="functions-formatting-table"><function>to_number()</></>,
+        interpret a <literal>V</> format code as dividing by 10 to the
+        power of the number of digits following <literal>V</> (Bruce
+        Momjian)
+       </para>
+
+       <para>
+        This makes it operate in an inverse fashion to
+        <function>to_char()</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-05 [ea0d494da] Make the to_reg*() functions accept text not cstring.
+-->
+       <para>
+        Make the <link
+        linkend="functions-info-catalog-table"><function>to_reg*()</></>
+        functions accept type <type>text</> not <type>cstring</>
+        (Petr Korobeinikov)
+       </para>
+
+       <para>
+        This avoids the need to write an explicit cast in most cases
+        where the argument is not a simple literal constant.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-20 [53874c522] Add pg_size_bytes() to parse human-readable size strings
+-->
+       <para>
+        Add <link
+        linkend="functions-admin-dbsize"><function>pg_size_bytes()</></>
+        function to convert human-readable size strings to numbers (Pavel
+        Stehule, Vitaly Burovoy, Dean Rasheed)
+       </para>
+
+       <para>
+        This function converts strings like those produced by
+        <function>pg_size_pretty()</> into bytes.  An example
+        usage is <literal>SELECT oid::regclass FROM pg_class WHERE
+        pg_total_relation_size(oid) &gt; pg_size_bytes('10 GB')</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-06 [8a1fab36a] pg_size_pretty: Format negative values similar to positi
+-->
+       <para>
+        In <link
+        linkend="functions-admin-dbsize"><function>pg_size_pretty()</></>,
+        format negative numbers similarly to positive ones (Adrian
+        Vondendriesch)
+       </para>
+
+       <para>
+        Previously, negative numbers were never abbreviated, just printed
+        in bytes.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-02 [10fb48d66] Add an optional missing_ok argument to SQL function curr
+-->
+       <para>
+        Add an optional <replaceable>missing_ok</> argument to the <link
+        linkend="functions-admin-set-table"><function>current_setting()</></>
+        function (David Christensen)
+       </para>
+
+       <para>
+        This allows avoiding an error for an unrecognized parameter
+        name, instead returning a <literal>NULL</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-07-26 [976b24fb4] Change various deparsing functions to return NULL for in
+2016-07-29 [3153b1a52] Eliminate a few more user-visible "cache lookup failed"
+2016-08-07 [8a8c6b538] Fix crash when pg_get_viewdef_name_ext() is passed a non
+-->
+       <para>
+        Change various catalog-inspection functions to return
+        <literal>NULL</> for invalid input (Michael Paquier)
+       </para>
+
+       <para>
+        <link
+        linkend="functions-info-catalog-table"><function>pg_get_viewdef()</></>
+        now returns <literal>NULL</> if given an invalid view <type>OID</>,
+        and several similar functions likewise return <literal>NULL</> for
+        bad input.  Previously, such cases usually led to <quote>cache
+        lookup failed</> errors, which are not meant to occur in
+        user-facing cases.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-08-02 [dd5eb805d] Remove unused arguments from pg_replication_origin_xact_
+-->
+       <para>
+        Fix <link
+        linkend="pg-replication-origin-xact-reset"><function>pg_replication_origin_xact_reset()</></>
+        to not have any arguments (Fujii Masao)
+       </para>
+
+       <para>
+        The documentation said that it has no arguments, and the C code did
+        not expect any arguments, but the entry in <structname>pg_proc</>
+        mistakenly specified two arguments.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Server-Side Languages</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2015-08-21 [fcdfce682] Detect mismatched CONTINUE and EXIT statements at plpgsq
+-->
+       <para>
+        In <link linkend="plpgsql">PL/pgSQL</link>, detect mismatched
+        <command>CONTINUE</> and <command>EXIT</> statements while
+        compiling a function, rather than at execution time
+        (Jim Nasby)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [5c3c3cd0a] Enhanced custom error in PLPythonu
+2016-06-11 [020140d84] PL/Python: Rename new keyword arguments of plpy.error()
+2016-07-02 [3a4a33ad4] PL/Python: Report argument parsing errors using exceptio
+-->
+       <para>
+        Extend <application>PL/Python</>'s error-reporting and
+        message-reporting functions to allow specifying additional message
+        fields besides the primary error message (Pavel Stehule)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-05 [1d2fe56e4] Fix PL/Python for recursion and interleaved set-returnin
+-->
+       <para>
+        Allow PL/Python functions to call themselves recursively
+        via <application>SPI</>, and fix the behavior when multiple
+        set-returning PL/Python functions are called within one query
+        (Alexey Grishchenko, Tom Lane)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-05 [8c75ad436] Fix memory leaks in PL/Python.
+-->
+       <para>
+        Fix session-lifespan memory leaks in PL/Python (Heikki Linnakangas,
+        Haribabu Kommi, Tom Lane)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-02 [287822068] Convert PL/Tcl to use Tcl's "object" interfaces.
+2016-03-02 [e2609323e] Make PL/Tcl require Tcl 8.4 or later.
+-->
+       <para>
+        Modernize <application>PL/Tcl</> to use Tcl's <quote>object</>
+        <acronym>API</>s instead of simple strings (Jim Nasby, Karl
+        Lehenbauer)
+       </para>
+
+       <para>
+        This can improve performance substantially in some cases.
+        Note that <application>PL/Tcl</> now requires Tcl 8.4 or later.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-25 [fb8d2a7f5] In PL/Tcl, make database errors return additional info i
+2016-03-25 [cd37bb785] Improve PL/Tcl errorCode facility by providing decoded n
+-->
+       <para>
+        In <application>PL/Tcl</>, make database-reported errors return
+        additional information in Tcl's <varname>errorCode</> global
+        variable (Jim Nasby, Tom Lane)
+       </para>
+
+       <para>
+        This feature follows the Tcl convention for returning auxiliary
+        data about an error.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-02 [c8c7c93de] Fix PL/Tcl's encoding conversion logic.
+-->
+       <para>
+        Fix <application>PL/Tcl</> to perform encoding conversion between
+        the database encoding and <literal>UTF-8</>, which is what Tcl
+        expects (Tom Lane)
+       </para>
+
+       <para>
+        Previously, strings were passed through without conversion,
+        leading to misbehavior with non-<literal>ASCII</> characters when
+        the database encoding was not <literal>UTF-8</>.
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Client Interfaces</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2016-08-26 [e796d0aba] Add a nonlocalized version of the severity field to clie
+-->
+       <para>
+        Add a nonlocalized version of
+        the <link linkend="protocol-error-fields">severity field</> in
+        error and notice messages (Tom Lane)
+       </para>
+
+       <para>
+        This change allows client code to determine severity of an error or
+        notice without having to worry about localized variants of the
+        severity strings.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-05 [0426f349e] Rearrange the handling of error context reports.
+This commit is also listed under psql and PL/pgSQL
+-->
+       <para>
+        Introduce a feature in <application>libpq</> whereby the
+        <literal>CONTEXT</> field of messages can be suppressed, either
+        always or only for non-error messages (Pavel Stehule)
+       </para>
+
+       <para>
+        The default behavior of <link
+        linkend="libpq-pqerrormessage"><function>PQerrorMessage()</></>
+        is now to print <literal>CONTEXT</>
+        only for errors.  The new function <link
+        linkend="libpq-pqseterrorcontextvisibility"><function>PQsetErrorContextVisibility()</></>
+        can be used to adjust this.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-03 [e3161b231] Add libpq support for recreating an error message with d
+-->
+       <para>
+        Add support in <application>libpq</> for regenerating an error
+        message with a different verbosity level (Alex Shulgin)
+       </para>
+
+       <para>
+        This is done with the new function <link
+        linkend="libpq-pqresultverboseerrormessage"><function>PQresultVerboseErrorMessage()</></>.
+        This supports <application>psql</>'s new <literal>\errverbose</>
+        feature, and may be useful for other clients as well.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-27 [40cb21f70] Improve PQhost() to return useful data for default Unix-
+-->
+       <para>
+        Improve <application>libpq</>'s <link
+        linkend="libpq-pqhost"><function>PQhost()</></> function to return
+        useful data for default Unix-socket connections (Tom Lane)
+       </para>
+
+       <para>
+        Previously it would return <literal>NULL</> if no explicit host
+        specification had been given; now it returns the default socket
+        directory path.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-16 [fc1ae7d2e] Change ecpg lexer to accept comments with line breaks in
+-->
+       <para>
+        Fix <application>ecpg</>'s lexer to handle line breaks within
+        comments starting on preprocessor directive lines (Michael Meskes)
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Client Applications</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2015-09-14 [d02426029] Check existency of table/schema for -t/-n option (pg_dum
+-->
+       <para>
+        Add a <option>--strict-names</> option
+        to <link linkend="APP-PGDUMP"><application>pg_dump</></>
+        and <link linkend="APP-PGRESTORE"><application>pg_restore</></>
+        (Pavel Stehule)
+       </para>
+
+       <para>
+        This option causes the program to complain if there is no match
+        for a <option>-t</option> or <option>-n</option> option, rather
+        than silently doing nothing.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-06 [a9f0e8e5a] In pg_dump, use a bitmap to represent what to include
+2016-04-06 [d217b2c36] In pg_dump, split "dump" into "dump" and "dump_contains"
+2016-04-06 [23f34fa4b] In pg_dump, include pg_catalog and extension ACLs, if ch
+2016-05-06 [5d589993c] pg_dump performance and other fixes
+2016-05-06 [e1b120a8c] Only issue LOCK TABLE commands when necessary
+-->
+       <para>
+        In <application>pg_dump</>, dump locally-made changes of privilege
+        assignments for system objects (Stephen Frost)
+       </para>
+
+       <para>
+        While it has always been possible for a superuser to change
+        the privilege assignments for built-in or extension-created
+        objects, such changes were formerly lost in a dump and reload.
+        Now, <application>pg_dump</> recognizes and dumps such changes.
+        (This works only when dumping from a 9.6 or later server, however.)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-09-08 [31eb14504] Allow pg_dump to dump non-extension members of an extens
+-->
+       <para>
+        Allow <application>pg_dump</> to dump non-extension-owned objects
+        that are within an extension-owned schema
+        (Mart&iacute;n Marqu&eacute;s)
+       </para>
+
+       <para>
+        Previously such objects were ignored because they were mistakenly
+        assumed to belong to the extension owning their schema.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-06 [3b3fcc4ee] pg_dump: Add table qualifications to some tags
+-->
+       <para>
+        In <application>pg_dump</> output, include the table name in object
+        tags for object types that are only uniquely named per-table
+        (for example, triggers) (Peter Eisentraut)
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+     <sect4>
+      <title><xref linkend="APP-PSQL"></title>
+
+      <itemizedlist>
+
+      <listitem>
+<!--
+2015-12-08 [d5563d7df] psql: Support multiple -c and -f options, and allow mixi
+this commit is also listed in the compatibility section
+-->
+       <para>
+        Support multiple <option>-c</option> and <option>-f</option>
+        command-line options (Pavel Stehule, Catalin Iacob)
+       </para>
+
+       <para>
+        The specified operations are carried out in the order in which the
+        options are given, and then <application>psql</> terminates.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-08 [c09b18f21] Support \crosstabview in psql
+-->
+       <para>
+        Add a <command>\crosstabview</> command that prints the results of
+        a query in a cross-tabulated display (Daniel V&eacute;rit&eacute;)
+       </para>
+
+       <para>
+        In the crosstab display, data values from one query result column
+        are placed in a grid whose column and row headers come from other
+        query result columns.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-03 [3cc38ca7d] Add psql \errverbose command to see last server error at
+-->
+       <para>
+        Add an <literal>\errverbose</> command that shows the last server
+        error at full verbosity (Alex Shulgin)
+       </para>
+
+       <para>
+        This is useful after getting an unexpected error &mdash; you
+        no longer need to adjust the <varname>VERBOSITY</> variable and
+        recreate the failure in order to see error fields that are not
+        shown by default.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-03 [8eb6407aa] Add psql \ev and \sv commands for editing and showing vi
+2016-05-06 [9b66aa006] Fix psql's \ev and \sv commands so that they handle view
+-->
+       <para>
+        Add <literal>\ev</> and <literal>\sv</> commands for editing and
+        showing view definitions (Petr Korobeinikov)
+       </para>
+
+       <para>
+        These are parallel to the existing <literal>\ef</> and
+        <literal>\sf</> commands for functions.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-04 [2bbe9112a] Add a \gexec command to psql for evaluation of computed
+-->
+       <para>
+        Add a <command>\gexec</> command that executes a query and
+        re-submits the result(s) as new queries (Corey Huinker)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-10-05 [2145a7660] psql:  allow \pset C in setting the title, matches \C
+-->
+       <para>
+        Allow <literal>\pset C <replaceable>string</></literal>
+        to set the table title, for consistency with <literal>\C
+        <replaceable>string</></literal> (Bruce Momjian)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-11 [69ab7b9d6] psql: Don't automatically use expanded format when there
+-->
+       <para>
+        In <literal>\pset expanded auto</> mode, do not use expanded
+        format for query results with only one column (Andreas Karlsson,
+        Robert Haas)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-21 [dea2b5960] Improve header output from psql's \watch command.
+2016-06-15 [9901d8ac2] Use strftime("%c") to format timestamps in psql's \watch
+-->
+       <para>
+        Improve the headers output by the <command>\watch</> command
+        (Michael Paquier, Tom Lane)
+       </para>
+
+       <para>
+        Include the <command>\pset title</> string if one has
+        been set, and shorten the prefabricated part of the
+        header to be <literal><replaceable>timestamp</> (every
+        <replaceable>N</>s)</literal>.  Also, the timestamp format now
+        obeys <application>psql</>'s locale environment.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-20 [d854118c8] Teach psql's tab completion to consider the entire input
+-->
+       <para>
+        Improve tab-completion logic to consider the entire input query,
+        not only the current line (Tom Lane)
+       </para>
+
+       <para>
+        Previously, breaking a command into multiple lines defeated any
+        tab completion rules that needed to see words on earlier lines.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-04 [158e3bc8e] Tab completion for CREATE SEQUENCE.
+2015-09-08 [3ae16798f] psql: Generic tab completion support for enum and bool G
+2015-09-09 [2f8880704] Improve tab-completion for GRANT and REVOKE.
+2015-10-01 [bf4817e4f] Fix incorrect tab-completion for GRANT and REVOKE
+2015-10-20 [7c0b49cd0] Tab complete CREATE EXTENSION .. VERSION.
+2015-12-25 [8014c44e8] Improve SECURITY LABEL tab completion
+2016-01-12 [bc56d5898] psql: Fix CREATE INDEX tab completion
+2016-01-12 [b1bfb28b5] psql: Improve CREATE INDEX CONCURRENTLY tab completion
+2016-01-16 [4189e3d65] psql: Add completion support for DROP INDEX CONCURRENTLY
+2016-01-20 [d0f2f53cd] psql: Add tab completion for COPY with query
+2016-01-23 [6ae4c8de0] psql: Improve completion of FDW DDL commands
+2016-01-26 [879d71393] Various fixes to REFRESH MATERIALIZED VIEW tab completio
+2016-02-01 [89611c4df] Various fixes to "ALTER ... SET/RESET" tab completions
+-->
+       <para>
+        Numerous minor improvements in tab-completion behavior (Peter
+        Eisentraut, Vik Fearing, Kevin Grittner, Kyotaro Horiguchi, Jeff
+        Janes, Andreas Karlsson, Fujii Masao, Thomas Munro, Masahiko
+        Sawada, Pavel Stehule)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-07 [275f05c99] Add psql PROMPT variable showing the pid of the connecte
+-->
+       <para>
+        Add a <literal>PROMPT</> option <literal>%p</> to insert the
+        process ID of the connected backend (Julien Rouhaud)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-05 [0426f349e] Rearrange the handling of error context reports.
+This commit is also listed under libpq and PL/pgSQL
+-->
+       <para>
+        Introduce a feature whereby the <literal>CONTEXT</> field of
+        messages can be suppressed, either always or only for non-error
+        messages (Pavel Stehule)
+       </para>
+
+       <para>
+        Printing <literal>CONTEXT</> only for errors is now the default
+        behavior.  This can be changed by setting the special variable
+        <varname>SHOW_CONTEXT</varname>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-07-11 [a670c24c3] Improve output of psql's \df+ command.
+-->
+       <para>
+        Make <command>\df+</> show function access privileges and
+        parallel-safety attributes (Michael Paquier)
+       </para>
+      </listitem>
+
+      </itemizedlist>
+
+    </sect4>
+
+    <sect4>
+     <title><xref linkend="pgbench"></title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2016-03-20 [68ab8e8ba] SQL commands in pgbench scripts are now ended by semicol
+-->
+       <para>
+        SQL commands in <application>pgbench</> scripts are now ended by
+        semicolons, not newlines (Kyotaro Horiguchi, Tom Lane)
+       </para>
+
+       <para>
+        This change allows SQL commands in scripts to span multiple lines.
+        Existing custom scripts will need to be modified to add a semicolon
+        at the end of each line that does not have one already.  (Doing so
+        does not break the script for use with older versions
+        of <application>pgbench</>.)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-01 [7e137f846] Extend pgbench's expression syntax to support a few buil
+2016-03-28 [86c43f4e2] pgbench: Support double constants and functions.
+2016-05-05 [7a622b273] Rename pgbench min/max to least/greatest, and fix handli
+2016-05-06 [951529948] Improve handling of numeric-valued variables in pgbench.
+-->
+       <para>
+        Support floating-point arithmetic, as well as some <link
+        linkend="pgbench-builtin-functions">built-in functions</>, in
+        expressions in backslash commands (Fabien Coelho)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-29 [ad9566470] pgbench: Remove \setrandom.
+-->
+       <para>
+        Replace <command>\setrandom</> with built-in functions (Fabien
+        Coelho)
+       </para>
+
+       <para>
+        The new built-in functions include <link
+        linkend="pgbench-functions"><function>random()</></>,
+        <function>random_exponential()</>, and
+        <function>random_gaussian()</>, which perform the same work as
+        <command>\setrandom</>, but are easier to use since they can be
+        embedded in larger expressions.  Since these additions have made
+        <command>\setrandom</> obsolete, remove it.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-27 [8bea3d221] pgbench: improve multi-script support
+2016-03-03 [d561f1cae] pgbench: accept unambiguous builtin prefixes for -b
+-->
+       <para>
+        Allow invocation of multiple copies of the built-in scripts,
+        not only custom scripts (Fabien Coelho)
+       </para>
+
+       <para>
+        This is done with the new <option>-b</> switch, which works
+        similarly to <option>-f</> for custom scripts.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-19 [7bafffea6] pgbench: Allow changing weights for scripts
+2016-09-21 [970300faa] Print test parameters like "foo: 123", and results like
+-->
+       <para>
+        Allow changing the selection probabilities (weights) for scripts
+        (Fabien Coelho)
+       </para>
+
+       <para>
+        When multiple scripts are specified, each <application>pgbench</>
+        transaction randomly chooses one to execute.  Formerly this was
+        always done with uniform probability, but now different selection
+        probabilities can be specified for different scripts.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-01 [1d0c3b3f8] pgbench: allow per-script statistics
+-->
+       <para>
+        Collect statistics for each script in a multi-script run (Fabien
+        Coelho)
+       </para>
+
+       <para>
+        This feature adds an intermediate level of detail to existing
+        global and per-command statistics printouts.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-16 [1def9063c] pgbench progress with timestamp
+-->
+       <para>
+        Add a <option>--progress-timestamp</> option to report progress
+        with Unix epoch timestamps, instead of time since the run started
+        (Fabien Coelho)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-03 [ba3deeefb] Lift the limitation that # of clients must be a multiple
+-->
+       <para>
+        Allow the number of client connections (<option>-c</>) to not
+        be an exact multiple of the number of threads (<option>-t</>)
+        (Fabien Coelho)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-09 [accf7616f] pgbench: When -T is used, don't wait for transactions be
+-->
+       <para>
+        When the <option>-T</> option is used, stop promptly at the end
+        of the specified time (Fabien Coelho)
+       </para>
+
+       <para>
+        Previously, specifying a low transaction rate could cause
+        <application>pgbench</> to wait significantly longer than
+        specified.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+   </sect3>
+
+   <sect3>
+    <title>Server Applications</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2015-12-17 [66d947b9d] Adjust behavior of single-user -j mode for better initdb
+-->
+       <para>
+        Improve error reporting during <application>initdb</>'s
+        post-bootstrap phase (Tom Lane)
+       </para>
+
+       <para>
+        Previously, an error here led to reporting the entire input
+        file as the <quote>failing query</>; now just the current
+        query is reported.  To get the desired behavior, queries in
+        <application>initdb</>'s input files must be separated by blank
+        lines.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-17 [c4a8812cf] Use just one standalone-backend session for initdb's pos
+2016-08-30 [d9720e437] Fix initdb misbehavior when user mis-enters superuser pa
+-->
+       <para>
+        Speed up <application>initdb</> by using just one
+        standalone-backend session for all the post-bootstrap steps
+        (Tom Lane)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-01 [e50cda784] Use pg_rewind when target timeline was switched
+-->
+       <para>
+        Improve <link linkend="app-pgrewind"><application>pg_rewind</></>
+        so that it can work when the target timeline changes (Alexander
+        Korotkov)
+       </para>
+
+       <para>
+        This allows, for example, rewinding a promoted standby back to
+        some state of the old master's timeline.
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Source Code</title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-07-02 [726117243] Remove obsolete heap_formtuple/modifytuple/deformtuple f
+-->
+       <para>
+        Remove obsolete
+        <function>heap_formtuple</>/<function>heap_modifytuple</>/<function>heap_deformtuple</>
+        functions (Peter Geoghegan)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-08-27 [b9fe6cbc8] Add macros to make AllocSetContextCreate() calls simpler
+-->
+       <para>
+        Add macros to make <function>AllocSetContextCreate()</> calls simpler
+        and safer (Tom Lane)
+       </para>
+
+       <para>
+        Writing out the individual sizing parameters for a memory context
+        is now deprecated in favor of using one of the new
+        macros <symbol>ALLOCSET_DEFAULT_SIZES</>,
+        <symbol>ALLOCSET_SMALL_SIZES</>,
+        or <symbol>ALLOCSET_START_SMALL_SIZES</>.
+        Existing code continues to work, however.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-05 [de6fd1c89] Rely on inline functions even if that causes warnings in
+-->
+       <para>
+        Unconditionally use <literal>static inline</> functions in header
+        files (Andres Freund)
+       </para>
+
+       <para>
+        This may result in warnings and/or wasted code space with very
+        old compilers, but the notational improvement seems worth it.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-29 [13d856e17] Make TAP tests work on Windows.
+2015-12-02 [1caef31d9] Refactor Perl test code
+2015-12-07 [9821492ee] Cleanup some problems in new Perl test code
+2016-03-03 [2c83f435a] Rework PostgresNode's psql method
+2016-02-26 [49148645f] Add a test framework for recovery
+2016-02-26 [74d58425c] Apply last revision of recovery patch
+2016-05-06 [6bd356c33] Add TAP tests for pg_dump
+-->
+       <para>
+        Improve <application>TAP</> testing infrastructure (Michael
+        Paquier, Craig Ringer, &Aacute;lvaro Herrera, Stephen Frost)
+       </para>
+
+       <para>
+        Notably, it is now possible to test recovery scenarios using
+        this infrastructure.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-11 [aa65de042] When trace_lwlocks is used, identify individual lwlocks
+-->
+       <para>
+        Make <varname>trace_lwlocks</> identify individual locks by name
+        (Robert Haas)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-19 [d37b816dc] Adopt a more compact, less error-prone notation for tab
+2016-01-04 [9b181b036] In psql's tab completion, change most TailMatches patter
+2016-01-05 [4f18010af] Convert psql's tab completion for backslash commands to
+-->
+       <para>
+        Improve <application>psql</>'s tab-completion code infrastructure
+        (Thomas Munro, Michael Paquier)
+       </para>
+
+       <para>
+        Tab-completion rules are now considerably easier to write, and
+        more compact.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-05 [efa318bcf] Make pg_shseclabel available in early backend startup
+-->
+       <para>
+        Nail the <structname>pg_shseclabel</> system catalog into cache,
+        so that it is available for access during connection authentication
+        (Adam Brightwell)
+       </para>
+
+       <para>
+        The core code does not use this catalog for authentication,
+        but extensions might wish to consult it.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-17 [65c5fcd35] Restructure index access method API to hide most of it a
+2016-01-21 [be44ed27b] Improve index AMs' opclass validation procedures.
+2016-08-13 [ed0097e4f] Add SQL-accessible functions for inspecting index AM pro
+-->
+       <para>
+        Restructure <link linkend="indexam">index access
+        method <acronym>API</></> to hide most of it at
+        the <application>C</> level (Alexander Korotkov, Andrew Gierth)
+       </para>
+
+       <para>
+        This change modernizes the index <acronym>AM API</> to look more
+        like the designs we have adopted for foreign data wrappers and
+        tablesample handlers.  This simplifies the <application>C</> code
+        and makes it much more practical to define index access methods in
+        installable extensions.  A consequence is that most of the columns
+        of the <structname>pg_am</> system catalog have disappeared.
+        New <link linkend="functions-info-catalog-table">inspection
+        functions</link> have been added to allow SQL queries to determine
+        index AM properties that used to be discoverable
+        from <structname>pg_am</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-06 [6c268df12] Add new catalog called pg_init_privs
+-->
+       <para>
+        Add <link
+        linkend="catalog-pg-init-privs"><structname>pg_init_privs</></>
+        system catalog to hold original privileges
+        of <application>initdb</>-created and extension-created objects
+        (Stephen Frost)
+       </para>
+
+       <para>
+        This infrastructure allows <application>pg_dump</> to dump changes
+        that an installation may have made in privileges attached to
+        system objects.  Formerly, such changes would be lost in a dump
+        and reload, but now they are preserved.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-04 [c1772ad92] Change the way that LWLocks for extensions are allocated
+-->
+       <para>
+        Change the way that extensions allocate custom <literal>LWLocks</>
+        (Amit Kapila, Robert Haas)
+       </para>
+
+       <para>
+        The <function>RequestAddinLWLocks()</> function is removed,
+        and replaced by <function>RequestNamedLWLockTranche()</>.
+        This allows better identification of custom <literal>LWLocks</>,
+        and is less error-prone.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-11 [38f8bdcac] Modify the isolation tester so that multiple sessions ca
+-->
+       <para>
+        Improve the isolation tester to allow multiple sessions to wait
+        concurrently, allowing testing of deadlock scenarios (Robert Haas)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-12 [bcac23de7] Introduce extensible node types.
+-->
+       <para>
+        Introduce extensible node types (KaiGai Kohei)
+       </para>
+
+       <para>
+        This change allows <application>FDW</>s or custom scan providers
+        to store data in a plan tree in a more convenient format than
+        was previously possible.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-08-11 [68fa28f77] Postpone extParam/allParam calculations until the very e
+2016-01-07 [c44d01383] Delay creation of subplan tlist until after create_plan(
+2016-02-18 [19a541143] Add an explicit representation of the output targetlist
+2016-03-07 [3fc6e2d7f] Make the upper part of the planner work by generating an
+2016-07-01 [5ce5e4a12] Set consider_parallel correctly for upper planner rels.
+2016-07-01 [9e703987a] Rethink the GetForeignUpperPaths API (again).
+-->
+       <para>
+        Make the planner deal with post-scan/join query steps by generating
+        and comparing <literal>Paths</>, replacing a lot of ad-hoc logic
+        (Tom Lane)
+       </para>
+
+       <para>
+        This change provides only marginal user-visible improvements today,
+        but it enables future work on a lot of upper-planner improvements
+        that were impractical to tackle using the old code structure.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-20 [a7de3dc5c] Support multi-stage aggregation.
+2016-06-22 [f8ace5477] Fix type-safety problem with parallel aggregate serial/d
+2016-06-26 [19e972d55] Rethink node-level representation of partial-aggregation
+-->
+       <para>
+        Support partial aggregation (David Rowley, Simon Riggs)
+       </para>
+
+       <para>
+        This change allows the computation of an aggregate function to be
+        split into separate parts, for example so that parallel worker
+        processes can cooperate on computing an aggregate.  In future
+        it might allow aggregation across local and remote data to occur
+        partially on the remote end.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-09 [b6fb6471f] Add a generic command progress reporting facility.
+-->
+       <para>
+        Add a generic command progress reporting facility (Vinayak Pokale,
+        Rahila Syed, Amit Langote, Robert Haas)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-18 [27199058d] Convert psql's flex lexer to be re-entrant, and make it
+2016-03-19 [0ea9efbe9] Split psql's lexer into two separate .l files for SQL an
+2016-03-20 [b6afae71a] Use %option bison-bridge in psql/pgbench lexers.
+2016-03-24 [588d963b0] Create src/fe_utils/, and move stuff into there from pg_
+2016-03-24 [d65bea26a] Move psql's print.c and mbprint.c into src/fe_utils.
+2016-03-24 [c1156411a] Move psql's psqlscan.l into src/fe_utils.
+-->
+       <para>
+        Separate out <application>psql</>'s <application>flex</> lexer to
+        make it usable by other client programs (Tom Lane, Kyotaro
+        Horiguchi)
+       </para>
+
+       <para>
+        This eliminates code duplication for programs that need to be able
+        to parse SQL commands well enough to identify command boundaries.
+        Doing that in full generality is more painful than one could
+        wish, and up to now only <application>psql</> has really gotten
+        it right among our supported client programs.
+       </para>
+
+       <para>
+        A new source-code subdirectory <filename>src/fe_utils/</> has
+        been created to hold this and other code that is shared across
+        our client programs.  Formerly such sharing was accomplished by
+        symbolic linking or copying source files at build time, which
+        was ugly and required duplicate compilation.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-21 [98a64d0bd] Introduce WaitEventSet API.
+-->
+       <para>
+        Introduce <literal>WaitEventSet</> <acronym>API</> to allow
+        efficient waiting for event sets that usually do not change from
+        one wait to the next (Andres Freund, Amit Kapila)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-01 [65578341a] Add Generic WAL interface
+-->
+       <para>
+        Add a generic interface for writing <acronym>WAL</> records
+        (Alexander Korotkov, Petr Jel&iacute;nek, Markus Nullmeier)
+       </para>
+
+       <para>
+        This change allows extensions to write <acronym>WAL</> records for
+        changes to pages using a standard layout.  The problem of needing to
+        replay <acronym>WAL</> without access to the extension is solved by
+        having generic replay code.  This allows extensions to implement,
+        for example, index access methods and have <acronym>WAL</>
+        support for them.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-06 [3fe3511d0] Generic Messages for Logical Decoding
+-->
+       <para>
+        Support generic <acronym>WAL</> messages for logical decoding
+        (Petr Jel&iacute;nek, Andres Freund)
+       </para>
+
+       <para>
+        This feature allows extensions to insert data into the
+        <acronym>WAL</> stream that can be read by logical-decoding
+        plugins, but is not connected to physical data restoration.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-30 [ccd6eb49a] Introduce traversalValue for SP-GiST scan
+2016-03-30 [87545f541] Use traversalValue in SP-GiST range opclass.
+-->
+       <para>
+        Allow SP-GiST operator classes to store an arbitrary
+        <quote>traversal value</> while descending the index (Alexander
+        Lebedev, Teodor Sigaev)
+       </para>
+
+       <para>
+        This is somewhat like the <quote>reconstructed value</>, but it
+        could be any arbitrary chunk of data, not necessarily of the same
+        data type as the indexed column.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-04 [66229ac00] Introduce a LOG_SERVER_ONLY ereport level, which is neve
+-->
+       <para>
+        Introduce a <literal>LOG_SERVER_ONLY</> message level for
+        <function>ereport()</> (David Steele)
+       </para>
+
+       <para>
+        This level acts like <literal>LOG</> except that the message is
+        never sent to the client.  It is meant for use in auditing and
+        similar applications.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-07-01 [548af97fc] Provide and use a makefile target to build all generated
+-->
+       <para>
+        Provide a <filename>Makefile</> target to build all generated
+        headers (Michael Paquier, Tom Lane)
+       </para>
+
+       <para>
+        <literal>submake-generated-headers</> can now be invoked to ensure
+        that generated backend header files are up-to-date.  This is
+        useful in subdirectories that might be built <quote>standalone</>.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-09-15 [fcd93e4af] Support OpenSSL 1.1.0.
+2016-09-15 [9895818d5] Fix building with LibreSSL.
+-->
+       <para>
+        Support OpenSSL 1.1.0 (Andreas Karlsson, Heikki Linnakangas)
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+   </sect3>
+
+   <sect3>
+    <title>Additional Modules</title>
+
+    <itemizedlist>
+
+      <listitem>
+<!--
+2016-03-11 [92f03fe76] Allow setting sample ratio for auto_explain
+2016-03-13 [7a8d87483] Rename auto_explain.sample_ratio to sample_rate
+-->
+       <para>
+        Add configuration parameter <literal>auto_explain.sample_rate</> to
+        allow <link linkend="auto-explain"><filename>contrib/auto_explain</></>
+        to capture just a configurable fraction of all queries (Craig
+        Ringer, Julien Rouhaud)
+       </para>
+
+       <para>
+        This allows reduction of overhead for heavy query traffic, while
+        still getting useful information on average.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-01 [9ee014fc8] Bloom index contrib module
+-->
+       <para>
+        Add <link linkend="bloom"><filename>contrib/bloom</></> module that
+        implements an index access method based on Bloom filtering (Teodor
+        Sigaev, Alexander Korotkov)
+       </para>
+
+       <para>
+        This is primarily a proof-of-concept for non-core index access
+        methods, but it could be useful in its own right for queries that
+        search many columns.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-18 [33bd250f6] Cube extension kNN support
+2015-12-28 [81ee726d8] Code and docs review for cube kNN support.
+-->
+       <para>
+        In <link linkend="cube"><filename>contrib/cube</></>, introduce
+        distance operators for cubes, and support kNN-style searches in
+        GiST indexes on cube columns (Stas Kelvich)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-03 [41d2c081c] Make hstore_to_jsonb_loose match hstore_to_json_loose on
+-->
+       <para>
+        Make <filename>contrib/hstore</>'s <link
+        linkend="hstore-func-table"><function>hstore_to_jsonb_loose()</></>
+        and <function>hstore_to_json_loose()</> functions agree on what
+        is a number (Tom Lane)
+       </para>
+
+       <para>
+        Previously, <function>hstore_to_jsonb_loose()</> would convert
+        numeric-looking strings to <acronym>JSON</> numbers, rather than
+        strings, even if they did not exactly match the <acronym>JSON</>
+        syntax specification for numbers.  This was inconsistent with
+        <function>hstore_to_json_loose()</>, so tighten the test to match
+        the <acronym>JSON</> syntax.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-21 [c6fbe6d6f] Add selectivity estimation functions for intarray operat
+-->
+       <para>
+        Add selectivity estimation functions for
+        <link linkend="intarray"><filename>contrib/intarray</></> operators
+        to improve plans for queries using those operators (Yury Zhuravlev,
+        Alexander Korotkov)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-25 [d6061f83a] Improve pageinspect module
+-->
+       <para>
+        Make <link
+        linkend="pageinspect"><filename>contrib/pageinspect</></>'s
+        <function>heap_page_items()</> function show the raw data in each
+        tuple, and add new functions <function>tuple_data_split()</> and
+        <function>heap_page_item_attrs()</> for inspection of individual
+        tuple fields (Nikolay Shaplov)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-09 [188f359d3] pgcrypto: support changing S2K iteration count
+-->
+       <para>
+        Add an optional <literal>S2K</> iteration count parameter to
+        <link linkend="pgcrypto"><filename>contrib/pgcrypto</></>'s
+        <function>pgp_sym_encrypt()</> function (Jeff Janes)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-16 [f576b17cd] Add word_similarity to pg_trgm contrib module.
+-->
+       <para>
+        Add support for <quote>word similarity</> to
+        <link linkend="pgtrgm"><filename>contrib/pg_trgm</></>
+        (Alexander Korotkov, Artur Zakirov)
+       </para>
+
+       <para>
+        These functions and operators measure the similarity between one
+        string and the most similar single word of another string.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-16 [5871b8848] GUC variable pg_trgm.similarity_threshold insead of set_
+2016-06-20 [9c852566a] Fix comparison of similarity to threshold in GIST trigra
+-->
+       <para>
+        Add configuration parameter
+        <varname>pg_trgm.similarity_threshold</> for
+        <filename>contrib/pg_trgm</>'s similarity threshold (Artur Zakirov)
+       </para>
+
+       <para>
+        This threshold has always been configurable, but formerly it was
+        controlled by special-purpose functions <function>set_limit()</>
+        and <function>show_limit()</>.  Those are now deprecated.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-07-20 [97f301464] This supports the triconsistent function for pg_trgm GIN
+-->
+       <para>
+        Improve <filename>contrib/pg_trgm</>'s GIN operator class to
+        speed up index searches in which both common and rare keys appear
+        (Jeff Janes)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-12-25 [25bfa7efd] Improve the gin index scan performance in pg_trgm.
+-->
+       <para>
+        Improve performance of similarity searches in
+        <filename>contrib/pg_trgm</> GIN indexes (Christophe Fornaroli)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-08 [ba0a198fb] Add pg_visibility contrib module.
+2016-06-17 [71d05a2c7] pg_visibility: Add pg_truncate_visibility_map function.
+-->
+       <para>
+        Add <link
+        linkend="pgvisibility"><filename>contrib/pg_visibility</></> module
+        to allow examining table visibility maps (Robert Haas)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-09-07 [49124613f] contrib/sslinfo: add ssl_extension_info SRF
+-->
+       <para>
+        Add <link linkend="sslinfo"><function>ssl_extension_info()</></>
+        function to <filename>contrib/sslinfo</>, to print information
+        about <acronym>SSL</> extensions present in the <literal>X509</>
+        certificate used for the current connection (Dmitry Voronin)
+       </para>
+      </listitem>
+
+    </itemizedlist>
+
+    <sect4>
+     <title><link linkend="postgres-fdw"><filename>postgres_fdw</></></title>
+
+     <itemizedlist>
+
+      <listitem>
+<!--
+2015-11-03 [d89494166] Allow postgres_fdw to ship extension funcs/operators for
+-->
+       <para>
+        Allow extension-provided operators and functions to be sent for
+        remote execution, if the extension is whitelisted in the foreign
+        server's options (Paul Ramsey)
+       </para>
+
+       <para>
+        Users can enable this feature when the extension is known to exist
+        in a compatible version in the remote database.  It allows more
+        efficient execution of queries involving extension operators.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2015-11-03 [f18c944b6] postgres_fdw: Add ORDER BY to some remote SQL queries.
+2015-12-22 [ccd8f9792] postgres_fdw: Consider requesting sorted data so we can
+-->
+       <para>
+        Consider performing sorts on the remote server (Ashutosh Bapat)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-09 [e4106b252] postgres_fdw: Push down joins to remote servers.
+2016-03-09 [aa09cd242] postgres_fdw: Consider foreign joining and foreign sorti
+-->
+       <para>
+        Consider performing joins on the remote server (Shigeru Hanada,
+        Ashutosh Bapat)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-03-18 [0bf3ae88a] Directly modify foreign tables.
+-->
+       <para>
+        When feasible, perform <command>UPDATE</> or <command>DELETE</>
+        entirely on the remote server (Etsuro Fujita)
+       </para>
+
+       <para>
+        Formerly, remote updates involved sending a <command>SELECT FOR UPDATE</>
+        command and then updating or deleting the selected rows one-by-one.
+        While that is still necessary if the operation requires any local
+        processing, it can now be done remotely if all elements of the
+        query are safe to send to the remote server.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-02-03 [dc203dc3a] postgres_fdw: Allow fetch_size to be set per-table or pe
+-->
+       <para>
+        Allow the fetch size to be set as a server or table option
+        (Corey Huinker)
+       </para>
+
+       <para>
+        Formerly, <filename>postgres_fdw</> always fetched 100 rows at
+        a time from remote queries; now that behavior is configurable.
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-01-28 [96198d94c] Avoid multiple foreign server connections when all use s
+-->
+       <para>
+        Use a single foreign-server connection for local user IDs that
+        all map to the same remote user (Ashutosh Bapat)
+       </para>
+      </listitem>
+
+      <listitem>
+<!--
+2016-04-21 [f039eaac7] Allow queries submitted by postgres_fdw to be canceled.
+2016-05-16 [1b812afb0] Fix multiple problems in postgres_fdw query cancellation
+-->
+       <para>
+        Transmit query cancellation requests to the remote server
+        (Michael Paquier)
+       </para>
+
+       <para>
+        Previously, a local query cancellation request did not cause an
+        already-sent remote query to terminate early.
+       </para>
+      </listitem>
+
+     </itemizedlist>
+
+    </sect4>
+
+   </sect3>
+
+  </sect2>
+
+ </sect1>

@@ -1,60 +1,179 @@
 <!-- doc/src/sgml/fdwhandler.sgml -->
 
  <chapter id="fdwhandler">
+<!--==========================orignal english content==========================
+   <title>Writing A Foreign Data Wrapper</title>
+____________________________________________________________________________-->
    <title>编写一个外部数据包装器</title>
 
+<!--==========================orignal english content==========================
+   <indexterm zone="fdwhandler">
+    <primary>foreign data wrapper</primary>
+    <secondary>handler for</secondary>
+   </indexterm>
+____________________________________________________________________________-->
    <indexterm zone="fdwhandler">
     <primary>foreign data wrapper</primary>
     <secondary>handler for</secondary>
    </indexterm>
 
+<!--==========================orignal english content==========================
+   <para>
+    All operations on a foreign table are handled through its foreign data
+    wrapper, which consists of a set of functions that the core server
+    calls.  The foreign data wrapper is responsible for fetching
+    data from the remote data source and returning it to the
+    <productname>PostgreSQL</productname> executor.  If updating foreign
+    tables is to be supported, the wrapper must handle that, too.
+    This chapter outlines how to write a new foreign data wrapper.
+   </para>
+____________________________________________________________________________-->
    <para>
     所有在一个外部表上的操作都通过它的外部数据包装器来处理，外部数据包装器由一组被核心服务器调用的函数组成。外部数据包装器负责从远程数据源取得数据并把它返回给<productname>PostgreSQL</productname>执行器。如果要支持更新外部表，包装器也需要处理更新。本章将介绍如何编写一个新的外部数据包装器。
    </para>
 
+<!--==========================orignal english content==========================
+   <para>
+    The foreign data wrappers included in the standard distribution are good
+    references when trying to write your own.  Look into the
+    <filename>contrib</> subdirectory of the source tree.
+    The <xref linkend="sql-createforeigndatawrapper"> reference page also has
+    some useful details.
+   </para>
+____________________________________________________________________________-->
    <para>
     在你试图编写你自己的外部数据包装器时，包含在标准发布中的外部数据包装器会是很好的参考。请看看源代码树的<filename>contrib</>子目录。<xref linkend="sql-createforeigndatawrapper">参考页也会有很多有用的细节。
    </para>
 
    <note>
+<!--==========================orignal english content==========================
+    <para>
+     The SQL standard specifies an interface for writing foreign data wrappers.
+     However, PostgreSQL does not implement that API, because the effort to
+     accommodate it into PostgreSQL would be large, and the standard API hasn't
+     gained wide adoption anyway.
+    </para>
+____________________________________________________________________________-->
     <para>
      SQL 标准声明了一个接口用来编写外部数据包装器。但是，PostgreSQL 没有实现该 API，因为将其纳入到 PostgreSQL 中的工作量将会很大，并且标准的 API 并没有得到广泛地采用。
     </para>
    </note>
 
    <sect1 id="fdw-functions">
+<!--==========================orignal english content==========================
+    <title>Foreign Data Wrapper Functions</title>
+____________________________________________________________________________-->
     <title>外部数据包装器函数</title>
 
+<!--==========================orignal english content==========================
     <para>
-     FDW的作者需要实现一个处理器函数，并且可以有选择地实现一个验证器函数。两个函数都必须被用一种编译语言（如 C）来编写，并使用版本-1接口。关于 C 语言调用习惯和动态载入的细节，请见<xref linkend="xfunc-c">。
+     The FDW author needs to implement a handler function, and optionally
+     a validator function. Both functions must be written in a compiled
+     language such as C, using the version-1 interface.
+     For details on C language calling conventions and dynamic loading,
+     see <xref linkend="xfunc-c">.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     FDW的作者需要实现一个处理器函数，并且可以有选择地实现一个验证器函数。两个函数都必须被用一种编译语言（如 C）来编写，并使用版本-1接口。关于 C 语言调用规范和动态载入的细节，请见<xref linkend="xfunc-c">。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     The handler function simply returns a struct of function pointers to
+     callback functions that will be called by the planner, executor, and
+     various maintenance commands.
+     Most of the effort in writing an FDW is in implementing these callback
+     functions.
+     The handler function must be registered with
+     <productname>PostgreSQL</productname> as taking no arguments and
+     returning the special pseudo-type <type>fdw_handler</type>.  The
+     callback functions are plain C functions and are not visible or
+     callable at the SQL level.  The callback functions are described in
+     <xref linkend="fdw-callbacks">.
+    </para>
+____________________________________________________________________________-->
     <para>
      处理器函数简单地返回一个函数指针结构给回调函数，回调函数将被规划器、执行器和多种维护命令调用。编写一个FDW的大部分工作量都在实现这些回调函数上。处理器函数必须被注册在<productname>PostgreSQL</productname>中，并且注册为不需要参数并且返回特殊的伪类型<type>fdw_handler</type>。回调函数则是普通的 C 函数并且对于 SQL 层是不可见的或者不可调用的。回调函数在<xref linkend="fdw-callbacks">中描述。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     验证器函数负责验证<command>CREATE</command>和<command>ALTER</command>命令中对它的外部数据包装器给出的选项，以及使用该包装器的外部服务器、用户映射和外部表。验证器函数必须被注册为要求两个参数：一个包含需要被验证的选项的文本数组，以及一个表示与这些选项相关联的对象类型的OID（以该对象可能被存储的系统目录的OID的形式，
-     可以是<literal>ForeignDataWrapperRelationId</>、<literal>ForeignServerRelationId</>、<literal>UserMappingRelationId</>、
-     或<literal>ForeignTableRelationId</>）。如果没有提供验证器函数，在对象创建或修改时选项不会被检查。
+     The validator function is responsible for validating options given in
+     <command>CREATE</command> and <command>ALTER</command> commands for its
+     foreign data wrapper, as well as foreign servers, user mappings, and
+     foreign tables using the wrapper.
+     The validator function must be registered as taking two arguments, a
+     text array containing the options to be validated, and an OID
+     representing the type of object the options are associated with (in
+     the form of the OID of the system catalog the object would be stored
+     in, either
+     <literal>ForeignDataWrapperRelationId</>,
+     <literal>ForeignServerRelationId</>,
+     <literal>UserMappingRelationId</>,
+     or <literal>ForeignTableRelationId</>).
+     If no validator function is supplied, options are not checked at object
+     creation time or object alteration time.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     验证器函数负责验证<command>CREATE</command>和<command>ALTER</command>命令中对它的外部数据包装器给出的选项，以及使用该包装器的外部服务器、用户映射和外部表。验证器函数必须被注册为要求两个参数：一个包含需要被验证的选项的文本数组，以及一个表示与这些选项相关联的对象类型的OID（以该对象可能被存储的系统目录的OID的形式，可以是<literal>ForeignDataWrapperRelationId</>、<literal>ForeignServerRelationId</>、<literal>UserMappingRelationId</>或<literal>ForeignTableRelationId</>）。如果没有提供验证器函数，在对象创建或修改时选项不会被检查。
     </para>
 
    </sect1>
 
    <sect1 id="fdw-callbacks">
+<!--==========================orignal english content==========================
+    <title>Foreign Data Wrapper Callback Routines</title>
+____________________________________________________________________________-->
     <title>外部数据包装器回调例程</title>
 
+<!--==========================orignal english content==========================
+    <para>
+     The FDW handler function returns a palloc'd <structname>FdwRoutine</>
+     struct containing pointers to the callback functions described below.
+     The scan-related functions are required, the rest are optional.
+    </para>
+____________________________________________________________________________-->
     <para>
      FDW处理器函数返回一个palloc过的<structname>FdwRoutine</>结构，它包含下文描述的回调函数的指针。扫描相关的函数是必需的，剩下的是可选的。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     The <structname>FdwRoutine</> struct type is declared in
+     <filename>src/include/foreign/fdwapi.h</>, which see for additional
+     details.
+    </para>
+____________________________________________________________________________-->
     <para>
      <structname>FdwRoutine</>结构类型被声明在<filename>src/include/foreign/fdwapi.h</>中，可以查看它来获得额外的信息。
     </para>
 
    <sect2 id="fdw-callbacks-scan">
+<!--==========================orignal english content==========================
+    <title>FDW Routines For Scanning Foreign Tables</title>
+____________________________________________________________________________-->
     <title>用于扫描外部表的FDW例程</title>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+GetForeignRelSize (PlannerInfo *root,
+                   RelOptInfo *baserel,
+                   Oid foreigntableid);
+</programlisting>
+
+     Obtain relation size estimates for a foreign table.  This is called
+     at the beginning of planning for a query that scans a foreign table.
+     <literal>root</> is the planner's global information about the query;
+     <literal>baserel</> is the planner's information about this table; and
+     <literal>foreigntableid</> is the <structname>pg_class</> OID of the
+     foreign table.  (<literal>foreigntableid</> could be obtained from the
+     planner data structures, but it's passed explicitly to save effort.)
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -66,14 +185,45 @@ GetForeignRelSize (PlannerInfo *root,
      获取一个外部表的关系尺寸估计。在对一个扫描外部表的查询进行规划的开头将调用该函数。<literal>root</>是规划器的关于该查询的全局信息；<literal>baserel</>是规划器的关于该表的信息；<literal>foreigntableid</>是外部表在<structname>pg_class</>中的 OID （<literal>foreigntableid</>可以从规划器的数据结构中获得，但是为了减少工作量，这里直接显式地将它传递给函数）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     This function should update <literal>baserel-&gt;rows</> to be the
+     expected number of rows returned by the table scan, after accounting for
+     the filtering done by the restriction quals.  The initial value of
+     <literal>baserel-&gt;rows</> is just a constant default estimate, which
+     should be replaced if at all possible.  The function may also choose to
+     update <literal>baserel-&gt;width</> if it can compute a better estimate
+     of the average result row width.
+    </para>
+____________________________________________________________________________-->
     <para>
      这个函数应该更新<literal>baserel-&gt;rows</>为表扫描根据限制条件完成了过滤后将返回的预期行数。<literal>baserel-&gt;rows</>的初始值只是一个常数的默认估计值，应该尽可能把它替换掉。如果该函数能够计算出一个平均结果行宽度的更好的估计值，该函数也可能选择更新<literal>baserel-&gt;width</>。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
     <para>
      更多信息请见<xref linkend="fdw-planning">。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+GetForeignPaths (PlannerInfo *root,
+                 RelOptInfo *baserel,
+                 Oid foreigntableid);
+</programlisting>
+
+     Create possible access paths for a scan on a foreign table.
+     This is called during query planning.
+     The parameters are the same as for <function>GetForeignRelSize</>,
+     which has already been called.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -85,14 +235,34 @@ GetForeignPaths (PlannerInfo *root,
      为一个外部表上的扫描创建可能的访问路径。这个函数在查询规划过程中被调用。参数和<function>GetForeignRelSize</>相同，后者已经被调用过了。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     This function must generate at least one access path
+     (<structname>ForeignPath</> node) for a scan on the foreign table and
+     must call <function>add_path</> to add each such path to
+     <literal>baserel-&gt;pathlist</>.  It's recommended to use
+     <function>create_foreignscan_path</> to build the
+     <structname>ForeignPath</> nodes.  The function can generate multiple
+     access paths, e.g., a path which has valid <literal>pathkeys</> to
+     represent a pre-sorted result.  Each access path must contain cost
+     estimates, and can contain any FDW-private information that is needed to
+     identify the specific scan method intended.
+    </para>
+____________________________________________________________________________-->
     <para>
      这个函数必须为外部表上的扫描生成至少一个访问路径（<structname>ForeignPath</>节点），并且必须调用<function>add_path</>把每一个这样的路径加入到<literal>baserel-&gt;pathlist</>中。我们推荐使用<function>create_foreignscan_path</>来建立<structname>ForeignPath</>节点。该函数可以生成多个访问路径，例如一个具有合法<literal>pathkeys</>的路径表示一个预排序好的结果。每一个反问路径必须包含代价估计，并且能包含任何FDW的私有信息，这种信息被用来标识想要使用的指定扫描方法。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
     <para>
      更多信息请见<xref linkend="fdw-planning">。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
 <programlisting>
 ForeignScan *
@@ -105,20 +275,77 @@ GetForeignPlan (PlannerInfo *root,
                 Plan *outer_plan);
 </programlisting>
 
-     从选择的外部访问路径创建一个<structname>ForeignScan</>计划节点。这个函数在查询规划的末尾被调用。参数和<function>GetForeignRelSize</>的一样，外加选中的<structname>ForeignPath</>（在前面由<function>GetForeignPaths</>或<function>GetForeignJoinPaths</>产生）。
-     由计划节点发出目标列表，计划节点强制执行限制子句以及<structname>ForeignScan</>的外部子查询，
-     用于<function>RecheckForeignScan</>执行的重新检查。（如果路径是一个连接而不是基本关系，
-     那么<literal>foreigntableid</>是<literal>InvalidOid</>。） 
+     Create a <structname>ForeignScan</> plan node from the selected foreign
+     access path.  This is called at the end of query planning.
+     The parameters are as for <function>GetForeignRelSize</>, plus
+     the selected <structname>ForeignPath</> (previously produced by
+     <function>GetForeignPaths</>, <function>GetForeignJoinPaths</>,
+     or <function>GetForeignUpperPaths</>),
+     the target list to be emitted by the plan node,
+     the restriction clauses to be enforced by the plan node,
+     and the outer subplan of the <structname>ForeignScan</>,
+     which is used for rechecks performed by <function>RecheckForeignScan</>.
+     (If the path is for a join rather than a base
+     relation, <literal>foreigntableid</> is <literal>InvalidOid</>.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+ForeignScan *
+GetForeignPlan (PlannerInfo *root,
+                RelOptInfo *baserel,
+                Oid foreigntableid,
+                ForeignPath *best_path,
+                List *tlist,
+                List *scan_clauses,
+                Plan *outer_plan);
+</programlisting>
+
+     从选择的外部访问路径创建一个<structname>ForeignScan</>计划节点。这个函数在查询规划的末尾被调用。参数和<function>GetForeignRelSize</>的一样，外加选中的<structname>ForeignPath</>（在前面由<function>GetForeignPaths</>、<function>GetForeignJoinPaths</>或者<function>GetForeignUpperPaths</>产生）、被计划节点发出的目标列表以及计划节点强制的限制子句以及被<function>RecheckForeignScan</>执行的复查所使用的<structname>ForeignScan</>的外子计划（如果该路径是用于一个连接而非基本关系，则<literal>foreigntableid</>是<literal>InvalidOid</>）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     This function must create and return a <structname>ForeignScan</> plan
+     node; it's recommended to use <function>make_foreignscan</> to build the
+     <structname>ForeignScan</> node.
+    </para>
+____________________________________________________________________________-->
     <para>
      这个函数必须创建并返回一个<structname>ForeignScan</>计划节点，我们对剑使用<function>make_foreignscan</>来建立<structname>ForeignScan</>节点。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
     <para>
      更多信息见<xref linkend="fdw-planning">。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+BeginForeignScan (ForeignScanState *node,
+                  int eflags);
+</programlisting>
+
+     Begin executing a foreign scan. This is called during executor startup.
+     It should perform any initialization needed before the scan can start,
+     but not start executing the actual scan (that should be done upon the
+     first call to <function>IterateForeignScan</>).
+     The <structname>ForeignScanState</> node has already been created, but
+     its <structfield>fdw_state</> field is still NULL.  Information about
+     the table to scan is accessible through the
+     <structname>ForeignScanState</> node (in particular, from the underlying
+     <structname>ForeignScan</> plan node, which contains any FDW-private
+     information provided by <function>GetForeignPlan</>).
+     <literal>eflags</> contains flag bits describing the executor's
+     operating mode for this plan node.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -129,10 +356,36 @@ BeginForeignScan (ForeignScanState *node,
      开始执行一个外部扫描。这个函数在执行器启动阶段被调用。它应该执行任何在扫描能够开始之前需要完成的初始化工作，但是并不开始执行真正的扫描（会在第一次调用<function>IterateForeignScan</>时完成）。<structname>ForeignScanState</>节点已经被创建好了，但是它的<structfield>fdw_state</>域仍然为 NULL。关于要被扫描的表的信息可以通过<structname>ForeignScanState</>节点访问（特殊地，从底层的<structname>ForeignScan</>计划节点，它包含任何由<function>GetForeignPlan</>提供的FDW私有信息）。<literal>eflags</>包含描述执行器对该计划节点操作模式的标志位。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     Note that when <literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</> is
+     true, this function should not perform any externally-visible actions;
+     it should only do the minimum required to make the node state valid
+     for <function>ExplainForeignScan</> and <function>EndForeignScan</>.
+    </para>
+____________________________________________________________________________-->
     <para>
      注意当<literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</>为真时，这个函数不应该执行任何外部可见的动作；它应当只做最少的事情来创建对<function>ExplainForeignScan</> 和<function>EndForeignScan</>有效的节点状态。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+TupleTableSlot *
+IterateForeignScan (ForeignScanState *node);
+</programlisting>
+
+     Fetch one row from the foreign source, returning it in a tuple table slot
+     (the node's <structfield>ScanTupleSlot</> should be used for this
+     purpose).  Return NULL if no more rows are available.  The tuple table
+     slot infrastructure allows either a physical or virtual tuple to be
+     returned; in most cases the latter choice is preferable from a
+     performance standpoint.  Note that this is called in a short-lived memory
+     context that will be reset between invocations.  Create a memory context
+     in <function>BeginForeignScan</> if you need longer-lived storage, or use
+     the <structfield>es_query_cxt</> of the node's <structname>EState</>.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 TupleTableSlot *
@@ -142,21 +395,48 @@ IterateForeignScan (ForeignScanState *node);
      从外部源获得一行，将它放在一个元组表槽中返回（节点的<structfield>ScanTupleSlot</>应当被用于此目的）。如果没有更多的行可用则返回 NULL。元组表槽设施允许一个物理的或者虚拟的元组被返回；在大部分情况下出于性能的考虑会倾向于选择后者。注意这是在一个短期存在的内存上下文中被调用的，该内存上下文会在调用之间被重置。如果你需要长期存在的存储，请在<function>BeginForeignScan</>中创建内存上下文，或者使用节点的<structname>EState</>中的<structfield>es_query_cxt</>。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     被返回的行必须匹配提供的<structfield>fdw_scan_tlist</>目标列。
-     否则，它们必须与被扫描的外表的行类型匹配。
-     如果你选择将那些不需要的列优化掉，你应该在那些列位置上插入空值。
-     否则产生忽略掉那些列的<structfield>fdw_scan_tlist</>列表。
+     The rows returned must match the <structfield>fdw_scan_tlist</> target
+     list if one was supplied, otherwise they must match the row type of the
+     foreign table being scanned.  If you choose to optimize away fetching
+     columns that are not needed, you should insert nulls in those column
+     positions, or else generate a <structfield>fdw_scan_tlist</> list with
+     those columns omitted.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果提供了<structfield>fdw_scan_tlist</>目标列表，被返回的行必须匹配它，如果没有提供则它们必须匹配被扫描的外部表的行类型。如果选择优化掉不需要的列，你应该在那些列的位置上插入控制或者生成一个忽略了那些列的<structfield>fdw_scan_tlist</>列表。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     注意<productname>PostgreSQL</productname>的执行器并不关心被返回的行是否违反任何定义在外部表列上的任何约束 &mdash; 
-     但是规划器却关心，并且如果在不满足声明约束的外表中有可见行，
-     可能优化查询不正确。
-     当用户已经声明该约束是真的时，如果违反了该约束，
-     可能抛出一个错误更为合适（就像你在数据类型失配的情况下你需要做的一样）。
+     Note that <productname>PostgreSQL</productname>'s executor doesn't care
+     whether the rows returned violate any constraints that were defined on
+     the foreign table &mdash; but the planner does care, and may optimize
+     queries incorrectly if there are rows visible in the foreign table that
+     do not satisfy a declared constraint.  If a constraint is violated when
+     the user has declared that the constraint should hold true, it may be
+     appropriate to raise an error (just as you would need to do in the case
+     of a data type mismatch).
+    </para>
+____________________________________________________________________________-->
+    <para>
+     注意<productname>PostgreSQL</productname>的执行器并不在乎被返回的行是否违背了定义在该外部表上的任何约束 &mdash; 但是规划器会在乎这一点，并且如果在外部表中有可见行不满足一个约束，规划器可能会错误地优化查询。如果当用户已经声明一个约束应该为真时它却被违背，最合适的处理可能是产生一个错误（就像在数据类型失配的情况下所作的那样）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ReScanForeignScan (ForeignScanState *node);
+</programlisting>
+
+     Restart the scan from the beginning.  Note that any parameters the
+     scan depends on may have changed value, so the new scan does not
+     necessarily return exactly the same rows.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -166,6 +446,18 @@ ReScanForeignScan (ForeignScanState *node);
      从头开始重启一个扫描。注意扫描所依赖的任何参数可能已经改变了值，因此新扫描不一定会返回完全相同的行。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+EndForeignScan (ForeignScanState *node);
+</programlisting>
+
+     End the scan and release resources.  It is normally not important
+     to release palloc'd memory, but for example open files and connections
+     to remote servers should be cleaned up.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -176,15 +468,25 @@ EndForeignScan (ForeignScanState *node);
     </para>
 
    </sect2>
-  
+   
    <sect2 id="fdw-callbacks-join-scan">
-    <title>扫描外部表的FDW例程</title>
+<!--==========================orignal english content==========================
+    <title>FDW Routines For Scanning Foreign Joins</title>
+____________________________________________________________________________-->
+    <title>用于扫描外部连接的 FDW 例程</title>
 
+<!--==========================orignal english content==========================
     <para>
-     如果一个FDW支持执行远程外部链接（而不是抓取表的数据以及执行本地链接），
-     它应该提供这个回调函数：
+     If an FDW supports performing foreign joins remotely (rather than
+     by fetching both tables' data and doing the join locally), it should
+     provide this callback function:
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果一个 FDW 支持远程执行外部连接（而不是先把两个表的数据取到本地然后做本地连接），它应该提供这个回调函数：
     </para>
 
+<!--==========================orignal english content==========================
     <para>
 <programlisting>
 void
@@ -195,48 +497,189 @@ GetForeignJoinPaths (PlannerInfo *root,
                      JoinType jointype,
                      JoinPathExtraData *extra);
 </programlisting>
-    创建两个（或多个）外表链接的可能访问路径都属于同一个外部服务器。
-    在查询规划中调用这个可选函数。
-    伴随<function>GetForeignPaths</>，
-    这个函数为提供的<literal>joinrel</>产生<structname>ForeignPath</>路径，
-    并且调用<function>add_path</>添加这些路径到考虑链接的路径集合中。
-    但不同于<function>GetForeignPaths</>，
-    这个函数成功创建至少一个路径是没有必要的，
-    因为涉及本地链接的路径总是有可能的。
+     Create possible access paths for a join of two (or more) foreign tables
+     that all belong to the same foreign server.  This optional
+     function is called during query planning.  As
+     with <function>GetForeignPaths</>, this function should
+     generate <structname>ForeignPath</> path(s) for the
+     supplied <literal>joinrel</>, and call <function>add_path</> to add these
+     paths to the set of paths considered for the join.  But unlike
+     <function>GetForeignPaths</>, it is not necessary that this function
+     succeed in creating at least one path, since paths involving local
+     joining are always possible.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+GetForeignJoinPaths (PlannerInfo *root,
+                     RelOptInfo *joinrel,
+                     RelOptInfo *outerrel,
+                     RelOptInfo *innerrel,
+                     JoinType jointype,
+                     JoinPathExtraData *extra);
+</programlisting>
+     它为两个（或更多）同属于一台外部服务器的外部表的连接创建可能的访问路径。这个可选的函数会在查询规划过程中被调用。和<function>GetForeignPaths</>一样，这个函数应该为提供的<literal>joinrel</>生成<structname>ForeignPath</>路径，并且调用<function>add_path</>把这些路径加入到该连接应该考虑的路径集合中。但是和<function>GetForeignPaths</>不一样的是，不需要这个函数产生最少一个路径，因为涉及本地连接的路径总是可用的。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     请注意，此函数为了相同的连接关系以及内、外部关系的不同组合将被重复调用；
-     FDW有责任减少重复工作。
+     Note that this function will be invoked repeatedly for the same join
+     relation, with different combinations of inner and outer relations; it is
+     the responsibility of the FDW to minimize duplicated work.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     注意为相同的连接关系将会重复地调用这个函数用来生成内外关系的不同组合。FDW 需要负责最小化其中重复的工作。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     如果为链接选择<structname>ForeignPath</>路径，
-     它将代表整个链接过程；不会使用为组件表生成的路径以及子辅助链接。
-     链接路径过程的随后处理正如扫描单一外部表的路径一样。
-    不同的是产生的<structname>ForeignScan</>计划节点的<structfield>scanrelid</>应设置为零，
-    因为它没有一个单一的关系，相反，
-    <structname>ForeignScan</>节点的<structfield>fs_relids</>字段代表要加入的关系集。
-    （较后面的字段是由核心策划代码自动设置的，不需要通过FDW填充。）
-    因为没有发现来自系统目录的远程连接的字段列表，
-    另一个区别是，FDW必须填充<structfield>fdw_scan_tlist</>以及<structfield>TargetEntry</>节点的适当列表。
-    代表一组列提供运行时返回的元组。
-     
+     If a <structname>ForeignPath</> path is chosen for the join, it will
+     represent the entire join process; paths generated for the component
+     tables and subsidiary joins will not be used.  Subsequent processing of
+     the join path proceeds much as it does for a path scanning a single
+     foreign table.  One difference is that the <structfield>scanrelid</> of
+     the resulting <structname>ForeignScan</> plan node should be set to zero,
+     since there is no single relation that it represents; instead,
+     the <structfield>fs_relids</> field of the <structname>ForeignScan</>
+     node represents the set of relations that were joined.  (The latter field
+     is set up automatically by the core planner code, and need not be filled
+     by the FDW.)  Another difference is that, because the column list for a
+     remote join cannot be found from the system catalogs, the FDW must
+     fill <structfield>fdw_scan_tlist</> with an appropriate list
+     of <structfield>TargetEntry</> nodes, representing the set of columns
+     it will supply at run time in the tuples it returns.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果一个<structname>ForeignPath</>路径被选中用于该连接，它将在整个连接处理中存在，为其中的成分表和子连接产生的路径将不会被使用。后续对该连接路径的处理大部分和扫描单个外部表的路径一样。一点不同是<structname>ForeignScan</>计划节点的<structfield>scanrelid</>应该被设置为零，因为它表示的不是单个关系，而是用<structname>ForeignScan</>节点的<structfield>fs_relids</>域来表示被连接的关系集合（后一个域会被核心规划器代码自动设置，不需要由 FDW 填充）。另一点不同是，由于一个远程连接的列列表无法在系统目录中找到，FDW 必须用一个合适的<structfield>TargetEntry</>节点列表来填充<structfield>fdw_scan_tlist</>，表示运行时它返回的元组中提供的列的集合。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     参阅<xref linkend="fdw-planning">获取附加信息。
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     更多信息请见<xref linkend="fdw-planning">。
     </para>
 
    </sect2>
-     
+   
+   <sect2 id="fdw-callbacks-upper-planning">
+<!--==========================orignal english content==========================
+    <title>FDW Routines For Planning Post-Scan/Join Processing</title>
+____________________________________________________________________________-->
+    <title>用于规划扫描/连接后处理的 FDW 例程</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     If an FDW supports performing remote post-scan/join processing, such as
+     remote aggregation, it should provide this callback function:
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果一个 FDW 支持执行远程的扫描/连接后处理，例如远程聚集，那么它应该提供这个回调函数：
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+GetForeignUpperPaths (PlannerInfo *root,
+                      UpperRelationKind stage,
+                      RelOptInfo *input_rel,
+                      RelOptInfo *output_rel);
+</programlisting>
+     Create possible access paths for <firstterm>upper relation</> processing,
+     which is the planner's term for all post-scan/join query processing, such
+     as aggregation, window functions, sorting, and table updates.  This
+     optional function is called during query planning.  Currently, it is
+     called only if all base relation(s) involved in the query belong to the
+     same FDW.  This function should generate <structname>ForeignPath</>
+     path(s) for any post-scan/join processing that the FDW knows how to
+     perform remotely, and call <function>add_path</> to add these paths to
+     the indicated upper relation.  As with <function>GetForeignJoinPaths</>,
+     it is not necessary that this function succeed in creating any paths,
+     since paths involving local processing are always possible.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+GetForeignUpperPaths (PlannerInfo *root,
+                      UpperRelationKind stage,
+                      RelOptInfo *input_rel,
+                      RelOptInfo *output_rel);
+</programlisting>
+     为<firstterm>上层关系</>处理创建可能的访问路径，这是规划器针对所有扫描/连接后查询处理的术语，例如聚集、窗口函数、排序和表更新。在查询规划期间会调用这个可选的函数。当前，只有当该查询中涉及的所有基本关系都属于同一个 FDW 时才会调用这个函数。这个函数应该为 FDW 知道如何远程执行的任何扫描/连接后处理生成<structname>ForeignPath</>路径，并且调用<function>add_path</>把这些路径加入到上层关系中。就<function>GetForeignJoinPaths</>来说，并不要求这个函数在创建任何路径时都能成功，因为路径总是有可能涉及到本地处理。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The <literal>stage</> parameter identifies which post-scan/join step is
+     currently being considered.  <literal>output_rel</> is the upper relation
+     that should receive paths representing computation of this step,
+     and <literal>input_rel</> is the relation representing the input to this
+     step.  (Note that <structname>ForeignPath</> paths added
+     to <literal>output_rel</> would typically not have any direct dependency
+     on paths of the <literal>input_rel</>, since their processing is expected
+     to be done externally.  However, examining paths previously generated for
+     the previous processing step can be useful to avoid redundant planning
+     work.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <literal>stage</>参数表示当前正在考虑的是哪一个扫描/连接后处理步骤。<literal>output_rel</>是接收表示这一个步骤的路径的上层关系，而<literal>input_rel</>是表示这个步骤输入的关系（注意被加入到<literal>output_rel</>中的<structname>ForeignPath</>路径通常对<literal>input_rel</>的路径没有直接的依赖，因为它们的处理被认为是在外部处理的。不过，检查为前一个处理步骤生成的路径有助于避免冗余的规划工作）。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     更多信息请见<xref linkend="fdw-planning">。
+    </para>
+   </sect2>
+
    <sect2 id="fdw-callbacks-update">
+<!--==========================orignal english content==========================
+    <title>FDW Routines For Updating Foreign Tables</title>
+____________________________________________________________________________-->
     <title>更新外部表的FDW例程</title>
 
+<!--==========================orignal english content==========================
+    <para>
+     If an FDW supports writable foreign tables, it should provide
+     some or all of the following callback functions depending on
+     the needs and capabilities of the FDW:
+    </para>
+____________________________________________________________________________-->
     <para>
      如果一个FDW支持可写的外部表，根据FDW的需要和功能它应该提供某些或者全部下列回调函数：
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+AddForeignUpdateTargets (Query *parsetree,
+                         RangeTblEntry *target_rte,
+                         Relation target_relation);
+</programlisting>
+
+     <command>UPDATE</> and <command>DELETE</> operations are performed
+     against rows previously fetched by the table-scanning functions.  The
+     FDW may need extra information, such as a row ID or the values of
+     primary-key columns, to ensure that it can identify the exact row to
+     update or delete.  To support that, this function can add extra hidden,
+     or <quote>junk</>, target columns to the list of columns that are to be
+     retrieved from the foreign table during an <command>UPDATE</> or
+     <command>DELETE</>.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -248,18 +691,68 @@ AddForeignUpdateTargets (Query *parsetree,
      <command>UPDATE</>和<command>DELETE</>操作是在之前由表扫描函数取出的行上被执行的。FDW可能需要额外的信息（例如一个行ID或主键列的值）来保证它能够找到要更新或删除的准确行。要支持这些要求，这个函数可以项列列表中增加额外的隐藏或<quote>junk</>的目标列，它们在一个<command>UPDATE</>或<command>DELETE</>期间会被从外部表中获取。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     To do that, add <structname>TargetEntry</> items to
+     <literal>parsetree-&gt;targetList</>, containing expressions for the
+     extra values to be fetched.  Each such entry must be marked
+     <structfield>resjunk</> = <literal>true</>, and must have a distinct
+     <structfield>resname</> that will identify it at execution time.
+     Avoid using names matching <literal>ctid<replaceable>N</></literal>,
+     <literal>wholerow</literal>, or
+     <literal>wholerow<replaceable>N</></literal>, as the core system can
+     generate junk columns of these names.
+    </para>
+____________________________________________________________________________-->
     <para>
      要做到这一点，向<literal>parsetree-&gt;targetList</>中增加<structname>TargetEntry</>项，它们包含要被获取的额外值的表达式。每一个这样的项必须被标记为<structfield>resjunk</> = <literal>true</>，并且必须有一个可区分的<structfield>resname</>用于在执行期间标识它。请避免使用匹配<literal>ctid<replaceable>N</></literal>、<literal>wholerow</literal>或<literal>wholerow<replaceable>N</></literal>的名字，因为核心系统可能会生成使用这些名字的junk列。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     This function is called in the rewriter, not the planner, so the
+     information available is a bit different from that available to the
+     planning routines.
+     <literal>parsetree</> is the parse tree for the <command>UPDATE</> or
+     <command>DELETE</> command, while <literal>target_rte</> and
+     <literal>target_relation</> describe the target foreign table.
+    </para>
+____________________________________________________________________________-->
     <para>
      这个函数在重写器中被调用，而不是在规划器中，因此可用的信息与在规划例程中的有点区别。<literal>parsetree</>是<command>UPDATE</>或<command>DELETE</>命令的分析树，而<literal>target_rte</>和<literal>target_relation</>描述目标外部表。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>AddForeignUpdateTargets</> pointer is set to
+     <literal>NULL</>, no extra target expressions are added.
+     (This will make it impossible to implement <command>DELETE</>
+     operations, though <command>UPDATE</> may still be feasible if the FDW
+     relies on an unchanging primary key to identify rows.)
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>AddForeignUpdateTargets</>指针被设置为<literal>NULL</>，则不会有额外的目标表达式被加入（这将使得我们不可能实现<command>DELETE</>操作，而<command>UPDATE</>则还有可能是可行的，前提是FDW依赖一个未改变的主键来标识行）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+List *
+PlanForeignModify (PlannerInfo *root,
+                   ModifyTable *plan,
+                   Index resultRelation,
+                   int subplan_index);
+</programlisting>
+
+     Perform any additional planning actions needed for an insert, update, or
+     delete on a foreign table.  This function generates the FDW-private
+     information that will be attached to the <structname>ModifyTable</> plan
+     node that performs the update action.  This private information must
+     have the form of a <literal>List</>, and will be delivered to
+     <function>BeginForeignModify</> during the execution stage.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 List *
@@ -272,20 +765,62 @@ PlanForeignModify (PlannerInfo *root,
      执行外部表上插入、更新或删除所需的任何附加规划动作。这个函数生成FDW私有信息，该信息将被附加到执行该更新动作的<structname>ModifyTable</>计划节点。这个私有信息的形式必须是一个<literal>List</>，并将会在执行阶段被传递给<function>BeginForeignModify</>。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     <literal>root</>是规划器关于该查询的全局信息。
-     <literal>plan</>是<structname>ModifyTable</>计划节点，它除了<structfield>fdwPrivLists</>域之外是完整的。
-     <literal>resultRelation</>通过目标外部表的范围表索引来标识它。<literal>subplan_index</>标识这是<structname>ModifyTable</>计划节点的哪个目标，从零开始计数；如果你希望索引到<literal>plan-&gt;plans</>或其他<literal>plan</>节点的子结构中，请使用它。
+     <literal>root</> is the planner's global information about the query.
+     <literal>plan</> is the <structname>ModifyTable</> plan node, which is
+     complete except for the <structfield>fdwPrivLists</> field.
+     <literal>resultRelation</> identifies the target foreign table by its
+     range table index.  <literal>subplan_index</> identifies which target of
+     the <structname>ModifyTable</> plan node this is, counting from zero;
+     use this if you want to index into <literal>plan-&gt;plans</> or other
+     substructure of the <literal>plan</> node.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <literal>root</>是规划器关于该查询的全局信息。<literal>plan</>是<structname>ModifyTable</>计划节点，它除了<structfield>fdwPrivLists</>域之外是完整的。<literal>resultRelation</>通过目标外部表的范围表索引来标识它。<literal>subplan_index</>标识这是<structname>ModifyTable</>计划节点的哪个目标，从零开始计数；如果你希望索引到<literal>plan-&gt;plans</>或其他<literal>plan</>节点的子结构中，请使用它。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
     <para>
      更多信息见<xref linkend="fdw-planning">。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>PlanForeignModify</> pointer is set to
+     <literal>NULL</>, no additional plan-time actions are taken, and the
+     <literal>fdw_private</> list delivered to
+     <function>BeginForeignModify</> will be NIL.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>PlanForeignModify</>指针被设置为<literal>NULL</>，则不会有额外的计划时动作被执行，并且传递给<function>BeginForeignModify</>的<literal>fdw_private</>列表也将为 NIL。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+BeginForeignModify (ModifyTableState *mtstate,
+                    ResultRelInfo *rinfo,
+                    List *fdw_private,
+                    int subplan_index,
+                    int eflags);
+</programlisting>
+
+     Begin executing a foreign table modification operation.  This routine is
+     called during executor startup.  It should perform any initialization
+     needed prior to the actual table modifications.  Subsequently,
+     <function>ExecForeignInsert</>, <function>ExecForeignUpdate</> or
+     <function>ExecForeignDelete</> will be called for each tuple to be
+     inserted, updated, or deleted.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -299,18 +834,72 @@ BeginForeignModify (ModifyTableState *mtstate,
      开始执行一个外部表修改操作。这个例程在执行器启动期间被调用。它应该执行任何先于实际表修改的初始化工作。随后，<function>ExecForeignInsert</>、<function>ExecForeignUpdate</>或<function>ExecForeignDelete</>将被为每一个将被插入、更新或删除的元组调用。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     <literal>mtstate</> is the overall state of the
+     <structname>ModifyTable</> plan node being executed; global data about
+     the plan and execution state is available via this structure.
+     <literal>rinfo</> is the <structname>ResultRelInfo</> struct describing
+     the target foreign table.  (The <structfield>ri_FdwState</> field of
+     <structname>ResultRelInfo</> is available for the FDW to store any
+     private state it needs for this operation.)
+     <literal>fdw_private</> contains the private data generated by
+     <function>PlanForeignModify</>, if any.
+     <literal>subplan_index</> identifies which target of
+     the <structname>ModifyTable</> plan node this is.
+     <literal>eflags</> contains flag bits describing the executor's
+     operating mode for this plan node.
+    </para>
+____________________________________________________________________________-->
     <para>
      <literal>mtstate</>是要被执行的<structname>ModifyTable</>计划节点的状态信息；通过这个结构可以得到关于规划和执行阶段的全局数据。<literal>rinfo</>是描述目标外部表的<structname>ResultRelInfo</>结构（<structname>ResultRelInfo</>的<structfield>ri_FdwState</>域用于FDW来存储它在此操作中需要的任何私有状态）。<literal>fdw_private</>包含<function>PlanForeignModify</>生成的私有数据。<literal>subplan_index</>标识这是<structname>ModifyTable</>计划节点的哪个目标。<literal>eflags</>包含描述执行器对该计划节点操作模式的标志位。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     Note that when <literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</> is
+     true, this function should not perform any externally-visible actions;
+     it should only do the minimum required to make the node state valid
+     for <function>ExplainForeignModify</> and <function>EndForeignModify</>.
+    </para>
+____________________________________________________________________________-->
     <para>
      注意当<literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</>为真，这个函数不应执行任何外部可见的动作；它只应该做最少的工作来创建<function>ExplainForeignModify</>和<function>EndForeignModify</>可用的节点状态。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>BeginForeignModify</> pointer is set to
+     <literal>NULL</>, no action is taken during executor startup.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>BeginForeignModify</>指针被设置为<literal>NULL</>，在执行器启动期间将不会采取任何动作。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+TupleTableSlot *
+ExecForeignInsert (EState *estate,
+                   ResultRelInfo *rinfo,
+                   TupleTableSlot *slot,
+                   TupleTableSlot *planSlot);
+</programlisting>
+
+     Insert one tuple into the foreign table.
+     <literal>estate</> is global execution state for the query.
+     <literal>rinfo</> is the <structname>ResultRelInfo</> struct describing
+     the target foreign table.
+     <literal>slot</> contains the tuple to be inserted; it will match the
+     row-type definition of the foreign table.
+     <literal>planSlot</> contains the tuple that was generated by the
+     <structname>ModifyTable</> plan node's subplan; it differs from
+     <literal>slot</> in possibly containing additional <quote>junk</>
+     columns.  (The <literal>planSlot</> is typically of little interest
+     for <command>INSERT</> cases, but is provided for completeness.)
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 TupleTableSlot *
@@ -323,21 +912,68 @@ ExecForeignInsert (EState *estate,
      插入一个元组到外部表。<literal>estate</>是查询的全局执行状态。<literal>rinfo</>是描述目标外部表的<structname>ResultRelInfo</>结构。<literal>slot</>包含要被插入的元组；它将匹配外部表的行类型定义。<literal>planSlot</>包含由<structname>ModifyTable</>计划节点的子计划生成的元组；它与<literal>slot</>不同，它可能包含额外的<quote>junk</>列（<command>INSERT</>情况通常不关心<literal>planSlot</>，但是为了完整性还是在这里提供它）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     The return value is either a slot containing the data that was actually
+     inserted (this might differ from the data supplied, for example as a
+     result of trigger actions), or NULL if no row was actually inserted
+     (again, typically as a result of triggers).  The passed-in
+     <literal>slot</> can be re-used for this purpose.
+    </para>
+____________________________________________________________________________-->
     <para>
      返回值可以是一个包含实际被插入的数据的槽（这可能会和所提供的数据不同，例如一个触发器动作的结果），或者为 NULL 表示实际没有插入行（还是触发器的结果）。被传入的<literal>slot</>可以被重用于这个目的。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     在返回槽中的数据只有在<command>INSERT</>查询具有一个<literal>RETURNING</>子句或者
-     外部表具有一个<literal>AFTER ROW</>触发器时才被使用。触发器要求所有的列，但是 FDW 应
-     该选择优化成根据<literal>RETURNING</>子句的内容返回某些或全部列。不管怎样，某些槽必须
-     被返回来指示成功，或者查询报告的行计数将会是错误的。
+     The data in the returned slot is used only if the <command>INSERT</>
+     query has a <literal>RETURNING</> clause or the foreign table has
+     an <literal>AFTER ROW</> trigger.  Triggers require all columns, but the
+     FDW could choose to optimize away returning some or all columns depending
+     on the contents of the <literal>RETURNING</> clause.  Regardless, some
+     slot must be returned to indicate success, or the query's reported row
+     count will be wrong.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在返回槽中的数据只有在<command>INSERT</>查询具有一个<literal>RETURNING</>子句或者外部表具有一个<literal>AFTER ROW</>触发器时才被使用。触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</>子句的内容返回某些或全部列。不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExecForeignInsert</> pointer is set to
+     <literal>NULL</>, attempts to insert into the foreign table will fail
+     with an error message.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>ExecForeignInsert</>指针被设置为<literal>NULL</>，尝试向外部表插入将会失败并报告一个错误消息。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+TupleTableSlot *
+ExecForeignUpdate (EState *estate,
+                   ResultRelInfo *rinfo,
+                   TupleTableSlot *slot,
+                   TupleTableSlot *planSlot);
+</programlisting>
+
+     Update one tuple in the foreign table.
+     <literal>estate</> is global execution state for the query.
+     <literal>rinfo</> is the <structname>ResultRelInfo</> struct describing
+     the target foreign table.
+     <literal>slot</> contains the new data for the tuple; it will match the
+     row-type definition of the foreign table.
+     <literal>planSlot</> contains the tuple that was generated by the
+     <structname>ModifyTable</> plan node's subplan; it differs from
+     <literal>slot</> in possibly containing additional <quote>junk</>
+     columns.  In particular, any junk columns that were requested by
+     <function>AddForeignUpdateTargets</> will be available from this slot.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 TupleTableSlot *
@@ -350,21 +986,68 @@ ExecForeignUpdate (EState *estate,
      更新外部表中的一个元组。<literal>estate</>是查询的全局执行状态。<literal>rinfo</>是描述目标外部表的<structname>ResultRelInfo</>结构。<literal>slot</>包含元组的新数据；它将匹配外部表的行类型定义。<literal>planSlot</>包含由<structname>ModifyTable</>计划节点的子计划生成的元组；它与<literal>slot</>不同，它可能包含额外的<quote>junk</>列（<command>INSERT</>情况通常不关心<literal>planSlot</>，但是为了完整性还是在这里提供它）。特殊地，任何<function>AddForeignUpdateTargets</>所要求的junk列在这个槽中都是有效的。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     The return value is either a slot containing the row as it was actually
+     updated (this might differ from the data supplied, for example as a
+     result of trigger actions), or NULL if no row was actually updated
+     (again, typically as a result of triggers).  The passed-in
+     <literal>slot</> can be re-used for this purpose.
+    </para>
+____________________________________________________________________________-->
     <para>
      返回值可以是一个包含实际被更新的数据的槽（这可能会和所提供的数据不同，例如一个触发器动作的结果），或者为 NULL 表示实际没有更新行（还是触发器的结果）。被传入的<literal>slot</>可以被重用于这个目的。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-    在返回槽中的数据只有在<command>UPDATE</>查询具有一个<literal>RETURNING</>子句或者
-    外部表具有一个<literal>AFTER ROW</>触发器时才被使用。触发器要求所有的列，但是 FDW 应
-    该选择优化成根据<literal>RETURNING</>子句的内容返回某些或全部列。不管怎样，某些槽必须
-    被返回来指示成功，或者查询报告的行计数将会是错误的。
+     The data in the returned slot is used only if the <command>UPDATE</>
+     query has a <literal>RETURNING</> clause or the foreign table has
+     an <literal>AFTER ROW</> trigger.  Triggers require all columns, but the
+     FDW could choose to optimize away returning some or all columns depending
+     on the contents of the <literal>RETURNING</> clause.  Regardless, some
+     slot must be returned to indicate success, or the query's reported row
+     count will be wrong.
+    </para>
+____________________________________________________________________________-->
+    <para>
+    在返回槽中的数据只有在<command>UPDATE</>查询具有一个<literal>RETURNING</>子句或者外部表具有一个<literal>AFTER ROW</>触发器时才被使用。触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</>子句的内容返回某些或全部列。不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExecForeignUpdate</> pointer is set to
+     <literal>NULL</>, attempts to update the foreign table will fail
+     with an error message.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>ExecForeignUpdate</>指针被设置为<literal>NULL</>，尝试更新外部表将会失败并报告一个错误消息。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+TupleTableSlot *
+ExecForeignDelete (EState *estate,
+                   ResultRelInfo *rinfo,
+                   TupleTableSlot *slot,
+                   TupleTableSlot *planSlot);
+</programlisting>
+
+     Delete one tuple from the foreign table.
+     <literal>estate</> is global execution state for the query.
+     <literal>rinfo</> is the <structname>ResultRelInfo</> struct describing
+     the target foreign table.
+     <literal>slot</> contains nothing useful upon call, but can be used to
+     hold the returned tuple.
+     <literal>planSlot</> contains the tuple that was generated by the
+     <structname>ModifyTable</> plan node's subplan; in particular, it will
+     carry any junk columns that were requested by
+     <function>AddForeignUpdateTargets</>.  The junk column(s) must be used
+     to identify the tuple to be deleted.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 TupleTableSlot *
@@ -377,21 +1060,56 @@ ExecForeignDelete (EState *estate,
      从外部表删除一个元组。<literal>estate</>是查询的全局执行状态。<literal>rinfo</>是描述目标外部表的<structname>ResultRelInfo</>结构。<literal>slot</>在调用时不包含任何有用的东西，但是可以被用于保持被返回的元组。<literal>planSlot</>包含由<structname>ModifyTable</>计划节点的子计划生成的元组；特殊地，它将携带<function>AddForeignUpdateTargets</>所要求的任意垃圾列。垃圾列被用来标识要被删除的元组。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     The return value is either a slot containing the row that was deleted,
+     or NULL if no row was deleted (typically as a result of triggers).  The
+     passed-in <literal>slot</> can be used to hold the tuple to be returned.
+    </para>
+____________________________________________________________________________-->
     <para>
      返回值可以是一个包含实际被删除的数据的槽（这可能会和所提供的数据不同，例如一个触发器动作的结果），或者为 NULL 表示实际没有删除行（还是触发器的结果）。被传入的<literal>slot</>可以被重用于这个目的。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-    在返回槽中的数据只有在<command>DELETE</>查询具有一个<literal>RETURNING</>子句或者
-    外部表具有一个<literal>AFTER ROW</>触发器时才被使用。触发器要求所有的列，但是 FDW 应
-    该选择优化成根据<literal>RETURNING</>子句的内容返回某些或全部列。不管怎样，某些槽必须
-    被返回来指示成功，或者查询报告的行计数将会是错误的。
+     The data in the returned slot is used only if the <command>DELETE</>
+     query has a <literal>RETURNING</> clause or the foreign table has
+     an <literal>AFTER ROW</> trigger.  Triggers require all columns, but the
+     FDW could choose to optimize away returning some or all columns depending
+     on the contents of the <literal>RETURNING</> clause.  Regardless, some
+     slot must be returned to indicate success, or the query's reported row
+     count will be wrong.
+    </para>
+____________________________________________________________________________-->
+    <para>
+    在返回槽中的数据只有在<command>DELETE</>查询具有一个<literal>RETURNING</>子句或者外部表具有一个<literal>AFTER ROW</>触发器时才被使用。触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</>子句的内容返回某些或全部列。不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExecForeignDelete</> pointer is set to
+     <literal>NULL</>, attempts to delete from the foreign table will fail
+     with an error message.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>ExecForeignDelete</>指针被设置为<literal>NULL</>，尝试从外部表中删除将会失败并报告一个错误消息。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+EndForeignModify (EState *estate,
+                  ResultRelInfo *rinfo);
+</programlisting>
+
+     End the table update and release resources.  It is normally not important
+     to release palloc'd memory, but for example open files and connections
+     to remote servers should be cleaned up.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -402,36 +1120,327 @@ EndForeignModify (EState *estate,
      结束表更新并释放资源。通常释放palloc的内存并不重要，但是打开的文件和到远程服务器的连接等应当被清除。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>EndForeignModify</> pointer is set to
+     <literal>NULL</>, no action is taken during executor shutdown.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>EndForeignModify</>指针被设置为<literal>NULL</>，在执行器关闭期间不会采取任何动作。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
 <programlisting>
 int
 IsForeignRelUpdatable (Relation rel);
 </programlisting>
 
-     报告指定的外部表支持哪些更新操作。返回值应该是一个规则事件编号的位掩码，它指示了哪些操作被外部表支持，它使用<literal>CmdType</>枚举，及：
+     Report which update operations the specified foreign table supports.
+     The return value should be a bit mask of rule event numbers indicating
+     which operations are supported by the foreign table, using the
+     <literal>CmdType</> enumeration; that is,
+     <literal>(1 << CMD_UPDATE) = 4</> for <command>UPDATE</>,
+     <literal>(1 << CMD_INSERT) = 8</> for <command>INSERT</>, and
+     <literal>(1 << CMD_DELETE) = 16</> for <command>DELETE</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+int
+IsForeignRelUpdatable (Relation rel);
+</programlisting>
+
+     报告指定的外部表支持哪些更新操作。返回值应该是一个规则事件编号的位掩码，它指示了哪些操作被外部表支持，它使用<literal>CmdType</>枚举，即：
      <literal>(1 << CMD_UPDATE) = 4</>表示<command>UPDATE</>、
      <literal>(1 << CMD_INSERT) = 8</>表示<command>INSERT</>以及
      <literal>(1 << CMD_DELETE) = 16</>表示<command>DELETE</>。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>IsForeignRelUpdatable</> pointer is set to
+     <literal>NULL</>, foreign tables are assumed to be insertable, updatable,
+     or deletable if the FDW provides <function>ExecForeignInsert</>,
+     <function>ExecForeignUpdate</>, or <function>ExecForeignDelete</>
+     respectively.  This function is only needed if the FDW supports some
+     tables that are updatable and some that are not.  (Even then, it's
+     permissible to throw an error in the execution routine instead of
+     checking in this function.  However, this function is used to determine
+     updatability for display in the <literal>information_schema</> views.)
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>IsForeignRelUpdatable</>指针被设置为<literal>NULL</>，而FDW提供了<function>ExecForeignInsert</>、<function>ExecForeignUpdate</>或<function>ExecForeignDelete</>，则外部表分别被假定为可插入、可更新或可删除。只有在FDW支持某些表是可更新的而某些不是可更新的时候，才需要这个函数（即便如此，也允许在执行例程中抛出一个错误而不是在这个函数中检查。但是，这个函数被用来决定显示在<literal>information_schema</>视图中的可更新性）。
     </para>
-
-   </sect2>
-
-   <sect2 id="fdw-callbacks-row-locking">
-    <title>行锁定的FDW例程</title>
-
+    
+<!--==========================orignal english content==========================
     <para>
-     如果FDW希望支持<firstterm>末行锁</>（正如<xref linkend="fdw-row-locking">所描述的），
-     它必须提供以下回调函数：
+     Some inserts, updates, and deletes to foreign tables can be optimized
+     by implementing an alternative set of interfaces.  The ordinary
+     interfaces for inserts, updates, and deletes fetch rows from the remote
+     server and then modify those rows one at a time.  In some cases, this
+     row-by-row approach is necessary, but it can be inefficient.  If it is
+     possible for the foreign server to determine which rows should be
+     modified without actually retrieving them, and if there are no local
+     triggers which would affect the operation, then it is possible to
+     arrange things so that the entire operation is performed on the remote
+     server.  The interfaces described below make this possible.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     一些对于外部表的插入、更新和删除可以通过实现另一组接口来优化。普通的插入、更新和删除接口会从远程服务器取得行，然后一次修改其中一行。在某些情况下，这种逐行的方式是必要的，但是可能效率不高。如果有可能让外部服务器判断哪些行可以直接修改而无需先检索它们并且没有本地触发器会影响该操作，那么可以让整个操作在远程服务器上执行。下面介绍的接口能让这种做法变成可能。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+bool
+PlanDirectModify (PlannerInfo *root,
+                  ModifyTable *plan,
+                  Index resultRelation,
+                  int subplan_index);
+</programlisting>
+
+     Decide whether it is safe to execute a direct modification
+     on the remote server.  If so, return <literal>true</> after performing
+     planning actions needed for that.  Otherwise, return <literal>false</>.
+     This optional function is called during query planning.
+     If this function succeeds, <function>BeginDirectModify</>,
+     <function>IterateDirectModify</> and <function>EndDirectModify</> will
+     be called at the execution stage, instead.  Otherwise, the table
+     modification will be executed using the table-updating functions
+     described above.
+     The parameters are the same as for <function>PlanForeignModify</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+bool
+PlanDirectModify (PlannerInfo *root,
+                  ModifyTable *plan,
+                  Index resultRelation,
+                  int subplan_index);
+</programlisting>
+
+     决定在远程服务器上执行直接修改是否安全。如果安全，执行所需的规划动作然后返回<literal>true</>。否则返回<literal>false</>。这个可选的函数在查询规划期间被调用。如果这个函数成功，在执行阶段将会调用<function>BeginDirectModify</>、<function>IterateDirectModify</>和<function>EndDirectModify</>。否则，对表的修改将采用上文描述的表更新函数来执行。参数和<function>PlanForeignModify</>的相同。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To execute the direct modification on the remote server, this function
+     must rewrite the target subplan with a <structname>ForeignScan</> plan
+     node that executes the direct modification on the remote server.  The
+     <structfield>operation</> field of the <structname>ForeignScan</> must
+     be set to the <literal>CmdType</> enumeration appropriately; that is,
+     <literal>CMD_UPDATE</> for <command>UPDATE</>,
+     <literal>CMD_INSERT</> for <command>INSERT</>, and
+     <literal>CMD_DELETE</> for <command>DELETE</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     要在远程服务器上执行直接修改，这个函数必须用一个<structname>ForeignScan</>计划节点（它在远程服务器上执行直接修改）重写目标子计划。<structname>ForeignScan</>的<structfield>operation</>域必须被合适地设置为<literal>CmdType</>枚举值，即<literal>CMD_UPDATE</>表示<command>UPDATE</>、<literal>CMD_INSERT</>表示<command>INSERT</>而<literal>CMD_DELETE</>表示<command>DELETE</>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-planning"> for additional information.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     更多信息请见<xref linkend="fdw-planning">。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>PlanDirectModify</> pointer is set to
+     <literal>NULL</>, no attempts to execute a direct modification on the
+     remote server are taken.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>PlanDirectModify</>指针被设置为<literal>NULL</>，不会尝试在远程服务器上执行直接修改。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+BeginDirectModify (ForeignScanState *node,
+                   int eflags);
+</programlisting>
+
+     Prepare to execute a direct modification on the remote server.
+     This is called during executor startup.  It should perform any
+     initialization needed prior to the direct modification (that should be
+     done upon the first call to <function>IterateDirectModify</>).
+     The <structname>ForeignScanState</> node has already been created, but
+     its <structfield>fdw_state</> field is still NULL.  Information about
+     the table to modify is accessible through the
+     <structname>ForeignScanState</> node (in particular, from the underlying
+     <structname>ForeignScan</> plan node, which contains any FDW-private
+     information provided by <function>PlanDirectModify</>).
+     <literal>eflags</> contains flag bits describing the executor's
+     operating mode for this plan node.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+BeginDirectModify (ForeignScanState *node,
+                   int eflags);
+</programlisting>
+
+     准备在远程服务器上执行一次直接修改。这个函数会在执行器启动时被调用。它应该执行直接修改所需的任何初始化工作（应该在第一次<function>IterateDirectModify</>调用之前完成）。<structname>ForeignScanState</>节点已经被创建，但是它的<structfield>fdw_state</>域仍然为 NULL。有关要被修改的表的信息可以通过<structname>ForeignScanState</>节点（具体地，从底层的<structname>ForeignScan</>计划节点，它包含了<function>PlanDirectModify</>提供的 FDW-私有信息）访问。<literal>eflags</>包含描述执行器对于这个计划节点操作模式的标志位。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Note that when <literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</> is
+     true, this function should not perform any externally-visible actions;
+     it should only do the minimum required to make the node state valid
+     for <function>ExplainDirectModify</> and <function>EndDirectModify</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     注意当<literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</>为真时，这个函数不应该执行任何外部可见的动作。它应当只做最少的工作让该节点状态对<function>ExplainDirectModify</>和<function>EndDirectModify</>有效。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>BeginDirectModify</> pointer is set to
+     <literal>NULL</>, no attempts to execute a direct modification on the
+     remote server are taken.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>BeginDirectModify</>指针被设置为<literal>NULL</>，不会尝试在远程服务器上执行直接修改。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+TupleTableSlot *
+IterateDirectModify (ForeignScanState *node);
+</programlisting>
+
+     When the <command>INSERT</>, <command>UPDATE</> or <command>DELETE</>
+     query doesn't have a <literal>RETURNING</> clause, just return NULL
+     after a direct modification on the remote server.
+     When the query has the clause, fetch one result containing the data
+     needed for the <literal>RETURNING</> calculation, returning it in a
+     tuple table slot (the node's <structfield>ScanTupleSlot</> should be
+     used for this purpose).  The data that was actually inserted, updated
+     or deleted must be stored in the
+     <literal>es_result_relation_info-&gt;ri_projectReturning-&gt;pi_exprContext-&gt;ecxt_scantuple</>
+     of the node's <structname>EState</>.
+     Return NULL if no more rows are available.
+     Note that this is called in a short-lived memory context that will be
+     reset between invocations.  Create a memory context in
+     <function>BeginDirectModify</> if you need longer-lived storage, or use
+     the <structfield>es_query_cxt</> of the node's <structname>EState</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+TupleTableSlot *
+IterateDirectModify (ForeignScanState *node);
+</programlisting>
+
+     当<command>INSERT</>、<command>UPDATE</>或者<command>DELETE</>查询没有<literal>RETURNING</>子句时，完成远程服务器上的直接修改后返回 NULL。当查询有该子句时，取出一个包含<literal>RETURNING</>计算所需数据的结果，用一个元组表槽返回它（节点的<structfield>ScanTupleSlot</>应被用于这一目的）。实际被插入、更新或者删除的数据必须被存储在该节点的<structname>EState</>的<literal>es_result_relation_info-&gt;ri_projectReturning-&gt;pi_exprContext-&gt;ecxt_scantuple</>中。如果没有更多行可用，则返回 NULL。注意这个函数会在一个短期生存的内存上下文中被调用，该上下文会在两次调用之间被重置。如果需要一个长期存在的存储，可以在<function>BeginDirectModify</>中创建一个内存上下文，或者使用该节点的<structname>EState</>中的<structfield>es_query_cxt</>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The rows returned must match the <structfield>fdw_scan_tlist</> target
+     list if one was supplied, otherwise they must match the row type of the
+     foreign table being updated.  If you choose to optimize away fetching
+     columns that are not needed for the <literal>RETURNING</> calculation,
+     you should insert nulls in those column positions, or else generate a
+     <structfield>fdw_scan_tlist</> list with those columns omitted.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果提供了<structfield>fdw_scan_tlist</>目标列表，则被返回的行必须匹配它。否则，被返回的行必须匹配被更新的外部表的行类型。如果选择优化掉<literal>RETURNING</>计算不需要的列，应该在这些列的位置上插入空值，或者生成一个忽略这些列的<structfield>fdw_scan_tlist</>列表。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Whether the query has the clause or not, the query's reported row count
+     must be incremented by the FDW itself.  When the query doesn't have the
+     clause, the FDW must also increment the row count for the
+     <structname>ForeignScanState</> node in the <command>EXPLAIN ANALYZE</>
+     case.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     不管该查询是否具有<literal>RETURNING</>子句，查询所报告的行计数必须由 FDW 本身增加。当查询没有该子句时，FDW 还必须为<command>EXPLAIN ANALYZE</>情况下的<structname>ForeignScanState</>节点增加行计数。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>IterateDirectModify</> pointer is set to
+     <literal>NULL</>, no attempts to execute a direct modification on the
+     remote server are taken.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>IterateDirectModify</>指针被设置为<literal>NULL</>，不会尝试在远程服务器上执行直接修改。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+EndDirectModify (ForeignScanState *node);
+</programlisting>
+
+     Clean up following a direct modification on the remote server.  It is
+     normally not important to release palloc'd memory, but for example open
+     files and connections to the remote server should be cleaned up.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+EndDirectModify (ForeignScanState *node);
+</programlisting>
+
+     在远程服务器上的直接修改后进行清理。通常释放用 palloc 分配的内存并不重要，但是诸如打开的文件和到远程服务器的连接应该被清除。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>EndDirectModify</> pointer is set to
+     <literal>NULL</>, no attempts to execute a direct modification on the
+     remote server are taken.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>EndDirectModify</>指针被设置为<literal>NULL</>，不会尝试在远程服务器上执行直接修改。
+    </para>
+
+   </sect2>
+   
+   <sect2 id="fdw-callbacks-row-locking">
+<!--==========================orignal english content==========================
+    <title>FDW Routines For Row Locking</title>
+____________________________________________________________________________-->
+    <title>用于行锁定的 FDW 例程</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     If an FDW wishes to support <firstterm>late row locking</> (as described
+     in <xref linkend="fdw-row-locking">), it must provide the following
+     callback functions:
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果一个 FDW 希望支持<firstterm>后期行锁定</>（如<xref linkend="fdw-row-locking">中所述），它必须提供下列回调函数：
+    </para>
+
+<!--==========================orignal english content==========================
     <para>
 <programlisting>
 RowMarkType
@@ -439,29 +1448,57 @@ GetForeignRowMarkType (RangeTblEntry *rte,
                        LockClauseStrength strength);
 </programlisting>
 
-     报告用于外部表的行标记选项。<literal>rte</>是表的<structname>RangeTblEntry</>节点，
-     并且<literal>strength</>描述通过相关的<literal>FOR UPDATE/SHARE</>子句请求的锁强度，
-     如果存在的情况下。结果必须是<literal>RowMarkType</>枚举类型成员。
-     
+     Report which row-marking option to use for a foreign table.
+     <literal>rte</> is the <structname>RangeTblEntry</> node for the table
+     and <literal>strength</> describes the lock strength requested by the
+     relevant <literal>FOR UPDATE/SHARE</> clause, if any.  The result must be
+     a member of the <literal>RowMarkType</> enum type.
     </para>
-
+____________________________________________________________________________-->
     <para>
-     
-     在查询规划<command>UPDATE</>，<command>DELETE</>或者<command>SELECT
-     FOR UPDATE/SHARE</>查询中的每个外部表时调用此函数，
-     并且不是<command>UPDATE</>或者<command>DELETE</>的目标。
+<programlisting>
+RowMarkType
+GetForeignRowMarkType (RangeTblEntry *rte,
+                       LockClauseStrength strength);
+</programlisting>
+
+     报告要对一个外部表使用哪个行标记选项。<literal>rte</>是该表的<structname>RangeTblEntry</>节点，而<literal>strength</>描述<literal>FOR UPDATE/SHARE</>子句（如果有）所要求的锁长度。结果必须是<literal>RowMarkType</>枚举类型的一个成员。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     如果<function>GetForeignRowMarkType</>指针设置为
-     <literal>NULL</>，那么使用<literal>ROW_MARK_COPY</>选项。
-     （这意味着永远不会调用<function>RefetchForeignRow</>，因此它也不需要被提供。）
+     This function is called during query planning for each foreign table that
+     appears in an <command>UPDATE</>, <command>DELETE</>, or <command>SELECT
+     FOR UPDATE/SHARE</> query and is not the target of <command>UPDATE</>
+     or <command>DELETE</>.
     </para>
-
+____________________________________________________________________________-->
     <para>
-     参见<xref linkend="fdw-row-locking">获取更多信息。
+     这个函数在查询规划期间会为每一个出现在<command>UPDATE</>、<command>DELETE</>或者<command>SELECT FOR UPDATE/SHARE</>查询中的外部表调用，并且该外部表不是<command>UPDATE</>和<command>DELETE</>的目标。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>GetForeignRowMarkType</> pointer is set to
+     <literal>NULL</>, the <literal>ROW_MARK_COPY</> option is always used.
+     (This implies that <function>RefetchForeignRow</> will never be called,
+     so it need not be provided either.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>GetForeignRowMarkType</>指针被设置为<literal>NULL</>，将总是使用<literal>ROW_MARK_COPY</>选项（这意味着将不会调用<function>RefetchForeignRow</>，因此也不必提供它）。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     See <xref linkend="fdw-row-locking"> for more information.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     更多信息请见<xref linkend="fdw-row-locking">。
+    </para>
+
+<!--==========================orignal english content==========================
     <para>
 <programlisting>
 HeapTuple
@@ -471,80 +1508,173 @@ RefetchForeignRow (EState *estate,
                    bool *updated);
 </programlisting>
 
-     如果需要的话锁定之后，重新从外部表中获取一个元组。
-     <literal>estate</>是查询的全局执行状态。
-     <literal>erm</>是描述目标外表的<structname>ExecRowMark</>结构
-     并且获得行锁类型（如果有的话）。<literal>rowid</>标识要获取的元组。
-     <literal>updated</>是一个输出参数。   
+     Re-fetch one tuple from the foreign table, after locking it if required.
+     <literal>estate</> is global execution state for the query.
+     <literal>erm</> is the <structname>ExecRowMark</> struct describing
+     the target foreign table and the row lock type (if any) to acquire.
+     <literal>rowid</> identifies the tuple to be fetched.
+     <literal>updated</> is an output parameter.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+HeapTuple
+RefetchForeignRow (EState *estate,
+                   ExecRowMark *erm,
+                   Datum rowid,
+                   bool *updated);
+</programlisting>
+
+     从外部表中重新取得一个元组，如有必要先锁定它。<literal>estate</>是该查询的全局执行状态。<literal>erm</>是描述目标外部表以及要获取的行锁类型（如果有）的<structname>ExecRowMark</>结构。<literal>rowid</>标识要取得的元组。<literal>updated</>是一个输出参数。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     如果无法获得行锁，这个函数应该返回获取的元组的复制或者<literal>NULL</>，
-获取的行锁类型由<literal>erm-&gt;markType</>定义，
-通过<function>GetForeignRowMarkType</>返回之前的值。
-（<literal>ROW_MARK_REFERENCE</>意味着重新获取没有获取任何锁的元组，
-并且这个例程不会看到<literal>ROW_MARK_COPY</>。）   
+     This function should return a palloc'ed copy of the fetched tuple,
+     or <literal>NULL</> if the row lock couldn't be obtained.  The row lock
+     type to acquire is defined by <literal>erm-&gt;markType</>, which is the
+     value previously returned by <function>GetForeignRowMarkType</>.
+     (<literal>ROW_MARK_REFERENCE</> means to just re-fetch the tuple without
+     acquiring any lock, and <literal>ROW_MARK_COPY</> will never be seen by
+     this routine.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     这个函数应该返回被取得的元组的一个已经分配内存的拷贝，如果无法得到行锁则返回<literal>NULL</>。要获得的行锁由<literal>erm-&gt;markType</>定义，它是之前由<function>GetForeignRowMarkType</>返回的值（<literal>ROW_MARK_REFERENCE</>标识只重新取得元组但不获得任何锁，这个例程将不会看到<literal>ROW_MARK_COPY</>）。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     此外，如果获取的是一个元组的更新版本，
-     而不是先前获得的相同版本。<literal>*updated</>应该设置为<literal>true</>
-     （如果FDW无法确定，建议总是返回<literal>true</>。）
+     In addition, <literal>*updated</> should be set to <literal>true</>
+     if what was fetched was an updated version of the tuple rather than
+     the same version previously obtained.  (If the FDW cannot be sure about
+     this, always returning <literal>true</> is recommended.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     此外，如果取得的是一个更新过的版本而不是之前获得的同一版本，<literal>*updated</>应被设置为<literal>true</>（如果 FDW 无法确定这一点，推荐总是返回<literal>true</>）。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     请注意缺省情况下，未能获得行锁导致产生错误；
-     如果通过<literal>erm-&gt;waitPolicy</>指定<literal>SKIP LOCKED</>选项，
-     则<literal>NULL</>返回是唯一适当的。
+     Note that by default, failure to acquire a row lock should result in
+     raising an error; a <literal>NULL</> return is only appropriate if
+     the <literal>SKIP LOCKED</> option is specified
+     by <literal>erm-&gt;waitPolicy</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     注意在默认情况下，获取行锁失败应该导致产生错误。如果<literal>erm-&gt;waitPolicy</>指定了<literal>SKIP LOCKED</>，只有返回<literal>NULL</>才是合适的。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     <literal>rowid</>是之前行重新抓取的<structfield>ctid</>值。
-     尽管<literal>rowid</>值作为<type>Datum</>传递，它目前只为<type>tid</>。
-     选择函数API希望允许将来行ID其它数据类型。
+     The <literal>rowid</> is the <structfield>ctid</> value previously read
+     for the row to be re-fetched.  Although the <literal>rowid</> value is
+     passed as a <type>Datum</>, it can currently only be a <type>tid</>.  The
+     function API is chosen in hopes that it may be possible to allow other
+     data types for row IDs in future.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <literal>rowid</>是要被重新取得的行之前读到的<structfield>ctid</>值。尽管<literal>rowid</>值被作为<type>Datum</>传递，但是目前它只能被读作<type>tid</>。选择该函数 API 是希望未来能允许其他的行 ID 数据类型。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     如果<function>RefetchForeignRow</>指针被设置为<literal>NULL</>，
-     尝试重新获取行出现错误消息而失败。它目前只能为<type>tid</>。
+     If the <function>RefetchForeignRow</> pointer is set to
+     <literal>NULL</>, attempts to re-fetch rows will fail
+     with an error message.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>RefetchForeignRow</>指针被设置为<literal>NULL</>，重新取得行的尝试将会失败并伴随有一个错误消息。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     参见<xref linkend="fdw-row-locking">获取更多信息。
+     See <xref linkend="fdw-row-locking"> for more information.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     更多信息请见<xref linkend="fdw-row-locking">。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-<programlisting> 
+<programlisting>
 bool
 RecheckForeignScan (ForeignScanState *node, TupleTableSlot *slot);
 </programlisting>
-     
-     重新检查之前返回的元组仍然匹配相关的扫描和连接限定符，
-     并且有可能提供元组的修改版本。
-     外部数据封装器不执行连接下推，
-     通常设置为<literal>NULL</>更方便，
-     而不是设置为<structfield>fdw_recheck_quals</structfield>。
-     当外连接被向下推时，然而，它不足以重新应用所有的基表与结果元组的检查相关性，
-     即使所有需要的属性都是存在的，
-     因为没有匹配一些限定符可能会导致一些属性为空，
-     而不是没有返回元组。如果它们仍然满足并为假，
-     则<literal>RecheckForeignScan</>可以复查限定符并返回真，
-     否则，它也可以将替换的元组存储到所提供的狭槽中。
-     
+     Recheck that a previously-returned tuple still matches the relevant
+     scan and join qualifiers, and possibly provide a modified version of
+     the tuple.  For foreign data wrappers which do not perform join pushdown,
+     it will typically be more convenient to set this to <literal>NULL</> and
+     instead set <structfield>fdw_recheck_quals</structfield> appropriately.
+     When outer joins are pushed down, however, it isn't sufficient to
+     reapply the checks relevant to all the base tables to the result tuple,
+     even if all needed attributes are present, because failure to match some
+     qualifier might result in some attributes going to NULL, rather than in
+     no tuple being returned.  <literal>RecheckForeignScan</> can recheck
+     qualifiers and return true if they are still satisfied and false
+     otherwise, but it can also store a replacement tuple into the supplied
+     slot.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+bool
+RecheckForeignScan (ForeignScanState *node, TupleTableSlot *slot);
+</programlisting>
+     重新检查之前返回的元组是否仍然匹配相关的扫描和连接条件，并且可能提供该元组的一个修改版本。对于不执行连接下推的外部数据包装器，通常把这设置为<literal>NULL</>并且恰当地设置<structfield>fdw_recheck_quals</structfield>会更方便。不过当外部连接被下推时，把与所有基表相关的检查重新应用在结果元组上是不够的，即便所有需要的属性都存在也是如此，因为匹配某个条件失败可能会导致某些属性变成 NULL，而不是没有元组被返回。<literal>RecheckForeignScan</>能够重新检查条件，并且在它们仍然满足时返回真，否则返回假，但是它也能够在提供的槽中存储一个替换元组。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     为了实现连接下推，外部数据包通常会建立用于复查的其它的本地连接计划；
-     这将成为<literal>ForeignScan</>的外部子查询。
-     当必须复查时，可以执行这个子计划并且产生的元组可以被存储在插槽中。
-     这个计划不必是有效的，因为没有基表会返回更多行；
-     例如，它可以作为嵌套循环实现所有的连接。
+     To implement join pushdown, a foreign data wrapper will typically
+     construct an alternative local join plan which is used only for
+     rechecks; this will become the outer subplan of the
+     <literal>ForeignScan</>.  When a recheck is required, this subplan
+     can be executed and the resulting tuple can be stored in the slot.
+     This plan need not be efficient since no base table will return more
+     than one row; for example, it may implement all joins as nested loops.
+     The function <literal>GetExistingLocalJoinPath</> may be used to search
+     existing paths for a suitable local join path, which can be used as the
+     alternative local join plan.  <literal>GetExistingLocalJoinPath</>
+     searches for an unparameterized path in the path list of the specified
+     join relation.  (If it does not find such a path, it returns NULL, in
+     which case a foreign data wrapper may build the local path by itself or
+     may choose not to create access paths for that join.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     要实现连接下推，外部数据包装器通常将构造一个可替代的本地连接计划，它只被用来做重新检查。这将变成<literal>ForeignScan</>的外子计划。在需要一次重新检查时，这个子计划可以被执行并且结果元组可以被存储在槽中。这个计划不需要效率很高，因为不会有基表返回超过一行。例如，它可以把所有的连接实现为嵌套循环。函数<literal>GetExistingLocalJoinPath</>可以被用来在已有的路径中搜索合适的本地连接路径，它可以被用作替换的本地连接计划。<literal>GetExistingLocalJoinPath</>会在指定连接关系的路径列表中搜索一个非参数化路径（如果没有找到这样的路径，它会返回 NULL，这种情况下外部数据包装器可以自行构造本地路径或者可以选择不为这个连接创建访问路径）。
     </para>
    </sect2>
-   
+
    <sect2 id="fdw-callbacks-explain">
+<!--==========================orignal english content==========================
+    <title>FDW Routines for <command>EXPLAIN</></title>
+____________________________________________________________________________-->
     <title><command>EXPLAIN</>的FDW例程</title>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ExplainForeignScan (ForeignScanState *node,
+                    ExplainState *es);
+</programlisting>
+
+     Print additional <command>EXPLAIN</> output for a foreign table scan.
+     This function can call <function>ExplainPropertyText</> and
+     related functions to add fields to the <command>EXPLAIN</> output.
+     The flag fields in <literal>es</> can be used to determine what to
+     print, and the state of the <structname>ForeignScanState</> node
+     can be inspected to provide run-time statistics in the <command>EXPLAIN
+     ANALYZE</> case.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -555,10 +1685,38 @@ ExplainForeignScan (ForeignScanState *node,
      为一个外部表扫描打印额外的<command>EXPLAIN</>输出。这个函数可以调用<function>ExplainPropertyText</>和相关函数来向<command>EXPLAIN</>输出中增加域。<literal>es</>中的标志域可以被用来决定什么将被打印，并且<structname>ForeignScanState</>节点的状态可以被检查来为<command>EXPLAIN ANALYZE</>提供运行时统计数据。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExplainForeignScan</> pointer is set to
+     <literal>NULL</>, no additional information is printed during
+     <command>EXPLAIN</>.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>ExplainForeignScan</>指针被设置为<literal>NULL</>，在<command>EXPLAIN</>期间不会打印任何额外的信息。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ExplainForeignModify (ModifyTableState *mtstate,
+                      ResultRelInfo *rinfo,
+                      List *fdw_private,
+                      int subplan_index,
+                      struct ExplainState *es);
+</programlisting>
+
+     Print additional <command>EXPLAIN</> output for a foreign table update.
+     This function can call <function>ExplainPropertyText</> and
+     related functions to add fields to the <command>EXPLAIN</> output.
+     The flag fields in <literal>es</> can be used to determine what to
+     print, and the state of the <structname>ModifyTableState</> node
+     can be inspected to provide run-time statistics in the <command>EXPLAIN
+     ANALYZE</> case.  The first four arguments are the same as for
+     <function>BeginForeignModify</>.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 void
@@ -572,15 +1730,81 @@ ExplainForeignModify (ModifyTableState *mtstate,
      为一个外部表更新打印额外的<command>EXPLAIN</>输出。这个函数可以调用<function>ExplainPropertyText</>和相关函数来向<command>EXPLAIN</>输出中增加域。<literal>es</>中的标志域可以被用来决定什么将被打印，并且<structname>ModifyTableState</>节点的状态可以被检查来为<command>EXPLAIN ANALYZE</>提供运行时统计数据。前四个参数和<function>BeginForeignModify</>相同。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExplainForeignModify</> pointer is set to
+     <literal>NULL</>, no additional information is printed during
+     <command>EXPLAIN</>.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果<function>ExplainForeignModify</>指针被设置为<literal>NULL</>，在<command>EXPLAIN</>期间不会打印任何额外的信息。
+    </para>
+    
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ExplainDirectModify (ForeignScanState *node,
+                     ExplainState *es);
+</programlisting>
+
+     Print additional <command>EXPLAIN</> output for a direct modification
+     on the remote server.
+     This function can call <function>ExplainPropertyText</> and
+     related functions to add fields to the <command>EXPLAIN</> output.
+     The flag fields in <literal>es</> can be used to determine what to
+     print, and the state of the <structname>ForeignScanState</> node
+     can be inspected to provide run-time statistics in the <command>EXPLAIN
+     ANALYZE</> case.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+ExplainDirectModify (ForeignScanState *node,
+                     ExplainState *es);
+</programlisting>
+
+     为远程服务器上的直接修改打印额外的<command>EXPLAIN</>输出。这个函数可以调用<function>ExplainPropertyText</>和相关函数来为<command>EXPLAIN</>输出增加域。<literal>es</>中的标志域可以被用来判断要打印什么，并且在<command>EXPLAIN ANALYZE</>情况中可以观察<structname>ForeignScanState</>节点的状态来提供运行时统计信息。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExplainDirectModify</> pointer is set to
+     <literal>NULL</>, no additional information is printed during
+     <command>EXPLAIN</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>ExplainDirectModify</>指针被设置为<literal>NULL</>，<command>EXPLAIN</>期间不会打印出额外的信息。
     </para>
 
    </sect2>
 
    <sect2 id="fdw-callbacks-analyze">
+<!--==========================orignal english content==========================
+    <title>FDW Routines for <command>ANALYZE</></title>
+____________________________________________________________________________-->
     <title><command>ANALYZE</>的FDW例程</title>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+bool
+AnalyzeForeignTable (Relation relation,
+                     AcquireSampleRowsFunc *func,
+                     BlockNumber *totalpages);
+</programlisting>
+
+     This function is called when <xref linkend="sql-analyze"> is executed on
+     a foreign table.  If the FDW can collect statistics for this
+     foreign table, it should return <literal>true</>, and provide a pointer
+     to a function that will collect sample rows from the table in
+     <parameter>func</>, plus the estimated size of the table in pages in
+     <parameter>totalpages</>.  Otherwise, return <literal>false</>.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 bool
@@ -592,10 +1816,36 @@ AnalyzeForeignTable (Relation relation,
      当<xref linkend="sql-analyze">被执行在一个外部表上时会调用这个函数。如果FDW可以为这个外部表收集统计信息，它会返回<literal>true</>并提供一个函数指针，该函数将将从<parameter>func</>中的表上收集采样行，外加<parameter>totalpages</>中页面中的表尺寸估计值。否则，返回<literal>false</>。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If the FDW does not support collecting statistics for any tables, the
+     <function>AnalyzeForeignTable</> pointer can be set to <literal>NULL</>.
+    </para>
+____________________________________________________________________________-->
     <para>
      如果FDW不支持为任何表收集统计信息，<function>AnalyzeForeignTable</>指针可以被设置为<literal>NULL</>。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     If provided, the sample collection function must have the signature
+<programlisting>
+int
+AcquireSampleRowsFunc (Relation relation, int elevel,
+                       HeapTuple *rows, int targrows,
+                       double *totalrows,
+                       double *totaldeadrows);
+</programlisting>
+
+     A random sample of up to <parameter>targrows</> rows should be collected
+     from the table and stored into the caller-provided <parameter>rows</>
+     array.  The actual number of rows collected must be returned.  In
+     addition, store estimates of the total numbers of live and dead rows in
+     the table into the output parameters <parameter>totalrows</> and
+     <parameter>totaldeadrows</>.  (Set <parameter>totaldeadrows</> to zero
+     if the FDW does not have any concept of dead rows.)
+    </para>
+____________________________________________________________________________-->
     <para>
      如果提供，采样收集函数必须具有签名
 <programlisting>
@@ -611,69 +1861,257 @@ AcquireSampleRowsFunc (Relation relation, int elevel,
 
    </sect2>
 
-     <sect2 id="fdw-callbacks-import">
-    <title><command>IMPORT FOREIGN SCHEMA</>的FDW例程</title>
+   <sect2 id="fdw-callbacks-import">
+<!--==========================orignal english content==========================
+    <title>FDW Routines For <command>IMPORT FOREIGN SCHEMA</></title>
+____________________________________________________________________________-->
+    <title><command>IMPORT FOREIGN SCHEMA</>的 FDW 例程</title>
 
+<!--==========================orignal english content==========================
     <para>
 <programlisting>
 List *
 ImportForeignSchema (ImportForeignSchemaStmt *stmt, Oid serverOid);
 </programlisting>
 
-     获取外表创建命令的列表。
-     当执行<xref linkend="sql-importforeignschema">的时候，调用这个函数。
-     并且为这个声明传递到解析树，以及使用外部服务器的OID。
-     它应该返回C字符串列表，
-     每一个必须包含一个<xref linkend="sql-createforeigntable">命令。
-     这些字符串将被解析并且通过核心服务器执行。
+     Obtain a list of foreign table creation commands.  This function is
+     called when executing <xref linkend="sql-importforeignschema">, and is
+     passed the parse tree for that statement, as well as the OID of the
+     foreign server to use.  It should return a list of C strings, each of
+     which must contain a <xref linkend="sql-createforeigntable"> command.
+     These strings will be parsed and executed by the core server.
     </para>
-
+____________________________________________________________________________-->
     <para>
-     
-     在<structname>ImportForeignSchemaStmt</>结构中，
-<structfield>remote_schema</>是导入该表的远程模式名。
-<structfield>list_type</>标识如何过滤表的名称：
-<literal>FDW_IMPORT_SCHEMA_ALL</>意味着远程模式中应该导入的所有表
-（在这种情况下，<structfield>table_list</>为空），
-<literal>FDW_IMPORT_SCHEMA_LIMIT_TO</>意味着包含<structfield>table_list</>列出的表，
-并且<literal>FDW_IMPORT_SCHEMA_EXCEPT</>意味着排除了
-<structfield>table_list</>列出的表。
-<structfield>options</>是用于导入过程的选择列表。
-该选项的含义是符合FDW。
-例如，FDW可以使用选项来定义是否要导入的列的<literal>NOT NULL</>属性。
-这些选项不需要与FDW作为数据库对象选项所支持的那些有任何关系。
+<programlisting>
+List *
+ImportForeignSchema (ImportForeignSchemaStmt *stmt, Oid serverOid);
+</programlisting>
 
+     取得一个外部表创建命令的列表。在执行<xref linkend="sql-importforeignschema">时会调用这个函数，并且会把该语句的解析树以及要使用的外部服务器的 OID 传递给它。它应该返回一个 C 字符串的列表，每一个必须包含一个<xref linkend="sql-createforeigntable">命令。这些命令将被核心服务器所解析和执行。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     FDW可能忽略<structname>ImportForeignSchemaStmt</>的
-     <structfield>local_schema</>字段，
-     因为核心服务器自动地将该名称插入到解析的<command>CREATE FOREIGN TABLE</>命令中。
+     Within the <structname>ImportForeignSchemaStmt</> struct,
+     <structfield>remote_schema</> is the name of the remote schema from
+     which tables are to be imported.
+     <structfield>list_type</> identifies how to filter table names:
+     <literal>FDW_IMPORT_SCHEMA_ALL</> means that all tables in the remote
+     schema should be imported (in this case <structfield>table_list</> is
+     empty), <literal>FDW_IMPORT_SCHEMA_LIMIT_TO</> means to include only
+     tables listed in <structfield>table_list</>,
+     and <literal>FDW_IMPORT_SCHEMA_EXCEPT</> means to exclude the tables
+     listed in <structfield>table_list</>.
+     <structfield>options</> is a list of options used for the import process.
+     The meanings of the options are up to the FDW.
+     For example, an FDW could use an option to define whether the
+     <literal>NOT NULL</> attributes of columns should be imported.
+     These options need not have anything to do with those supported by the
+     FDW as database object options.
     </para>
-
+____________________________________________________________________________-->
     <para>
-FDW不用担心自身实现由<structfield>list_type</>和<structfield>table_list</>指定的过滤，
-要么，作为核心服务器将自动为了依据这些选项排除的表而忽略任何返回的命令。
-然而，它可以有效的避免为第一个位置处的排除表创建命令的工作。
-函数<function>IsImportableForeignTable()</>可以有效的测试给定的外表名称是否会通过过滤器。 
+     在<structname>ImportForeignSchemaStmt</>结构中，<structfield>remote_schema</>是要从其中导入这些表的远程模式的名称。<structfield>list_type</>标识如何过滤表名：<literal>FDW_IMPORT_SCHEMA_ALL</>表示该远程模式中的所有表都应该被导入（这种情况下<structfield>table_list</>为空），<literal>FDW_IMPORT_SCHEMA_LIMIT_TO</>表示只包括<structfield>table_list</>中列出的表，而<literal>FDW_IMPORT_SCHEMA_EXCEPT</>则表示排除<structfield>table_list</>中列出的表。<structfield>options</>是一个用于该导入处理的选项列表。选项的含义由 FDW 决定。例如，一个 FDW 可以用一个选项来定义是否应该导入列的<literal>NOT NULL</>属性。这些选项不需要与那些 FDW 支持的数据库对象选项有什么关系。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     如果FDW不支持导入表定义，
-     那么<function>ImportForeignSchema</>指针可以设置为<literal>NULL</>。
+     The FDW may ignore the <structfield>local_schema</> field of
+     the <structname>ImportForeignSchemaStmt</>, because the core server
+     will automatically insert that name into the parsed <command>CREATE
+     FOREIGN TABLE</> commands.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     FDW 可能会忽略<structname>ImportForeignSchemaStmt</>的<structfield>local_schema</>域，因为核心服务器会自动地向解析好的<command>CREATE FOREIGN TABLE</>命令中插入本地模式的名称。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     The FDW does not have to concern itself with implementing the filtering
+     specified by <structfield>list_type</> and <structfield>table_list</>,
+     either, as the core server will automatically skip any returned commands
+     for tables excluded according to those options.  However, it's often
+     useful to avoid the work of creating commands for excluded tables in the
+     first place.  The function <function>IsImportableForeignTable()</> may be
+     useful to test whether a given foreign-table name will pass the filter.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     FDW 也不必担心实现<structfield>list_type</>以及<structfield>table_list</>所指定的过滤，因为核心服务器将自动根据那些选项跳过为被排除的表所返回的命令。不过，起初就避免为被排除的表创建命令当然更好。函数<function>IsImportableForeignTable()</>可以用来测试一个给定的外部表名是否能通过该过滤器。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the FDW does not support importing table definitions, the
+     <function>ImportForeignSchema</> pointer can be set to <literal>NULL</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果 FDW 不支持导入表定义，<function>ImportForeignSchema</>指针可以被设置为<literal>NULL</>。
+    </para>
+
+   </sect2>
+   
+   <sect2 id="fdw-callbacks-parallel">
+<!--==========================orignal english content==========================
+    <title>FDW Routines for Parallel Execution</title>
+____________________________________________________________________________-->
+    <title>并行执行的 FDW 例程</title>
+<!--==========================orignal english content==========================
+    <para>
+     A <structname>ForeignScan</> node can, optionally, support parallel
+     execution.  A parallel <structname>ForeignScan</> will be executed
+     in multiple processes and should return each row only once across
+     all cooperating processes.  To do this, processes can coordinate through
+     fixed size chunks of dynamic shared memory.  This shared memory is not
+     guaranteed to be mapped at the same address in every process, so pointers
+     may not be used.  The following callbacks are all optional in general,
+     but required if parallel execution is to be supported.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <structname>ForeignScan</>节点可以选择支持并行执行。一个并行的<structname>ForeignScan</>将在多个进程中被执行并且在相互合作的进程中每一个元组只会被返回一次。要做到这样，进程可以通过动态共享内存的固定尺寸块来协作。并不保证在每一个进程中这部份共享内存都被映射到相同的地址，因此不能使用指针。下面的回调通常都是可选的，但是如果要支持并行执行就必须提供。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+bool
+IsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
+                          RangeTblEntry *rte);
+</programlisting>
+    Test whether a scan can be performed within a parallel worker.  This
+    function will only be called when the planner believes that a parallel
+    plan might be possible, and should return true if it is safe for that scan
+    to run within a parallel worker.  This will generally not be the case if
+    the remote data source has transaction semantics, unless the worker's
+    connection to the data can somehow be made to share the same transaction
+    context as the leader.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+bool
+IsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
+                          RangeTblEntry *rte);
+</programlisting>
+    测试一个扫描是否可以在一个并行工作者中被执行。只有当规划器相信可以使用并行计划时才会调用这个函数，如果该扫描在并行工作者中可以安全运行这个函数应该返回真。如果远程数据源具有事务语义，情况通常都不是这样，除非工作者到数据的连接能够以某种方式共享与领导者相同的事务环境。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+    If this callback is not defined, it is assumed that the scan must take
+    place within the parallel leader.  Note that returning true does not mean
+    that the scan itself can be done in parallel, only that the scan can be
+    performed within a parallel worker.  Therefore, it can be useful to define
+    this method even when parallel execution is not supported.
+    </para>
+____________________________________________________________________________-->
+    <para>
+    如果没有定义这个回调，则假定该扫描必须被放置在并行领导者中。注意返回真并不意味着该扫描本身可以被并行完成，只是说明该扫描可以在一个并行工作者中执行。因此，即便当不支持并行执行时，定义这个方法也是有用的。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+Size
+EstimateDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt);
+</programlisting>
+    Estimate the amount of dynamic shared memory that will be required
+    for parallel operation.  This may be higher than the amount that will
+    actually be used, but it must not be lower.  The return value is in bytes.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+Size
+EstimateDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt);
+</programlisting>
+    估算并行操作所需的动态共享内存的数量。这可能比实际要用的数量更大，但是绝不能更小。返回值的单位是字节。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+InitializeDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt,
+                         void *coordinate);
+</programlisting>
+    Initialize the dynamic shared memory that will be required for parallel
+    operation; <literal>coordinate</> points to an amount of allocated space
+    equal to the return value of <function>EstimateDSMForeignScan</>.
+   </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+InitializeDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt,
+                         void *coordinate);
+</programlisting>
+    初始化并行操作所需的动态共享内存，<literal>coordinate</>指向已分配的空间，其容量等于<function>EstimateDSMForeignScan</>的返回值。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+<programlisting>
+void
+InitializeWorkerForeignScan(ForeignScanState *node, shm_toc *toc,
+                            void *coordinate);
+</programlisting>
+    Initialize a parallel worker's custom state based on the shared state
+    set up in the leader by <literal>InitializeDSMForeignScan</>.
+    This callback is optional, and needs only be supplied if this
+    custom path supports parallel execution.
+   </para>
+____________________________________________________________________________-->
+   <para>
+<programlisting>
+void
+InitializeWorkerForeignScan(ForeignScanState *node, shm_toc *toc,
+                            void *coordinate);
+</programlisting>
+    基于领导者中由<literal>InitializeDSMForeignScan</>设置的共享状态初始化并行工作者的自定义状态。这个回调是可选的，只有在这条自定义路径支持并行执行时才需要被提供。
+   </para>
    </sect2>
    
    </sect1>
 
    <sect1 id="fdw-helpers">
+<!--==========================orignal english content==========================
+    <title>Foreign Data Wrapper Helper Functions</title>
+____________________________________________________________________________-->
     <title>外部数据包装器助手函数</title>
 
+<!--==========================orignal english content==========================
+    <para>
+     Several helper functions are exported from the core server so that
+     authors of foreign data wrappers can get easy access to attributes of
+     FDW-related objects, such as FDW options.
+     To use any of these functions, you need to include the header file
+     <filename>foreign/foreign.h</filename> in your source file.
+     That header also defines the struct types that are returned by
+     these functions.
+    </para>
+____________________________________________________________________________-->
     <para>
      多个助手函数被从核心服务器输出，这样外部数据包装器的作者们可以很容易访问到FDW相关对象的属性，例如FDW选项。要使用任何其中一个函数，你需要在你的源文件中包括头文件<filename>foreign/foreign.h</filename>。这个头也定义了被这些函数返回的结构类型。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+ForeignDataWrapper *
+GetForeignDataWrapper(Oid fdwid);
+</programlisting>
+
+     This function returns a <structname>ForeignDataWrapper</structname>
+     object for the foreign-data wrapper with the given OID.  A
+     <structname>ForeignDataWrapper</structname> object contains properties
+     of the FDW (see <filename>foreign/foreign.h</filename> for details).
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 ForeignDataWrapper *
@@ -683,6 +2121,19 @@ GetForeignDataWrapper(Oid fdwid);
      这个函数为具有给定 OID 的外部数据包装器返回一个<structname>ForeignDataWrapper</structname>对象。一个<structname>ForeignDataWrapper</structname>对象包含该FDW的特性（详见<filename>foreign/foreign.h</filename>）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+ForeignServer *
+GetForeignServer(Oid serverid);
+</programlisting>
+
+     This function returns a <structname>ForeignServer</structname> object
+     for the foreign server with the given OID.  A
+     <structname>ForeignServer</structname> object contains properties
+     of the server (see <filename>foreign/foreign.h</filename> for details).
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 ForeignServer *
@@ -692,6 +2143,21 @@ GetForeignServer(Oid serverid);
      这个函数为一个具有给定 OID 的外部服务器返回<structname>ForeignServer</structname>对象。一个<structname>ForeignServer</structname>对象包含该服务器的特性（详见<filename>foreign/foreign.h</filename>）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+UserMapping *
+GetUserMapping(Oid userid, Oid serverid);
+</programlisting>
+
+     This function returns a <structname>UserMapping</structname> object for
+     the user mapping of the given role on the given server.  (If there is no
+     mapping for the specific user, it will return the mapping for
+     <literal>PUBLIC</>, or throw error if there is none.)  A
+     <structname>UserMapping</structname> object contains properties of the
+     user mapping (see <filename>foreign/foreign.h</filename> for details).
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 UserMapping *
@@ -701,6 +2167,19 @@ GetUserMapping(Oid userid, Oid serverid);
      这个函数为在给定服务器上的给定角色的用户映射返回<structname>UserMapping</structname>对象（如果指定用户没有映射，它将返回<literal>PUBLIC</>的映射，如果也没有则抛出错误）。一个<structname>UserMapping</structname>对象包含该用户映射的特性（详见<filename>foreign/foreign.h</filename>）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+ForeignTable *
+GetForeignTable(Oid relid);
+</programlisting>
+
+     This function returns a <structname>ForeignTable</structname> object for
+     the foreign table with the given OID.  A
+     <structname>ForeignTable</structname> object contains properties of the
+     foreign table (see <filename>foreign/foreign.h</filename> for details).
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 ForeignTable *
@@ -710,6 +2189,19 @@ GetForeignTable(Oid relid);
      该函数为一个具有给定 OID 的外部表返回<structname>ForeignTable</structname>对象。一个<structname>ForeignTable</structname>对象包含该外部表的特性（详见<filename>foreign/foreign.h</filename>）。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+List *
+GetForeignColumnOptions(Oid relid, AttrNumber attnum);
+</programlisting>
+
+     This function returns the per-column FDW options for the column with the
+     given foreign table OID and attribute number, in the form of a list of
+     <structname>DefElem</structname>.  NIL is returned if the column has no
+     options.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 List *
@@ -719,10 +2211,29 @@ GetForeignColumnOptions(Oid relid, AttrNumber attnum);
      这个函数为一个具有给定外部表 OID 和属性号的列返回针对每一列的FDW选项，形式为一个<structname>DefElem</structname>列表。如果该列没有选项则返回 NIL。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     Some object types have name-based lookup functions in addition to the
+     OID-based ones:
+    </para>
+____________________________________________________________________________-->
     <para>
      某些对象类型除了基于OID的查找函数之外，还具有基于名称的查找函数：
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+ForeignDataWrapper *
+GetForeignDataWrapperByName(const char *name, bool missing_ok);
+</programlisting>
+
+     This function returns a <structname>ForeignDataWrapper</structname>
+     object for the foreign-data wrapper with the given name.  If the wrapper
+     is not found, return NULL if missing_ok is true, otherwise raise an
+     error.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 ForeignDataWrapper *
@@ -732,6 +2243,18 @@ GetForeignDataWrapperByName(const char *name, bool missing_ok);
      这个函数为一个具有给定名称的外部数据包装器返回<structname>ForeignDataWrapper</structname>对象。如果包装器没有找到，在missing_ok为真时返回 NULL，否则抛出一个错误。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+ForeignServer *
+GetForeignServerByName(const char *name, bool missing_ok);
+</programlisting>
+
+     This function returns a <structname>ForeignServer</structname> object
+     for the foreign server with the given name.  If the server is not found,
+     return NULL if missing_ok is true, otherwise raise an error.
+    </para>
+____________________________________________________________________________-->
     <para>
 <programlisting>
 ForeignServer *
@@ -744,175 +2267,467 @@ GetForeignServerByName(const char *name, bool missing_ok);
    </sect1>
 
    <sect1 id="fdw-planning">
+<!--==========================orignal english content==========================
+    <title>Foreign Data Wrapper Query Planning</title>
+____________________________________________________________________________-->
     <title>外部数据包装器查询规划</title>
 
+<!--==========================orignal english content==========================
     <para>
-     FDW回调函数<function>GetForeignRelSize</>，<function>GetForeignPaths</>，<function>GetForeignPlan</>，
-     <function>PlanForeignModify</>以及<function>GetForeignJoinPaths</>必须适合<productname>PostgreSQL</>规划器的工作。
-     这里有一些关于它们必须做什么的注记。
+     The FDW callback functions <function>GetForeignRelSize</>,
+     <function>GetForeignPaths</>, <function>GetForeignPlan</>,
+     <function>PlanForeignModify</>, <function>GetForeignJoinPaths</>,
+     <function>GetForeignUpperPaths</>, and <function>PlanDirectModify</>
+     must fit into the workings of the <productname>PostgreSQL</> planner.
+     Here are some notes about what they must do.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     FDW回调函数<function>GetForeignRelSize</>、<function>GetForeignPaths</>、<function>GetForeignPlan</>、<function>PlanForeignModify</>、<function>GetForeignJoinPaths</>、<function>GetForeignUpperPaths</>以及<function>PlanDirectModify</>必须适合<productname>PostgreSQL</>规划器的工作。这里有一些关于它们必须做什么的注记。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     <literal>root</>和<literal>baserel</>中的信息可以被用来减少必须从外部表获得的信息量（并且因此降低代价）。<literal>baserel-&gt;baserestrictinfo</>是特别有趣的，因为它包含限制条件（<literal>WHERE</>）子句，它应该被用来过滤要被获取的行（FDW本身并不要求强制这些条件，因为核心执行器可以检查它们）。<literal>baserel-&gt;reltargetlist</>可以被用来决定哪些类需要被获取；但是注意它仅列出了<structname>ForeignScan</>计划节点所发出的列，不包含在条件计算中使用但并不被查询输出的列。
+     The information in <literal>root</> and <literal>baserel</> can be used
+     to reduce the amount of information that has to be fetched from the
+     foreign table (and therefore reduce the cost).
+     <literal>baserel-&gt;baserestrictinfo</> is particularly interesting, as
+     it contains restriction quals (<literal>WHERE</> clauses) that should be
+     used to filter the rows to be fetched.  (The FDW itself is not required
+     to enforce these quals, as the core executor can check them instead.)
+     <literal>baserel-&gt;reltarget-&gt;exprs</> can be used to determine which
+     columns need to be fetched; but note that it only lists columns that
+     have to be emitted by the <structname>ForeignScan</> plan node, not
+     columns that are used in qual evaluation but not output by the query.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <literal>root</>和<literal>baserel</>中的信息可以被用来减少必须从外部表获得的信息量（并且因此降低代价）。<literal>baserel-&gt;baserestrictinfo</>是特别有趣的，因为它包含限制条件（<literal>WHERE</>）子句，它应该被用来过滤要被获取的行（FDW本身并不要求强制这些条件，因为核心执行器可以检查它们）。<literal>baserel-&gt;reltarget-&gt;exprs</>可以被用来决定哪些类需要被获取；但是注意它仅列出了<structname>ForeignScan</>计划节点所发出的列，不包含在条件计算中使用但并不被查询输出的列。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     Various private fields are available for the FDW planning functions to
+     keep information in.  Generally, whatever you store in FDW private fields
+     should be palloc'd, so that it will be reclaimed at the end of planning.
+    </para>
+____________________________________________________________________________-->
     <para>
      有多个私有域可以给FDW规划函数来保存信息。通常，不管你存储什么在FDW私有域中，它们都应该被palloc，这样它会在规划结束时被回收。    </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     <literal>baserel-&gt;fdw_private</> is a <type>void</> pointer that is
+     available for FDW planning functions to store information relevant to
+     the particular foreign table.  The core planner does not touch it except
+     to initialize it to NULL when the <literal>RelOptInfo</> node is created.
+     It is useful for passing information forward from
+     <function>GetForeignRelSize</> to <function>GetForeignPaths</> and/or
+     <function>GetForeignPaths</> to <function>GetForeignPlan</>, thereby
+     avoiding recalculation.
+    </para>
+____________________________________________________________________________-->
     <para>
      <literal>baserel-&gt;fdw_private</>是一个<type>void</>指针，它可以被FDW规划函数用来存储与特定外部表相关的信息。核心规划器不会碰它除非当<literal>RelOptInfo</>节点被创建时把它初始化为NULL。它对从<function>GetForeignRelSize</>传递信息给<function>GetForeignPaths</>和/或从<function>GetForeignPaths</>传递信息给<function>GetForeignPlan</>非常有用，这样避免了重新计算。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     <function>GetForeignPaths</> can identify the meaning of different
+     access paths by storing private information in the
+     <structfield>fdw_private</> field of <structname>ForeignPath</> nodes.
+     <structfield>fdw_private</> is declared as a <type>List</> pointer, but
+     could actually contain anything since the core planner does not touch
+     it.  However, best practice is to use a representation that's dumpable
+     by <function>nodeToString</>, for use with debugging support available
+     in the backend.
+    </para>
+____________________________________________________________________________-->
     <para>
      <function>GetForeignPaths</>可以通过在<structname>ForeignPath</>节点的<structfield>fdw_private</>域中存储私有信息来标识不同的访问路径。<structfield>fdw_private</>被声明为一个<type>List</>指针，但是可能实际上包含任何东西，因为规划器不会触碰它。但是，最好是使用一种<function>nodeToString</>可导出的形式，这样在后端可以用于调试支持。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     <function>GetForeignPlan</> can examine the <structfield>fdw_private</>
+     field of the selected <structname>ForeignPath</> node, and can generate
+     <structfield>fdw_exprs</> and <structfield>fdw_private</> lists to be
+     placed in the <structname>ForeignScan</> plan node, where they will be
+     available at execution time.  Both of these lists must be
+     represented in a form that <function>copyObject</> knows how to copy.
+     The <structfield>fdw_private</> list has no other restrictions and is
+     not interpreted by the core backend in any way.  The
+     <structfield>fdw_exprs</> list, if not NIL, is expected to contain
+     expression trees that are intended to be executed at run time.  These
+     trees will undergo post-processing by the planner to make them fully
+     executable.
+    </para>
+____________________________________________________________________________-->
     <para>
      <function>GetForeignPlan</>可以检查选中的<structname>ForeignPath</>节点的<structfield>fdw_private</>域，并且可以生成被放置于<structname>ForeignPath</>计划节点中的<structfield>fdw_exprs</>和<structfield>fdw_private</>列表。这两个列表必须被表示为一种<function>copyObject</>可复制的形式。<structfield>fdw_private</>列表没有任何其他限制并且不会被核心后端以任何形式解释。非 NIL 的<structfield>fdw_exprs</>应该包含表达式树，该树会在运行时被执行。这些树将由规划器在后期处理，以便让它们变成完全可执行的。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     In <function>GetForeignPlan</>, generally the passed-in target list can
+     be copied into the plan node as-is.  The passed <literal>scan_clauses</> list
+     contains the same clauses as <literal>baserel-&gt;baserestrictinfo</>,
+     but may be re-ordered for better execution efficiency.  In simple cases
+     the FDW can just strip <structname>RestrictInfo</> nodes from the
+     <literal>scan_clauses</> list (using <function>extract_actual_clauses</>) and put
+     all the clauses into the plan node's qual list, which means that all the
+     clauses will be checked by the executor at run time.  More complex FDWs
+     may be able to check some of the clauses internally, in which case those
+     clauses can be removed from the plan node's qual list so that the
+     executor doesn't waste time rechecking them.
+    </para>
+____________________________________________________________________________-->
     <para>
      在<function>GetForeignPlan</>中，通常被传入的目标列表可以被照样复制到计划节点中。被传入的<literal>scan_clauses</> 列表包含和<literal>baserel-&gt;baserestrictinfo</>相同的子句，但是可能为了更好的执行效率会被重新排序。在简单情况下，FDW可以只把<structname>RestrictInfo</>节点从<literal>scan_clauses</> 列表剥离（使用<function>extract_actual_clauses</>）并且把所有子句放到计划节点的条件列表中，这意味着所有子句将在运行时由执行器检查。更复杂的FDW可能可以在内部检查某些子句，着这种情况下哪些子句可以从计划节点的条件列表中删除，这样执行器就不用浪费时间去检查它们。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+     As an example, the FDW might identify some restriction clauses of the
+     form <replaceable>foreign_variable</> <literal>=</>
+     <replaceable>sub_expression</>, which it determines can be executed on
+     the remote server given the locally-evaluated value of the
+     <replaceable>sub_expression</>.  The actual identification of such a
+     clause should happen during <function>GetForeignPaths</>, since it would
+     affect the cost estimate for the path.  The path's
+     <structfield>fdw_private</> field would probably include a pointer to
+     the identified clause's <structname>RestrictInfo</> node.  Then
+     <function>GetForeignPlan</> would remove that clause from <literal>scan_clauses</>,
+     but add the <replaceable>sub_expression</> to <structfield>fdw_exprs</>
+     to ensure that it gets massaged into executable form.  It would probably
+     also put control information into the plan node's
+     <structfield>fdw_private</> field to tell the execution functions what
+     to do at run time.  The query transmitted to the remote server would
+     involve something like <literal>WHERE <replaceable>foreign_variable</> =
+     $1</literal>, with the parameter value obtained at run time from
+     evaluation of the <structfield>fdw_exprs</> expression tree.
+    </para>
+____________________________________________________________________________-->
     <para>
      作为一个例子，FDW可以标识某些<replaceable>foreign_variable</> <literal>=</>
      <replaceable>sub_expression</>形式的限制子句，它决定哪些可以使用由<replaceable>sub_expression</>给出的本地计算值在远程服务器上被执行。这样一个子句的实际标识应该在<function>GetForeignPaths</>期间发生，因为它可能会影响路径的代价估计。路径的<structfield>fdw_private</>域可能包括一个已标识的子句的<structname>RestrictInfo</>节点。然后<function>GetForeignPlan</>将从<literal>scan_clauses</> 中移除该子句，但是将<replaceable>sub_expression</>加到<structfield>fdw_exprs</>来保证它被揉成可执行的形式。它可能还将把控制信息放入到计划节点的<structfield>fdw_private</>域来告诉执行函数在运行时要做什么。传递给远程服务器的查询将涉及类似<literal>WHERE <replaceable>foreign_variable</> = $1</literal>的东西，使用在运行时从<structfield>fdw_exprs</>表达式树获得的参数值。
     </para>
-
-    <para>
-     从计划节点的质量列表中删除的任何子句
-     相反必须添加到<literal>fdw_recheck_quals</>中，
-     为了确保<literal>读取已提交</>隔离级别中正确的操作<literal>RecheckForeignScan</>重新检查。
-     在查询中涉及的一些其它表中发生并行更新的时候，
-     执行器可能需要验证所有最初的质量还是满足元组的，
-     可能是针对一组不同的参数值。
-     使用<literal>fdw_recheck_quals</>通常比在<literal>RecheckForeignScan</>中实现检查更容易，
-     当外部链接下推的时候，这种方法不充分。因为链接元组在这种情况下可能有一些字段为空而不会完全拒绝元组。
-    </para>
-
-    <para>
-     另一个通过FDW填充的<structname>ForeignScan</>字段是<structfield>fdw_scan_tlist</>，
-它描述了为计划节点通过FDW返回的元组。
-对于简单的外表扫描，可以设置为<literal>NIL</>，
-意味着返回的元组有用于外表的行类型声明。
-非<symbol>NIL</symbol>值必须是包含变量的目标列表
-（<structname>TargetEntry</>列）和/或表示返回列的表达式。 
-可能会使用，比如，显示了FDW已经忽略的不再需要查询的一些列。
-另外，如果FDW可以计算使用查询的表达式比在本地执行更便宜，
-它可以添加这些表达式到<structfield>fdw_scan_tlist</>。
-注意，链接计划（由<function>GetForeignJoinPaths</>创建路径）
-必须供给<structfield>fdw_scan_tlist</>用来描述它们返回的列集合。
-    </para>
     
+<!--==========================orignal english content==========================
+    <para>
+     Any clauses removed from the plan node's qual list must instead be added
+     to <literal>fdw_recheck_quals</> or rechecked by
+     <literal>RecheckForeignScan</> in order to ensure correct behavior
+     at the <literal>READ COMMITTED</> isolation level.  When a concurrent
+     update occurs for some other table involved in the query, the executor
+     may need to verify that all of the original quals are still satisfied for
+     the tuple, possibly against a different set of parameter values.  Using
+     <literal>fdw_recheck_quals</> is typically easier than implementing checks
+     inside <literal>RecheckForeignScan</>, but this method will be
+     insufficient when outer joins have been pushed down, since the join tuples
+     in that case might have some fields go to NULL without rejecting the
+     tuple entirely.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     任何从该计划节点的条件列表移除的子句必须被加入到<literal>fdw_recheck_quals</>或者由<literal>RecheckForeignScan</>重新检查以便确保在<literal>READ COMMITTED</>隔离级别的正确行为。当查询中涉及的某个其他表上发生并发更新时，执行器可能需要验证原来的所有条件仍然对该元组满足（可能用一组不同的参数值）。使用<literal>fdw_recheck_quals</>通常比在<literal>RecheckForeignScan</>中实现检查要更容易，但是这种方法不足以应付外连接被下推的情况，因为那种情况下的连接元组可能会有一些域具有 NULL 但是不会导致整个元组被拒绝。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Another <structname>ForeignScan</> field that can be filled by FDWs
+     is <structfield>fdw_scan_tlist</>, which describes the tuples returned by
+     the FDW for this plan node.  For simple foreign table scans this can be
+     set to <literal>NIL</>, implying that the returned tuples have the
+     row type declared for the foreign table.  A non-<symbol>NIL</symbol> value must be a
+     target list (list of <structname>TargetEntry</>s) containing Vars and/or
+     expressions representing the returned columns.  This might be used, for
+     example, to show that the FDW has omitted some columns that it noticed
+     won't be needed for the query.  Also, if the FDW can compute expressions
+     used by the query more cheaply than can be done locally, it could add
+     those expressions to <structfield>fdw_scan_tlist</>.  Note that join
+     plans (created from paths made by <function>GetForeignJoinPaths</>) must
+     always supply <structfield>fdw_scan_tlist</> to describe the set of
+     columns they will return.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     另一个可以由 FDW 填充的<structname>ForeignScan</>域是<structfield>fdw_scan_tlist</>，它描述 FDW 为这个计划节点返回的元组。对于简单的外部表扫描这可以设置为<literal>NIL</>，表示返回的元组具有为外部表声明的行类型。非-<symbol>NIL</symbol>值必须是一个包含表示返回列的 Var 或表达式的目标列表（<structname>TargetEntry</>的列表）。例如，这可以被用来显示 FDW 省略了某些查询不需要的列。还有，如果 FDW 计算表达式比在本地计算代价更低，可以把那些表达式加入到<structfield>fdw_scan_tlist</>。注意连接计划（从<function>GetForeignJoinPaths</>创建的路径得到）必须总是提供<structfield>fdw_scan_tlist</>来描述它们将返回的列集合。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The FDW should always construct at least one path that depends only on
+     the table's restriction clauses.  In join queries, it might also choose
+     to construct path(s) that depend on join clauses, for example
+     <replaceable>foreign_variable</> <literal>=</>
+     <replaceable>local_variable</>.  Such clauses will not be found in
+     <literal>baserel-&gt;baserestrictinfo</> but must be sought in the
+     relation's join lists.  A path using such a clause is called a
+     <quote>parameterized path</>.  It must identify the other relations
+     used in the selected join clause(s) with a suitable value of
+     <literal>param_info</>; use <function>get_baserel_parampathinfo</>
+     to compute that value.  In <function>GetForeignPlan</>, the
+     <replaceable>local_variable</> portion of the join clause would be added
+     to <structfield>fdw_exprs</>, and then at run time the case works the
+     same as for an ordinary restriction clause.
+    </para>
+____________________________________________________________________________-->
     <para>
      FDW应该总是只依靠表的限制子句构建至少一个路径。在连接查询中，它可能还会选择依靠连接子句构建路径，例如<replaceable>foreign_variable</> <literal>=</> <replaceable>local_variable</>。这样的子句将不会在<literal>baserel-&gt;baserestrictinfo</>中找到，但是必须出现在关系的连接列表中。使用这样一个子句的路径被称为一个<quote>参数化路径</>。它必须用一个合适的<literal>param_info</>值来标识其他被使用在选中的连接子句中的关系；使用<function>get_baserel_parampathinfo</>来计算该值。在<function>GetForeignPlan</>中，连接子句的<replaceable>local_variable</>部分将被加到<structfield>fdw_exprs</>中，并且接着在运行时和一个普通限制子句一样工作。
     </para>
+    
+<!--==========================orignal english content==========================
+    <para>
+     If an FDW supports remote joins, <function>GetForeignJoinPaths</> should
+     produce <structname>ForeignPath</>s for potential remote joins in much
+     the same way as <function>GetForeignPaths</> works for base tables.
+     Information about the intended join can be passed forward
+     to <function>GetForeignPlan</> in the same ways described above.
+     However, <structfield>baserestrictinfo</> is not relevant for join
+     relations; instead, the relevant join clauses for a particular join are
+     passed to <function>GetForeignJoinPaths</> as a separate parameter
+     (<literal>extra-&gt;restrictlist</>).
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果一个 FDW 支持远程连接，<function>GetForeignJoinPaths</>应该和<function>GetForeignPaths</>对基本表所作的那样为潜在的远程连接产生<structname>ForeignPath</>。有关想要进行的连接的信息可以以上述相同的方式传递给<function>GetForeignPlan</>。不过，<structfield>baserestrictinfo</>与连接关系无关，一个特定连接的相关连接子句将被作为一个独立的参数（<literal>extra-&gt;restrictlist</>）被传递给<function>GetForeignJoinPaths</>。
+    </para>
+    
+<!--==========================orignal english content==========================
+    <para>
+     An FDW might additionally support direct execution of some plan actions
+     that are above the level of scans and joins, such as grouping or
+     aggregation.  To offer such options, the FDW should generate paths and
+     insert them into the appropriate <firstterm>upper relation</>.  For
+     example, a path representing remote aggregation should be inserted into
+     the <literal>UPPERREL_GROUP_AGG</> relation, using <function>add_path</>.
+     This path will be compared on a cost basis with local aggregation
+     performed by reading a simple scan path for the foreign relation (note
+     that such a path must also be supplied, else there will be an error at
+     plan time).  If the remote-aggregation path wins, which it usually would,
+     it will be converted into a plan in the usual way, by
+     calling <function>GetForeignPlan</>.  The recommended place to generate
+     such paths is in the <function>GetForeignUpperPaths</>
+     callback function, which is called for each upper relation (i.e., each
+     post-scan/join processing step), if all the base relations of the query
+     come from the same FDW.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     FDW 可能会额外地支持直接执行某些在扫描和连接层次之上的计划动作，例如分组或者聚集。为了提供这类选项，FDW 应该生成路径并且把它们插入到合适的<firstterm>上层关系中</>。例如，一条表示远程聚集的路径应该被使用<function>add_path</>插入到<literal>UPPERREL_GROUP_AGG</>关系中。这条路径的代价将会与通过读取外部关系的简单扫描路径的本地聚集（注意这样一条路径也必须被提供，否则规划时会有错误）进行比较。如果远程聚集路径胜出（通常是这样），它会被以通常的方式（调用<function>GetForeignPlan</>）转化成计划。如果该查询的所有基本关系都来自于同一个 FDW，推荐在<function>GetForeignUpperPaths</>回调函数中生成这种路径，该函数会为每一个上层关系被调用（即每一次扫描/连接后处理步骤）。
+    </para>
 
-     <para>
-     如果FDW支持远程连接，<function>GetForeignJoinPaths</>
-     为潜在的远程连接生成<structname>ForeignPath</>与作为基表的<function>GetForeignPaths</>一样。
-     有关预期连接的信息以上述相同的方式传递给<function>GetForeignPlan</>。
-     然而，<structfield>baserestrictinfo</>是不相关的连接关系；
-     相反，一个特定连接的相关连接子句作为单独的参数(<literal>extra-&gt;restrictlist</>)
-     传递给函数<function>GetForeignJoinPaths</>。
-    </para>
-    
+<!--==========================orignal english content==========================
     <para>
-     在规划一个<command>UPDATE</>或<command>DELETE</>时，<function>PlanForeignModify</>能为外部表查找<structname>RelOptInfo</>结构，并利用之前由扫描规划函数创建的<literal>baserel-&gt;fdw_private</>数据。但是，在<command>INSERT</>中目标表不会被扫描，因此不会有它的<structname>RelOptInfo</>。由<function>PlanForeignModify</>返回的<structname>List</>具有和<structname>ForeignScan</>计划节点的<structfield>fdw_private</>列表相同的限制，即它必须只包含<function>copyObject</>知道怎么拷贝的结构。
+     <function>PlanForeignModify</> and the other callbacks described in
+     <xref linkend="fdw-callbacks-update"> are designed around the assumption
+     that the foreign relation will be scanned in the usual way and then
+     individual row updates will be driven by a local <literal>ModifyTable</>
+     plan node.  This approach is necessary for the general case where an
+     update requires reading local tables as well as foreign tables.
+     However, if the operation could be executed entirely by the foreign
+     server, the FDW could generate a path representing that and insert it
+     into the <literal>UPPERREL_FINAL</> upper relation, where it would
+     compete against the <literal>ModifyTable</> approach.  This approach
+     could also be used to implement remote <literal>SELECT FOR UPDATE</>,
+     rather than using the row locking callbacks described in
+     <xref linkend="fdw-callbacks-row-locking">.  Keep in mind that a path
+     inserted into <literal>UPPERREL_FINAL</> is responsible for
+     implementing <emphasis>all</> behavior of the query.
     </para>
- 
-    
+____________________________________________________________________________-->
     <para>
-     带有<literal>ON CONFLICT</>的<command>INSERT</>子句不支持声明冲突目标，
-     作为唯一的约束或远程表上的排除约束不是本地已知的。
-     这反过来意味着不支持<literal>ON CONFLICT DO UPDATE</>，
-     因为该规范是强制性的。  
+     <xref linkend="fdw-callbacks-update">中描述的<function>PlanForeignModify</>以及其他回调的设计是建立在这样一个假设之上：外部表将以通常的方式被扫描并且行更新将被一个本地<literal>ModifyTable</>计划节点所驱动。这种方法对于更新需要读取本地表以及外部表的一般情况下是必要的。不过，如果操作可以完全由外部服务器执行，FDW 可以产生一个表示这种操作的计划并且把它插入到<literal>UPPERREL_FINAL</>上层关系中，在其中它会与<literal>ModifyTable</>方法竞争。这种方法还可以被用来实现远程<literal>SELECT FOR UPDATE</>，而不使用<xref linkend="fdw-callbacks-row-locking">中描述的行锁定回调。记住插入到<literal>UPPERREL_FINAL</>中的路径负责实现查询的<emphasis>所有</>行为。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     When planning an <command>UPDATE</> or <command>DELETE</>,
+     <function>PlanForeignModify</> and <function>PlanDirectModify</>
+     can look up the <structname>RelOptInfo</>
+     struct for the foreign table and make use of the
+     <literal>baserel-&gt;fdw_private</> data previously created by the
+     scan-planning functions.  However, in <command>INSERT</> the target
+     table is not scanned so there is no <structname>RelOptInfo</> for it.
+     The <structname>List</> returned by <function>PlanForeignModify</> has
+     the same restrictions as the <structfield>fdw_private</> list of a
+     <structname>ForeignScan</> plan node, that is it must contain only
+     structures that <function>copyObject</> knows how to copy.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在规划一个<command>UPDATE</>或<command>DELETE</>时，<function>PlanForeignModify</>和<function>PlanDirectModify</>能为外部表查找<structname>RelOptInfo</>结构，并利用之前由扫描规划函数创建的<literal>baserel-&gt;fdw_private</>数据。但是，在<command>INSERT</>中目标表不会被扫描，因此不会有它的<structname>RelOptInfo</>。由<function>PlanForeignModify</>返回的<structname>List</>具有和<structname>ForeignScan</>计划节点的<structfield>fdw_private</>列表相同的限制，即它必须只包含<function>copyObject</>知道怎么拷贝的结构。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     <command>INSERT</> with an <literal>ON CONFLICT</> clause does not
+     support specifying the conflict target, as unique constraints or
+     exclusion constraints on remote tables are not locally known. This
+     in turn implies that <literal>ON CONFLICT DO UPDATE</> is not supported,
+     since the specification is mandatory there.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     带有一个<literal>ON CONFLICT</>子句的<command>INSERT</>不支持指定冲突目标，因为本地不知道远程表上的唯一约束和排除约束的情况。然后这也意味着<literal>ON CONFLICT DO UPDATE</>不被支持，因为该说明是强制性的。
     </para>
 
    </sect1>
 
    <sect1 id="fdw-row-locking">
-    <title>外部数据封装器中的行锁定</title>
+<!--==========================orignal english content==========================
+    <title>Row Locking in Foreign Data Wrappers</title>
+____________________________________________________________________________-->
+    <title>外部数据包装器中的行锁定</title>
 
+<!--==========================orignal english content==========================
     <para>
-     如果FDW的底层存储机制具有锁定独立行的概念用来防止这些行的并发更新，
-     FDW执行行级锁尽可能近似实际在普通<productname>PostgreSQL</>表的语义是值得的。
-     有涉及这个的多方面考虑。
+     If an FDW's underlying storage mechanism has a concept of locking
+     individual rows to prevent concurrent updates of those rows, it is
+     usually worthwhile for the FDW to perform row-level locking with as
+     close an approximation as practical to the semantics used in
+     ordinary <productname>PostgreSQL</> tables.  There are multiple
+     considerations involved in this.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果一个 FDW 的底层存储机制具有锁定行的概念来阻止对行的并发更新，通常值得 FDW 去执行行级锁定以尽可能接近在普通<productname>PostgreSQL</>表中所实际使用的语义。涉及这个问题有多种考虑。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-    关键决定是是否执行<firstterm>早期锁定</>或者<firstterm>后期锁定</>。
-    早期锁定中，当开始从底层存储中检索的时候，行是被锁定的，而在后期锁定中，
-    当它是已知的需要被锁定的时候，该行才被锁定。
-    （产生差异，因为局部检查限制或连接条件某些行可能会被丢弃。）
-     早期锁定更简单，并且避免了到远程存储的额外往返，
-     但它可以导致不需要被锁定的行锁定，从而减少了并发甚至意外死锁。
-     此外，如果要锁定的行可以后期被唯一地重新确定，那么后期锁定是唯一可能。
-     优选行标识符标识行的特定版本，正如<productname>PostgreSQL</> TID一样。 
+     One key decision to be made is whether to perform <firstterm>early
+     locking</> or <firstterm>late locking</>.  In early locking, a row is
+     locked when it is first retrieved from the underlying store, while in
+     late locking, the row is locked only when it is known that it needs to
+     be locked.  (The difference arises because some rows may be discarded by
+     locally-checked restriction or join conditions.)  Early locking is much
+     simpler and avoids extra round trips to a remote store, but it can cause
+     locking of rows that need not have been locked, resulting in reduced
+     concurrency or even unexpected deadlocks.  Also, late locking is only
+     possible if the row to be locked can be uniquely re-identified later.
+     Preferably the row identifier should identify a specific version of the
+     row, as <productname>PostgreSQL</> TIDs do.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     要做出的一个关键决定是执行<firstterm>早期锁定</>还是<firstterm>晚期锁定</>。在早期锁定中，当一行被第一次从底层存储中检索到时，它会被锁定；而在晚期锁定中，只有当行需要被锁定时才锁定它（由于某些行可能被本地检查的限制或者连接条件抛弃，所以会出现不同）。早期锁定更加简单并且能避免额外地与远程存储交互，但是可能会导致一些不需要锁定的行也被锁定，最终造成并发性下降甚至意外的死锁。还有，只有在要被锁定的行可以在后期唯一地重新标识时才可以用晚期锁定。较好的行标识符应该能标识行的特定版本，就像<productname>PostgreSQL</> TID 那样。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     默认情况下，当连接到FDW的时候，<productname>PostgreSQL</>忽略锁定因素，
-     但FDW可提早进行锁定而无核心代码的任何明确支持。
-     <xref linkend="fdw-callbacks-row-locking">中描述的API函数，
-     被添加到<productname>PostgreSQL</> 9.5中，如果愿意允许FDW使用原来的锁定。
+     By default, <productname>PostgreSQL</> ignores locking considerations
+     when interfacing to FDWs, but an FDW can perform early locking without
+     any explicit support from the core code.  The API functions described
+     in <xref linkend="fdw-callbacks-row-locking">, which were added
+     in <productname>PostgreSQL</> 9.5, allow an FDW to use late locking if
+     it wishes.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     默认情况下，<productname>PostgreSQL</>在与 FDW 交互时会忽略锁定考虑，但是 FDW 可以在没有核心代码显式支持的情况下执行早期锁定。<xref linkend="fdw-callbacks-row-locking">中描述的 API 函数（在<productname>PostgreSQL</> 9.5 中加入）允许 FDW 按照意愿使用晚期锁定。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     另一个考虑是在<literal>READ COMMITTED</>隔离模式中，
-     <productname>PostgreSQL</>可能需要重新检查一些目标元组更新版本的限制和链接条件。
-     当执行标准<productname>PostgreSQL</>表时，
-     重新检查链接条件需要重新获取之前加入到目标元组的非目标行的副本。
-     通过包含连接列表中非目标表的TID来执行，
-     当需要时，然后重新获取非目标行。
-     这种方法保持连接数据集的紧凑，但它需要廉价的重新获取能力，
-     以及可以唯一标识被重新取出的行版本的TID。
-     默认情况下，因此，使用外部表的方法是包括通过链接列表中的外部表抓取的整行的副本。
-     这对FDW并没有特别的要求，但导致合并以及哈希连接的性能降低。
-     能够满足重新提取需求的FDW可以选择第一种方式执行它。
+     An additional consideration is that in <literal>READ COMMITTED</>
+     isolation mode, <productname>PostgreSQL</> may need to re-check
+     restriction and join conditions against an updated version of some
+     target tuple.  Rechecking join conditions requires re-obtaining copies
+     of the non-target rows that were previously joined to the target tuple.
+     When working with standard <productname>PostgreSQL</> tables, this is
+     done by including the TIDs of the non-target tables in the column list
+     projected through the join, and then re-fetching non-target rows when
+     required.  This approach keeps the join data set compact, but it
+     requires inexpensive re-fetch capability, as well as a TID that can
+     uniquely identify the row version to be re-fetched.  By default,
+     therefore, the approach used with foreign tables is to include a copy of
+     the entire row fetched from a foreign table in the column list projected
+     through the join.  This puts no special demands on the FDW but can
+     result in reduced performance of merge and hash joins.  An FDW that is
+     capable of meeting the re-fetch requirements can choose to do it the
+     first way.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     一个额外的考虑是在<literal>READ COMMITTED</>隔离模式中，<productname>PostgreSQL</>可能需要对某个目标元组的更新版本进行限制以及连接条件的重新检查。重新检查连接条件要求重新获得之前连接成目标元组的非目标行拷贝。在标准<productname>PostgreSQL</>表的情况下，这可以通过在连接投影出的列列表中包括非目标表的 TID 并且在需要时重新取得非目标行来做到。这种方法可以让连接数据集保持紧凑，但是它要求代价较低的重新取得元组的功能，还有 TID 要能够唯一地标识要被重新取得的行版本。因此，默认情况下用于外部表的方法是将整个外部表元组的拷贝包括在从连接投影出的列列表中。这不会对 FDW 有特殊的要求，但是会导致归并和哈希连接性能下降。要满足重新取得元组需求的 FDW 可以选择第一种方式。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     对于外表上<command>UPDATE</>或者<command>DELETE</>，
-     推荐目标表上的<literal>ForeignScan</>操作在抓取的行上执行早期锁定，
-     可能相当于<command>SELECT FOR UPDATE</>。
-     FDW可以在计划时间内通过比较relid到<literal>root-&gt;parse-&gt;resultRelation</>
-     或者在执行时间通过使用<function>ExecRelationIsTargetRelation()</>检测
-     表是否是<command>UPDATE</>/<command>DELETE</>目标。
-     另一种可能性是在<function>ExecForeignUpdate</>或者<function>ExecForeignDelete</>回调中
-     执行后期锁定，但没有这个特别的支持。
+     For an <command>UPDATE</> or <command>DELETE</> on a foreign table, it
+     is recommended that the <literal>ForeignScan</> operation on the target
+     table perform early locking on the rows that it fetches, perhaps via the
+     equivalent of <command>SELECT FOR UPDATE</>.  An FDW can detect whether
+     a table is an <command>UPDATE</>/<command>DELETE</> target at plan time
+     by comparing its relid to <literal>root-&gt;parse-&gt;resultRelation</>,
+     or at execution time by using <function>ExecRelationIsTargetRelation()</>.
+     An alternative possibility is to perform late locking within the
+     <function>ExecForeignUpdate</> or <function>ExecForeignDelete</>
+     callback, but no special support is provided for this.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     对于在外部表上的<command>UPDATE</>或者<command>DELETE</>，推荐目标表上的<literal>ForeignScan</>操作在它取得的行上执行早期锁定（可能通过<command>SELECT FOR UPDATE</>的等效体）。通过在规划时比较一个表的 relid 和<literal>root-&gt;parse-&gt;resultRelation</>或在执行时使用<function>ExecRelationIsTargetRelation()</>，一个 FDW 可以检测该表是否为<command>UPDATE</>/<command>DELETE</>的目标。另一种可能性是在<function>ExecForeignUpdate</>或者<function>ExecForeignDelete</>回调中执行晚期锁定，但是对此没有特别的支持。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     指定外部表通过<command>SELECT FOR UPDATE/SHARE</>命令锁定，
-     <literal>ForeignScan</>操作可以通过抓取使用等效<command>SELECT FOR UPDATE/SHARE</>元组执行早期锁定。
-     相反执行后期锁定，提供<xref linkend="fdw-callbacks-row-locking">里面定义的回调函数。
-     在<function>GetForeignRowMarkType</>中，
-     选择rowmark选项<literal>ROW_MARK_EXCLUSIVE</>，<literal>ROW_MARK_NOKEYEXCLUSIVE</>，
-     <literal>ROW_MARK_SHARE</>或者<literal>ROW_MARK_KEYSHARE</>依赖于请求锁强度。
-     （核心代码将采取相同操作，不论你选择四个选项中的哪一个。）
-     在其他地方，您可以检测是否指定外表被该类型命令锁定，
-     通过计划时间使用<function>get_plan_rowmark</>或者执行时间使用<function>ExecFindRowMark</>；
-     你不仅仅检查返回的是否非空rowmark结构，但<structfield>strength</>字段为非<literal>LCS_NONE</>。 
+     For foreign tables that are specified to be locked by a <command>SELECT
+     FOR UPDATE/SHARE</> command, the <literal>ForeignScan</> operation can
+     again perform early locking by fetching tuples with the equivalent
+     of <command>SELECT FOR UPDATE/SHARE</>.  To perform late locking
+     instead, provide the callback functions defined
+     in <xref linkend="fdw-callbacks-row-locking">.
+     In <function>GetForeignRowMarkType</>, select rowmark option
+     <literal>ROW_MARK_EXCLUSIVE</>, <literal>ROW_MARK_NOKEYEXCLUSIVE</>,
+     <literal>ROW_MARK_SHARE</>, or <literal>ROW_MARK_KEYSHARE</> depending
+     on the requested lock strength.  (The core code will act the same
+     regardless of which of these four options you choose.)
+     Elsewhere, you can detect whether a foreign table was specified to be
+     locked by this type of command by using <function>get_plan_rowmark</> at
+     plan time, or <function>ExecFindRowMark</> at execution time; you must
+     check not only whether a non-null rowmark struct is returned, but that
+     its <structfield>strength</> field is not <literal>LCS_NONE</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     对于通过<command>SELECT FOR UPDATE/SHARE</>命令指定要被锁定的外部表，<literal>ForeignScan</>操作同样可以通过用<command>SELECT FOR UPDATE/SHARE</>的等效体取元组来执行早期锁定。要执行晚期锁定，请提供<xref linkend="fdw-callbacks-row-locking">中定义的回调函数。在<function>GetForeignRowMarkType</>中，根据请求的锁长度来选择行标记选项<literal>ROW_MARK_EXCLUSIVE</>、<literal>ROW_MARK_NOKEYEXCLUSIVE</>、<literal>ROW_MARK_SHARE</>或者<literal>ROW_MARK_KEYSHARE</>（不管选择哪一种选项，核心代码都会做同样的事情）。在别的地方，可以在规划时用<function>get_plan_rowmark</>或者在执行时用<function>ExecFindRowMark</>来检测一个外部表是否被指定由这种类型的命令锁定。你必须不仅仅检测是否返回了一个非空的行标记结构，还要检测它的<structfield>strength</>域不是<literal>LCS_NONE</>。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     最后，对于<command>UPDATE</>，<command>DELETE</>或者<command>SELECT FOR UPDATE/SHARE</>命令中使用的外部表，
-     但未指定行锁定，当看到锁强度<literal>LCS_NONE</>时，你可以通过<function>GetForeignRowMarkType</>选择选项<literal>ROW_MARK_REFERENCE</>重写缺省选项复制整个行。
-     这将导致调用使用<structfield>markType</>的<function>RefetchForeignRow</>；
-     然后重新获取行，而不需要获得任何新的锁。
-     （如果你有<function>GetForeignRowMarkType</>函数但不想重新抓取未锁定行，
-     为<literal>LCS_NONE</>选择选项<literal>ROW_MARK_COPY</>。）
+     Lastly, for foreign tables that are used in an <command>UPDATE</>,
+     <command>DELETE</> or <command>SELECT FOR UPDATE/SHARE</> command but
+     are not specified to be row-locked, you can override the default choice
+     to copy entire rows by having <function>GetForeignRowMarkType</> select
+     option <literal>ROW_MARK_REFERENCE</> when it sees lock strength
+     <literal>LCS_NONE</>.  This will cause <function>RefetchForeignRow</> to
+     be called with that value for <structfield>markType</>; it should then
+     re-fetch the row without acquiring any new lock.  (If you have
+     a <function>GetForeignRowMarkType</> function but don't wish to re-fetch
+     unlocked rows, select option <literal>ROW_MARK_COPY</>
+     for <literal>LCS_NONE</>.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     最后，对于在<command>UPDATE</>、<command>DELETE</>或者<command>SELECT FOR UPDATE/SHARE</>命令中使用但是没有被指定要行锁定的外部表，你可以在看到锁长度<literal>LCS_NONE</>时通过使用<function>GetForeignRowMarkType</>选择选项<literal>ROW_MARK_REFERENCE</>来把默认选择覆盖为拷贝整个行。 这将导致用那个值作为<structfield>markType</>来调用<function>RefetchForeignRow</>。它应该接着重新取得该行而不获取任何新锁（如果你有一个<function>GetForeignRowMarkType</>函数，但是不想重新取未锁定的行，可为<literal>LCS_NONE</>选择选项<literal>ROW_MARK_COPY</>）。
     </para>
 
+<!--==========================orignal english content==========================
     <para>
-     参阅<filename>src/include/nodes/lockoptions.h</>，
-     <filename>src/include/nodes/plannodes.h</>中<type>RowMarkType</>和<type>PlanRowMark</>注释
-     以及<filename>src/include/nodes/execnodes.h</>中的<type>ExecRowMark</>注释
-     获取更多信息。
+     See <filename>src/include/nodes/lockoptions.h</>, the comments
+     for <type>RowMarkType</> and <type>PlanRowMark</>
+     in <filename>src/include/nodes/plannodes.h</>, and the comments for
+     <type>ExecRowMark</> in <filename>src/include/nodes/execnodes.h</> for
+     additional information.
     </para>
-    
+____________________________________________________________________________-->
+    <para>
+     更多信息可见<filename>src/include/nodes/lockoptions.h</>，以及<filename>src/include/nodes/plannodes.h</>中<type>RowMarkType</>和<type>PlanRowMark</>的注释，还有<filename>src/include/nodes/execnodes.h</>中<type>ExecRowMark</>的注释。
+    </para>
+
   </sect1>
 
  </chapter>
