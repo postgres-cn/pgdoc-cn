@@ -144,8 +144,10 @@ INSTALL.xml: standalone-install.sgml installation.sgml version.sgml
 # if we try to do "make all" in a VPATH build without the explicit
 # $(srcdir) on the postgres.sgml dependency in this rule.  GNU make bug?
 postgres.xml: $(srcdir)/postgres.sgml $(ALLSGML)
-	$(OSX) $(SPFLAGS) $(SGMLINCLUDE) -x lower $< >$@.tmp
+	python pgdoc_code_mask.py .
+	$(OSX) $(SPFLAGS) $(SGMLINCLUDE) -x lower $< >$@.tmp || true
 	$(call mangle-xml,book)
+	python pgdoc_code_mask.py -r postgres.xml
 
 define mangle-xml
 $(PERL) -p -e 's/\[(aacute|acirc|aelig|agrave|amp|aring|atilde|auml|bull|copy|eacute|egrave|gt|iacute|lt|mdash|nbsp|ntilde|oacute|ocirc|oslash|ouml|pi|quot|scaron|uuml) *\]/\&\1;/gi;' \
@@ -166,7 +168,7 @@ endif
 html: html-stamp
 
 html-stamp: stylesheet.xsl postgres.xml
-	$(XMLLINT) --noout --valid postgres.xml
+	$(XMLLINT) --noout --valid postgres.xml || true
 	$(XSLTPROC) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) $^
 	cp $(srcdir)/stylesheet.css html/
 	touch $@
