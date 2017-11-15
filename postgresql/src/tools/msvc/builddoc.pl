@@ -18,7 +18,7 @@ chdir '../../..' if (-d '../msvc' && -d '../../../src');
 
 noversion() unless -e 'doc/src/sgml/version.sgml';
 
-require 'src/tools/msvc/buildenv.pl' if -e 'src/tools/msvc/buildenv.pl';
+do 'src/tools/msvc/buildenv.pl' if -e 'src/tools/msvc/buildenv.pl';
 
 my $docroot = $ENV{DOCROOT};
 die "bad DOCROOT '$docroot'" unless ($docroot && -d $docroot);
@@ -84,7 +84,6 @@ $cmd =
   . "| findstr /V \"DTDDECL catalog entries are not supported\" ";
 
 system($cmd);    # die "openjade" if $?;
-
 copy "stylesheet.css", "html/stylesheet.css";
 
 print "Docs build complete.\n";
