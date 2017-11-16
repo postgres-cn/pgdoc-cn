@@ -3,8 +3,6 @@
 use strict;
 use autodie;
 use File::Copy;
-use encoding "utf8";
-use encoding  "gbk";
 
 my $sourceDir = "postgresql";
 my $targetDir = "build";
@@ -27,14 +25,6 @@ sub process
 			}
 		}
 		closedir($handle);
-	}elsif($sourceFile =~ /.sgml$/){
-		open(FIN, "<:encoding(utf8)",$sourceFile);# or die $!;
-		open(FOUT, ">:encoding(gbk)",$targetFile);# or die $!;
-		while(<FIN>) {
-			print FOUT $_;
-		}
-		close(FIN);
-		close(FOUT);
 	}else{
 		copy $sourceFile,$targetFile ;
 	}
