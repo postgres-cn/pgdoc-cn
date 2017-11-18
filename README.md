@@ -16,16 +16,16 @@ https://github.com/postgres-cn/pgdoc-cn
 https://github.com/postgres-cn/pgdoc-cn/wiki
 
 ## 分支管理
-master分支对于正在翻译的版本，当前是10.1，其他各个分支对于PostgreSQL文档版本如下。
+master分支对于正在翻译的版本，当前是10.1，各个分支对应于PostgreSQL文档的版本如下。
 
 - 9.3：9.3.1
 - 9.4：9.4.4
 - 9.5：9.5.3
 - 9.6：9.6.0
-
+- master：10.1
 
 ## 文档的编译
-### Windows上的编译（目前版本10编译有问题）
+### Windows上的编译（目前版本10的编译有问题）
   1 . 安装Perl
 
 http://www.activestate.com/activeperl/downloads
@@ -48,6 +48,9 @@ builddoc.bat
 pgdoc-cn/build/doc/src/sgml/html/index.html
 
 ### Linux/UNIX上的编译
+
+以下说明以10.1为例
+
   1 . 下载本Github仓库
 ```shell
 git clone https://github.com/postgres-cn/pgdoc-cn.git
@@ -89,12 +92,12 @@ postgresql-10.1/doc/src/sgml/html/index.html
 
 
 ## 在线中文手册
-http://www.postgres.cn/docs/9.3  
-http://www.postgres.cn/docs/9.3.4  
-http://www.postgres.cn/docs/9.4  
-http://www.postgres.cn/docs/9.5  
-http://www.postgres.cn/docs/9.6
-http://www.postgres.cn/docs/10
+- http://www.postgres.cn/docs/9.3  
+- http://www.postgres.cn/docs/9.3.4  
+- http://www.postgres.cn/docs/9.4  
+- http://www.postgres.cn/docs/9.5  
+- http://www.postgres.cn/docs/9.6  
+- http://www.postgres.cn/docs/10
 
 通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
 
