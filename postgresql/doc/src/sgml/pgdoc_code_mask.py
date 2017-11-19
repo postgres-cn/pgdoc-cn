@@ -51,7 +51,7 @@ def process_file(sourceFile,code_unmask):
         if not inChineseCharSeq:
             tailtext = content[bufpos:]
         else:
-            tailtext = '&${%s}' % base64.b64encode(content[bufpos:])
+            tailtext = '$${%s}' % base64.b64encode(content[bufpos:])
         fout.write(tailtext)
     else:
         inChineseCharSeq = False
