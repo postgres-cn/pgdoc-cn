@@ -195,15 +195,17 @@ postgres.pdf:
 	$(error Invalid target;  use postgres-A4.pdf or postgres-US.pdf as targets)
 
 %-A4.fo: stylesheet-fo.xsl %.xml
-	$(XMLLINT) --noout --valid $*.xml
+	$(XMLLINT) --noout --valid $*.xml || true
 	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type A4 -o $@ $^
+	sed s/ZapfDingbats/ZapfDingbats,SimSun/g -i $@
 
 %-US.fo: stylesheet-fo.xsl %.xml
-	$(XMLLINT) --noout --valid $*.xml
+	$(XMLLINT) --noout --valid $*.xml || true
 	$(XSLTPROC) $(XSLTPROCFLAGS) --stringparam paper.type USletter -o $@ $^
+	sed s/ZapfDingbats/ZapfDingbats,SimSun/g -i $@
 
 %.pdf: %.fo
-	$(FOP) -fo $< -pdf $@
+	ADDITIONAL_OPTIONS="-Xms900m" $(FOP) -fo $< -pdf $@
 
 
 ##
