@@ -1963,16 +1963,21 @@ ____________________________________________________________________________-->
     <para>
      A <structname>ForeignScan</> node can, optionally, support parallel
      execution.  A parallel <structname>ForeignScan</> will be executed
-     in multiple processes and should return each row only once across
+     in multiple processes and must return each row exactly once across
      all cooperating processes.  To do this, processes can coordinate through
-     fixed size chunks of dynamic shared memory.  This shared memory is not
-     guaranteed to be mapped at the same address in every process, so pointers
-     may not be used.  The following callbacks are all optional in general,
-     but required if parallel execution is to be supported.
+     fixed-size chunks of dynamic shared memory.  This shared memory is not
+     guaranteed to be mapped at the same address in every process, so it
+     must not contain pointers.  The following functions are all optional,
+     but most are required if parallel execution is to be supported.
     </para>
 ____________________________________________________________________________-->
     <para>
-     <structname>ForeignScan</>节点可以选择支持并行执行。一个并行的<structname>ForeignScan</>将在多个进程中被执行并且在相互合作的进程中每一个元组只会被返回一次。要做到这样，进程可以通过动态共享内存的固定尺寸块来协作。并不保证在每一个进程中这部份共享内存都被映射到相同的地址，因此不能使用指针。下面的回调通常都是可选的，但是如果要支持并行执行就必须提供。
+     <structname>ForeignScan</>节点可以选择支持并行执行。一个并行的
+	 <structname>ForeignScan</>将在多个进程中执行，
+	 并且在相互合作的进程中每个行必须只被返回一次。要做到这样，
+	 进程可以通过动态共享内存的固定尺寸块来协作。
+	 并不保证在每一个进程中这部份共享内存都被映射到相同的地址，
+	 因此必须不能包含指针。下面的函数都是可选的，但是如果要支持并行执行需要提供大多数。
     </para>
 
 <!--==========================orignal english content==========================
@@ -2002,7 +2007,7 @@ IsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
 
 <!--==========================orignal english content==========================
     <para>
-    If this callback is not defined, it is assumed that the scan must take
+    If this function is not defined, it is assumed that the scan must take
     place within the parallel leader.  Note that returning true does not mean
     that the scan itself can be done in parallel, only that the scan can be
     performed within a parallel worker.  Therefore, it can be useful to define
@@ -2010,7 +2015,7 @@ IsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
     </para>
 ____________________________________________________________________________-->
     <para>
-    如果没有定义这个回调，则假定该扫描必须被放置在并行领导者中。注意返回真并不意味着该扫描本身可以被并行完成，只是说明该扫描可以在一个并行工作者中执行。因此，即便当不支持并行执行时，定义这个方法也是有用的。
+    如果没有定义这个函数，则假定该扫描必须被放置在并行领导者中。注意返回真并不意味着该扫描本身可以被并行完成，只是说明该扫描可以在一个并行工作者中执行。因此，即便当不支持并行执行时，定义这个方法也是有用的。
     </para>
 
 <!--==========================orignal english content==========================
@@ -2022,6 +2027,9 @@ EstimateDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt);
     Estimate the amount of dynamic shared memory that will be required
     for parallel operation.  This may be higher than the amount that will
     actually be used, but it must not be lower.  The return value is in bytes.
+    This function is optional, and can be omitted if not needed; but if it
+    is omitted, the next three functions must be omitted as well, because
+    no shared memory will be allocated for the FDW's use.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -2030,6 +2038,8 @@ Size
 EstimateDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt);
 </programlisting>
     估算并行操作所需的动态共享内存的数量。这可能比实际要用的数量更大，但是绝不能更小。返回值的单位是字节。
+	该函数是可选的，如果不需要可以省略；但是如果省略它，
+	接下来的三个函数也必须省略，因为没有分配共享内存将给FDW使用。
     </para>
 
 <!--==========================orignal english content==========================
@@ -2040,8 +2050,9 @@ InitializeDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt,
                          void *coordinate);
 </programlisting>
     Initialize the dynamic shared memory that will be required for parallel
-    operation; <literal>coordinate</> points to an amount of allocated space
-    equal to the return value of <function>EstimateDSMForeignScan</>.
+    operation.  <literal>coordinate</> points to a shared memory area of
+    size equal to the return value of <function>EstimateDSMForeignScan</>.
+    This function is optional, and can be omitted if not needed.
    </para>
 ____________________________________________________________________________-->
     <para>
@@ -2050,7 +2061,37 @@ void
 InitializeDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt,
                          void *coordinate);
 </programlisting>
-    初始化并行操作所需的动态共享内存，<literal>coordinate</>指向已分配的空间，其容量等于<function>EstimateDSMForeignScan</>的返回值。
+    初始化并行操作所需的动态共享内存。<literal>coordinate</>指向共享内存区域，
+	其大小等于<function>EstimateDSMForeignScan</>的返回值。
+	该函数是可选的，如果不需要可以省略。
+   </para>
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ReInitializeDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt,
+                           void *coordinate);
+</programlisting>
+    Re-initialize the dynamic shared memory required for parallel operation
+    when the foreign-scan plan node is about to be re-scanned.
+    This function is optional, and can be omitted if not needed.
+    Recommended practice is that this function reset only shared state,
+    while the <function>ReScanForeignScan</> function resets only local
+    state.  Currently, this function will be called
+    before <function>ReScanForeignScan</>, but it's best not to rely on
+    that ordering.
+   </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+ReInitializeDSMForeignScan(ForeignScanState *node, ParallelContext *pcxt,
+                           void *coordinate);
+</programlisting>
+    当外部扫描计划节点即将被重新扫描时，重新初始化并行操作所需的动态共享内存。
+	该函数是可选的，如果不需要可以省略。推荐的做法是此函数仅重置共享状态，
+	而<function>ReScanForeignScan</>函数仅重置本地状态。目前，
+	这个函数会在<function>ReScanForeignScan</>之前调用，但最好不要依赖这个顺序。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2060,10 +2101,9 @@ void
 InitializeWorkerForeignScan(ForeignScanState *node, shm_toc *toc,
                             void *coordinate);
 </programlisting>
-    Initialize a parallel worker's custom state based on the shared state
-    set up in the leader by <literal>InitializeDSMForeignScan</>.
-    This callback is optional, and needs only be supplied if this
-    custom path supports parallel execution.
+    Initialize a parallel worker's local state based on the shared state
+    set up by the leader during <function>InitializeDSMForeignScan</>.
+    This function is optional, and can be omitted if not needed.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -2072,7 +2112,35 @@ void
 InitializeWorkerForeignScan(ForeignScanState *node, shm_toc *toc,
                             void *coordinate);
 </programlisting>
-    基于领导者中由<literal>InitializeDSMForeignScan</>设置的共享状态初始化并行工作者的自定义状态。这个回调是可选的，只有在这条自定义路径支持并行执行时才需要被提供。
+    基于<literal>InitializeDSMForeignScan</>
+	期间领导者设置的共享状态初始化并行工作者的本地状态。这个函数是可选的，
+	如果不需要可以省略。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+<programlisting>
+void
+ShutdownForeignScan(ForeignScanState *node);
+</programlisting>
+    Release resources when it is anticipated the node will not be executed
+    to completion.  This is not called in all cases; sometimes,
+    <literal>EndForeignScan</> may be called without this function having
+    been called first.  Since the DSM segment used by parallel query is
+    destroyed just after this callback is invoked, foreign data wrappers that
+    wish to take some action before the DSM segment goes away should implement
+    this method.
+   </para>
+____________________________________________________________________________-->
+   <para>
+<programlisting>
+void
+ShutdownForeignScan(ForeignScanState *node);
+</programlisting>
+    预计节点将不会执行完成时释放资源。这在所有情况下都不被调用；有时，
+	<literal>EndForeignScan</>可能会在没有先调用此函数的情况下调用。
+	由于并行查询使用的DSM段在调用此回调后即被销毁，
+	因此希望在DSM段消失之前采取某些操作的外部数据包装器应实现此方法。
    </para>
    </sect2>
    

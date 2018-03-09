@@ -614,6 +614,21 @@ ____________________________________________________________________________-->
    <para>
     能作为一个扩展的成员的 SQL 对象的种类如<xref linkend="sql-alterextension">所示。尤其是数据库集簇范围的对象（例如数据库、角色和表空间）不能作为扩展成员，因为一个扩展只在一个数据库范围内可见（尽管一个扩展脚本并没有被禁止创建这些对象，但是这样做将无法把它们作为扩展的一部分来跟踪）。还要注意虽然一个表可以是一个扩展的成员，它的扶助对象（例如索引）不会被直接认为是该扩展的成员。另一个重点是模式可以属于扩展，但是反过来不行：一个扩展本身有一个不被限定的名称并且不存在于任何模式<quote>中</>。不过，扩展的成员对象只要对象类型合适就可以属于模式。一个扩展拥有包含其成员对象的模式可能合适也可能不合适。
    </para>
+<!--==========================orignal english content==========================
+   <para>
+    If an extension's script creates any temporary objects (such as temp
+    tables), those objects are treated as extension members for the
+    remainder of the current session, but are automatically dropped at
+    session end, as any temporary object would be.  This is an exception
+    to the rule that extension member objects cannot be dropped without
+    dropping the whole extension.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果扩展的脚本创建任何临时对象（例如临时表），
+	则这些对象将被视为当前会话的其余部分的扩展成员，但会在会话结束时自动删除，
+	就像任何临时对象那样。这是不删除整个扩展就不能被删除扩展成员对象的规则的一个例外。
+   </para>
 
    <sect2>
 <!--==========================orignal english content==========================
@@ -1265,11 +1280,13 @@ ____________________________________________________________________________-->
      environment that <command>CREATE EXTENSION</> provides for installation
      scripts: in particular, <varname>search_path</> is set up in the same
      way, and any new objects created by the script are automatically added
-     to the extension.
+     to the extension.  Also, if the script chooses to drop extension member
+     objects, they are automatically dissociated from the extension.
     </para>
 ____________________________________________________________________________-->
     <para>
      假定有一个合适的更新脚本可用，命令<command>ALTER EXTENSION UPDATE</>将把一个已安装的扩展更新到指定的新版本。更新脚本运行在与<command>CREATE EXTENSION</>提供给安装脚本相同的环境中：特别是<varname>search_path</>会按照相同的方式设置，并且该脚本创建的任何新对象会被自动地加入到扩展中。
+	 另外，如果脚本选择删除扩展成员对象，它们将自动与扩展解除关联。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1385,6 +1402,78 @@ SELECT * FROM pg_extension_update_paths('<replaceable>extension_name</>');
     </para>
    </sect2>
 
+   <sect2>
+<!--==========================orignal english content==========================
+    <title>Installing Extensions using Update Scripts</title>
+____________________________________________________________________________-->
+    <title>使用更新脚本安装扩展</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     An extension that has been around for awhile will probably exist in
+     several versions, for which the author will need to write update scripts.
+     For example, if you have released a <literal>foo</> extension in
+     versions <literal>1.0</>, <literal>1.1</>, and <literal>1.2</>, there
+     should be update scripts <filename>foo-&minus;1.0-&minus;1.1.sql</>
+     and <filename>foo-&minus;1.1-&minus;1.2.sql</>.
+     Before <productname>PostgreSQL</> 10, it was necessary to also create
+     new script files <filename>foo-&minus;1.1.sql</> and <filename>foo-&minus;1.2.sql</>
+     that directly build the newer extension versions, or else the newer
+     versions could not be installed directly, only by
+     installing <literal>1.0</> and then updating.  That was tedious and
+     duplicative, but now it's unnecessary, because <command>CREATE
+     EXTENSION</> can follow update chains automatically.
+     For example, if only the script
+     files <filename>foo-&minus;1.0.sql</>, <filename>foo-&minus;1.0-&minus;1.1.sql</>,
+     and <filename>foo-&minus;1.1-&minus;1.2.sql</> are available then a request to
+     install version <literal>1.2</> is honored by running those three
+     scripts in sequence.  The processing is the same as if you'd first
+     installed <literal>1.0</> and then updated to <literal>1.2</>.
+     (As with <command>ALTER EXTENSION UPDATE</>, if multiple pathways are
+     available then the shortest is preferred.)  Arranging an extension's
+     script files in this style can reduce the amount of maintenance effort
+     needed to produce small updates.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     已经存在一段时间的扩展可能存在几个版本，作者需要编写更新脚本。例如，
+	 如果您已经发布了<literal>foo</>扩展的<literal>1.0</>、<literal>1.1</>和
+	 <literal>1.2</>版本，则应该有更新脚本<filename>foo--1.0--1.1.sql</>和
+	 <filename>foo--1.1--1.2.sql</>。
+     在<productname>PostgreSQL</> 10之前，还必须创建直接构建较新扩展版本的新的脚本文件
+	 <filename>foo--1.1.sql</>和<filename>foo--1.2.sql</>，
+	 否则不能直接安装较新版本，只能通过安装<literal>1.0</>然后更新。
+	 那是乏味并且重复，但是现在不是必须的了，因为<command>CREATE
+     EXTENSION</>可以自动跟踪更新链。
+	 例如，如果只有脚本文件<filename>foo--1.0.sql</>、<filename>foo--1.0--1.1.sql</>
+     和<filename>foo--1.1--1.2.sql</>可用，那么会顺序运行这三个脚本来满足安装版本
+	 <literal>1.2</>的请求。过程与首先安装了<literal>1.0</>然后更新到
+	 <literal>1.2</>相同。（与<command>ALTER EXTENSION UPDATE</>一样，
+	 如果多个路径可用，那么首选是最短的路径）。
+	 以这种方式安排扩展的脚本文件可以减少产生小更新所需的维护工作量。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If you use secondary (version-specific) control files with an extension
+     maintained in this style, keep in mind that each version needs a control
+     file even if it has no stand-alone installation script, as that control
+     file will determine how the implicit update to that version is performed.
+     For example, if <filename>foo-&minus;1.0.control</> specifies <literal>requires
+     = 'bar'</> but <literal>foo</>'s other control files do not, the
+     extension's dependency on <literal>bar</> will be dropped when updating
+     from <literal>1.0</> to another version.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果您使用以此风格保留的扩展名的辅助（特定于版本的）控制文件，
+	 请记住即使没有独立安装脚本，每个版本也需要一个控制文件，
+	 因为该控制文件将确定如何执行到那个版本的隐式更新。例如，
+	 如果<filename>foo--1.0.control</>指定了<literal>requires = 'bar'</>但<literal>foo</>
+	 的其他控制文件没有，则当从<literal>1.0</>更新到另一个版本时，
+	 扩展对<literal>bar</>的依赖将被删除。
+    </para>
+   </sect2>
    <sect2 id="extend-extensions-example">
 <!--==========================orignal english content==========================
     <title>Extension Example</title>
@@ -1754,6 +1843,15 @@ include $(PGXS)
      </varlistentry>
 
      <varlistentry>
+      <term><varname>NO_INSTALLCHECK</varname></term>
+      <listitem>
+       <para>
+        don't define an <literal>installcheck</literal> target, useful e.g. if tests require special configuration, or don't use <application>pg_regress</application>
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><varname>EXTRA_CLEAN</varname></term>
       <listitem>
        <para>
@@ -1924,6 +2022,16 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         要传递给<application>pg_regress</>的附加开关
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><varname>NO_INSTALLCHECK</varname></term>
+      <listitem>
+       <para>
+        不要定义<literal>installcheck</literal>目标，例如，如果测试需要特殊配置，
+		或者不要使用<application>pg_regress</application>
        </para>
       </listitem>
      </varlistentry>
