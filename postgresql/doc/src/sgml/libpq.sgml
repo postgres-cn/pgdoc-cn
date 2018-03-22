@@ -447,6 +447,24 @@ PostgresPollingStatusType PQconnectPoll(PGconn *conn);
           </para>
          </listitem>
         </varlistentry>
+
+        <varlistentry id="libpq-connection-check-writable">
+         <term><symbol>CONNECTION_CHECK_WRITABLE</symbol></term>
+         <listitem>
+          <para>
+           Checking if connection is able to handle write transactions.
+          </para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry id="libpq-connection-consume">
+         <term><symbol>CONNECTION_CONSUME</symbol></term>
+         <listitem>
+          <para>
+           Consuming any remaining response messages on connection.
+          </para>
+         </listitem>
+        </varlistentry>
        </variablelist>
 
        Note that, although these constants will remain (in order to maintain
@@ -1034,7 +1052,25 @@ PostgresPollingStatusType PQconnectPoll(PGconn *conn);
           </para>
          </listitem>
         </varlistentry>
-       </variablelist>
+
+        <varlistentry id="libpq-connection-check-writable">
+         <term><symbol>CONNECTION_CHECK_WRITABLE</symbol></term>
+         <listitem>
+          <para>
+           检查连接是否能够处理写入事务。
+          </para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry id="libpq-connection-consume">
+         <term><symbol>CONNECTION_CONSUME</symbol></term>
+         <listitem>
+          <para>
+           在连接上消费任何剩余的响应消息。
+          </para>
+         </listitem>
+        </varlistentry>
+		</variablelist>
 
        注意，尽管这些常数将被保留（为了维护兼容性），一个应用永远不应该依赖这些状态按照特定顺序出现，或者根本就不依赖它们，或者不依赖状态总是这些文档中所说的值。一个应用可能做些这样的事情：
 <programlisting>
@@ -1312,12 +1348,17 @@ ____________________________________________________________________________-->
     Several <application>libpq</> functions parse a user-specified string to obtain
     connection parameters.  There are two accepted formats for these strings:
     plain <literal>keyword = value</literal> strings
-    and <ulink url="http://www.ietf.org/rfc/rfc3986.txt">RFC
-    3986</ulink> URIs.
+    and URIs.  URIs generally follow
+    <ulink url="https://tools.ietf.org/html/rfc3986">RFC
+    3986</ulink>, except that multi-host connection strings are allowed
+    as further described below.
    </para>
 ____________________________________________________________________________-->
    <para>
-    几个<application>libpq</>函数会解析一个用户指定的字符串来获得连接参数。这些字符串有两种被接受的格式：纯<literal>关键词 = 值</literal>字符串以及<ulink url="http://www.ietf.org/rfc/rfc3986.txt">RFC 3986</ulink> URI。
+    几个<application>libpq</>函数会解析一个用户指定的字符串来获得连接参数。这些字符串有两种被接受的格式：纯<literal>关键词 = 值</literal>字符串以及URI。
+	URI通常遵循
+    <ulink url="https://tools.ietf.org/html/rfc3986">RFC
+    3986</ulink>，除了允许多主机连接字符串，如下面进一步的描述。
    </para>
 
    <sect3>
@@ -1377,14 +1418,14 @@ ____________________________________________________________________________-->
    <para>
    The general form for a connection <acronym>URI</acronym> is:
 <synopsis>
-postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&amp;...]
+postgresql://[user[:password]@][netloc][:port][,...][/dbname][?param1=value1&amp;...]
 </synopsis>
    </para>
 ____________________________________________________________________________-->
    <para>
    一个连接<acronym>URI</acronym>的一般形式是：
 <synopsis>
-postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&amp;...]
+postgresql://[user[:password]@][netloc][:port][,...][/dbname][?param1=value1&amp;...]
 </synopsis>
    </para>
 
@@ -1402,6 +1443,7 @@ postgresql://localhost/mydb
 postgresql://user@localhost
 postgresql://user:secret@localhost
 postgresql://other@localhost/otherdb?connect_timeout=10&amp;application_name=myapp
+postgresql://host1:123,host2:456/somedb?target_session_attrs=any&amp;application_name=myapp
 </programlisting>
     Components of the hierarchical part of the <acronym>URI</acronym> can also
     be given as parameters.  For example:
@@ -1420,6 +1462,7 @@ postgresql://localhost/mydb
 postgresql://user@localhost
 postgresql://user:secret@localhost
 postgresql://other@localhost/otherdb?connect_timeout=10&amp;application_name=myapp
+postgresql://host1:123,host2:456/somedb?target_session_attrs=any&amp;application_name=myapp
 </programlisting>
     <acronym>URI</acronym>的层次部分的组件可以作为参数给出。例如：
 <programlisting>
@@ -1430,11 +1473,15 @@ postgresql:///mydb?host=localhost&amp;port=5433
 <!--==========================orignal english content==========================
    <para>
     Percent-encoding may be used to include symbols with special meaning in any
-    of the <acronym>URI</acronym> parts.
+    of the <acronym>URI</acronym> parts, e.g. replace <literal>=</> with
+    <literal>%3D</>.
+
    </para>
 ____________________________________________________________________________-->
    <para>
-    在任意<acronym>URI</acronym>部分中可以使用百分号编码来包括有特殊含义的符号。
+    在任意<acronym>URI</acronym>部分中可以使用百分号编码来包括有特殊含义的符号，
+	例如使用<literal>%3D</>替换<literal>=</>。
+    .
    </para>
 
 <!--==========================orignal english content==========================
@@ -1498,8 +1545,95 @@ postgresql:///dbname?host=/var/lib/postgresql
 postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
 </programlisting>
    </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    It is possible to specify multiple host components, each with an optional
+    port component, in a single URI.  A URI of the form
+    <literal>postgresql://host1:port1,host2:port2,host3:port3/</literal>
+    is equivalent to a connection string of the form
+    <literal>host=host1,host2,host3 port=port1,port2,port3</literal>.  Each
+    host will be tried in turn until a connection is successfully established.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    可以在一个URI中指定多个主机组件，每个主机组件都有一个可选的端口组件。
+	一个格式为<literal>postgresql://host1:port1,host2:port2,host3:port3/</literal>
+	的URI相当于一个连接字符串，格式为<literal>host=host1,host2,host3 port=port1,port2,port3</literal>。
+	每个主机将依次尝试，直到连接成功建立。
+   </para>
    </sect3>
-  </sect2>
+
+   <sect3 id="libpq-multiple-hosts">
+<!--==========================orignal english content==========================
+     <title>Specifying Multiple Hosts</title>
+____________________________________________________________________________-->
+     <title>指定多个主机</title>
+
+<!--==========================orignal english content==========================
+     <para>
+       It is possible to specify multiple hosts to connect to, so that they are
+       tried in the given order. In the Keyword/Value format, the <literal>host</>,
+       <literal>hostaddr</>, and <literal>port</> options accept a comma-separated
+       list of values. The same number of elements must be given in each option, such
+       that e.g. the first <literal>hostaddr</> corresponds to the first host name,
+       the second <literal>hostaddr</> corresponds to the second host name, and so
+       forth. As an exception, if only one <literal>port</literal> is specified, it
+       applies to all the hosts.
+     </para>
+____________________________________________________________________________-->
+     <para>
+       可以指定多个要连接的主机，以便按给定顺序尝试它们。在关键字/值格式中，
+	   <literal>host</>、<literal>hostaddr</>和<literal>port</>选项接受逗号分隔的值列表。
+	   在每个选项中必须给出相同数量的元素，例如，第一个<literal>hostaddr</>
+	   对应于第一个主机名称，第二个<literal>hostaddr</>对应于第二个主机名称，等等。
+	   作为例外，如果只指定了一个<literal>port</literal>，它将应用于所有主机。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+       In the connection URI format, you can list multiple <literal>host:port</> pairs
+       separated by commas, in the <literal>host</> component of the URI. In either
+       format, a single hostname can also translate to multiple network addresses. A
+       common example of this is a host that has both an IPv4 and an IPv6 address.
+     </para>
+____________________________________________________________________________-->
+     <para>
+       在连接URI格式中，您可以在URI的<literal>host</>组件中列出多个由逗号分隔的
+	   <literal>host:port</>对。无论哪种格式，单个主机名也可以转换为多个网络地址。
+	   这种情况的一个常见示例是同时拥有IPv4和IPv6地址的主机。	   
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+       When multiple hosts are specified, or when a single hostname is
+       translated to multiple addresses,  all the hosts and addresses will be
+       tried in order, until one succeeds. If none of the hosts can be reached,
+       the connection fails. If a connection is established successfully, but
+       authentication fails, the remaining hosts in the list are not tried.
+     </para>
+____________________________________________________________________________-->
+     <para>
+       当指定多个主机时，或者将单个主机名转换为多个地址时，
+	   将按顺序尝试所有主机和地址，直到成功为止。如果没有主机可以到达，
+	   则连接失败。如果连接成功建立，但验证失败，则不尝试列表中剩余的主机。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+       If a password file is used, you can have different passwords for
+       different hosts. All the other connection options are the same for every
+       host, it is not possible to e.g. specify a different username for
+       different hosts.
+     </para>
+____________________________________________________________________________-->
+     <para>
+       如果使用密码文件，则可以为不同的主机设置不同的密码。
+	   所有其他连接选项对于每个主机都是相同的，
+	   因此不可能例如为不同的主机指定不同的用户名。
+     </para>
+   </sect3>
+   </sect2>
 
   <sect2 id="libpq-paramkeywords">
 <!--==========================orignal english content==========================
@@ -1517,15 +1651,21 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         Name of host to connect to.<indexterm><primary>host name</></>
-        If this begins with a slash, it specifies Unix-domain
+        If a host name begins with a slash, it specifies Unix-domain
         communication rather than TCP/IP communication; the value is the
-        name of the directory in which the socket file is stored.  The
-        default behavior when <literal>host</literal> is not specified
-        is to connect to a Unix-domain
+        name of the directory in which the socket file is stored.  If
+        multiple host names are specified, each will be tried in turn in
+        the order given.  The default behavior when <literal>host</literal> is
+        not specified is to connect to a Unix-domain
         socket<indexterm><primary>Unix domain socket</></> in
         <filename>/tmp</filename> (or whatever socket directory was specified
         when <productname>PostgreSQL</> was built). On machines without
         Unix-domain sockets, the default is to connect to <literal>localhost</>.
+       </para>
+       <para>
+        A comma-separated list of host names is also accepted, in which case
+        each host name in the list is tried in order. See
+        <xref linkend="libpq-multiple-hosts"> for details.
        </para>
       </listitem>
      </varlistentry>
@@ -1576,10 +1716,15 @@ ____________________________________________________________________________-->
         Note that authentication is likely to fail if <literal>host</>
         is not the name of the server at network address <literal>hostaddr</>.
         Also, note that <literal>host</> rather than <literal>hostaddr</>
-        is used to identify the connection in <filename>~/.pgpass</> (see
+        is used to identify the connection in a password file (see
         <xref linkend="libpq-pgpass">).
        </para>
 
+       <para>
+        A comma-separated list of <literal>hostaddrs</> is also accepted, in
+        which case each host in the list is tried in order. See
+        <xref linkend="libpq-multiple-hosts"> for details.
+       </para>
        <para>
         Without either a host name or host address,
         <application>libpq</application> will connect using a
@@ -1596,6 +1741,10 @@ ____________________________________________________________________________-->
         Port number to connect to at the server host, or socket file
         name extension for Unix-domain
         connections.<indexterm><primary>port</></>
+        If multiple hosts were given in the <literal>host</literal> or
+        <literal>hostaddr</> parameters, this parameter may specify a list
+        of ports of equal length, or it may specify a single port number to
+        be used for all hosts.
        </para>
       </listitem>
      </varlistentry>
@@ -1632,6 +1781,19 @@ ____________________________________________________________________________-->
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-connect-passfile" xreflabel="passfile">
+      <term><literal>passfile</literal></term>
+      <listitem>
+      <para>
+       Specifies the name of the file used to store passwords
+       (see <xref linkend="libpq-pgpass">).
+       Defaults to <filename>~/.pgpass</filename>, or
+       <filename>%APPDATA%\postgresql\pgpass.conf</> on Microsoft Windows.
+       (No error is reported if this file does not exist.)
+      </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="libpq-connect-connect-timeout" xreflabel="connect_timeout">
       <term><literal>connect_timeout</literal></term>
       <listitem>
@@ -1639,6 +1801,11 @@ ____________________________________________________________________________-->
        Maximum wait for connection, in seconds (write as a decimal integer
        string). Zero or not specified means wait indefinitely.  It is not
        recommended to use a timeout of less than 2 seconds.
+       This timeout applies separately to each connection attempt.
+       For example, if you specify two hosts and <literal>connect_timeout</>
+       is 5, each host will time out if no connection is made within 5
+       seconds, so the total time spent waiting for a connection might be
+       up to 10 seconds.
       </para>
       </listitem>
      </varlistentry>
@@ -1719,10 +1886,10 @@ ____________________________________________________________________________-->
         Controls the number of seconds of inactivity after which TCP should
         send a keepalive message to the server.  A value of zero uses the
         system default. This parameter is ignored for connections made via a
-        Unix-domain socket, or if keepalives are disabled. It is only supported
-        on systems where the <symbol>TCP_KEEPIDLE</> or <symbol>TCP_KEEPALIVE</>
-        socket option is available, and on Windows; on other systems, it has no
-        effect.
+        Unix-domain socket, or if keepalives are disabled.
+        It is only supported on systems where <symbol>TCP_KEEPIDLE</> or
+        an equivalent socket option is available, and on Windows; on other
+        systems, it has no effect.
        </para>
       </listitem>
      </varlistentry>
@@ -1735,9 +1902,9 @@ ____________________________________________________________________________-->
         that is not acknowledged by the server should be retransmitted.  A
         value of zero uses the system default. This parameter is ignored for
         connections made via a Unix-domain socket, or if keepalives are disabled.
-        It is only supported on systems where the <symbol>TCP_KEEPINTVL</>
-        socket option is available, and on Windows; on other systems, it has no
-        effect.
+        It is only supported on systems where <symbol>TCP_KEEPINTVL</> or
+        an equivalent socket option is available, and on Windows; on other
+        systems, it has no effect.
        </para>
       </listitem>
      </varlistentry>
@@ -1750,8 +1917,9 @@ ____________________________________________________________________________-->
         client's connection to the server is considered dead.  A value of
         zero uses the system default. This parameter is ignored for
         connections made via a Unix-domain socket, or if keepalives are disabled.
-        It is only supported on systems where the <symbol>TCP_KEEPCNT</>
-        socket option is available; on other systems, it has no effect.
+        It is only supported on systems where <symbol>TCP_KEEPCNT</> or
+        an equivalent socket option is available; on other systems, it has no
+        effect.
        </para>
       </listitem>
      </varlistentry>
@@ -1884,8 +2052,7 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         If set to 1 (default), data sent over SSL connections will be
-        compressed (this requires <productname>OpenSSL</> version
-        0.9.8 or later).
+        compressed.
         If set to 0, compression will be disabled (this requires
         <productname>OpenSSL</> 1.0.0 or later).
         This parameter is ignored if a connection without SSL is made,
@@ -2013,6 +2180,23 @@ ____________________________________________________________________________-->
        </para>
       </listitem>
      </varlistentry>
+
+     <varlistentry id="libpq-connect-target-session-attrs" xreflabel="target_session_attrs">
+      <term><literal>target_session_attrs</literal></term>
+      <listitem>
+       <para>
+        If this parameter is set to <literal>read-write</literal>, only a
+        connection in which read-write transactions are accepted by default
+        is considered acceptable.  The query
+        <literal>SHOW transaction_read_only</literal> will be sent upon any
+        successful connection; if it returns <literal>on</>, the connection
+        will be closed.  If multiple hosts were specified in the connection
+        string, any remaining servers will be tried just as if the connection
+        attempt had failed.  The default value of this parameter,
+        <literal>any</>, regards all connections as acceptable.
+      </para>
+      </listitem>
+    </varlistentry>
     </variablelist>
    </para>
 ____________________________________________________________________________-->
@@ -2024,7 +2208,13 @@ ____________________________________________________________________________-->
       <term><literal>host</literal></term>
       <listitem>
        <para>
-        要连接的主机名。<indexterm><primary>host name</></>如果它以一个斜线开始，则表示一个 Unix 域通信而不是 TCP/IP 通信，其值是存储套接字文件的目录名。当<literal>host</literal>没有指定时的默认行为是连接到一个<filename>/tmp</filename>（或者<productname>PostgreSQL</>编译时指定的任何套接字目录）中的 Unix 域套接字<indexterm><primary>Unix 域套接字</></>。在没有 Unix 域套接字的机器上，默认是连接到<literal>localhost</>。
+        要连接的主机名。<indexterm><primary>host name</></>如果主机名以一个斜线开始，则表示一个 Unix 域通信而不是 TCP/IP 通信，其值是存储套接字文件的目录名。
+		如果指定了多个主机名，则将以给出的顺序依次尝试每个主机名。
+		当<literal>host</literal>没有指定时的默认行为是连接到一个<filename>/tmp</filename>（或者<productname>PostgreSQL</>编译时指定的任何套接字目录）中的 Unix 域套接字<indexterm><primary>Unix 域套接字</></>。在没有 Unix 域套接字的机器上，默认是连接到<literal>localhost</>。
+       </para>
+       <para>
+        还接受以逗号分隔的主机名列表，在这种情况下，列表中的每个主机名均按顺序尝试。
+		有关详细信息，请参见<xref linkend="libpq-multiple-hosts"> 。
        </para>
       </listitem>
      </varlistentry>
@@ -2055,9 +2245,13 @@ ____________________________________________________________________________-->
           </para>
          </listitem>
         </itemizedlist>
-        注意如果<literal>host</>不是网络地址<literal>hostaddr</>上的服务器名，认证很可能会失败。还有，注意<literal>host</>而不是<literal>hostaddr</>被用来标识<filename>~/.pgpass</>中的连接（见<xref linkend="libpq-pgpass">）。
+        注意如果<literal>host</>不是网络地址<literal>hostaddr</>上的服务器名，认证很可能会失败。还有，注意<literal>host</>而不是<literal>hostaddr</>被用来标识口令文件中的连接（见<xref linkend="libpq-pgpass">）。
        </para>
-
+       <para>
+        还接受以逗号分隔的<literal>hostaddrs</>列表，在这种情况下，
+		列表中的每个主机名均按顺序尝试。有关详细信息，
+		请参见<xref linkend="libpq-multiple-hosts">。
+       </para>
        <para>
         如果没有一个主机名或主机地址，<application>libpq</application>将尝试使用一个本地 Unix 域套接字连接，或者在没有 Unix 域套接字的机器上尝试连接到<literal>localhost</>。
        </para>
@@ -2069,6 +2263,8 @@ ____________________________________________________________________________-->
        <listitem>
        <para>
         在服务器主机上要连接的端口号，或者用于 Unix 域连接的套接字文件名扩展<indexterm><primary>port</></>。
+		如果在<literal>host</literal>或<literal>hostaddr</>参数中给出了多个主机名，
+		那么这个参数可以指定等长的端口列表，或者它可以指定单个端口号用于所有主机。
        </para>
       </listitem>
      </varlistentry>
@@ -2099,12 +2295,27 @@ ____________________________________________________________________________-->
       </para>
       </listitem>
      </varlistentry>
+     <varlistentry id="libpq-connect-passfile" xreflabel="passfile">
+      <term><literal>passfile</literal></term>
+      <listitem>
+      <para>
+       声明要用于存储口令的文件的名称(参阅<xref linkend="libpq-pgpass">)。
+       默认是<filename>~/.pgpass</filename>，或者微软Windows上是
+       <filename>%APPDATA%\postgresql\pgpass.conf</>。
+       (如果此文件不存在，则不报告错误。)
+      </para>
+      </listitem>
+     </varlistentry>
 
      <varlistentry id="libpq-connect-connect-timeout" xreflabel="connect_timeout">
       <term><literal>connect_timeout</literal></term>
       <listitem>
       <para>
-       连接超时时间，以秒计（写成一个十进制整数字符串）。0 或未指定表示无限等待。我们不推荐使用低于 2 秒的超时时间。
+       连接超时时间，以秒计（写成一个十进制整数字符串）。0 或未指定表示无限等待。
+	   我们不推荐使用低于 2 秒的超时时间。
+	   此超时单独适用于每个连接尝试。例如，如果指定了两台主机并且
+	   <literal>connect_timeout</>为5，如果没有主机在5秒内建立连接，
+	   则每台主机都将超时，因此等待连接所花费的总时间可能高达10秒。	   
       </para>
       </listitem>
      </varlistentry>
@@ -2163,7 +2374,7 @@ ____________________________________________________________________________-->
       <term><literal>keepalives_idle</literal></term>
       <listitem>
        <para>
-        控制非活动多少秒之后 TCP 应该向服务器发送一个存活消息。零值表示使用系统默认值。对于一个通过 Unix 域套接字建立的连接将忽略这个参数，如果保持存活机制被禁用也将忽略这个参数。它只被<symbol>TCP_KEEPIDLE</>或<symbol>TCP_KEEPALIVE</>套接字选项可用的系统以及 Windows支持，在其他系统上，它没有效果。
+        控制非活动多少秒之后 TCP 应该向服务器发送一个存活消息。零值表示使用系统默认值。对于一个通过 Unix 域套接字建立的连接将忽略这个参数，如果保持存活机制被禁用也将忽略这个参数。它只被<symbol>TCP_KEEPIDLE</>或等效的套接字选项可用的系统以及 Windows支持，在其他系统上，它没有效果。
        </para>
       </listitem>
      </varlistentry>
@@ -2172,7 +2383,7 @@ ____________________________________________________________________________-->
       <term><literal>keepalives_interval</literal></term>
       <listitem>
        <para>
-        控制一个 TCP 存活消息没有被服务器认可多少秒之后应该被重传。零值表示使用系统默认值。对于一个通过 Unix 域套接字建立的连接将忽略这个参数，如果保持存活机制被禁用也将忽略这个参数。它只被<symbol>TCP_KEEPINTVL</>套接字选项可用的系统以及 Windows支持，在其他系统上，它没有效果。
+        控制一个 TCP 存活消息没有被服务器认可多少秒之后应该被重传。零值表示使用系统默认值。对于一个通过 Unix 域套接字建立的连接将忽略这个参数，如果保持存活机制被禁用也将忽略这个参数。它只被<symbol>TCP_KEEPINTVL</>或等效的套接字选项可用的系统以及 Windows支持，在其他系统上，它没有效果。
        </para>
       </listitem>
      </varlistentry>
@@ -2181,7 +2392,7 @@ ____________________________________________________________________________-->
       <term><literal>keepalives_count</literal></term>
       <listitem>
        <para>
-        控制该客户端到服务器的连接被认为死亡之前可以丢失的 TCP 保活消息数量。零值表示使用系统默认值。对于一个通过 Unix 域套接字建立的连接将忽略这个参数，如果保持存活机制被禁用也将忽略这个参数。它只被<symbol>TCP_KEEPCNT</>套接字选项可用的系统以及 Windows支持，在其他系统上，它没有效果。
+        控制该客户端到服务器的连接被认为死亡之前可以丢失的 TCP 保活消息数量。零值表示使用系统默认值。对于一个通过 Unix 域套接字建立的连接将忽略这个参数，如果保持存活机制被禁用也将忽略这个参数。它只被<symbol>TCP_KEEPCNT</>或等效的套接字选项可用的系统以及 Windows支持，在其他系统上，它没有效果。
        </para>
       </listitem>
      </varlistentry>
@@ -2285,7 +2496,7 @@ ____________________________________________________________________________-->
       <term><literal>sslcompression</literal></term>
       <listitem>
        <para>
-        如果设置为 1（默认），SSL 连接之上传送的数据将被压缩（这要求<productname>OpenSSL</>版本 0.9.8 或更高）。如果设置为 0，压缩将被禁用（这要求<productname>OpenSSL</> 1.0.0 或更高）。如果建立的是一个没有 SSL 的连接，这个参数会被忽略。如果使用的<productname>OpenSSL</>版本不支持该参数，它也会被忽略。
+        如果设置为 1（默认），SSL 连接之上传送的数据将被压缩。如果设置为 0，压缩将被禁用（这要求<productname>OpenSSL</> 1.0.0 或更高）。如果建立的是一个没有 SSL 的连接，这个参数会被忽略。如果使用的<productname>OpenSSL</>版本不支持该参数，它也会被忽略。
        </para>
        <para>
         压缩会占用 CUP 时间，但是当瓶颈为网络时可以提高吞吐量。如果 CPU 性能是限制因素，禁用压缩能够改进响应时间和吞吐量。
@@ -2364,7 +2575,21 @@ ____________________________________________________________________________-->
        </para>
       </listitem>
      </varlistentry>
-    </variablelist>
+
+     <varlistentry id="libpq-connect-target-session-attrs" xreflabel="target_session_attrs">
+      <term><literal>target_session_attrs</literal></term>
+      <listitem>
+       <para>
+        如果这个参数设置为<literal>read-write</literal>，
+		则只有默认接受读写事务的连接才被认为是可接受的。查询
+		<literal>SHOW transaction_read_only</literal>将在任何成功连接上发送；
+		如果它返回<literal>on</>，则将关闭连接。如果在连接字符串中指定了多个主机，
+		则将尝试任何剩余的服务器，就像连接尝试失败了一样。该参数的默认值<literal>any</>，
+		将所有连接看做是可接受的。
+      </para>
+      </listitem>
+    </varlistentry>  
+  </variablelist>
    </para>
   </sect2>
  </sect1>
@@ -2408,7 +2633,11 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    The following functions return parameter values established at connection.
-   These values are fixed for the life of the <structname>PGconn</> object.
+   These values are fixed for the life of the connection.  If a multi-host
+   connection string is used, the values of <function>PQhost</>,
+   <function>PQport</>, and <function>PQpass</> can change if a new connection
+   is established using the same <structname>PGconn</> object.  Other values
+   are fixed for the lifetime of the <structname>PGconn</> object.
 
    <variablelist>
     <varlistentry id="libpq-pqdb">
@@ -2549,7 +2778,11 @@ char *PQoptions(const PGconn *conn);
   </para>
 ____________________________________________________________________________-->
   <para>
-   下列函数返回一个连接所建立的参数值。这些值在<structname>PGconn</>对象的生命期中是固定的。
+   下列函数返回一个连接所建立的参数值。
+   这些值在连接的生命期中是固定的。如果使用了多个主机连接字符串，
+   则如果使用同一个<structname>PGconn</>对象建立了一个新的连接，
+   <function>PQhost</>、<function>PQport</>和<function>PQpass</>的值可以改变。
+   其他值在<structname>PGconn</>对象的生命期中是固定的。
 
    <variablelist>
     <varlistentry id="libpq-pqdb">
@@ -2871,17 +3104,36 @@ int PQprotocolVersion(const PGconn *conn);
 
      <listitem>
       <para>
-       Returns an integer representing the backend version.
+       Returns an integer representing the server version.
 <synopsis>
 int PQserverVersion(const PGconn *conn);
 </synopsis>
-       Applications might use this function to determine the version of the database
-       server they are connected to. The number is formed by converting
-       the major, minor, and revision numbers into two-decimal-digit
-       numbers and appending them together. For example, version 8.1.5
-       will be returned as 80105, and version 8.2 will be returned as
-       80200 (leading zeroes are not shown).  Zero is returned if the
-       connection is bad.
+      </para>
+
+      <para>
+       Applications might use this function to determine the version of the
+       database server they are connected to.  The result is formed by
+       multiplying the server's major version number by 10000 and adding
+       the minor version number.  For example, version 10.1 will be
+       returned as 100001, and version 11.0 will be returned as 110000.
+       Zero is returned if the connection is bad.
+      </para>
+
+      <para>
+       Prior to major version 10, <productname>PostgreSQL</> used
+       three-part version numbers in which the first two parts together
+       represented the major version.  For those
+       versions, <function>PQserverVersion</> uses two digits for each
+       part; for example version 9.1.5 will be returned as 90105, and
+       version 9.2.0 will be returned as 90200.
+      </para>
+
+      <para>
+       Therefore, for purposes of determining feature compatibility,
+       applications should divide the result of <function>PQserverVersion</>
+       by 100 not 10000 to determine a logical major version number.
+       In all release series, only the last two digits differ between
+       minor releases (bug-fix releases).
       </para>
      </listitem>
     </varlistentry>
@@ -3143,11 +3395,28 @@ int PQprotocolVersion(const PGconn *conn);
 
      <listitem>
       <para>
-       返回一个表示后端版本的整数。
+       返回一个表示服务器版本的整数。
 <synopsis>
 int PQserverVersion(const PGconn *conn);
 </synopsis>
-       应用可能会使用这个函数来决定它们连接到的数据库服务器的版本。该数字通过将主、次和修订数字转换成两位十进制数并连接在一起形成。例如，版本 8.1.5 将被返回为 80105，版本 8.2 将被返回为 80200（前导零没有被显示）。如果连接损坏，将返回零。
+      </para>
+
+      <para>
+       应用可能会使用这个函数来决定它们连接到的数据库服务器的版本。
+	   结果是通过将服务器的主要版本号乘以10000并添加次要版本号形成的。
+	   例如，版本10.1将返回100001，版本11.0将返回110000。如果连接不正确，则返回零。
+      </para>
+
+      <para>
+       在主版本10之前，<productname>PostgreSQL</>使用三部分版本号，
+	   前两部分代表主要版本。对于这些版本，<function>PQserverVersion</>
+	   对每个部分使用两个数字；例如版本9.1.5将返回90105，版本9.2.0将返回90200。
+      </para>
+
+      <para>
+       因此，为确定功能兼容性，应用程序应将<function>PQserverVersion</>
+	   的结果除以100而不是10000，以确定逻辑主要版本号。在所有发行版系列中，
+	   只有最后两位数字在次版本（错误修复版本）之间有所不同。
       </para>
      </listitem>
     </varlistentry>
@@ -3301,8 +3570,7 @@ const char *PQsslAttribute(const PGconn *conn, const char *attribute_name);
           <listitem>
            <para>
              SSL/TLS version in use. Common values
-             are <literal>"SSLv2"</literal>, <literal>"SSLv3"</literal>,
-             <literal>"TLSv1"</literal>, <literal>"TLSv1.1"</literal>
+             are <literal>"TLSv1"</literal>, <literal>"TLSv1.1"</literal>
              and <literal>"TLSv1.2"</literal>, but an implementation may
              return other strings if some other protocol is used.
            </para>
@@ -3467,8 +3735,7 @@ const char *PQsslAttribute(const PGconn *conn, const char *attribute_name);
          <term><literal>protocol</literal></term>
           <listitem>
            <para>
-             正在使用的SSL/TLS版本。常见值为<literal>"SSLv2"</literal>、
-             <literal>"SSLv3"</literal>、<literal>"TLSv1"</literal>、
+             正在使用的SSL/TLS版本。常见值为<literal>"TLSv1"</literal>、
              <literal>"TLSv1.1"</literal>和<literal>"TLSv1.2"</literal>，
              但如果使用某些其他协议，实现可能返回其他字符串。
            </para>
@@ -5364,9 +5631,10 @@ ____________________________________________________________________________-->
      <listitem>
 <!--==========================orignal english content==========================
       <para>
-       Returns the number of rows (tuples) in the query result.  Because
-       it returns an integer result, large result sets might overflow the
-       return value on 32-bit operating systems.
+       Returns the number of rows (tuples) in the query result.
+       (Note that <structname>PGresult</> objects are limited to no more
+       than <literal>INT_MAX</> rows, so an <type>int</> result is
+       sufficient.)
 
 <synopsis>
 int PQntuples(const PGresult *res);
@@ -5375,7 +5643,9 @@ int PQntuples(const PGresult *res);
       </para>
 ____________________________________________________________________________-->
       <para>
-       返回查询结果中的行（元组）数。因为它返回一个整数结果，在 32 位操作系统上大型的结果集可能使返回值溢出。
+       返回查询结果中的行（元组）数。
+	   (请注意，<structname>PGresult</>对象限制为不超过<literal>INT_MAX</>行，
+	   所以<type>int</>结果是足够的。)
 
 <synopsis>
 int PQntuples(const PGresult *res);
@@ -10080,6 +10350,97 @@ ____________________________________________________________________________-->
     </listitem>
    </varlistentry>
 
+   <varlistentry id="libpq-pqencryptpasswordconn">
+<!--==========================orignal english content==========================
+    <term>
+     <function>PQencryptPasswordConn</function>
+     <indexterm>
+      <primary>PQencryptPasswordConn</primary>
+     </indexterm>
+    </term>
+____________________________________________________________________________-->
+    <term>
+     <function>PQencryptPasswordConn</function>
+     <indexterm>
+      <primary>PQencryptPasswordConn</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Prepares the encrypted form of a <productname>PostgreSQL</> password.
+<synopsis>
+char *PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user, const char *algorithm);
+</synopsis>
+      This function is intended to be used by client applications that
+      wish to send commands like <literal>ALTER USER joe PASSWORD
+      'pwd'</>.  It is good practice not to send the original cleartext
+      password in such a command, because it might be exposed in command
+      logs, activity displays, and so on.  Instead, use this function to
+      convert the password to encrypted form before it is sent.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      准备一个<productname>PostgreSQL</>口令的加密形式。
+<synopsis>
+char *PQencryptPasswordConn(PGconn *conn, const char *passwd, const char *user, const char *algorithm);
+</synopsis>
+      这个函数旨在用于那些希望发送类似于<literal>ALTER USER joe PASSWORD 'pwd'</>命令的客户端应用。不在这样一个命令中发送原始的明文密码是一个好习惯，因为它可能被暴露在命令日志、活动显示等等中。相反，在发送之前使用这个函数可以将口令转换为加密的形式。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      The <parameter>passwd</> and <parameter>user</> arguments
+      are the cleartext password, and the SQL name of the user it is for.
+      <parameter>algorithm</> specifies the encryption algorithm
+      to use to encrypt the password. Currently supported algorithms are
+      <literal>md5</> and <literal>scram-sha-256</> (<literal>on</> and
+      <literal>off</> are also accepted as aliases for <literal>md5</>, for
+      compatibility with older server versions). Note that support for
+      <literal>scram-sha-256</> was introduced in <productname>PostgreSQL</>
+      version 10, and will not work correctly with older server versions. If
+      <parameter>algorithm</> is <symbol>NULL</>, this function will query
+      the server for the current value of the
+      <xref linkend="guc-password-encryption"> setting. That can block, and
+      will fail if the current transaction is aborted, or if the connection
+      is busy executing another query. If you wish to use the default
+      algorithm for the server but want to avoid blocking, query
+      <varname>password_encryption</> yourself before calling
+      <function>PQencryptPasswordConn</>, and pass that value as the
+      <parameter>algorithm</>.
+     </para>
+____________________________________________________________________________-->
+     <para>	  
+	  <parameter>algorithm</>指定用于加密口令的加密算法。目前支持的算法是
+	  <literal>md5</>和<literal>scram-sha-256</>，（<literal>on</>和<literal>off</>
+	  也被接受为<literal>md5</>的别名，以与旧版服务器版本兼容）。
+	  请注意，在<productname>PostgreSQL</>版本10中引入了对<literal>scram-sha-256</>
+	  的支持，并且在旧版服务器版本中无法正常工作。如果<parameter>algorithm</>
+	  是<symbol>NULL</>，则此函数将向服务器查询<xref linkend="guc-password-encryption">
+	  设置的当前值。如果当前事务中止，或者连接忙于执行另一个查询，则可能会阻塞，
+	  并会失败。如果您希望服务器使用默认算法，但希望避免阻塞，
+	  请在调用<function>PQencryptPasswordConn</>之前亲自查询
+	  <varname>password_encryption</>，并将该值作为<parameter>algorithm</>传递。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      The return value is a string allocated by <function>malloc</>.
+      The caller can assume the string doesn't contain any special characters
+      that would require escaping.  Use <function>PQfreemem</> to free the
+      result when done with it. On error, returns <symbol>NULL</>, and
+      a suitable message is stored in the connection object.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      返回值是<function>malloc</function>分配的一个字符串。
+	  调用者可以假定该字符串中不包含任何需要转义的特殊字符。当使用结束之后，
+	  用<function>PQfreemem</>释放结果。错误时，返回<symbol>NULL</>，
+	  并且一个合适的消息被存储在连接对象中。	  
+     </para>
+    </listitem>
+   </varlistentry>
    <varlistentry id="libpq-pqencryptpassword">
 <!--==========================orignal english content==========================
     <term>
@@ -10099,34 +10460,28 @@ ____________________________________________________________________________-->
     <listitem>
 <!--==========================orignal english content==========================
      <para>
-      Prepares the encrypted form of a <productname>PostgreSQL</> password.
+      Prepares the md5-encrypted form of a <productname>PostgreSQL</> password.
 <synopsis>
-char * PQencryptPassword(const char *passwd, const char *user);
+char *PQencryptPassword(const char *passwd, const char *user);
 </synopsis>
-      This function is intended to be used by client applications that
-      wish to send commands like <literal>ALTER USER joe PASSWORD
-      'pwd'</>.  It is good practice not to send the original cleartext
-      password in such a command, because it might be exposed in command
-      logs, activity displays, and so on.  Instead, use this function to
-      convert the password to encrypted form before it is sent.  The
-      arguments are the cleartext password, and the SQL name of the user
-      it is for.  The return value is a string allocated by
-      <function>malloc</function>, or <symbol>NULL</symbol> if out of
-      memory.  The caller can assume the string doesn't contain any
-      special characters that would require escaping.  Use
-      <function>PQfreemem</> to free the result when done with it.
+      <function>PQencryptPassword</> is an older, deprecated version of
+      <function>PQencryptPasswodConn</>. The difference is that
+      <function>PQencryptPassword</> does not
+      require a connection object, and <literal>md5</> is always used as the
+      encryption algorithm.
      </para>
 ____________________________________________________________________________-->
      <para>
-      准备一个<productname>PostgreSQL</>口令的加密形式。
+      准备一个<productname>PostgreSQL</>口令的md5加密形式。
 <synopsis>
-char * PQencryptPassword(const char *passwd, const char *user);
+char *PQencryptPassword(const char *passwd, const char *user);
 </synopsis>
-      这个函数旨在用于那些希望发送类似于<literal>ALTER USER joe PASSWORD 'pwd'</>命令的客户端应用。不在这样一个命令中发送原始的明文密码是一个好习惯，因为它可能被暴露在命令日志、活动显示等等中。相反，在发送之前使用这个函数可以将口令转换为加密的形式。这个函数的参数是明文口令和要使用该口令的用户的 SQL 名。返回值是<function>malloc</function>分配的一个字符串，如果内存不足会返回<symbol>NULL</symbol>。调用者可以假定该字符串中不包含任何需要转义的特殊字符。当使用结束之后，用<function>PQfreemem</>进行释放。
+      <function>PQencryptPassword</>是<function>PQencryptPasswodConn</>
+	  的一个较旧的，废弃的版本。区别在于<function>PQencryptPassword</>
+	  不需要连接对象，并且始终使用<literal>md5</>作为加密算法。
      </para>
     </listitem>
    </varlistentry>
-
    <varlistentry id="libpq-pqmakeemptypgresult">
 <!--==========================orignal english content==========================
     <term>
@@ -10506,40 +10861,70 @@ int PQlibVersion(void);
 <!--==========================orignal english content==========================
      <para>
       The result of this function can be used to determine, at
-      run time, if specific functionality is available in the currently
+      run time, whether specific functionality is available in the currently
       loaded version of libpq. The function can be used, for example,
-      to determine which connection options are available for
-      <function>PQconnectdb</> or if the <literal>hex</> <type>bytea</>
-      output added in PostgreSQL 9.0 is supported.
+      to determine which connection options are available in
+      <function>PQconnectdb</>.
      </para>
 ____________________________________________________________________________-->
      <para>
-      在运行时，这个函数的结果可以被用来决定在当前已载入的 libpq 版本中特定的功能是否可用。例如，这个函数可以被用来决定哪些选项可以被用于<function>PQconnectdb</>或者 PostgreSQL 9.0 中加入的<literal>hex</> <type>bytea</>输出是否被支持。
+      在运行时，这个函数的结果可以被用来决定在当前已载入的 libpq 版本中特定的功能是否可用。
+	  例如，这个函数可以被用来决定哪些选项可以被用于<function>PQconnectdb</>。
      </para>
 
 <!--==========================orignal english content==========================
      <para>
-      The number is formed by converting the major, minor, and revision
-      numbers into two-decimal-digit numbers and appending them together.
-      For example, version 9.1 will be returned as 90100, and version
-      9.1.2 will be returned as 90102 (leading zeroes are not shown).
+      The result is formed by multiplying the library's major version
+      number by 10000 and adding the minor version number.  For example,
+      version 10.1 will be returned as 100001, and version 11.0 will be
+      returned as 110000.
      </para>
 ____________________________________________________________________________-->
      <para>
-      该数字是通过将主数字、次数字和修订数字转换为两位十进制数字并且将它们追加在一起形成的。例如，版本 9.1 将被返回为 90100，并且 9.1.2 将被返回为 90102（前导零不被显示）。
+      结果是通过将库的主要版本号乘以10000并添加次要版本号形成的。
+	  例如，版本10.1将返回100001，版本11.0将返回110000。如果连接不正确，则返回零。
      </para>
+<!--==========================orignal english content==========================
+      <para>
+      Prior to major version 10, <productname>PostgreSQL</> used
+      three-part version numbers in which the first two parts together
+      represented the major version.  For those
+      versions, <function>PQlibVersion</> uses two digits for each
+      part; for example version 9.1.5 will be returned as 90105, and
+      version 9.2.0 will be returned as 90200.
+     </para>
+____________________________________________________________________________-->
+      <para>
+       在主版本10之前，<productname>PostgreSQL</>使用三部分版本号，
+	   前两部分代表主要版本。对于这些版本，<function>PQserverVersion</>
+	   对每个部分使用两个数字；例如版本9.1.5将返回90105，版本9.2.0将返回90200。
+      </para>
 
+<!--==========================orignal english content==========================
+      <para>
+      Therefore, for purposes of determining feature compatibility,
+      applications should divide the result of <function>PQlibVersion</>
+      by 100 not 10000 to determine a logical major version number.
+      In all release series, only the last two digits differ between
+      minor releases (bug-fix releases).
+     </para>
+____________________________________________________________________________-->
+      <para>
+       因此，为确定功能兼容性，应用程序应将<function>PQserverVersion</>
+	   的结果除以100而不是10000，以确定逻辑主要版本号。在所有发行版系列中，
+	   只有最后两位数字在次版本（错误修复版本）之间有所不同。
+      </para>
      <note>
 <!--==========================orignal english content==========================
       <para>
        This function appeared in <productname>PostgreSQL</> version 9.1, so
        it cannot be used to detect required functionality in earlier
-       versions, since linking to it will create a link dependency
-       on version 9.1.
+       versions, since calling it will create a link dependency
+       on version 9.1 or later.
       </para>
 ____________________________________________________________________________-->
       <para>
-       这个函数出现于<productname>PostgreSQL</>版本 9.1，因此它不能被用来在早期的版本中检测所需的功能，因为链接到它将会创建一个对版本 9.1 的链接依赖。
+       这个函数出现于<productname>PostgreSQL</>版本 9.1，因此它不能被用来在早期的版本中检测所需的功能，因为调用它将会创建一个对版本 9.1 或更高版本的链接依赖。
       </para>
      </note>
     </listitem>
@@ -11817,8 +12202,8 @@ ____________________________________________________________________________-->
       Use of this environment variable
       is not recommended for security reasons, as some operating systems
       allow non-root users to see process environment variables via
-      <application>ps</>; instead consider using the
-      <filename>~/.pgpass</> file (see <xref linkend="libpq-pgpass">).
+      <application>ps</>; instead consider using a password file
+      (see <xref linkend="libpq-pgpass">).
      </para>
     </listitem>
 
@@ -11827,9 +12212,8 @@ ____________________________________________________________________________-->
       <indexterm>
        <primary><envar>PGPASSFILE</envar></primary>
       </indexterm>
-      <envar>PGPASSFILE</envar> specifies the name of the password file to
-      use for lookups.  If not set, it defaults to <filename>~/.pgpass</>
-      (see <xref linkend="libpq-pgpass">).
+      <envar>PGPASSFILE</envar> behaves the same as the <xref
+      linkend="libpq-connect-passfile"> connection parameter.
      </para>
     </listitem>
 
@@ -11852,22 +12236,6 @@ ____________________________________________________________________________-->
       connection service file.  If not set, it defaults
       to <filename>~/.pg_service.conf</>
       (see <xref linkend="libpq-pgservice">).
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      <indexterm>
-       <primary><envar>PGREALM</envar></primary>
-      </indexterm>
-      <envar>PGREALM</envar> sets the Kerberos realm to use with
-      <productname>PostgreSQL</productname>, if  it is different from the
-      local realm.  If <envar>PGREALM</envar> is set,
-      <application>libpq</application> applications will attempt
-      authentication  with  servers for this realm and use separate ticket
-      files to avoid conflicts with local ticket files.   This
-      environment  variable is only used if GSSAPI authentication is
-      selected by the server.
      </para>
     </listitem>
 
@@ -11908,6 +12276,9 @@ ____________________________________________________________________________-->
       </indexterm>
       <envar>PGREQUIRESSL</envar> behaves the same as the <xref
       linkend="libpq-connect-requiressl"> connection parameter.
+      This environment variable is deprecated in favor of the
+      <envar>PGSSLMODE</envar> variable; setting both variables suppresses the
+      effect of this one.
      </para>
     </listitem>
 
@@ -12010,6 +12381,16 @@ ____________________________________________________________________________-->
       linkend="libpq-connect-client-encoding"> connection parameter.
      </para>
     </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
+       <primary><envar>PGTARGETSESSIONATTRS</envar></primary>
+      </indexterm>
+      <envar>PGTARGETSESSIONATTRS</envar> behaves the same as the <xref
+      linkend="libpq-connect-target-session-attrs"> connection parameter.
+     </para>
+    </listitem>
    </itemizedlist>
   </para>
 ____________________________________________________________________________-->
@@ -12067,7 +12448,7 @@ ____________________________________________________________________________-->
       <indexterm>
        <primary><envar>PGPASSWORD</envar></primary>
       </indexterm>
-      <envar>PGPASSWORD</envar>的行为和<xref linkend="libpq-connect-password">连接参数相同。出于安全原因，我们不推荐使用这个环境变量，因为某些操作系统允许非根用户通过<application>ps</>看到进程的环境变量。可以考虑使用<filename>~/.pgpass</>文件（见<xref linkend="libpq-pgpass">）。
+      <envar>PGPASSWORD</envar>的行为和<xref linkend="libpq-connect-password">连接参数相同。出于安全原因，我们不推荐使用这个环境变量，因为某些操作系统允许非根用户通过<application>ps</>看到进程的环境变量。可以考虑使用口令文件（见<xref linkend="libpq-pgpass">）。
      </para>
     </listitem>
 
@@ -12076,7 +12457,8 @@ ____________________________________________________________________________-->
       <indexterm>
        <primary><envar>PGPASSFILE</envar></primary>
       </indexterm>
-      <envar>PGPASSFILE</envar>指定要用于查找的口令文件的名称。如果没有设置，默认为<filename>~/.pgpass</>（见<xref linkend="libpq-pgpass">）。
+      <envar>PGPASSFILE</envar>和<xref
+      linkend="libpq-connect-passfile">连接参数的行为相同。
      </para>
     </listitem>
 
@@ -12095,15 +12477,6 @@ ____________________________________________________________________________-->
        <primary><envar>PGSERVICEFILE</envar></primary>
       </indexterm>
       <envar>PGSERVICEFILE</envar>指定针对每个用户的连接服务文件名。如果没有设置，默认为<filename>~/.pg_service.conf</>（见<xref linkend="libpq-pgservice">）。
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      <indexterm>
-       <primary><envar>PGREALM</envar></primary>
-      </indexterm>
-      如果<productname>PostgreSQL</productname>要使用的 Kerberos 领域和本地领域不同，<envar>PGREALM</envar>可以设置它。如果<envar>PGREALM</envar>被设置，<application>libpq</application>应用将尝试通过服务器鉴定这个领域并且使用独立的票据文件来避免与本地票据文件冲突。只有在服务器选择了 GSSAPI 认证时，这个环境变量才被使用。
      </para>
     </listitem>
 
@@ -12140,6 +12513,8 @@ ____________________________________________________________________________-->
        <primary><envar>PGREQUIRESSL</envar></primary>
       </indexterm>
       <envar>PGREQUIRESSL</envar>的行为和<xref linkend="libpq-connect-requiressl">连接参数相同。
+	  为了支持<envar>PGSSLMODE</envar>变量，废弃了这个环境变量；
+	  同时设置这两个变量会抑制这个变量的效果。
      </para>
     </listitem>
 
@@ -12232,7 +12607,17 @@ ____________________________________________________________________________-->
       <envar>PGCLIENTENCODING</envar>的行为和<xref linkend="libpq-connect-client-encoding">连接参数相同。
      </para>
     </listitem>
-   </itemizedlist>
+
+    <listitem>
+     <para>
+      <indexterm>
+       <primary><envar>PGTARGETSESSIONATTRS</envar></primary>
+      </indexterm>
+      <envar>PGTARGETSESSIONATTRS</envar>的行为和<xref
+      linkend="libpq-connect-target-session-attrs">连接参数相同。
+     </para>
+    </listitem>
+	</itemizedlist>
   </para>
 
 <!--==========================orignal english content==========================
@@ -12398,17 +12783,22 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   The file <filename>.pgpass</filename> in a user's home directory or the
-   file referenced by <envar>PGPASSFILE</envar> can contain passwords to
+   The file <filename>.pgpass</filename> in a user's home directory can
+   contain passwords to
    be used if the connection requires a password (and no password has been
    specified  otherwise). On Microsoft Windows the file is named
    <filename>%APPDATA%\postgresql\pgpass.conf</> (where
    <filename>%APPDATA%</> refers to the Application Data subdirectory in
    the user's profile).
+   Alternatively, a password file can be specified
+   using the connection parameter <xref linkend="libpq-connect-passfile">
+   or the environment variable <envar>PGPASSFILE</envar>.
   </para>
 ____________________________________________________________________________-->
   <para>
-   一个用户主目录中的<filename>.pgpass</filename>文件或者被<envar>PGPASSFILE</envar>引用的文件可能包含在连接需要时使用的口令（并且其他情况不会指定口令）。在微软的 Windows 上该文件被命名为<filename>%APPDATA%\postgresql\pgpass.conf</>（其中<filename>%APPDATA%</>指的是用户配置中的应用数据子目录）。
+   一个用户主目录中的<filename>.pgpass</filename>文件可能包含在连接需要时使用的口令（并且其他情况不会指定口令）。在微软的 Windows 上该文件被命名为<filename>%APPDATA%\postgresql\pgpass.conf</>（其中<filename>%APPDATA%</>指的是用户配置中的应用数据子目录）。
+   或者，可以使用连接参数<xref linkend="libpq-connect-passfile">或环境变量
+   <envar>PGPASSFILE</envar>指定口令文件。
   </para>
 
 <!--==========================orignal english content==========================
@@ -12444,8 +12834,8 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   On Unix systems, the permissions on <filename>.pgpass</filename> must
-   disallow any access to world or group; achieve this by the command
+   On Unix systems, the permissions on a password file must
+   disallow any access to world or group; achieve this by a command such as
    <command>chmod 0600 ~/.pgpass</command>.  If the permissions are less
    strict than this, the file will be ignored.  On Microsoft Windows, it
    is assumed that the file is stored in a directory that is secure, so
@@ -12453,7 +12843,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   在 Unix 系统上，<filename>.pgpass</filename>上的权限必须不允许所有人或组内访问，可以用命令<command>chmod 0600 ~/.pgpass</command>实现。如果权限没有这么严格，该文件将被忽略。在微软 Windows 上，该文件被假定存储在一个安全的目录中，因此不会进行特别的权限检查。
+   在 Unix 系统上，口令文件上的权限必须不允许所有人或组内访问，可以用命令比如<command>chmod 0600 ~/.pgpass</command>实现。如果权限没有这么严格，该文件将被忽略。在微软 Windows 上，该文件被假定存储在一个安全的目录中，因此不会进行特别的权限检查。
   </para>
  </sect1>
 
