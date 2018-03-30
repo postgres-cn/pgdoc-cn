@@ -152,7 +152,7 @@ EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 1000;
    and the entry in this case is <function>scalarltsel</function>.
    The <function>scalarltsel</function> function retrieves the histogram for
    <structfield>unique1</structfield> from
-   <structname>pg_statistics</structname>.  For manual queries it is more
+   <structname>pg_statistic</structname>.  For manual queries it is more
    convenient to look in the simpler <structname>pg_stats</structname>
    view:
 
@@ -205,7 +205,7 @@ EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 1000;
          Index Cond: (unique1 &lt; 1000)
 </programlisting>
 
-   规划器检查<literal>WHERE</literal>子句条件，并在<structname>pg_operator</structname>中查找<literal>&lt;</literal>操作符的选择度函数。这被保持在<structfield>oprrest</structfield>列中， 并且在这个例子中的项是<function>scalarltsel</function>。 <function>scalarltsel</function>函数从<structname>pg_statistics</structname>为<structfield>unique1</structfield>检索直方图。 对于手工查询来说，查看更简单的<structname>pg_stats</structname>视图会更方便：
+   规划器检查<literal>WHERE</literal>子句条件，并在<structname>pg_operator</structname>中查找<literal>&lt;</literal>操作符的选择度函数。这被保持在<structfield>oprrest</structfield>列中， 并且在这个例子中的项是<function>scalarltsel</function>。 <function>scalarltsel</function>函数从<structname>pg_statistic</structname>为<structfield>unique1</structfield>检索直方图。 对于手工查询来说，查看更简单的<structname>pg_stats</structname>视图会更方便：
 
 <programlisting>
 SELECT histogram_bounds FROM pg_stats
@@ -769,4 +769,381 @@ ____________________________________________________________________________-->
 
  </sect1>
 
+ <sect1 id="multivariate-statistics-examples">
+<!--==========================orignal english content==========================
+  <title>Multivariate Statistics Examples</title>
+____________________________________________________________________________-->
+  <title>多变量统计例子</title>
+
+<!--==========================orignal english content==========================
+  <indexterm>
+   <primary>row estimation</primary>
+   <secondary>multivariate</secondary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm>
+   <primary>row estimation</primary>
+   <secondary>multivariate</secondary>
+  </indexterm>
+
+  <sect2>
+<!--==========================orignal english content==========================
+   <title>Functional Dependencies</title>
+____________________________________________________________________________-->
+   <title>函数依赖</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Multivariate correlation can be demonstrated with a very simple data set
+    &mdash; a table with two columns, both containing the same values:
+
+<programlisting>
+CREATE TABLE t (a INT, b INT);
+INSERT INTO t SELECT i % 100, i % 100 FROM generate_series(1, 10000) s(i);
+ANALYZE t;
+</programlisting>
+
+    As explained in <xref linkend="planner-stats">, the planner can determine
+    cardinality of <structname>t</structname> using the number of pages and
+    rows obtained from <structname>pg_class</structname>:
+
+<programlisting>
+SELECT relpages, reltuples FROM pg_class WHERE relname = 't';
+
+ relpages | reltuples
+-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;-
+       45 |     10000
+</programlisting>
+
+    The data distribution is very simple; there are only 100 distinct values
+    in each column, uniformly distributed.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    多元相关性可以用一个非常简单的数据集来演示 &mdash; 一个有两列的表，它们都包含相同的值：
+
+<programlisting>
+CREATE TABLE t (a INT, b INT);
+INSERT INTO t SELECT i % 100, i % 100 FROM generate_series(1, 10000) s(i);
+ANALYZE t;
+</programlisting>
+
+    如<xref linkend="planner-stats">所述，规划人员可以使用从
+	<structname>pg_class</structname>获取的页面和行数来确定
+	<structname>t</structname>的基数：
+
+<programlisting>
+SELECT relpages, reltuples FROM pg_class WHERE relname = 't';
+
+ relpages | reltuples
+----------+-----------
+       45 |     10000
+</programlisting>
+
+    他的数据分布非常简单；每列中只有100个不同的值，均匀分布。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The following example shows the result of estimating a <literal>WHERE</>
+    condition on the <structfield>a</> column:
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1;
+                                 QUERY PLAN                                  
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on t  (cost=0.00..170.00 rows=100 width=8) (actual rows=100 loops=1)
+   Filter: (a = 1)
+   Rows Removed by Filter: 9900
+</programlisting>
+
+    The planner examines the condition and determines the selectivity
+    of this clause to be 1%.  By comparing this estimate and the actual
+    number of rows, we see that the estimate is very accurate
+    (in fact exact, as the table is very small).  Changing the
+    <literal>WHERE</> condition to use the <structfield>b</> column, an
+    identical plan is generated.  But observe what happens if we apply the same
+    condition on both columns, combining them with <literal>AND</>:
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
+                                 QUERY PLAN                                  
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on t  (cost=0.00..195.00 rows=1 width=8) (actual rows=100 loops=1)
+   Filter: ((a = 1) AND (b = 1))
+   Rows Removed by Filter: 9900
+</programlisting>
+
+    The planner estimates the selectivity for each condition individually,
+    arriving at the same 1% estimates as above.  Then it assumes that the
+    conditions are independent, and so it multiplies their selectivities,
+    producing a final selectivity estimate of just 0.01%.
+    This is a significant underestimate, as the actual number of rows
+    matching the conditions (100) is two orders of magnitude higher.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    以下示例显示了在<structfield>a</>列上估计<literal>WHERE</>条件的结果：
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1;
+                                 QUERY PLAN                                  
+-------------------------------------------------------------------------------
+ Seq Scan on t  (cost=0.00..170.00 rows=100 width=8) (actual rows=100 loops=1)
+   Filter: (a = 1)
+   Rows Removed by Filter: 9900
+</programlisting>
+
+    规划器检查条件并确定该子句的选择性为1％。通过比较这个估计值和实际的行数，
+	我们可以看到估计值非常准确（事实上，是因为表格非常小）。
+	更改<literal>WHERE</>条件以使用<structfield>b</>列，将生成一个完全相同的计划。
+	但是观察一下，如果我们在两列上应用相同的条件，将它们用
+	<literal>AND</>结合起来会发生什么：
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Seq Scan on t  (cost=0.00..195.00 rows=1 width=8) (actual rows=100 loops=1)
+   Filter: ((a = 1) AND (b = 1))
+   Rows Removed by Filter: 9900
+</programlisting>
+
+    规划器分别估算每个条件的选择性，达到与上述相同的1％估计值。
+	然后它假定条件是独立的，因此它乘以它们的选择性，产生最终选择性估计值仅为0.01％。
+	这是一个明显的低估，因为符合条件（100）的实际行数要高于两个数量级。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    This problem can be fixed by creating a statistics object that
+    directs <command>ANALYZE</> to calculate functional-dependency
+    multivariate statistics on the two columns:
+
+<programlisting>
+CREATE STATISTICS stts (dependencies) ON a, b FROM t;
+ANALYZE t;
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
+                                  QUERY PLAN                                   
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on t  (cost=0.00..195.00 rows=100 width=8) (actual rows=100 loops=1)
+   Filter: ((a = 1) AND (b = 1))
+   Rows Removed by Filter: 9900
+</programlisting>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    通过创建一个指示<command>ANALYZE</>
+	计算两列上的函数依赖性多变量统计信息的统计对象，可以解决此问题。
+
+<programlisting>
+CREATE STATISTICS stts (dependencies) ON a, b FROM t;
+ANALYZE t;
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Seq Scan on t  (cost=0.00..195.00 rows=100 width=8) (actual rows=100 loops=1)
+   Filter: ((a = 1) AND (b = 1))
+   Rows Removed by Filter: 9900
+</programlisting>
+   </para>
+  </sect2>
+
+  <sect2>
+<!--==========================orignal english content==========================
+   <title>Multivariate N-Distinct Counts</title>
+____________________________________________________________________________-->
+   <title>N 个不同变量的计数</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    A similar problem occurs with estimation of the cardinality of sets of
+    multiple columns, such as the number of groups that would be generated by
+    a <command>GROUP BY</command> clause.  When <command>GROUP BY</command>
+    lists a single column, the n-distinct estimate (which is visible as the
+    estimated number of rows returned by the HashAggregate node) is very
+    accurate:
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a;
+                                       QUERY PLAN                                        
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ HashAggregate  (cost=195.00..196.00 rows=100 width=12) (actual rows=100 loops=1)
+   Group Key: a
+   -&gt;  Seq Scan on t  (cost=0.00..145.00 rows=10000 width=4) (actual rows=10000 loops=1)
+</programlisting>
+    But without multivariate statistics, the estimate for the number of
+    groups in a query with two columns in <command>GROUP BY</command>, as
+    in the following example, is off by an order of magnitude:
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a, b;
+                                       QUERY PLAN                                        
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ HashAggregate  (cost=220.00..230.00 rows=1000 width=16) (actual rows=100 loops=1)
+   Group Key: a, b
+   -&gt;  Seq Scan on t  (cost=0.00..145.00 rows=10000 width=8) (actual rows=10000 loops=1)
+</programlisting>
+    By redefining the statistics object to include n-distinct counts for the
+    two columns, the estimate is much improved:
+<programlisting>
+DROP STATISTICS stts;
+CREATE STATISTICS stts (dependencies, ndistinct) ON a, b FROM t;
+ANALYZE t;
+EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a, b;
+                                       QUERY PLAN                                        
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ HashAggregate  (cost=220.00..221.00 rows=100 width=16) (actual rows=100 loops=1)
+   Group Key: a, b
+   -&gt;  Seq Scan on t  (cost=0.00..145.00 rows=10000 width=8) (actual rows=10000 loops=1)
+</programlisting>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    估计多列集合的基数时会出现类似的问题，例如由<command>GROUP BY</command>
+	子句生成的组的数量。当<command>GROUP BY</command>列出单个列时，
+	n个不同估计值（作为HashAggregate节点返回的估计行数可见）非常准确：
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ HashAggregate  (cost=195.00..196.00 rows=100 width=12) (actual rows=100 loops=1)
+   Group Key: a
+   -&gt;  Seq Scan on t  (cost=0.00..145.00 rows=10000 width=4) (actual rows=10000 loops=1)
+</programlisting>
+    但是，如果没有多变量统计信息，那么在<command>GROUP BY</command>
+	中包含两列的查询中的组数量估计值将在下面的示例中偏离一个数量级：
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a, b;
+                                       QUERY PLAN                                        
+--------------------------------------------------------------------------------------------
+ HashAggregate  (cost=220.00..230.00 rows=1000 width=16) (actual rows=100 loops=1)
+   Group Key: a, b
+   -&gt;  Seq Scan on t  (cost=0.00..145.00 rows=10000 width=8) (actual rows=10000 loops=1)
+</programlisting>
+    通过重新定义统计对象以包括两列的n个不同值的计数，估计得到了很大改进：
+<programlisting>
+DROP STATISTICS stts;
+CREATE STATISTICS stts (dependencies, ndistinct) ON a, b FROM t;
+ANALYZE t;
+EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a, b;
+                                       QUERY PLAN                                        
+--------------------------------------------------------------------------------------------
+ HashAggregate  (cost=220.00..221.00 rows=100 width=16) (actual rows=100 loops=1)
+   Group Key: a, b
+   -&gt;  Seq Scan on t  (cost=0.00..145.00 rows=10000 width=8) (actual rows=10000 loops=1)
+</programlisting>
+   </para>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="planner-stats-security">
+<!--==========================orignal english content==========================
+  <title>Planner Statistics and Security</title>
+____________________________________________________________________________-->
+  <title>规划器统计和安全</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   Access to the table <structname>pg_statistic</structname> is restricted to
+   superusers, so that ordinary users cannot learn about the contents of the
+   tables of other users from it.  Some selectivity estimation functions will
+   use a user-provided operator (either the operator appearing in the query or
+   a related operator) to analyze the stored statistics.  For example, in order
+   to determine whether a stored most common value is applicable, the
+   selectivity estimator will have to run the appropriate <literal>=</literal>
+   operator to compare the constant in the query to the stored value.
+   Thus the data in <structname>pg_statistic</structname> is potentially
+   passed to user-defined operators.  An appropriately crafted operator can
+   intentionally leak the passed operands (for example, by logging them
+   or writing them to a different table), or accidentally leak them by showing
+   their values in error messages, in either case possibly exposing data from
+   <structname>pg_statistic</structname> to a user who should not be able to
+   see it.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   对表<structname>pg_statistic</structname>的访问仅限于超级用户，
+   以便普通用户无法从中了解其他用户的表的内容。
+   一些选择性估算函数将使用用户提供的操作符（出现在查询中的操作符或相关操作符）
+   来分析所存储的统计。例如，为了确定存储的最常用值是否适用，
+   选择性估计器将必须运行适当的<literal>=</literal>
+   运算符来将查询中的常量与存储的值进行比较。因此，
+   <structname>pg_statistic</structname>中的数据可能会传递给用户定义的运算符。
+   适当制作的操作符可以故意泄漏传递的操作数（例如，通过记录它们或将它们写入不同的表），
+   或者通过在错误消息中显示它们的值来意外泄漏它们，无论哪种情况都可能暴露
+   <structname>pg_statistic</structname>中的数据给一个不应该能够看到它的用户。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   In order to prevent this, the following applies to all built-in selectivity
+   estimation functions.  When planning a query, in order to be able to use
+   stored statistics, the current user must either
+   have <literal>SELECT</literal> privilege on the table or the involved
+   columns, or the operator used must be <literal>LEAKPROOF</literal> (more
+   accurately, the function that the operator is based on).  If not, then the
+   selectivity estimator will behave as if no statistics are available, and
+   the planner will proceed with default or fall-back assumptions.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   为了防止这种情况，以下内容适用于所有内置的选择性估计函数。在规划查询时，
+   为了能够使用存储的统计信息，当前用户必须在表或相关列上具有
+   <literal>SELECT</literal>权限，或者使用的操作符必须是
+   <literal>LEAKPROOF</literal>（更准确地说，是操作符所基于的函数）。
+   如果不是，那么选择性估计器将表现得好像没有统计数据可用，
+   并且规划器将继续进行默认或回退假设。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   If a user does not have the required privilege on the table or columns,
+   then in many cases the query will ultimately receive a permission-denied
+   error, in which case this mechanism is invisible in practice.  But if the
+   user is reading from a security-barrier view, then the planner might wish
+   to check the statistics of an underlying table that is otherwise
+   inaccessible to the user.  In that case, the operator should be leak-proof
+   or the statistics will not be used.  There is no direct feedback about
+   that, except that the plan might be suboptimal.  If one suspects that this
+   is the case, one could try running the query as a more privileged user,
+   to see if a different plan results.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   如果用户对表或列没有所需的权限，那么在很多情况下，查询最终会收到权限被拒绝的错误，
+   在这种情况下，这种机制在实践中是不可见的。但是，如果用户正在从安全屏障视图读取数据，
+   则规划器可能希望检查用户无法访问的基础表的统计数据。在这种情况下，
+   操作符应该是防漏的，否则统计数据将不会被使用。没有直接的反馈意见，
+   除非计划可能是次优的。如果有人怀疑是这种情况，
+   可以尝试将查询作为更有特权的用户来运行，以查看是否产生了不同的计划。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   This restriction applies only to cases where the planner would need to
+   execute a user-defined operator on one or more values
+   from <structname>pg_statistic</structname>.  Thus the planner is permitted
+   to use generic statistical information, such as the fraction of null values
+   or the number of distinct values in a column, regardless of access
+   privileges.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   此限制仅适用于规划器需要对<structname>pg_statistic</structname>
+   中的一个或多个值执行用户定义的运算符的情况。因此，无论访问权限如何，
+   规划器都可以使用通用的统计信息，例如列中空值的比例或列中不同值的数量。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Selectivity estimation functions contained in third-party extensions that
+   potentially operate on statistics with user-defined operators should follow
+   the same security rules.  Consult the PostgreSQL source code for guidance.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   可能对用户定义的操作符进行统计操作的第三方扩展中包含的选择性估计函数，
+   应遵循相同的安全规则。请参考PostgreSQL源代码获取指导。
+  </para>
+ </sect1>
 </chapter>

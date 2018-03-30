@@ -45,7 +45,8 @@ ____________________________________________________________________________-->
    <para>
     When the optimizer determines that parallel query is the fastest execution
     strategy for a particular query, it will create a query plan which includes
-    a <firstterm>Gather node</firstterm>.  Here is a simple example:
+    a <firstterm>Gather</firstterm> or <firstterm>Gather Merge</firstterm>
+    node.  Here is a simple example:
 
 <screen>
 EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
@@ -60,7 +61,7 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
    </para>
 ____________________________________________________________________________-->
    <para>
-   当优化器判断对于某一个特定的查询，并行查询是最快的执行策略时，优化器将创建一个查询计划。该计划包括一个 <firstterm>Gather 节点</firstterm>。下面是一个简单的例子：
+   当优化器判断对于某一个特定的查询，并行查询是最快的执行策略时，优化器将创建一个查询计划。该计划包括一个<firstterm>Gather</firstterm>或<firstterm>Gather Merge</firstterm>节点。下面是一个简单的例子：
 
 <screen>
 EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
@@ -76,19 +77,26 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
 
 <!--==========================orignal english content==========================
    <para>
-    In all cases, the <literal>Gather</literal> node will have exactly one
+    In all cases, the <literal>Gather</literal> or
+    <literal>Gather Merge</literal> node will have exactly one
     child plan, which is the portion of the plan that will be executed in
-    parallel.  If the <literal>Gather</> node is at the very top of the plan
-    tree, then the entire query will execute in parallel.  If it is somewhere
-    else in the plan tree, then only that portion of the query will run in
-    parallel.  In the example above, the query accesses only one table, so
-    there is only one plan node other than the <literal>Gather</> node itself;
-    since that plan node is a child of the <literal>Gather</> node, it will
-    run in parallel.
+    parallel.  If the <literal>Gather</> or <literal>Gather Merge</> node is
+    at the very top of the plan tree, then the entire query will execute in
+    parallel.  If it is somewhere else in the plan tree, then only the portion
+    of the plan below it will run in parallel.  In the example above, the
+    query accesses only one table, so there is only one plan node other than
+    the <literal>Gather</> node itself; since that plan node is a child of the
+    <literal>Gather</> node, it will run in parallel.
    </para>
 ____________________________________________________________________________-->
    <para>
-    在所有的情形下，<literal>Gather</literal>节点都只有一个子计划，它是将被并行执行的计划的一部分。如果 <literal>Gather</>节点 位于计划树的最顶层，那么整个查询将并行执行。如果它位于计划树的其他位置，那么只有查询的那一部分会并行执行。在上面的例子中，查询只访问了一个表，因此除<literal>Gather</>节点本身之外只有一个计划节点。因为该计划节点是 <literal>Gather</>节点的孩子节点，所以它会并行执行。
+    在所有的情形下，<literal>Gather</literal>或<literal>Gather Merge</literal>
+	节点都只有一个子计划，它是将被并行执行的计划的一部分。如果 <literal>Gather</>
+	或<literal>Gather Merge</literal>节点位于计划树的最顶层，那么整个查询将并行执行。
+	如果它位于计划树的其他位置，那么只有在它下面的计划部分会并行执行。
+	在上面的例子中，查询只访问了一个表，因此除<literal>Gather</>
+	节点本身之外只有一个计划节点。因为该计划节点是 <literal>Gather</>
+	节点的孩子节点，所以它会并行执行。
    </para>
 
 <!--==========================orignal english content==========================
@@ -98,44 +106,85 @@ ____________________________________________________________________________-->
     during query execution, the process which is implementing the user's
     session will request a number of <link linkend="bgworker">background
     worker processes</link> equal to the number
-    of workers chosen by the planner.  The total number of background
-    workers that can exist at any one time is limited by
-    <xref linkend="guc-max-worker-processes">, so it is possible for a
+    of workers chosen by the planner.  The number of background workers that
+    the planner will consider using is limited to at most
+    <xref linkend="guc-max-parallel-workers-per-gather">.  The total number
+    of background workers that can exist at any one time is limited by both
+    <xref linkend="guc-max-worker-processes"> and
+    <xref linkend="guc-max-parallel-workers">.  Therefore, it is possible for a
     parallel query to run with fewer workers than planned, or even with
     no workers at all.  The optimal plan may depend on the number of workers
     that are available, so this can result in poor query performance.  If this
-    occurrence is frequent, considering increasing
-    <varname>max_worker_processes</> so that more workers can be run
-    simultaneously or alternatively reducing
-    <xref linkend="guc-max-parallel-workers-per-gather"> so that the planner
+    occurrence is frequent, consider increasing
+    <varname>max_worker_processes</> and <varname>max_parallel_workers</>
+    so that more workers can be run simultaneously or alternatively reducing
+    <varname>max_parallel_workers_per_gather</varname> so that the planner
     requests fewer workers.
    </para>
 ____________________________________________________________________________-->
    <para>
-    <link linkend="using-explain">使用 EXPLAIN</>命令, 你能看到规划器选择的工作者数量。当查询执行期间到达<literal>Gather</>节点时，实现用户会话的进程将会请求和规划器选中的工作者数量一样多的<link linkend="bgworker">后台工作者进程</link> 。任何时候能够存在的后台工作者进程的总数由<xref linkend="guc-max-worker-processes">限制，因此一个并行查询可能会使用比规划中少的工作者来运行，甚至有可能根本不使用工作者。最优的计划可能取决于可用的工作者的数量，因此这可能会导致不好的查询性能。如果这种情况经常发生，那么就应当考虑一下提高<varname>max_worker_processes</>的值，这样更多的工作者可以同时运行；或者降低<xref linkend="guc-max-parallel-workers-per-gather">，这样规划器会要求少一些的工作者。
+    <link linkend="using-explain">使用 EXPLAIN</>命令, 你能看到规划器选择的工作者数量。
+	当查询执行期间到达<literal>Gather</>节点时，
+	实现用户会话的进程将会请求和规划器选中的工作者数量一样多的
+	<link linkend="bgworker">后台工作者进程</link> 。
+	规划器考虑使用的后台工作者的数量限制为最多
+	<xref linkend="guc-max-parallel-workers-per-gather">。
+	任何时候能够存在的后台工作者进程的总数由<xref linkend="guc-max-worker-processes">
+	和<xref linkend="guc-max-parallel-workers">限制，
+	因此一个并行查询可能会使用比规划中少的工作者来运行，
+	甚至有可能根本不使用工作者。最优的计划可能取决于可用的工作者的数量，
+	因此这可能会导致不好的查询性能。如果这种情况经常发生，
+	那么就应当考虑一下提高<varname>max_worker_processes</>和<varname>max_parallel_workers</>
+	的值，这样更多的工作者可以同时运行；或者降低<varname>max_parallel_workers_per_gather</varname>，
+	这样规划器会要求少一些的工作者。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
     Every background worker process which is successfully started for a given
-    parallel query will execute the portion of the plan which is a descendent
-    of the <literal>Gather</> node.  The leader will also execute that portion
-    of the plan, but it has an additional responsibility: it must also read
-    all of the tuples generated by the workers.  When the parallel portion of
-    the plan generates only a small number of tuples, the leader will often
-    behave very much like an additional worker, speeding up query execution.
-    Conversely, when the parallel portion of the plan generates a large number
-    of tuples, the leader may be almost entirely occupied with reading the
-    tuples generated by the workers and performing any further processing
-    steps which are required by plan nodes above the level of the
-    <literal>Gather</literal> node.  In such cases, the leader will do very
-    little of the work of executing the parallel portion of the plan.
+    parallel query will execute the parallel portion of the plan.  The leader
+    will also execute that portion of the plan, but it has an additional
+    responsibility: it must also read all of the tuples generated by the
+    workers.  When the parallel portion of the plan generates only a small
+    number of tuples, the leader will often behave very much like an additional
+    worker, speeding up query execution.  Conversely, when the parallel portion
+    of the plan generates a large number of tuples, the leader may be almost
+    entirely occupied with reading the tuples generated by the workers and
+    performing any further processing steps which are required by plan nodes
+    above the level of the <literal>Gather</literal> node or
+    <literal>Gather Merge</literal> node.  In such cases, the leader will
+    do very little of the work of executing the parallel portion of the plan.
    </para>
 ____________________________________________________________________________-->
    <para>
-    为一个给定并行查询成功启动的后台工作者进程都将会执行<literal>Gather</> 节点的后代计划的一部分。这些工作者的领导者也将执行该计划，不过它还有一个额外的任务：它还必须读取所有由工作者产生的元组。当整个计划的并行部分只产生了少量元组时，领导者通常将表现为一个额外的加速查询执行的工作者。反过来，当计划的并行部分产生大量的元组时，领导者将几乎全用来读取由工作者产生的元组并且执行<literal>Gather</literal>节点上层计划节点所要求的任何进一步处理。在这些情况下，领导者所作的执行并行部分的工作将会很少。
+    为一个给定并行查询成功启动的后台工作者进程都将会执行计划的并行部分。
+	这些工作者的领导者也将执行该计划，不过它还有一个额外的任务：
+	它还必须读取所有由工作者产生的元组。当整个计划的并行部分只产生了少量元组时，
+	领导者通常将表现为一个额外的加速查询执行的工作者。反过来，
+	当计划的并行部分产生大量的元组时，领导者将几乎全用来读取由工作者产生的元组并且执行
+	<literal>Gather</literal>节点或<literal>Gather Merge</literal>
+	节点上层计划节点所要求的任何进一步处理。在这些情况下，
+	领导者所作的执行并行部分的工作将会很少。
    </para>
- </sect1>
+
+<!--==========================orignal english content==========================
+   <para>
+    When the node at the top of the parallel portion of the plan is
+    <literal>Gather Merge</> rather than <literal>Gather</>, it indicates that
+    each process executing the parallel portion of the plan is producing
+    tuples in sorted order, and that the leader is performing an
+    order-preserving merge.  In contrast, <literal>Gather</> reads tuples
+    from the workers in whatever order is convenient, destroying any sort
+    order that may have existed.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当计划平行部分顶部的节点是<literal>Gather Merge</>而不是<literal>Gather</>时，
+	它表示执行计划的并行部分的每个进程正在按排序顺序生成元组，
+	领导者正在执行顺序保留合并。相反，<literal>Gather</>
+	以任何方便地顺序从工作者读取元组，从而破坏可能存在的任何排序顺序。
+   </para>  
+   </sect1>
 
  <sect1 id="when-can-parallel-query-be-used">
 <!--==========================orignal english content==========================
@@ -209,12 +258,12 @@ ____________________________________________________________________________-->
   <itemizedlist>
     <listitem>
 <!--==========================orignal english content==========================
-      <para> 
+      <para>
         The query writes any data or locks any database rows. If a query
         contains a data-modifying operation either at the top level or within
         a CTE, no parallel plans for that query will be generated. This is a
         limitation of the current implementation which could be lifted in a
-        future release. 
+        future release.
       </para>
 ____________________________________________________________________________-->
       <para> 
@@ -229,15 +278,15 @@ ____________________________________________________________________________-->
         which the system thinks that partial or incremental execution might
         occur, no parallel plan is generated. For example, a cursor created
         using <link linkend="sql-declare">DECLARE CURSOR</link> will never use
-        a parallel plan. Similarly, a PL/pgsql loop of the form
+        a parallel plan. Similarly, a PL/pgSQL loop of the form
         <literal>FOR x IN query LOOP .. END LOOP</literal> will never use a
         parallel plan, because the parallel query system is unable to verify
         that the code in the loop is safe to execute while parallel query is
-        active. 
+        active.
       </para>
 ____________________________________________________________________________-->
       <para>
-        查询可能在执行过程中被暂停。只要在系统认为可能发生部分或者增量式执行，就不会产生并行计划。例如：用<link linkend="sql-declare">DECLARE CURSOR</link>创建的游标将永远不会使用并行计划。类似地，一个<literal>FOR x IN query LOOP .. END LOOP</literal>形式的 PL/pgsql 循环也永远
+        查询可能在执行过程中被暂停。只要在系统认为可能发生部分或者增量式执行，就不会产生并行计划。例如：用<link linkend="sql-declare">DECLARE CURSOR</link>创建的游标将永远不会使用并行计划。类似地，一个<literal>FOR x IN query LOOP .. END LOOP</literal>形式的 PL/pgSQL 循环也永远
 不会使用并行计划，因为当并行查询进行时，并行查询系统无法验证循环中的代码执行起来是安全的。
       </para>
     </listitem>
@@ -265,7 +314,7 @@ ____________________________________________________________________________-->
         query itself, that query will never use a parallel plan. This is a
         limitation of the current implementation, but it may not be desirable
         to remove this limitation, since it could result in a single query
-        using a very large number of processes. 
+        using a very large number of processes.
       </para>
 ____________________________________________________________________________-->
       <para>
@@ -291,7 +340,7 @@ ____________________________________________________________________________-->
     Even when parallel query plan is generated for a particular query, there
     are several circumstances under which it will be impossible to execute
     that plan in parallel at execution time.  If this occurs, the leader
-    will execute the portion of the plan between below the <literal>Gather</>
+    will execute the portion of the plan below the <literal>Gather</>
     node entirely by itself, almost as if the <literal>Gather</> node were
     not present.  This will happen if any of the following conditions are met:
   </para>
@@ -303,7 +352,7 @@ ____________________________________________________________________________-->
   <itemizedlist>
     <listitem>
 <!--==========================orignal english content==========================
-      <para> 
+      <para>
         No background workers can be obtained because of the limitation that
         the total number of background workers cannot exceed
         <xref linkend="guc-max-worker-processes">.
@@ -313,10 +362,23 @@ ____________________________________________________________________________-->
         因为后台工作者进程的总数不能超过<xref linkend="guc-max-worker-processes">，导致不能得到后台工作者进程。
       </para>
     </listitem>
+    <listitem>
+<!--==========================orignal english content==========================
+      <para>
+        No background workers can be obtained because of the limitation that
+        the total number of background workers launched for purposes of
+        parallel query cannot exceed <xref linkend="guc-max-parallel-workers">.
+      </para>
+____________________________________________________________________________-->
+      <para>
+        由于为并行查询而启动的后台工作者总数不能超过
+		<xref linkend="guc-max-parallel-workers">，因此无法获得后台工作者。
+      </para>
+    </listitem>
 
     <listitem>
 <!--==========================orignal english content==========================
-      <para> 
+      <para>
         The client sends an Execute message with a non-zero fetch count.
         See the discussion of the
         <link linkend="protocol-flow-ext-query">extended query protocol</link>.
@@ -324,19 +386,34 @@ ____________________________________________________________________________-->
         send such a message, this can only occur when using a client that
         does not rely on libpq.  If this is a frequent
         occurrence, it may be a good idea to set
-        <xref linkend="guc-max-parallel-workers-per-gather"> in sessions
-        where it is likely, so as to avoid generating query plans that may
-        be suboptimal when run serially.
+        <xref linkend="guc-max-parallel-workers-per-gather"> to zero in
+        sessions where it is likely, so as to avoid generating query plans
+        that may be suboptimal when run serially.
       </para>
 ____________________________________________________________________________-->
       <para> 
-        客户端发送了一个执行消息，并且消息中要求取元组的数量不为零。执行消息可见<link linkend="protocol-flow-ext-query">扩展查询协议</link>中的讨论。因为<link linkend="libpq">libpq</link>当前没有提供方法来发送这种消息，所以这种情况只可能发生在不依赖 libpq 的客户端中。如果这种情况经常发生，那在它可能发生的会话中设置 <xref linkend="guc-max-parallel-workers-per-gather">是一个很好的主意，这样可以避免产生连续运行时次优的查询计划。
+        客户端发送了一个执行消息，并且消息中要求取元组的数量不为零。执行消息可见<link linkend="protocol-flow-ext-query">扩展查询协议</link>中的讨论。因为<link linkend="libpq">libpq</link>当前没有提供方法来发送这种消息，所以这种情况只可能发生在不依赖 libpq 的客户端中。如果这种情况经常发生，那在它可能发生的会话中将<xref linkend="guc-max-parallel-workers-per-gather">设置为0是一个很好的主意，这样可以避免产生连续运行时次优的查询计划。
       </para>
     </listitem>
 
     <listitem>
 <!--==========================orignal english content==========================
-      <para> 
+      <para>
+        A prepared statement is executed using a <literal>CREATE TABLE .. AS
+        EXECUTE ..</literal> statement.  This construct converts what otherwise
+        would have been a read-only operation into a read-write operation,
+        making it ineligible for parallel query.
+      </para>
+____________________________________________________________________________-->
+      <para>
+        准备好的语句是使用<literal>CREATE TABLE .. AS EXECUTE ..</literal>语句执行的。
+		此构造将本来只是只读操作的内容转换为读写操作，使其不适合并行查询。
+      </para>
+    </listitem>
+
+    <listitem>
+<!--==========================orignal english content==========================
+      <para>
         The transaction isolation level is serializable.  This situation
         does not normally arise, because parallel query plans are not
         generated when the transaction isolation level is serializable.
@@ -365,14 +442,17 @@ ____________________________________________________________________________-->
     copy of the output result set, so the query would not run any faster
     than normal but would produce incorrect results.  Instead, the parallel
     portion of the plan must be what is known internally to the query
-    optimizer as a <firstterm>partial plan</>; that is, it must constructed
-    so that each process will which executes the plan will generate only a
+    optimizer as a <firstterm>partial plan</>; that is, it must be constructed
+    so that each process which executes the plan will generate only a
     subset of the output rows in such a way that each required output row
     is guaranteed to be generated by exactly one of the cooperating processes.
+    Generally, this means that the scan on the driving table of the query
+    must be a parallel-aware scan.
   </para>
 ____________________________________________________________________________-->
   <para>
     因为每个工作者只执行完成计划的并行部分，所以不可能简单地产生一个普通查询计划并使用多个工作者运行它。每个工作者都会产生输出结果集的一个完全拷贝，因而查询并不会比普通查询运行得更快甚至还会产生不正确的结果。相反，计划的并行部分一定被查询优化器在内部当作一个<firstterm>部分计划</>。也就是说，一定要这样来创建计划，使得每个将执行该计划的进程只产生输出行的一个子集，这样可以保证每个需要被输出的行刚好会被合作进程产生一次。
+	通常，这意味着查询驱动表上的扫描必须是并行感知扫描。
   </para>
 
  <sect2 id="parallel-scans">
@@ -383,18 +463,74 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-    Currently, the only type of scan which has been modified to work with
-    parallel query is a sequential scan.  Therefore, the driving table in
-    a parallel plan will always be scanned using a
-    <literal>Parallel Seq Scan</>.  The relation's blocks will be divided
-    among the cooperating processes.  Blocks are handed out one at a
-    time, so that access to the relation remains sequential.  Each process
-    will visit every tuple on the page assigned to it before requesting a new
-    page.
+    The following types of parallel-aware table scans are currently supported.
+
+  <itemizedlist>
+    <listitem>
+      <para>
+        In a <emphasis>parallel sequential scan</>, the table's blocks will
+        be divided among the cooperating processes.  Blocks are handed out one
+        at a time, so that access to the table remains sequential.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        In a <emphasis>parallel bitmap heap scan</>, one process is chosen
+        as the leader.  That process performs a scan of one or more indexes
+        and builds a bitmap indicating which table blocks need to be visited.
+        These blocks are then divided among the cooperating processes as in
+        a parallel sequential scan.  In other words, the heap scan is performed
+        in parallel, but the underlying index scan is not.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        In a <emphasis>parallel index scan</> or <emphasis>parallel index-only
+        scan</>, the cooperating processes take turns reading data from the
+        index.  Currently, parallel index scans are supported only for
+        btree indexes.  Each process will claim a single index block and will
+        scan and return all tuples referenced by that block; other process can
+        at the same time be returning tuples from a different index block.
+        The results of a parallel btree scan are returned in sorted order
+        within each worker process.
+      </para>
+    </listitem>
+  </itemizedlist>
+
+    Other scan types, such as scans of non-btree indexes, may support
+    parallel scans in the future.
   </para>
 ____________________________________________________________________________-->
   <para>
-    当前唯一一种被修改用于并行查询的扫描类型是顺序扫描。因此在并行计划中的驱动表将总是被使用<literal>并行顺序扫描</>进行扫描。关系的块将被划分给合作进程。一次发放一个文件块，这样对于关系的访问仍然保持为顺序访问。在请求一个新页面之前，每一个进程将访问分配给它的页面上的每一个元组。
+    目前支持以下类型的并行感知表扫描。
+
+  <itemizedlist>
+    <listitem>
+      <para>
+        在<emphasis>并行顺序扫描</>中，表格的块将在协作过程中分配。
+		块一次发放一个，所以访问表仍然是连续的。
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        在一个<emphasis>并行位图堆扫描</>中，选择一个进程作为领导者。
+		该进程执行一个或多个索引的扫描并构建指示需要访问哪些表块的位图。
+		然后这些块在并行顺序扫描中在协作进程中分配。换句话说，
+		堆扫描是并行执行的，但底层索引扫描不是。
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        在<emphasis>并行索引扫描</>或<emphasis>并行仅索引的扫描</>中，
+		协作进程轮流从索引读取数据。目前，
+		并行索引扫描仅支持btree索引。每个进程将声明一个索引块，
+		并将扫描并返回该块引用的所有元组；其他进程可以同时从不同的索引块返回元组。
+		并行btree扫描的结果以每个工作进程内的排序顺序返回。
+      </para>
+    </listitem>
+  </itemizedlist>
+
+    其他扫描类型（如非Btree索引的扫描）可能会在将来支持并行扫描。
   </para>
  </sect2>
 
@@ -406,64 +542,98 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-    The driving table may be joined to one or more other tables using nested
-    loops or hash joins.  The outer side of the join may be any kind of
-    non-parallel plan that is otherwise supported by the planner provided that
-    it is safe to run within a parallel worker.  For example, it may be an
-    index scan which looks up a value based on a column taken from the inner
-    table. Each worker will execute the outer side of the plan in full, which
-    is why merge joins are not supported here. The outer side of a merge join
-    will often involve sorting the entire inner table; even if it involves an
-    index, it is unlikely to be productive to have multiple processes each
-    conduct a full index scan of the inner table.
+    Just as in a non-parallel plan, the driving table may be joined to one or
+    more other tables using a nested loop, hash join, or merge join.  The
+    inner side of the join may be any kind of non-parallel plan that is
+    otherwise supported by the planner provided that it is safe to run within
+    a parallel worker.  For example, if a nested loop join is chosen, the
+    inner plan may be an index scan which looks up a value taken from the outer
+    side of the join.
   </para>
 ____________________________________________________________________________-->
   <para>
-    驱动表将被使用嵌套循环或者哈希连接连接到一个或者多个其他表。在连接的外侧可以是任何一种被规划器支持可以安全地在并行工作者中运行的非并行计划。例如，它可以是一个索引扫描，基于从内表取得的一列来查找值。每个工作者都将会完整地执行外侧的计划，这也是为什么这里不能支持归并连接的原因。归并连接的外侧常常涉及到排序整个内表，即便使用索引，多次在内表上进行完全索引扫描也效率不高。
+    就像在非平行计划中一样，可以使用嵌套循环、
+	散列连接或合并连接将驱动表连接到一个或多个其他表。
+	连接的内侧可以是规划器支持的任何类型的非平行计划，
+	只要在并行工作者内运行是安全的。例如，如果选择了嵌套循环连接，
+	则内部计划可能是索引扫描，它会查找从连接外侧获取的值。
   </para>
- </sect2>
+<!--==========================orignal english content==========================
+  <para>
+    Each worker will execute the inner side of the join in full.  This is
+    typically not a problem for nested loops, but may be inefficient for
+    cases involving hash or merge joins.  For example, for a hash join, this
+    restriction means that an identical hash table is built in each worker
+    process, which works fine for joins against small tables but may not be
+    efficient when the inner table is large.  For a merge join, it might mean
+    that each worker performs a separate sort of the inner relation, which
+    could be slow.  Of course, in cases where a parallel plan of this type
+    would be inefficient, the query planner will normally choose some other
+    plan (possibly one which does not use parallelism) instead.
+  </para>
+____________________________________________________________________________-->
+  <para>
+    每个工作者将全部执行连接的内侧。这对于嵌套循环通常不是问题，
+	但对于涉及散列或合并连接的情况可能效率低下。例如，对于散列连接，
+	此限制意味着在每个工作进程中构建了一个相同的散列表，
+	这对于小型表中的连接工作良好，但在内部表很大时可能效率不高。
+	对于合并连接，这可能意味着每个工作者执行内部关系的一个单独排序，
+	这可能会很慢。当然，在这种并行计划效率低下的情况下，
+	查询规划器通常会选择其他计划（可能不使用并行性）。
+  </para>
+  </sect2>
 
  <sect2 id="parallel-aggregation">
 <!--==========================orignal english content==========================
   <title>Parallel Aggregation</title>
 ____________________________________________________________________________-->
-  <title>并行聚集</title>
-<!--==========================orignal english content==========================
-  <para>
-    It is not possible to perform the aggregation portion of a query entirely
-    in parallel.  For example, if a query involves selecting
-    <literal>COUNT(*)</>, each worker could compute a total, but those totals
-    would need to combined in order to produce a final answer.  If the query
-    involved a <literal>GROUP BY</> clause, a separate total would need to
-    be computed for each group.  Even though aggregation can't be done entirely
-    in parallel, queries involving aggregation are often excellent candidates
-    for parallel query, because they typically read many rows but return only
-    a few rows to the client.  Queries that return many rows to the client
-    are often limited by the speed at which the client can read the data,
-    in which case parallel query cannot help very much.
-  </para>
-____________________________________________________________________________-->
-  <para>
-    将查询的聚集部分整个地并行执行是不可能的。例如，如果一个查询涉及到选择<literal>COUNT(*)</>，每个工作者可以计算一个总和，但是这些总和需要被整合在一起以产生最终的答案。如果一个计划涉及到<literal>GROUP BY</>子句，为每个组需要计算出一个单独的总和。即使聚集不能完全地并行执行，但是涉及聚集的查询常常是并行查询很好的候选，因为它们通常都是读很多行但只返回少数几行给客户端。返回很多行给客户端的查询常常受制于客户端读取数据的速度，这种情况下并行查询帮助不大。
-  </para>
+  <title>并行聚合</title>
 
 <!--==========================orignal english content==========================
   <para>
-    <productname>PostgreSQL</> supports parallel aggregation by aggregating
-    twice.  First, each process participating in the parallel portion of the
-    query performs an aggregation step, producing a partial result for each
-    group of which that process is aware.  This is reflected in the plan as
-    a <literal>PartialAggregate</> node.  Second, the partial results are
-    transferred to the leader via the <literal>Gather</> node.  Finally, the
-    leader re-aggregates the results across all workers in order to produce
-    the final result.  This is reflected in the plan as a
-    <literal>FinalizeAggregate</> node.
+    <productname>PostgreSQL</> supports parallel aggregation by aggregating in
+    two stages.  First, each process participating in the parallel portion of
+    the query performs an aggregation step, producing a partial result for
+    each group of which that process is aware.  This is reflected in the plan
+    as a <literal>Partial Aggregate</> node.  Second, the partial results are
+    transferred to the leader via <literal>Gather</> or <literal>Gather
+    Merge</>.  Finally, the leader re-aggregates the results across all
+    workers in order to produce the final result.  This is reflected in the
+    plan as a <literal>Finalize Aggregate</> node.
   </para>
 ____________________________________________________________________________-->
   <para>
-    <productname>PostgreSQL</>通过做两次聚集来支持并行聚集。第一次，每个参与查询计划并行部分执行的进程执行一个聚集步骤，为进程发现的每个分组产生一个部分结果。这在计划中反映为一个<literal>PartialAggregate</>节点。第二次，部分结果被通过<literal>Gather</>节点传输给领导者。最后，领导者对所有工作者的部分结果进行重聚集以得到最终的结果。这在计划中反映为一个<literal>FinalizeAggregate</>节点。
+    <productname>PostgreSQL</>通过两个阶段的聚合来支持并行聚合。第一次，
+	每个参与查询计划并行部分执行的进程执行一个聚合步骤，
+	为进程发现的每个分组产生一个部分结果。这在计划中反映为一个
+	<literal>PartialAggregate</>节点。第二次，部分结果被通过<literal>Gather</>
+	或<literal>Gather Merge</>节点传输给领导者。最后，
+	领导者对所有工作者的部分结果进行重聚合以得到最终的结果。
+	这在计划中反映为一个<literal>FinalizeAggregate</>节点。
   </para>
-
+<!--==========================orignal english content==========================
+  <para>
+    Because the <literal>Finalize Aggregate</> node runs on the leader
+    process, queries which produce a relatively large number of groups in
+    comparison to the number of input rows will appear less favorable to the
+    query planner. For example, in the worst-case scenario the number of
+    groups seen by the <literal>Finalize Aggregate</> node could be as many as
+    the number of input rows which were seen by all worker processes in the
+    <literal>Partial Aggregate</> stage. For such cases, there is clearly
+    going to be no performance benefit to using parallel aggregation. The
+    query planner takes this into account during the planning process and is
+    unlikely to choose parallel aggregate in this scenario.
+  </para>
+____________________________________________________________________________-->
+  <para>  
+  	因为<literal>Finalize Aggregate</>节点运行在领导者进程上，
+	所以与输入行的数量相比产生相对大量组的查询对于查询计划者来说显得较不利。
+	例如，在最坏的情况下，<literal>Finalize Aggregate</>
+	节点看到的组的数量可能与<literal>Partial Aggregate</>
+	阶段中所有工作进程看到的输入行的数量一样多。对于这种情况，
+	使用并行聚合显然没有性能优势。查询规划器在规划过程中考虑到了这一点，
+	并且在这种情况下不太可能选择并行聚合。
+  </para>
 <!--==========================orignal english content==========================
   <para>
     Parallel aggregation is not supported in all situations.  Each aggregate
@@ -471,14 +641,17 @@ ____________________________________________________________________________-->
     have a combine function.  If the aggregate has a transition state of type
     <literal>internal</>, it must have serialization and deserialization
     functions.  See <xref linkend="sql-createaggregate"> for more details.
-    Parallel aggregation is not supported for ordered set aggregates or when
-    the query involves <literal>GROUPING SETS</>.  It can only be used when
-    all joins involved in the query are also part of the parallel portion
-    of the plan.
+    Parallel aggregation is not supported if any aggregate function call
+    contains <literal>DISTINCT</> or <literal>ORDER BY</> clause and is also
+    not supported for ordered set aggregates or when  the query involves
+    <literal>GROUPING SETS</>.  It can only be used when all joins involved in
+    the query are also part of the parallel portion of the plan.
   </para>
 ____________________________________________________________________________-->
   <para>
-    并行聚集并不能支持所有的情况。每个聚集对于并行机制一定要是<link linkend="parallel-safety">安全</>的，并且必须有一个结合函数。如果聚集有一个<literal>internal</>类型的转移状态，它必须有序列化和反序列化函数。详见<xref linkend="sql-createaggregate">。对于有序集聚集或者查询涉及<literal>GROUPING SETS</>时不支持并行聚集。只有当查询中涉及的所有连接也是计划中并行不分的一部分时，才能使用并行聚集。
+    并行聚合并不能支持所有的情况。每个聚合对于并行机制一定要是<link linkend="parallel-safety">安全</>的，并且必须有一个结合函数。如果聚合有一个<literal>internal</>类型的转移状态，它必须有序列化和反序列化函数。详见<xref linkend="sql-createaggregate">。
+	如果任何聚合函数调用包含<literal>DISTINCT</>或<literal>ORDER BY</>子句，
+	则不支持并行聚合，并且对于有序集聚合或者查询涉及<literal>GROUPING SETS</>时也不支持并行聚合。只有当查询中涉及的所有连接也是计划中并行不分的一部分时，才能使用并行聚合。
   </para>
 
  </sect2>
@@ -511,7 +684,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
     When executing a parallel plan, you can use <literal>EXPLAIN (ANALYZE,
-    VERBOSE)</literal> will display per-worker statistics for each plan node.
+    VERBOSE)</literal> to display per-worker statistics for each plan node.
     This may be useful in determining whether the work is being evenly
     distributed between all plan nodes and more generally in understanding the
     performance characteristics of the plan.
@@ -539,15 +712,19 @@ ____________________________________________________________________________-->
     operation is one which cannot be performed in a parallel worker, but which
     can be performed in the leader while parallel query is in use.  Therefore,
     parallel restricted operations can never occur below a <literal>Gather</>
-    node, but can occur elsewhere in a plan which contains a
-    <literal>Gather</> node.  A parallel unsafe operation is one which cannot
+    or <literal>Gather Merge</> node, but can occur elsewhere in a plan which
+    contains such a node.  A parallel unsafe operation is one which cannot
     be performed while parallel query is in use, not even in the leader.
     When a query contains anything which is parallel unsafe, parallel query
     is completely disabled for that query.
   </para>
 ____________________________________________________________________________-->
   <para>
-    规划器把查询中涉及的操作分类成<firstterm>并行安全</>、<firstterm>并行受限</>或者<firstterm>并行不安全</>。并行安全的操作不会与并行查询的使用产生冲突。并行受限的操作不能在并行工作者中执行，但是能够在并行查询的领导者中执行。因此，并行受限的操作不能出现在<literal>Gather</>节点之下，但是能够出现在包含有<literal>Gather</> 节点的计划的其他位置。并行不安全的操作不能在并行查询中执行，甚至不能在领导者中执行。当一个查询包含任何并行不安全操作时，并行查询对这个查询是完全被禁用的。
+    规划器把查询中涉及的操作分类成<firstterm>并行安全</>、<firstterm>并行受限</>
+	或者<firstterm>并行不安全</>。并行安全的操作不会与并行查询的使用产生冲突。
+	并行受限的操作不能在并行工作者中执行，但是能够在并行查询的领导者中执行。
+	因此，并行受限的操作不能出现在<literal>Gather</>或<literal>Gather Merge</>节点之下，
+	但是能够出现在包含有这样节点的计划的其他位置。并行不安全的操作不能在并行查询中执行，甚至不能在领导者中执行。当一个查询包含任何并行不安全操作时，并行查询对这个查询是完全被禁用的。
   </para>
 
 <!--==========================orignal english content==========================
@@ -597,11 +774,11 @@ ____________________________________________________________________________-->
     <listitem>
 <!--==========================orignal english content==========================
       <para>
-        Access to an <literal>InitPlan</> or <literal>SubPlan</>.
+        Access to an <literal>InitPlan</> or correlated <literal>SubPlan</>.
       </para>
 ____________________________________________________________________________-->
       <para>
-        对<literal>InitPlan</>或者<literal>SubPlan</>的访问。
+        对<literal>InitPlan</>或者相关的<literal>SubPlan</>的访问。
       </para>
     </listitem>
   </itemizedlist>
@@ -610,7 +787,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <title>Parallel Labeling for Functions and Aggregates</title>
 ____________________________________________________________________________-->
-  <title>为函数和聚集加并行标签</title>
+  <title>为函数和聚合加并行标签</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -632,14 +809,14 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-    规划器无法自动判定一个用户定义的函数或者聚集是并行安全、并行受限还是并行不安全，因为这需要预测函数可能执行的每一个操作。一般而言，这就相当于一个停机问题，因此是不可能的。甚至对于可以做到判定的简单函数我们也不会尝试，因为那会非常昂贵而且容易出错。相反，除非是被标记出来，所有用户定义的函数都被认为是并行不安全的。在使用<xref linkend="sql-createfunction">或者<xref linkend="sql-alterfunction">时，可以通过指定<literal>PARALLEL SAFE</>、<literal>PARALLEL RESTRICTED</>或者<literal>PARALLEL UNSAFE</>来设置标记 。在使用<xref linkend="sql-createaggregate">时，<literal>PARALLEL</>选项可以被指定为<literal>SAFE</>、<literal>RESTRICTED</>或者 <literal>UNSAFE</>。
+    规划器无法自动判定一个用户定义的函数或者聚合是并行安全、并行受限还是并行不安全，因为这需要预测函数可能执行的每一个操作。一般而言，这就相当于一个停机问题，因此是不可能的。甚至对于可以做到判定的简单函数我们也不会尝试，因为那会非常昂贵而且容易出错。相反，除非是被标记出来，所有用户定义的函数都被认为是并行不安全的。在使用<xref linkend="sql-createfunction">或者<xref linkend="sql-alterfunction">时，可以通过指定<literal>PARALLEL SAFE</>、<literal>PARALLEL RESTRICTED</>或者<literal>PARALLEL UNSAFE</>来设置标记 。在使用<xref linkend="sql-createaggregate">时，<literal>PARALLEL</>选项可以被指定为<literal>SAFE</>、<literal>RESTRICTED</>或者 <literal>UNSAFE</>。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
     Functions and aggregates must be marked <literal>PARALLEL UNSAFE</> if
     they write to the database, access sequences, change the transaction state
-    even temporarily (e.g. a PL/pgsql function which establishes an
+    even temporarily (e.g. a PL/pgSQL function which establishes an
     <literal>EXCEPTION</> block to catch errors), or make persistent changes to
     settings.  Similarly, functions must be marked <literal>PARALLEL
     RESTRICTED</> if they access temporary tables, client connection state,
@@ -650,7 +827,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-    如果函数和聚集会写数据库、访问序列、改变事务状态（即便是临时改变，例如建立一个<literal>EXCEPTION</>块来捕捉错误的 PL/pgsql）或者对设置做持久化的更改，它们一定要被标记为<literal>PARALLEL UNSAFE</>。类似地，如果函数会访问临时表、客户端连接状态、游标、预备语句或者系统无法在工作者之间同步的后端本地状态，它们必须被标记为<literal>PARALLEL RESTRICTED</>。例如，<literal>setseed</>和 <literal>random</>由于后一种原因而是并行受限的。
+    如果函数和聚合会写数据库、访问序列、改变事务状态（即便是临时改变，例如建立一个<literal>EXCEPTION</>块来捕捉错误的 PL/pgSQL）或者对设置做持久化的更改，它们一定要被标记为<literal>PARALLEL UNSAFE</>。类似地，如果函数会访问临时表、客户端连接状态、游标、预备语句或者系统无法在工作者之间同步的后端本地状态，它们必须被标记为<literal>PARALLEL RESTRICTED</>。例如，<literal>setseed</>和 <literal>random</>由于后一种原因而是并行受限的。
   </para>
 
 <!--==========================orignal english content==========================
@@ -677,7 +854,7 @@ ____________________________________________________________________________-->
     transaction. If you write a function which does this, and this behavior
     difference is important to you, mark such functions as
     <literal>PARALLEL RESTRICTED</literal>
-    to ensure that they execute only in the leader. 
+    to ensure that they execute only in the leader.
   </para>
 ____________________________________________________________________________-->
   <para>
@@ -690,8 +867,8 @@ ____________________________________________________________________________-->
     parallel-restricted functions or aggregates involved in the query in
     order to obtain a superior plan.  So, for example, if a <literal>WHERE</>
     clause applied to a particular table is parallel restricted, the query
-    planner will not consider placing the scan of that table below a 
-    <literal>Gather</> node.  In some cases, it would be
+    planner will not consider performing a scan of that table in the parallel
+    portion of a plan.  In some cases, it would be
     possible (and perhaps even efficient) to include the scan of that table in
     the parallel portion of the query and defer the evaluation of the
     <literal>WHERE</> clause so that it happens above the <literal>Gather</>
@@ -699,7 +876,10 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-    注意查询规划器不会为了获取一个更好的计划而考虑延迟计算并行受限的函数或者聚集。所以，如果一个被应用到特定表的<literal>WHERE</>子句是并行受限的，查询规划器就不会考虑把对那张表的扫描放置在<literal>Gather</>节点之下。在一些情况中，可以（甚至效率更高）把对表的扫描包括在查询的并行部分并且延迟对<literal>WHERE</>子句的计算，这样它会出现在<literal>Gather</>节点之上。不过，规划器不会这样做。
+    注意查询规划器不会为了获取一个更好的计划而考虑延迟计算并行受限的函数或者聚合。
+	所以，如果一个被应用到特定表的<literal>WHERE</>子句是并行受限的，
+	查询规划器就不会考虑在计划的并行部分中执行对该表的扫描。
+	在一些情况中，可以（甚至效率更高）把对表的扫描包括在查询的并行部分并且延迟对<literal>WHERE</>子句的计算，这样它会出现在<literal>Gather</>节点之上。不过，规划器不会这样做。
   </para>
 
  </sect2>

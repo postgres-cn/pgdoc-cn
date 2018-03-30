@@ -29,13 +29,13 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
  <para>
   To install PL/Python in a particular database, use
-  <literal>CREATE EXTENSION plpythonu</>, or from the shell command line use
-  <literal>createlang plpythonu <replaceable>dbname</></literal> (but
+  <literal>CREATE EXTENSION plpythonu</> (but
   see also <xref linkend="plpython-python23">).
  </para>
 ____________________________________________________________________________-->
  <para>
-  要在一个特定数据库中安装 PL/Python，请使用<literal>CREATE EXTENSION plpythonu</>或者用 shell 命令<literal>createlang plpythonu <replaceable>dbname</></literal>（另见<xref linkend="plpython-python23">）。
+  要在一个特定数据库中安装 PL/Python，请使用<literal>CREATE EXTENSION plpythonu</>
+  （另见<xref linkend="plpython-python23">）。
  </para>
 
   <tip>
@@ -765,13 +765,13 @@ ____________________________________________________________________________-->
   <para>
    SQL array values are passed into PL/Python as a Python list.  To
    return an SQL array value out of a PL/Python function, return a
-   Python sequence, for example a list or tuple:
+   Python list:
 
 <programlisting>
 CREATE FUNCTION return_arr()
   RETURNS int[]
 AS $$
-return (1, 2, 3, 4, 5)
+return [1, 2, 3, 4, 5]
 $$ LANGUAGE plpythonu;
 
 SELECT return_arr();
@@ -781,6 +781,76 @@ SELECT return_arr();
 (1 row)
 </programlisting>
 
+   Multidimensional arrays are passed into PL/Python as nested Python lists.
+   A 2-dimensional array is a list of lists, for example. When returning
+   a multi-dimensional SQL array out of a PL/Python function, the inner
+   lists at each level must all be of the same size. For example:
+
+<programlisting>
+CREATE FUNCTION test_type_conversion_array_int4(x int4[]) RETURNS int4[] AS $$
+plpy.info(x, type(x))
+return x
+$$ LANGUAGE plpythonu;
+
+SELECT * FROM test_type_conversion_array_int4(ARRAY[[1,2,3],[4,5,6]]);
+INFO:  ([[1, 2, 3], [4, 5, 6]], &lt;type 'list'&gt;)
+ test_type_conversion_array_int4 
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ {{1,2,3},{4,5,6}}
+(1 row)
+</programlisting>
+
+   Other Python sequences, like tuples, are also accepted for
+   backwards-compatibility with PostgreSQL versions 9.6 and below, when
+   multi-dimensional arrays were not supported. However, they are always
+   treated as one-dimensional arrays, because they are ambiguous with
+   composite types. For the same reason, when a composite type is used in a
+   multi-dimensional array, it must be represented by a tuple, rather than a
+   list.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   SQL 数组会被作为一个 Python 列表传递到 PL/Python 中。要从一个 PL/Python 函数中返回出一个 SQL 数组值，可返回一个列表：
+
+<programlisting>
+CREATE FUNCTION return_arr()
+  RETURNS int[]
+AS $$
+return [1, 2, 3, 4, 5]
+$$ LANGUAGE plpythonu;
+
+SELECT return_arr();
+ return_arr  
+-------------
+ {1,2,3,4,5}
+(1 row)
+</programlisting>
+   
+   多维数组作为嵌套Python列表传递到PL/Python中。例如，二维数组是列表的列表。
+   从PL/Python函数中返回多维SQL数组时，每个级别的内部列表都必须具有相同的大小。
+   例如：
+
+<programlisting>
+CREATE FUNCTION test_type_conversion_array_int4(x int4[]) RETURNS int4[] AS $$
+plpy.info(x, type(x))
+return x
+$$ LANGUAGE plpythonu;
+
+SELECT * FROM test_type_conversion_array_int4(ARRAY[[1,2,3],[4,5,6]]);
+INFO:  ([[1, 2, 3], [4, 5, 6]], &lt;type 'list'&gt;)
+ test_type_conversion_array_int4 
+---------------------------------
+ {{1,2,3},{4,5,6}}
+(1 row)
+</programlisting>
+
+   当多维数组不支持时，其他Python序列（如元组）
+   也被接受用于向后兼容PostgreSQL版本9.6及更低版本。但是，它们始终被视为一维数组，
+   因为它们与复合类型不明确。出于同样的原因，当在多维数组中使用复合类型时，
+   它必须由元组而不是列表表示。
+  </para>
+<!--==========================orignal english content==========================
+  <para>
    Note that in Python, strings are sequences, which can have
    undesirable effects that might be familiar to Python programmers:
 
@@ -800,22 +870,6 @@ SELECT return_str_arr();
   </para>
 ____________________________________________________________________________-->
   <para>
-   SQL 数组会被作为一个 Python 列表传递到 PL/Python 中。要从一个 PL/Python 函数中返回出一个 SQL 数组值，可返回一个序列，例如一个列表或者元组：
-
-<programlisting>
-CREATE FUNCTION return_arr()
-  RETURNS int[]
-AS $$
-return (1, 2, 3, 4, 5)
-$$ LANGUAGE plpythonu;
-
-SELECT return_arr();
- return_arr  
--------------
- {1,2,3,4,5}
-(1 row)
-</programlisting>
-
    注意在 Python 中，串是序列，这可能产生与 Python 程序员所熟悉的不同的效果：
 
 <programlisting>
@@ -916,13 +970,18 @@ CREATE TYPE named_value AS (
 CREATE FUNCTION make_pair (name text, value integer)
   RETURNS named_value
 AS $$
-  return [ name, value ]
-  # or alternatively, as tuple: return ( name, value )
+  return ( name, value )
+  # or alternatively, as tuple: return [ name, value ]
 $$ LANGUAGE plpythonu;
 </programlisting>
 
        To return a SQL null for any column, insert <symbol>None</symbol> at
        the corresponding position.
+      </para>
+      <para>
+       When an array of composite types is returned, it cannot be returned as a list,
+       because it is ambiguous whether the Python list represents a composite type,
+       or another array dimension.
       </para>
      </listitem>
     </varlistentry>
@@ -1004,14 +1063,18 @@ CREATE TYPE named_value AS (
 CREATE FUNCTION make_pair (name text, value integer)
   RETURNS named_value
 AS $$
-  return [ name, value ]
-  # or alternatively, as tuple: return ( name, value )
+  return ( name, value )
+  # or alternatively, as tuple: return [ name, value ]
 $$ LANGUAGE plpythonu;
 </programlisting>
 
        要为任意列返回一个 SQL 空，应在对应的位置插入<symbol>None</symbol>。
       </para>
-     </listitem>
+      <para>
+       当返回一个复合类型数组时，它不能作为列表返回，
+	   因为它不明确Python列表是表示复合类型还是其他数组维数。
+      </para>
+	  </listitem>
     </varlistentry>
 
     <varlistentry>
@@ -1169,19 +1232,6 @@ AS $$
 $$ LANGUAGE plpythonu;
 </programlisting>
 
-       <warning>
-        <para>
-         Due to Python
-         <ulink url="http://bugs.python.org/issue1483133">bug #1483133</ulink>,
-         some debug versions of Python 2.4
-         (configured and compiled with option <literal>-&minus;with-pydebug</literal>)
-         are known to crash the <productname>PostgreSQL</productname> server
-         when using an iterator to return a set result.
-         Unpatched versions of Fedora 4 contain this bug.
-         It does not happen in production versions of Python or on patched
-         versions of Fedora 4.
-        </para>
-       </warning>
       </para>
      </listitem>
     </varlistentry>
@@ -1262,11 +1312,6 @@ AS $$
 $$ LANGUAGE plpythonu;
 </programlisting>
 
-       <warning>
-        <para>
-         由于 Python<ulink url="http://bugs.python.org/issue1483133">bug #1483133</ulink>，已知 Python 2.4 的某些调试版本（用选项<literal>--with-pydebug</literal>配置并且编译）在使用迭代器返回集合结果时会让<productname>PostgreSQL</productname>服务器崩溃。没有打过补丁的 Fedora 4 包含这个缺陷。在生产版本的 Python 中或者打过补丁的 Fedora 4 上不会发生该问题。
-        </para>
-       </warning>
       </para>
      </listitem>
     </varlistentry>
@@ -1852,6 +1897,21 @@ rv = plpy.execute(plan, ["name"], 5)
 
 <!--==========================orignal english content==========================
      <para>
+      Alternatively, you can call the <function>execute</function> method on
+      the plan object:
+<programlisting>
+rv = plan.execute(["name"], 5)
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      或者，您可以调用计划对象上的<function>execute</function> 方法：
+<programlisting>
+rv = plan.execute(["name"], 5)
+</programlisting>
+     </para>
+<!--==========================orignal english content==========================
+     <para>
       Query parameters and result row fields are converted between PostgreSQL
       and Python data types as described in <xref linkend="plpython-data">.
      </para>
@@ -1912,11 +1972,14 @@ ____________________________________________________________________________-->
       as <literal>plpy.execute</literal> (except for the row limit) and returns
       a cursor object, which allows you to process large result sets in smaller
       chunks.  As with <literal>plpy.execute</literal>, either a query string
-      or a plan object along with a list of arguments can be used.
+      or a plan object along with a list of arguments can be used, or
+      the <function>cursor</function> function can be called as a method of
+      the plan object.
      </para>
 ____________________________________________________________________________-->
      <para>
-      <literal>plpy.cursor</literal>函数接受和<literal>plpy.execute</literal>相同的参数（行数限制除外）并且返回一个游标对象，它允许以较小的块来处理大型的结果集合。和<literal>plpy.execute</literal>一样（行数限制除外），既可以使用一个查询字符串，也可以使用带有参数列表的计划对象。
+      <literal>plpy.cursor</literal>函数接受和<literal>plpy.execute</literal>相同的参数（行数限制除外）并且返回一个游标对象，它允许以较小的块来处理大型的结果集合。和<literal>plpy.execute</literal>一样（行数限制除外），既可以使用一个查询字符串，也可以使用带有参数列表的计划对象，
+	  或者可以调用<function>cursor</function>函数作为计划对象的一种方法。
      </para>
 
 <!--==========================orignal english content==========================
@@ -1966,7 +2029,7 @@ $$ LANGUAGE plpythonu;
 CREATE FUNCTION count_odd_prepared() RETURNS integer AS $$
 odd = 0
 plan = plpy.prepare("select num from largetable where num % $1 &lt;&gt; 0", ["integer"])
-rows = list(plpy.cursor(plan, [2]))
+rows = list(plpy.cursor(plan, [2]))  # or: = list(plan.cursor([2]))
 
 return len(rows)
 $$ LANGUAGE plpythonu;
@@ -2000,7 +2063,7 @@ $$ LANGUAGE plpythonu;
 CREATE FUNCTION count_odd_prepared() RETURNS integer AS $$
 odd = 0
 plan = plpy.prepare("select num from largetable where num % $1 &lt;&gt; 0", ["integer"])
-rows = list(plpy.cursor(plan, [2]))
+rows = list(plpy.cursor(plan, [2]))  # or: = list(plan.cursor([2]))
 
 return len(rows)
 $$ LANGUAGE plpythonu;
