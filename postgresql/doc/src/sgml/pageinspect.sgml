@@ -30,7 +30,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <title>Functions</title>
 ____________________________________________________________________________-->
-  <title>函数</title>
+  <title>通用函数</title>
 
   <variablelist>
    <varlistentry>
@@ -139,10 +139,48 @@ ____________________________________________________________________________-->
 test=# SELECT * FROM page_header(get_raw_page('pg_class', 0));
     lsn    | checksum | flags  | lower | upper | special | pagesize | version | prune_xid
 -----------+----------+--------+-------+-------+---------+----------+---------+-----------
- 0/24A1B50 |        1 |      1 |   232 |   368 |    8192 |     8192 |       4 |         0
+ 0/24A1B50 |        0 |      1 |   232 |   368 |    8192 |     8192 |       4 |         0
 </screen>
       返回的列对应于<structname>PageHeaderData</>结构中的域。详见<filename>src/include/storage/bufpage.h</>。
     </para>
+
+     <para>
+      <structfield>checksum</structfield>字段是存储在页面中的校验和，
+	  如果页面以某种方式损坏，则该校验和可能不正确。如果这个实例没有启用数据校验和，
+	  那么存储的值是没有意义的。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>page_checksum(page bytea, blkno int4) returns smallint</function>
+     <indexterm>
+      <primary>page_checksum</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <function>page_checksum</function>计算页面的校验和，就好像它位于给定的块一样。
+     </para>
+
+     <para>
+      用<function>get_raw_page</function>获得的页面图像应该作为参数传递。例如：
+<screen>
+test=# SELECT page_checksum(get_raw_page('pg_class', 0), 0);
+ page_checksum
+---------------
+         13443
+</screen>
+      请注意，校验和取决于块编号，因此应该传递匹配的块编号（除了进行深奥调试时）。
+     </para>
+
+     <para>
+      使用这个函数计算的校验和可以与函数<function>page_header</function>的
+	  <structfield>checksum</structfield>结果字段进行比较。
+	  如果为这个实例启用了数据校验和，那么这两个值应该相等。
+     </para>
     </listitem>
    </varlistentry>
 
@@ -299,8 +337,45 @@ test=# SELECT * FROM heap_page_item_attrs(get_raw_page('pg_class', 0), 'pg_class
      </para>
     </listitem>
    </varlistentry>
-
    <varlistentry>
+    <term>
+     <function>fsm_page_contents(page bytea) returns text</function>
+    <indexterm>
+     <primary>fsm_page_contents</primary>
+    </indexterm>    
+    </term>
+
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      <function>fsm_page_contents</function> shows the internal node structure
+      of a FSM page. The output is a multiline string, with one line per
+      node in the binary tree within the page. Only those nodes that are not
+      zero are printed. The so-called "next" pointer, which points to the
+      next slot to be returned from the page, is also printed.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>fsm_page_contents</function>显示一个 FSM 页面的内部结点结构。输出是一个多行字符串，每一行对应页面中二叉树的一个结点。只有非零节点会被打印。所谓的“next”指针也会被打印，它指向页面中下一个要被返回的槽。
+     </para>
+<!--==========================orignal english content==========================
+     <para>
+      See <filename>src/backend/storage/freespace/README</> for more
+      information on the structure of an FSM page.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      关于一个 FSM 页面的结构详见<filename>src/backend/storage/freespace/README</>。
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+ <sect2>
+  <title>B-tree 函数</title>
+
+  <variablelist>
+	 <varlistentry>
 <!--==========================orignal english content==========================
     <term>
      <function>bt_metap(relname text) returns record</function>
@@ -493,6 +568,43 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
+    <term>
+     <function>bt_page_items(page bytea) returns setof record</function>
+     <indexterm>
+      <primary>bt_page_items</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      也可以将一个页面作为<type>bytea</>值传递给<function>bt_page_items</function>。
+	  用<function>get_raw_page</function>获得的页面图像应该作为参数传递。
+	  所以最后一个例子也可以像这样重写：
+<screen>
+test=# SELECT * FROM bt_page_items(get_raw_page('pg_cast_oid_index', 1));
+ itemoffset |  ctid   | itemlen | nulls | vars |    data
+------------+---------+---------+-------+------+-------------
+          1 | (0,1)   |      12 | f     | f    | 23 27 00 00
+          2 | (0,2)   |      12 | f     | f    | 24 27 00 00
+          3 | (0,3)   |      12 | f     | f    | 25 27 00 00
+          4 | (0,4)   |      12 | f     | f    | 26 27 00 00
+          5 | (0,5)   |      12 | f     | f    | 27 27 00 00
+          6 | (0,6)   |      12 | f     | f    | 28 27 00 00
+          7 | (0,7)   |      12 | f     | f    | 29 27 00 00
+          8 | (0,8)   |      12 | f     | f    | 2a 27 00 00
+</screen>
+      所有其他细节与前一项中的解释相同。
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>BRIN 函数</title>
+
+  <variablelist>
+   <varlistentry>
 <!--==========================orignal english content==========================
     <term>
      <function>brin_page_type(page bytea) returns text</function>
@@ -617,7 +729,7 @@ ____________________________________________________________________________-->
       <acronym>BRIN</acronym>索引范围映射页面中元组标识符的列表。
       例如：
 <screen>
-test=# SELECT * FROM brin_revmap_data(get_raw_page('brinidx', 2)) limit 5;
+test=# SELECT * FROM brin_revmap_data(get_raw_page('brinidx', 2)) LIMIT 5;
   pages  
 ---------
  (6,137)
@@ -691,7 +803,13 @@ test=# SELECT * FROM brin_page_items(get_raw_page('brinidx', 5),
      </para>
     </listitem>
    </varlistentry>
+  </variablelist>
+ </sect2>
 
+ <sect2>
+  <title>GIN 函数</title>
+
+  <variablelist>
    <varlistentry>
 <!--==========================orignal english content==========================
     <term>
@@ -836,7 +954,7 @@ ____________________________________________________________________________-->
       <function>gin_leafpage_items</function>返回有关存储在一个
       <acronym>GIN</acronym>叶子页面中的数据的信息。例如：
 <screen>
-test=# SELECT first_tid, nbytes, tids[0:5] as some_tids
+test=# SELECT first_tid, nbytes, tids[0:5] AS some_tids
         FROM gin_leafpage_items(get_raw_page('gin_test_idx', 2));
  first_tid | nbytes |                        some_tids
 -----------+--------+----------------------------------------------------------
@@ -852,7 +970,13 @@ test=# SELECT first_tid, nbytes, tids[0:5] as some_tids
      </para>
     </listitem>
    </varlistentry>
+  </variablelist>
+ </sect2>
 
+ <sect2>
+  <title>Hash 函数</title>
+
+  <variablelist>
    <varlistentry>
 <!--==========================orignal english content==========================
     <term>
@@ -863,9 +987,9 @@ test=# SELECT first_tid, nbytes, tids[0:5] as some_tids
     </term>
 ____________________________________________________________________________-->
     <term>
-     <function>fsm_page_contents(page bytea) 返回 text</function>
+     <function>hash_page_type(page bytea) returns text</function>
     <indexterm>
-     <primary>fsm_page_contents</primary>
+      <primary>hash_page_type</primary>
     </indexterm>    
     </term>
 
@@ -880,16 +1004,133 @@ ____________________________________________________________________________-->
      </para>
 ____________________________________________________________________________-->
      <para>
-      <function>fsm_page_contents</function>显示一个 FSM 页面的内部结点结构。输出是一个多行字符串，每一行对应页面中二叉树的一个结点。只有非零节点会被打印。所谓的“next”指针也会被打印，它指向页面中下一个要被返回的槽。
+      <function>hash_page_type</function>返回给定<acronym>HASH</acronym>
+	  索引页面的页面类型。例如：
+<screen>
+test=# SELECT hash_page_type(get_raw_page('con_hash_index', 0));
+ hash_page_type 
+----------------
+ metapage
+</screen>
      </para>
-<!--==========================orignal english content==========================
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>hash_page_stats(page bytea) returns setof record</function>
+     <indexterm>
+      <primary>hash_page_stats</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
      <para>
-      See <filename>src/backend/storage/freespace/README</> for more
-      information on the structure of an FSM page.
+      <function>hash_page_stats</function>返回关于一个
+	  <acronym>HASH</acronym>索引的桶或溢出页面的信息。
+      例如：
+<screen>
+test=# SELECT * FROM hash_page_stats(get_raw_page('con_hash_index', 1));
+-[ RECORD 1 ]---+-----------
+live_items      | 407
+dead_items      | 0
+page_size       | 8192
+free_size       | 8
+hasho_prevblkno | 4096
+hasho_nextblkno | 8474
+hasho_bucket    | 0
+hasho_flag      | 66
+hasho_page_id   | 65408
+</screen>
      </para>
-____________________________________________________________________________-->
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>hash_page_items(page bytea) returns setof record</function>
+     <indexterm>
+      <primary>hash_page_items</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
      <para>
-      关于一个 FSM 页面的结构详见<filename>src/backend/storage/freespace/README</>。
+      <function>hash_page_items</function>返回存储在<acronym>HASH</acronym>
+	  索引页的桶或溢出页面中的数据信息。例如：
+<screen>
+test=# SELECT * FROM hash_page_items(get_raw_page('con_hash_index', 1)) LIMIT 5;
+ itemoffset |   ctid    |    data    
+------------+-----------+------------
+          1 | (899,77)  | 1053474816
+          2 | (897,29)  | 1053474816
+          3 | (894,207) | 1053474816
+          4 | (892,159) | 1053474816
+          5 | (890,111) | 1053474816
+</screen>
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>hash_bitmap_info(index oid, blkno int) returns record</function>
+     <indexterm>
+      <primary>hash_bitmap_info</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <function>hash_bitmap_info</function>显示了位图页面中针对
+	  <acronym>HASH</acronym>索引的特定溢出页面的位状态。例如：
+<screen>
+test=# SELECT * FROM hash_bitmap_info('con_hash_index', 2052);
+ bitmapblkno | bitmapbit | bitstatus 
+-------------+-----------+-----------
+          65 |         3 | t
+</screen>
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>hash_metapage_info(page bytea) returns record</function>
+     <indexterm>
+      <primary>hash_metapage_info</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+     <para>
+      <function>hash_metapage_info</function>返回存储在<acronym>HASH</acronym>
+	  索引的元页面中的信息。例如：
+<screen>
+test=# SELECT magic, version, ntuples, ffactor, bsize, bmsize, bmshift,
+test-#     maxbucket, highmask, lowmask, ovflpoint, firstfree, nmaps, procid,
+test-#     regexp_replace(spares::text, '(,0)*}', '}') as spares,
+test-#     regexp_replace(mapp::text, '(,0)*}', '}') as mapp
+test-# FROM hash_metapage_info(get_raw_page('con_hash_index', 0));
+-[ RECORD 1 ]-------------------------------------------------------------------------------
+spares    | {0,0,0,0,0,0,1,1,1,1,1,1,1,1,3,4,4,4,45,55,58,59,508,567,628,704,1193,1202,1204}
+magic     | 105121344
+version   | 3
+ntuples   | 500500
+ffactor   | 40
+bsize     | 8152
+bmsize    | 4096
+bmshift   | 15
+maxbucket | 12512
+highmask  | 16383
+lowmask   | 8191
+ovflpoint | 28
+firstfree | 1204
+nmaps     | 1
+procid    | 450
+spares    | {0,0,0,0,0,0,1,1,1,1,1,1,1,1,3,4,4,4,45,55,58,59,508,567,628,704,1193,1202,1204}
+mapp      | {65}
+</screen>
      </para>
     </listitem>
    </varlistentry>

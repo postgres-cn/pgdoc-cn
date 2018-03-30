@@ -1558,6 +1558,11 @@ ____________________________________________________________________________-->
    <primary>统计信息</primary>
    <secondary>of the planner</secondary>
   </indexterm>
+  <sect2>
+<!--==========================orignal english content==========================
+   <title>Single-Column Statistics</title>
+____________________________________________________________________________-->
+   <title>单列统计</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -1781,7 +1786,433 @@ ____________________________________________________________________________-->
   <para>
    更多规划器对统计信息的使用可参阅<xref linkend="planner-stats-details">。
   </para>
+  </sect2>
 
+  <sect2 id="planner-stats-extended">
+<!--==========================orignal english content==========================
+   <title>Extended Statistics</title>
+____________________________________________________________________________-->
+   <title>扩展统计</title>
+
+<!--==========================orignal english content==========================
+   <indexterm zone="planner-stats-extended">
+    <primary>statistics</primary>
+    <secondary>of the planner</secondary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm zone="planner-stats-extended">
+    <primary>statistics</primary>
+    <secondary>of the planner</secondary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <indexterm>
+    <primary>correlation</primary>
+    <secondary>in the query planner</secondary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm>
+    <primary>correlation</primary>
+    <secondary>in the query planner</secondary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <indexterm>
+    <primary>pg_statistic_ext</primary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm>
+    <primary>pg_statistic_ext</primary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <para>
+    It is common to see slow queries running bad execution plans because
+    multiple columns used in the query clauses are correlated.
+    The planner normally assumes that multiple conditions
+    are independent of each other,
+    an assumption that does not hold when column values are correlated.
+    Regular statistics, because of their per-individual-column nature,
+    cannot capture any knowledge about cross-column correlation.
+    However, <productname>PostgreSQL</> has the ability to compute
+    <firstterm>multivariate statistics</firstterm>, which can capture
+    such information.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    通常会看到缓慢的查询运行错误的执行计划，因为查询子句中使用的多列是相关的。
+	规划器通常假定多个条件彼此独立，当列值相关时，这种假设不成立。
+	由于每个单独列的性质，定期统计无法捕捉有关跨列关联的任何知识。
+	但是，<productname>PostgreSQL</>能够计算<firstterm>多元统计信息</firstterm>，
+	它可以捕获这些信息。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Because the number of possible column combinations is very large,
+    it's impractical to compute multivariate statistics automatically.
+    Instead, <firstterm>extended statistics objects</firstterm>, more often
+    called just <firstterm>statistics objects</>, can be created to instruct
+    the server to obtain statistics across interesting sets of columns.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    由于可能的列组合数量非常大，因此自动计算多元统计信息是不切实际的。
+	相反，可以创建<firstterm>扩展统计信息对象</firstterm>，
+	通常称为<firstterm>统计信息对象</>，以指示服务器通过有趣的列集获得统计信息。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Statistics objects are created using
+    <xref linkend="sql-createstatistics">, which see for more details.
+    Creation of such an object merely creates a catalog entry expressing
+    interest in the statistics.  Actual data collection is performed
+    by <command>ANALYZE</command> (either a manual command, or background
+    auto-analyze).  The collected values can be examined in the
+    <link linkend="catalog-pg-statistic-ext"><structname>pg_statistic_ext</structname></link>
+    catalog.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    统计信息对象是使用<xref linkend="sql-createstatistics">创建的，
+	它可以查看更多详细信息。创建这样一个对象只是创建一个表示对统计信息感兴趣的目录条目。
+	实际的数据收集由<command>ANALYZE</command>执行（手动命令或后端自动分析）。
+	可以在<link linkend="catalog-pg-statistic-ext"><structname>pg_statistic_ext</structname></link>
+	目录中检查收集的值。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    <command>ANALYZE</command> computes extended statistics based on the same
+    sample of table rows that it takes for computing regular single-column
+    statistics.  Since the sample size is increased by increasing the
+    statistics target for the table or any of its columns (as described in
+    the previous section), a larger statistics target will normally result in
+    more accurate extended statistics, as well as more time spent calculating
+    them.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <command>ANALYZE</command>根据计算常规单列统计信息所用的相同表行样本来计算扩展统计信息。
+	由于通过增加表或其任何列的统计目标（如前一节中所述）来增加样本大小，
+	因此较大的统计目标通常会导致更加准确的扩展统计量，以及花费更多时间计算它们。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The following subsections describe the kinds of extended statistics
+    that are currently supported.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    以下小节介绍当前支持的扩展统计信息的种类。
+   </para>
+
+   <sect3>
+<!--==========================orignal english content==========================
+    <title>Functional Dependencies</title>
+____________________________________________________________________________-->
+    <title>函数依赖</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     The simplest kind of extended statistics tracks <firstterm>functional
+     dependencies</>, a concept used in definitions of database normal forms.
+     We say that column <structfield>b</> is functionally dependent on
+     column <structfield>a</> if knowledge of the value of
+     <structfield>a</> is sufficient to determine the value
+     of <structfield>b</>, that is there are no two rows having the same value
+     of <structfield>a</> but different values of <structfield>b</>.
+     In a fully normalized database, functional dependencies should exist
+     only on primary keys and superkeys. However, in practice many data sets
+     are not fully normalized for various reasons; intentional
+     denormalization for performance reasons is a common example.
+     Even in a fully normalized database, there may be partial correlation
+     between some columns, which can be expressed as partial functional
+     dependency.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     最简单的扩展统计信息跟踪<firstterm>函数依赖</>，一个用于数据库标准表单的定义中的概念。
+	 如果知道<structfield>a</>的值足够确定<structfield>b</>的值，
+	 我们说列<structfield>b</>函数依赖于列<structfield>a</>，
+	 即没有两行会有相同的<structfield>a</>值但<structfield>b</>值不同。
+	 在完全规范化的数据库中，函数依赖关系只应存在于主键和超级键上。
+	 但是，实际上很多数据集由于各种原因未完全标准化；
+	 出于性能原因的故意的非规范化是一个常见的例子。即使在完全标准化的数据库中，
+	 某些列之间也可能存在部分相关性，可以将其表示为部分函数依赖性。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The existence of functional dependencies directly affects the accuracy
+     of estimates in certain queries.  If a query contains conditions on
+     both the independent and the dependent column(s), the
+     conditions on the dependent columns do not further reduce the result
+     size; but without knowledge of the functional dependency, the query
+     planner will assume that the conditions are independent, resulting
+     in underestimating the result size.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     函数依赖的存在直接影响某些查询中估计的准确性。
+	 如果查询在独立列和从属列上都包含条件，则从属列上的条件不会进一步减小结果大小；
+	 但没有关于函数依赖关系的知识，查询规划器会认为条件是独立的，导致低估结果大小。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To inform the planner about functional dependencies, <command>ANALYZE</>
+     can collect measurements of cross-column dependency. Assessing the
+     degree of dependency between all sets of columns would be prohibitively
+     expensive, so data collection is limited to those groups of columns
+     appearing together in a statistics object defined with
+     the <literal>dependencies</> option.  It is advisable to create
+     <literal>dependencies</> statistics only for column groups that are
+     strongly correlated, to avoid unnecessary overhead in both
+     <command>ANALYZE</> and later query planning.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     为了向规划器通知函数依赖关系，<command>ANALYZE</>可以收集跨列依赖关系的度量。
+	 评估所有列集之间的依赖程度会非常昂贵，因此数据收集仅限于那些在使用
+	 <literal>dependencies</>选项定义的统计信息对象中一起出现的列组。
+	 建议仅为强关联的列组创建<literal>dependencies</>统计信息，
+	 以避免在<command>ANALYZE</>和以后的查询计划中产生不必要的开销。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Here is an example of collecting functional-dependency statistics:
+<programlisting>
+CREATE STATISTICS stts (dependencies) ON zip, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxname, stxkeys, stxdependencies
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts';
+ stxname | stxkeys |             stxdependencies               
+-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ stts    | 1 5     | {"1 => 5": 1.000000, "5 => 1": 0.423130}
+(1 row)
+</programlisting>
+     Here it can be seen that column 1 (zip code) fully determines column
+     5 (city) so the coefficient is 1.0, while city only determines zip code
+     about 42% of the time, meaning that there are many cities (58%) that are
+     represented by more than a single ZIP code.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     这里是一个收集函数依赖性统计信息的示例：
+<programlisting>
+CREATE STATISTICS stts (dependencies) ON zip, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxname, stxkeys, stxdependencies
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts';
+ stxname | stxkeys |             stxdependencies               
+---------+---------+------------------------------------------
+ stts    | 1 5     | {"1 => 5": 1.000000, "5 => 1": 0.423130}
+(1 row)
+</programlisting>
+     在这里可以看出，第1列（zip code）完全确定第5列（city），因此系数为1.0，
+	 而city仅确定大约42％的zip code，这意味着有很多cities（58％）是由多个ZIP code代表的。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     When computing the selectivity for a query involving functionally
+     dependent columns, the planner adjusts the per-condition selectivity
+     estimates using the dependency coefficients so as not to produce
+     an underestimate.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     当计算包含函数依赖性列的查询的选择性时，规划器使用依赖系数调整每个条件的选择性估计，
+	 以免产生低估。
+    </para>
+
+    <sect4>
+<!--==========================orignal english content==========================
+     <title>Limitations of Functional Dependencies</title>
+____________________________________________________________________________-->
+     <title>函数依赖的局限性</title>
+
+<!--==========================orignal english content==========================
+     <para>
+      Functional dependencies are currently only applied when considering
+      simple equality conditions that compare columns to constant values.
+      They are not used to improve estimates for equality conditions
+      comparing two columns or comparing a column to an expression, nor for
+      range clauses, <literal>LIKE</> or any other type of condition.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      函数依赖性当前仅在考虑将列与常量值进行比较的简单相等条件时才适用。
+	  它们不用于改进对比较两列或将列与表达式进行比较的相等条件的估计值，
+	  也不用于范围子句、<literal>LIKE</>或任何其他类型的条件。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      When estimating with functional dependencies, the planner assumes that
+      conditions on the involved columns are compatible and hence redundant.
+      If they are incompatible, the correct estimate would be zero rows, but
+      that possibility is not considered.  For example, given a query like
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '94105';
+</programlisting>
+      the planner will disregard the <structfield>city</> clause as not
+      changing the selectivity, which is correct.  However, it will make
+      the same assumption about
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '90210';
+</programlisting>
+      even though there will really be zero rows satisfying this query.
+      Functional dependency statistics do not provide enough information
+      to conclude that, however.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      When estimating with functional dependencies, the planner assumes that
+      conditions on the involved columns are compatible and hence redundant.
+      If they are incompatible, the correct estimate would be zero rows, but
+      that possibility is not considered.  For example, given a query like
+	  当使用函数依赖性进行估计时，规划器假设包含列上的条件是兼容的，并且因此使冗余的。
+	  如果它们不兼容，则正确的估计应该是0行，但是不考虑这种可能性。例如，
+	  给出一个查询
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '94105';
+</programlisting>
+      规划器将忽略<structfield>city</>子句没有改变选择性，这是正确的。不过，
+	  它会对下面语句做出相同的假设
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '90210';
+</programlisting>
+      即使实际上没有行满足这个查询。然而，函数依赖统计信息没有提供足够的信息来得出结论。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      In many practical situations, this assumption is usually satisfied;
+      for example, there might be a GUI in the application that only allows
+      selecting compatible city and ZIP code values to use in a query.
+      But if that's not the case, functional dependencies may not be a viable
+      option.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      在许多实际情况中，这个假设通常是满足的；例如，应用程序中可能存在GUI，
+	  只允许选择兼容的city和ZIP code值用于查询。但是，如果情况并非如此，
+	  函数依赖可能不是一个可行的选择。
+     </para>
+    </sect4>
+   </sect3>
+
+   <sect3>
+<!--==========================orignal english content==========================
+    <title>Multivariate N-Distinct Counts</title>
+____________________________________________________________________________-->
+    <title> N 个不同多变量的计数</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     Single-column statistics store the number of distinct values in each
+     column.  Estimates of the number of distinct values when combining more
+     than one column (for example, for <literal>GROUP BY a, b</literal>) are
+     frequently wrong when the planner only has single-column statistical
+     data, causing it to select bad plans.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     单列统计信息存储每列中不同值的数量。当规划器只有单列统计数据时，
+	 如果组合多个列（例如，对于<literal>GROUP BY a, b</literal>），
+	 对不同值个数的估计常常是错误的，导致它选择不好的计划。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To improve such estimates, <command>ANALYZE</> can collect n-distinct
+     statistics for groups of columns.  As before, it's impractical to do
+     this for every possible column grouping, so data is collected only for
+     those groups of columns appearing together in a statistics object
+     defined with the <literal>ndistinct</> option.  Data will be collected
+     for each possible combination of two or more columns from the set of
+     listed columns.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     为了改进这种估计，<command>ANALYZE</>可以为列组收集n个不同的统计数据。
+	 与以前一样，对每个可能的列组都进行此操作是不切实际的，
+	 因此仅针对那些出现在由<literal>ndistinct</>
+	 选项定义的统计信息对象中的列组收集数据。
+	 将针对列出的列中的两列或更多列的每个可能组合收集数据。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Continuing the previous example, the n-distinct counts in a
+     table of ZIP codes might look like the following:
+<programlisting>
+CREATE STATISTICS stts2 (ndistinct) ON zip, state, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxkeys AS k, stxndistinct AS nd
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts2';
+-[ RECORD 1 ]-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+k  | 1 2 5
+nd | {"1, 2": 33178, "1, 5": 33178, "2, 5": 27435, "1, 2, 5": 33178}
+(1 row)
+</programlisting>
+     This indicates that there are three combinations of columns that
+     have 33178 distinct values: ZIP code and state; ZIP code and city;
+     and ZIP code, city and state (the fact that they are all equal is
+     expected given that ZIP code alone is unique in this table).  On the
+     other hand, the combination of city and state has only 27435 distinct
+     values.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     继续前面的例子，邮政编码表中的n个不同的计数可能如下所示：
+<programlisting>
+CREATE STATISTICS stts2 (ndistinct) ON zip, state, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxkeys AS k, stxndistinct AS nd
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts2';
+-[ RECORD 1 ]--------------------------------------------------------
+k  | 1 2 5
+nd | {"1, 2": 33178, "1, 5": 33178, "2, 5": 27435, "1, 2, 5": 33178}
+(1 row)
+</programlisting>
+     这表明有三种组合的列有33178个不同的值：ZIP code和state；
+	 ZIP code和city；ZIP code、city和state（事实上，他们都是平等的，
+	 因为ZIP code本身在此表中是独一无二的）。另一方面，
+	 city与state的组合只有27435个不同的值。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     It's advisable to create <literal>ndistinct</> statistics objects only
+     on combinations of columns that are actually used for grouping, and
+     for which misestimation of the number of groups is resulting in bad
+     plans.  Otherwise, the <command>ANALYZE</> cycles are just wasted.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     建议仅在实际用于分组的列的组合上创建<literal>ndistinct</>统计信息对象，
+	 并且对组数进行错误估计会导致计划错误。否则，<command>ANALYZE</>周期只会被浪费。
+    </para>
+   </sect3>
+  </sect2>
  </sect1>
 
  <sect1 id="explicit-joins">
@@ -2648,9 +3079,9 @@ ____________________________________________________________________________-->
      <listitem>
       <para>
        Increase <xref linkend="guc-max-wal-size"> and <xref
-       linkend="guc-checkpoint-timeout"> ; this reduces the frequency
+       linkend="guc-checkpoint-timeout">; this reduces the frequency
        of checkpoints, but increases the storage requirements of
-       <filename>/pg_xlog</>.
+       <filename>/pg_wal</>.
       </para>
      </listitem>
 
@@ -2698,7 +3129,7 @@ ____________________________________________________________________________-->
      <listitem>
       <para>
        增加<xref linkend="guc-max-wal-size">和<xref linkend="guc-checkpoint-timeout">；
-       这会降低检查点的频率，但会 增加<filename>/pg_xlog</>的存储要求。
+       这会降低检查点的频率，但会 增加<filename>/pg_wal</>的存储要求。
       </para>
      </listitem>
 
