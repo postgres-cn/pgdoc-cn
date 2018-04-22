@@ -52,6 +52,10 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     SET SCHEMA <replaceable class="PARAMETER">new_schema</replaceable>
 ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> [ OWNED BY <replaceable class="PARAMETER">role_name</replaceable> [, ... ] ]
     SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable> [ NOWAIT ]
+ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
+    ATTACH PARTITION <replaceable class="PARAMETER">partition_name</replaceable> FOR VALUES <replaceable class="PARAMETER">partition_bound_spec</replaceable>
+ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
+    DETACH PARTITION <replaceable class="PARAMETER">partition_name</replaceable>
 
 <phrase>where <replaceable class="PARAMETER">action</replaceable> is one of:</phrase>
 
@@ -61,6 +65,9 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET DEFAULT <replaceable class="PARAMETER">expression</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> DROP DEFAULT
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> { SET | DROP } NOT NULL
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ]
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> { SET GENERATED { ALWAYS | BY DEFAULT } | SET <replaceable>sequence_option</replaceable> | RESTART [ [ WITH ] <replaceable class="parameter">restart</replaceable> ] } [...]
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> DROP IDENTITY [ IF EXISTS ]
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET STATISTICS <replaceable class="PARAMETER">integer</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET ( <replaceable class="PARAMETER">attribute_option</replaceable> = <replaceable class="PARAMETER">value</replaceable> [, ... ] )
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> RESET ( <replaceable class="PARAMETER">attribute_option</replaceable> [, ... ] )
@@ -117,6 +124,10 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
     SET SCHEMA <replaceable class="PARAMETER">new_schema</replaceable>
 ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> [ OWNED BY <replaceable class="PARAMETER">role_name</replaceable> [, ... ] ]
     SET TABLESPACE <replaceable class="PARAMETER">new_tablespace</replaceable> [ NOWAIT ]
+ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
+    ATTACH PARTITION <replaceable class="PARAMETER">partition_name</replaceable> FOR VALUES <replaceable class="PARAMETER">partition_bound_spec</replaceable>
+ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
+    DETACH PARTITION <replaceable class="PARAMETER">partition_name</replaceable>
 
 <phrase>其中<replaceable class="PARAMETER">action</replaceable> 是以下之一：</phrase>
 
@@ -126,6 +137,9 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET DEFAULT <replaceable class="PARAMETER">expression</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> DROP DEFAULT
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> { SET | DROP } NOT NULL
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ]
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> { SET GENERATED { ALWAYS | BY DEFAULT } | SET <replaceable>sequence_option</replaceable> | RESTART [ [ WITH ] <replaceable class="parameter">restart</replaceable> ] } [...]
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> DROP IDENTITY [ IF EXISTS ]
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET STATISTICS <replaceable class="PARAMETER">integer</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> SET ( <replaceable class="PARAMETER">attribute_option</replaceable> = <replaceable class="PARAMETER">value</replaceable> [, ... ] )
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> RESET ( <replaceable class="PARAMETER">attribute_option</replaceable> [, ... ] )
@@ -203,9 +217,12 @@ ____________________________________________________________________________-->
      <para>
       This form drops a column from a table.  Indexes and
       table constraints involving the column will be automatically
-      dropped as well.  You will need to say <literal>CASCADE</> if
-      anything outside the table depends on the column, for example,
-      foreign key references or views.
+      dropped as well.
+      Multivariate statistics referencing the dropped column will also be
+      removed if the removal of the column would cause the statistics to
+      contain data for only a single column.
+      You will need to say <literal>CASCADE</> if anything outside the table
+      depends on the column, for example, foreign key references or views.
       If <literal>IF EXISTS</literal> is specified and the column
       does not exist, no error is thrown. In this case a notice
       is issued instead.
@@ -253,6 +270,49 @@ ____________________________________________________________________________-->
       These forms change whether a column is marked to allow null
       values or to reject null values.  You can only use <literal>SET
       NOT NULL</> when the column contains no null values.
+     </para>
+
+     <para>
+      If this table is a partition, one cannot perform <literal>DROP NOT NULL</literal>
+      on a column if it is marked <literal>NOT NULL</literal> in the parent
+      table.  To drop the <literal>NOT NULL</literal> constraint from all the
+      partitions, perform <literal>DROP NOT NULL</literal> on the parent
+      table.  Even if there is no <literal>NOT NULL</> constraint on the
+      parent, such a constraint can still be added to individual partitions,
+      if desired; that is, the children can disallow nulls even if the parent
+      allows them, but not the other way around.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY</literal></term>
+    <term><literal>SET GENERATED { ALWAYS | BY DEFAULT }</literal></term>
+    <term><literal>DROP IDENTITY [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>
+      These forms change whether a column is an identity column or change the
+      generation attribute of an existing identity column.
+      See <xref linkend="sql-createtable"> for details.
+     </para>
+
+     <para>
+      If <literal>DROP IDENTITY IF EXISTS</literal> is specified and the
+      column is not an identity column, no error is thrown.  In this case a
+      notice is issued instead.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET <replaceable>sequence_option</replaceable></literal></term>
+    <term><literal>RESTART</literal></term>
+    <listitem>
+     <para>
+      These forms alter the sequence that underlies an existing identity
+      column.  <replaceable>sequence_option</replaceable> is an option
+      supported by <xref linkend="sql-altersequence"> such
+      as <literal>INCREMENT BY</literal>.
      </para>
     </listitem>
    </varlistentry>
@@ -646,10 +706,17 @@ ____________________________________________________________________________-->
       That can be done with <link linkend="SQL-VACUUM">VACUUM
       FULL</>, <xref linkend="SQL-CLUSTER"> or one of the forms
       of <command>ALTER TABLE</> that forces a table rewrite.
+      For planner related parameters, changes will take effect from the next
+      time the table is locked so currently executing queries will not be
+      affected.
      </para>
 
      <para>
-      Changing fillfactor and autovacuum storage parameters acquires a <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
+      <literal>SHARE UPDATE EXCLUSIVE</literal> lock will be taken for
+      fillfactor and autovacuum storage parameters, as well as the
+      following planner related parameters:
+      <varname>effective_io_concurrency</>, <varname>parallel_workers</>, <varname>seq_page_cost</>,
+      <varname>random_page_cost</>, <varname>n_distinct</> and <varname>n_distinct_inherited</>.
      </para>
 
      <note>
@@ -792,6 +859,62 @@ ____________________________________________________________________________-->
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term><literal>ATTACH PARTITION <replaceable class="PARAMETER">partition_name</replaceable> FOR VALUES <replaceable class="PARAMETER">partition_bound_spec</replaceable></literal></term>
+    <listitem>
+     <para>
+      This form attaches an existing table (which might itself be partitioned)
+      as a partition of the target table using the same syntax for
+      <replaceable class="PARAMETER">partition_bound_spec</replaceable> as
+      <xref linkend="sql-createtable">.  The partition bound specification
+      must correspond to the partitioning strategy and partition key of the
+      target table.  The table to be attached must have all the same columns
+      as the target table and no more; moreover, the column types must also
+      match.  Also, it must have all the <literal>NOT NULL</literal> and
+      <literal>CHECK</literal> constraints of the target table.  Currently
+      <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal>, and
+      <literal>FOREIGN KEY</literal> constraints are not considered.
+      If any of the <literal>CHECK</literal> constraints of the table being
+      attached is marked <literal>NO INHERIT</literal>, the command will fail;
+      such a constraint must be recreated without the <literal>NO INHERIT</literal>
+      clause.
+     </para>
+
+     <para>
+      If the new partition is a regular table, a full table scan is performed
+      to check that no existing row in the table violates the partition
+      constraint.  It is possible to avoid this scan by adding a valid
+      <literal>CHECK</literal> constraint to the table that would allow only
+      the rows satisfying the desired partition constraint before running this
+      command.  It will be determined using such a constraint that the table
+      need not be scanned to validate the partition constraint.  This does not
+      work, however, if any of the partition keys is an expression and the
+      partition does not accept <literal>NULL</literal> values.  If attaching
+      a list partition that will not accept <literal>NULL</literal> values,
+      also add <literal>NOT NULL</literal> constraint to the partition key
+      column, unless it's an expression.
+     </para>
+
+     <para>
+      If the new partition is a foreign table, nothing is done to verify
+      that all the rows in the foreign table obey the partition constraint.
+      (See the discussion in <xref linkend="SQL-CREATEFOREIGNTABLE"> about
+      constraints on the foreign table.)
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DETACH PARTITION</literal> <replaceable class="PARAMETER">partition_name</replaceable></term>
+    <listitem>
+     <para>
+      This form detaches specified partition of the target table.  The detached
+      partition continues to exist as a standalone table, but no longer has any
+      ties to the table from which it was detached.
+     </para>
+    </listitem>
+   </varlistentry>
+
   </variablelist>
   </para>
 ____________________________________________________________________________-->
@@ -819,7 +942,9 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       这种形式从表删除一列。涉及到该列的索引和表约束也将会被自动
-      删除。如果在该表之外有任何东西（例如外键引用或者视图）依赖
+      删除。如果删除列会导致统计信息仅包含单个列的数据，
+	  那么引用删除列的多变量统计信息也将被删除。
+	  如果在该表之外有任何东西（例如外键引用或者视图）依赖
       于该列，你将需要用到<literal>CASCADE</>。如果指定了
       <literal>IF EXISTS</literal>但该列不存在，则不会抛出错误。
       这种情况中会发出一个提示。
@@ -860,7 +985,45 @@ ____________________________________________________________________________-->
       这些形式更改一列是否被标记为允许空值或者拒绝空值。只有当该列
       不包含空值时，你才能使用<literal>SET NOT NULL</>。
      </para>
+
+     <para>
+      如果这个表是一个分区，如果在父表中标记了<literal>NOT NULL</literal>，
+	  则不能在列上执行<literal>DROP NOT NULL</literal>。
+	  要从所有分区中删除<literal>NOT NULL</literal>约束，
+	  请在父表上执行<literal>DROP NOT NULL</literal>。即使父表没有
+	  <literal>NOT NULL</>约束，如果需要，这样的约束仍然可以添加到单个分区；
+	  也就是说，即使父表允许，子表也可以不允许为空，但是反过来不行。
+     </para>
     </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY</literal></term>
+    <term><literal>SET GENERATED { ALWAYS | BY DEFAULT }</literal></term>
+    <term><literal>DROP IDENTITY [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>
+      这些形式会更改列是否为标识列或更改现有标识列的生成属性。
+	  有关详细信息，请参见<xref linkend="sql-createtable">。
+     </para>
+
+     <para>
+      如果指定了<literal>DROP IDENTITY IF EXISTS</literal>，并且该列不是标识列，
+	  则不会抛出错误。在这种情况下，发出一个通知。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET <replaceable>sequence_option</replaceable></literal></term>
+    <term><literal>RESTART</literal></term>
+    <listitem>
+     <para>
+      这些形式修改现有标识列下的序列。<replaceable>sequence_option</replaceable>
+	  是一个由<xref linkend="sql-altersequence">支持的选项，
+	  例如<literal>INCREMENT BY</literal>。
+     </para>
+	 </listitem>
    </varlistentry>
 
    <varlistentry>
@@ -1175,9 +1338,8 @@ ____________________________________________________________________________-->
     <term><literal>SET { LOGGED | UNLOGGED }</literal></term>
     <listitem>
      <para>
-      This form changes the table from unlogged to logged or vice-versa
-      (see <xref linkend="SQL-CREATETABLE-UNLOGGED">).  It cannot be applied
-      to a temporary table.
+      这种形式将表从unlogged改为logged或者反过来
+      （参阅<xref linkend="SQL-CREATETABLE-UNLOGGED">）。不能应用于临时表。
      </para>
     </listitem>
    </varlistentry>
@@ -1193,11 +1355,15 @@ ____________________________________________________________________________-->
       参数。可以用<link linkend="SQL-VACUUM">VACUUM
       FULL</>、<xref linkend="SQL-CLUSTER">或者
       <command>ALTER TABLE</>的一种形式来强制一次表重写。
+	  对于与规划器相关的参数，更改将在下次表锁定时生效，
+	  因此当前执行的查询不会受到影响。
      </para>
      
      <para>
-      更改存储参数 fillfactor 和 autovacuum 要求
-      <literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+      对于fillfactor和autovacuum存储参数以及以下规划器相关参数，
+	  将采用<literal>SHARE UPDATE EXCLUSIVE</literal>锁：
+	  <varname>effective_io_concurrency</>、<varname>parallel_workers</>、<varname>seq_page_cost</>、
+      <varname>random_page_cost</>、<varname>n_distinct</>和<varname>n_distinct_inherited</>。
      </para>
 
      <note>
@@ -1322,24 +1488,69 @@ ____________________________________________________________________________-->
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term><literal>ATTACH PARTITION <replaceable class="PARAMETER">partition_name</replaceable> FOR VALUES <replaceable class="PARAMETER">partition_bound_spec</replaceable></literal></term>
+    <listitem>
+     <para>
+      这种形式使用与<xref linkend="sql-createtable">相同的
+	  <replaceable class="PARAMETER">partition_bound_spec</replaceable>语法，
+	  将现有的表（可能本身是分区）作为目标表的分区。
+	  分区绑定规范必须对应于目标表的分区策略和分区键。
+	  要绑定的表必须与目标表具有相同的列，而不能再多；此外，
+	  列类型也必须匹配。此外，它必须具有目标表的所有
+	  <literal>NOT NULL</literal>和<literal>CHECK</literal>约束。
+	  目前没有考虑<literal>UNIQUE</literal>、<literal>PRIMARY KEY</literal>
+	  和<literal>FOREIGN KEY</literal>约束。
+	  如果附加表的任意<literal>CHECK</literal>约束被标记为<literal>NO INHERIT</literal>，
+	  则该命令将失败；必须重新创建这样的约束，而不使用<literal>NO INHERIT</literal>子句。
+     </para>
+
+     <para>
+      如果新的分区是普通表，则执行一个全表扫描来检查表中的现有行是否违反分区约束。
+	  可以通过给该表添加一个有效的<literal>CHECK</literal>约束来避免此扫描，
+	  在执行此命令之前，只允许满足所需分区约束的行。将使用这样的约束来确定，
+	  而不需要扫描表来验证分区约束。但是，如果任何分区键是表达式并且分区不接受
+	  <literal>NULL</literal>值，这将起作用。如果附加一个不接受
+	  <literal>NULL</literal>值的列表分区，除非它是一个表达式，
+	  否则向分区键列添加<literal>NOT NULL</literal>约束。
+     </para>
+
+     <para>
+      如果新分区是外部表，则不会执行任何操作来验证外部表中的所有行都遵守分区约束。
+	  （请参阅<xref linkend="SQL-CREATEFOREIGNTABLE">中关于外部表的约束的讨论。）
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DETACH PARTITION</literal> <replaceable class="PARAMETER">partition_name</replaceable></term>
+    <listitem>
+     <para>
+      该形式分离目标表的指定分区。分离的分区作为独立表继续存在，但不再与分离的表相关联。
+     </para>
+    </listitem>
+   </varlistentry>
+
   </variablelist>
   </para>
 
 <!--==========================orignal english content==========================
   <para>
-   All the actions except <literal>RENAME</literal>,
-   <literal>SET TABLESPACE</literal> and <literal>SET SCHEMA</literal>
-   can be combined into
-   a list of multiple alterations to apply in parallel.  For example, it
+   All the forms of ALTER TABLE that act on a single table, except
+   <literal>RENAME</literal>, <literal>SET SCHEMA</literal>,
+   <literal>ATTACH PARTITION</literal>, and
+   <literal>DETACH PARTITION</literal> can be combined into
+   a list of multiple alterations to be applied together.  For example, it
    is possible to add several columns and/or alter the type of several
    columns in a single command.  This is particularly useful with large
    tables, since only one pass over the table need be made.
   </para>
 ____________________________________________________________________________-->
   <para>
-   所有除了<literal>RENAME</literal>、
-   <literal>SET TABLESPACE</literal>和<literal>SET SCHEMA</literal>
-   的动作可以被被整合到一个列表中以进行并行的修改。例如，可以在一个命
+   除了<literal>RENAME</literal>、<literal>SET SCHEMA</literal>、
+   <literal>ATTACH PARTITION</literal>和
+   <literal>DETACH PARTITION</literal>
+   之外的所有作用于单个表的ALTER TABLE形式可以整合到一个具有多个修改的列表中一起使用。例如，可以在一个命
    令中增加一些列并且/或者修改一些列的类型。对于大型的表这是特别有用的，
    因为只需要对表做一趟操作。
   </para>
@@ -1349,8 +1560,9 @@ ____________________________________________________________________________-->
    You must own the table to use <command>ALTER TABLE</>.
    To change the schema or tablespace of a table, you must also have
    <literal>CREATE</literal> privilege on the new schema or tablespace.
-   To add the table as a new child of a parent table, you must own the
-   parent table as well.
+   To add the table as a new child of a parent table, you must own the parent
+   table as well.  Also, to attach a table as a new partition of the table,
+   you must own the table being attached.
    To alter the owner, you must also be a direct or indirect member of the new
    owning role, and that role must have <literal>CREATE</literal> privilege on
    the table's schema.  (These restrictions enforce that altering the owner
@@ -1365,7 +1577,7 @@ ____________________________________________________________________________-->
    要使用<command>ALTER TABLE</>，你必须拥有该表。要更改一个表的
    模式或者表空间，你还必须拥有新模式或表空间上的
    <literal>CREATE</literal>特权。要把一个表作为一个父表的新子表加入，
-   你必须也拥有该父表。要更改拥有者，你还必须
+   你必须也拥有该父表。另外，要将一个表附加为表的新分区，您必须拥有要附加的那个表。要更改拥有者，你还必须
    是新拥有角色的一个直接或者间接成员，并且该角色必须具有该表的模式上的
    <literal>CREATE</literal>特权（这些限制强制修改拥有者不能做一些通过删除和重
    建表做不到的事情。不过，一个超级用户怎么都能更改任何表的所有权。）。
@@ -1748,6 +1960,40 @@ ____________________________________________________________________________-->
        </para>
       </listitem>
      </varlistentry>
+     <varlistentry>
+<!--==========================orignal english content==========================
+      <term><replaceable class="PARAMETER">partition_name</replaceable></term>
+____________________________________________________________________________-->
+      <term><replaceable class="PARAMETER">partition_name</replaceable></term>
+      <listitem>
+<!--==========================orignal english content==========================
+       <para>
+        The name of the table to attach as a new partition or to detach from this table.
+       </para>
+____________________________________________________________________________-->
+       <para>
+        要附加为新分区或从此表中分离的表的名称。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+<!--==========================orignal english content==========================
+      <term><replaceable class="PARAMETER">partition_bound_spec</replaceable></term>
+____________________________________________________________________________-->
+      <term><replaceable class="PARAMETER">partition_bound_spec</replaceable></term>
+      <listitem>
+<!--==========================orignal english content==========================
+       <para>
+        The partition bound specification for a new partition.  Refer to
+        <xref linkend="sql-createtable"> for more details on the syntax of the same.
+       </para>
+____________________________________________________________________________-->
+       <para>
+        新分区的分区绑定规范。请参阅<xref linkend="sql-createtable">获取更多关于相同语法的细节。
+       </para>
+      </listitem>
+     </varlistentry>
 
     </variablelist>
  </refsect1>
@@ -1819,6 +2065,16 @@ ____________________________________________________________________________-->
    <para>
     增加一个<literal>CHECK</>或者<literal>NOT NULL</>约束要求扫描
     表以验证现有行符合该约束，但是不要求一次表重写。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Similarly, when attaching a new partition it may be scanned to verify that
+    existing rows meet the partition constraint.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    同样，在附加新分区时，可能会扫描它以验证现有行是否符合分区约束。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1918,18 +2174,25 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     If a table has any descendant tables, it is not permitted to add,
-    rename, or change the type of a column, or rename an inherited constraint
-    in the parent table without doing
-    the same to the descendants.  That is, <command>ALTER TABLE ONLY</command>
-    will be rejected.  This ensures that the descendants always have
-    columns matching the parent.
+    rename, or change the type of a column in the parent table without doing
+    same to the descendants.  This ensures that the descendants always have
+    columns matching the parent.  Similarly, a constraint cannot be renamed
+    in the parent without also renaming it in all descendants, so that
+    constraints also match between the parent and its descendants.
+    Also, because selecting from the parent also selects from its descendants,
+    a constraint on the parent cannot be marked valid unless it is also marked
+    valid for those descendants.  In all of these cases, <command>ALTER TABLE
+    ONLY</command> will be rejected.
    </para>
 ____________________________________________________________________________-->
    <para>
     如果一个表有任何后代表，所以如果不对后代做同样的操作，则不允许在父表
-    中增加列、重命名列、更改列的类型或者重命名一个继承的约束。也就是说，
-    <command>ALTER TABLE ONLY</command>将会被拒绝。这确保了后代
-    总是具有匹配父表的列。
+    中增加列、重命名列、更改列的类型。这确保了后代
+    总是具有匹配父表的列。同样，如果不在所有后代中重新命名约束，
+	则不能在父级中重新命名该约束，以便约束在父代及其后代之间也匹配。
+	此外，因为从父项中选择也从其后代中进行选择，所以对父项的约束不能被标记为有效，
+	除非它对于那些后代也被标记为有效。在所有这些情况下，
+    <command>ALTER TABLE ONLY</command>将会被拒绝。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1941,6 +2204,9 @@ ____________________________________________________________________________-->
     COLUMN</literal> (i.e., <command>ALTER TABLE ONLY ... DROP
     COLUMN</command>) never removes any descendant columns, but
     instead marks them as independently defined rather than inherited.
+    A nonrecursive <literal>DROP COLUMN</literal> command will fail for a
+    partitioned table, because all partitions of a table must have the same
+    columns as the partitioning root.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1949,20 +2215,27 @@ ____________________________________________________________________________-->
     的<literal>DROP COLUMN</literal>（即
     <command>ALTER TABLE ONLY ... DROP COLUMN</command>）不会移除
     任何后代列，而是会把它们标记成独立定义的列。
+	对于分区表，非递归<literal>DROP COLUMN</literal>命令将失败，
+	因为表的所有分区必须与分区根具有相同的列。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
-    The <literal>TRIGGER</>, <literal>CLUSTER</>, <literal>OWNER</>,
-    and <literal>TABLESPACE</> actions never recurse to descendant tables;
+    The actions for identity columns (<literal>ADD
+    GENERATED</literal>, <literal>SET</literal> etc., <literal>DROP
+    IDENTITY</literal>), as well as the actions
+    <literal>TRIGGER</>, <literal>CLUSTER</>, <literal>OWNER</>,
+    and <literal>TABLESPACE</> never recurse to descendant tables;
     that is, they always act as though <literal>ONLY</> were specified.
     Adding a constraint recurses only for <literal>CHECK</> constraints
     that are not marked <literal>NO INHERIT</>.
    </para>
 ____________________________________________________________________________-->
    <para>
-    <literal>TRIGGER</>、<literal>CLUSTER</>、<literal>OWNER</>
-    以及<literal>TABLESPACE</>动作不会递归到后代表。也就是说，它们的执行
+    标识列的操作(<literal>ADD
+    GENERATED</literal>、<literal>SET</literal>等，<literal>DROP
+    IDENTITY</literal>)，还有操作<literal>TRIGGER</>、<literal>CLUSTER</>、<literal>OWNER</>
+    以及<literal>TABLESPACE</>不会递归到后代表。也就是说，它们的执行
     总像是指定了<literal>ONLY</>。增加一个约束只会在没有标记成
     <literal>NO INHERIT</>的<literal>CHECK</>约束上进行。
    </para>
@@ -2336,6 +2609,51 @@ ALTER TABLE distributors DROP CONSTRAINT distributors_pkey,
     ADD CONSTRAINT distributors_pkey PRIMARY KEY USING INDEX dist_id_temp_idx;
 </programlisting></para>
 
+<!--==========================orignal english content==========================
+  <para>
+   Attach a partition to range partitioned table:
+<programlisting>
+ALTER TABLE measurement
+    ATTACH PARTITION measurement_y2016m07 FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');
+</programlisting></para>
+____________________________________________________________________________-->
+  <para>
+   将分区附加到范围分区表中：
+<programlisting>
+ALTER TABLE measurement
+    ATTACH PARTITION measurement_y2016m07 FOR VALUES FROM ('2016-07-01') TO ('2016-08-01');
+</programlisting></para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Attach a partition to list partitioned table:
+<programlisting>
+ALTER TABLE cities
+    ATTACH PARTITION cities_ab FOR VALUES IN ('a', 'b');
+</programlisting></para>
+____________________________________________________________________________-->
+  <para>
+   将分区附加到列表分区表中：
+<programlisting>
+ALTER TABLE cities
+    ATTACH PARTITION cities_ab FOR VALUES IN ('a', 'b');
+</programlisting></para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Detach a partition from partitioned table:
+<programlisting>
+ALTER TABLE measurement
+    DETACH PARTITION measurement_y2015m12;
+</programlisting></para>
+____________________________________________________________________________-->
+  <para>
+   从分区表中分离分区：
+<programlisting>
+ALTER TABLE measurement
+    DETACH PARTITION measurement_y2015m12;
+</programlisting></para>
+
  </refsect1>
 
  <refsect1>
@@ -2347,8 +2665,9 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    The forms <literal>ADD</literal> (without <literal>USING INDEX</literal>),
-   <literal>DROP</>, <literal>SET DEFAULT</>,
-   and <literal>SET DATA TYPE</literal> (without <literal>USING</literal>)
+   <literal>DROP [COLUMN]</>, <literal>DROP IDENTITY</literal>, <literal>RESTART</literal>,
+   <literal>SET DEFAULT</>, <literal>SET DATA TYPE</literal> (without <literal>USING</literal>),
+   <literal>SET GENERATED</literal>, and <literal>SET <replaceable>sequence_option</replaceable></literal>
    conform with the SQL standard.  The other forms are
    <productname>PostgreSQL</productname> extensions of the SQL standard.
    Also, the ability to specify more than one manipulation in a single
@@ -2357,9 +2676,10 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
   <para>
    形式<literal>ADD</literal>（不带<literal>USING INDEX</literal>）、
-   <literal>DROP</>、<literal>SET DEFAULT</>以及
-   <literal>SET DATA TYPE</literal>（不带<literal>USING</literal>）符合 SQL 
-   标准。其他形式是<productname>PostgreSQL</productname>对 SQL 标准的
+   <literal>DROP [COLUMN]</>、<literal>DROP IDENTITY</literal>、<literal>RESTART</literal>、
+   <literal>SET DEFAULT</>、<literal>SET DATA TYPE</literal>（不带<literal>USING</literal>）、
+   <literal>SET GENERATED</literal>和<literal>SET <replaceable>sequence_option</replaceable></literal>
+   符合 SQL 标准。其他形式是<productname>PostgreSQL</productname>对 SQL 标准的
    扩展。还有，在一个<command>ALTER TABLE</>命令中指定多于一个操作的能
    力也是一种扩展。
   </para>

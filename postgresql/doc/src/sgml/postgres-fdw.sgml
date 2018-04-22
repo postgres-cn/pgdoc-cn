@@ -685,7 +685,24 @@ ____________________________________________________________________________-->
    <para>
     注意除<literal>NOT NULL</>之外的约束将不会从远程表中导入。虽然<productname>PostgreSQL</>确实支持外部表上的<literal>CHECK</>约束，但不会自动导入它们，因为存在本地和远程服务器计算约束表达式方式不同的风险。<literal>CHECK</>约束中的任何这类不一致都可能导致查询优化中很难检测的错误。因此，如果你希望导入<literal>CHECK</>约束，你必须手工来做，并且你应该仔细地验证每一个这种约束的语义。有关处理外部表上<literal>CHECK</>约束的更多细节，请见<xref linkend="sql-createforeigntable">。
    </para>
-  </sect3>
+
+<!--==========================orignal english content==========================
+   <para>
+    Tables or foreign tables which are partitions of some other table are
+    automatically excluded.  Partitioned tables are imported, unless they
+    are a partition of some other table.  Since all data can be accessed
+    through the partitioned table which is the root of the partitioning
+    hierarchy, this approach should allow access to all the data without
+    creating extra objects.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    自动排除作为其他表的分区的表或外部表。分区表被导入，除非它们是其他表的分区。
+	由于所有数据都可以通过作为分区层次根的分区表来访问，
+	所以这种方法应该允许访问所有数据而不创建额外的对象。
+   </para>
+
+   </sect3>
  </sect2>
 
  <sect2>
@@ -773,15 +790,20 @@ ____________________________________________________________________________-->
    <filename>postgres_fdw</> attempts to optimize the query execution by
    sending the whole query to the remote server if there are no query
    <literal>WHERE</> clauses that cannot be sent to the remote server,
-   no local joins for the query, and no row-level local <literal>BEFORE</> or
-   <literal>AFTER</> triggers on the target table.  In <command>UPDATE</>,
+   no local joins for the query, no row-level local <literal>BEFORE</> or
+   <literal>AFTER</> triggers on the target table, and no
+   <literal>CHECK OPTION</> constraints from parent views.
+   In <command>UPDATE</>,
    expressions to assign to target columns must use only built-in data types,
    <literal>IMMUTABLE</> operators, or <literal>IMMUTABLE</> functions,
    to reduce the risk of misexecution of the query.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <filename>postgres_fdw</>尝试优化远程查询来减少从外部服务器传来的数据量。这可以通过把查询的<literal>WHERE</>子句发送给远程服务器执行来完成，并且还可以不检索当前查询不需要的表列。为了降低查询被误执行的风险，除非<literal>WHERE</>子句使用的数据类型、操作符和函数都是内建的或者属于列在该外部服务器的<literal>extensions</>选项中的一个扩展，将不会把<literal>WHERE</>子句发送到远程服务器。这些子句中的操作符合函数也必须是<literal>IMMUTABLE</>。对于<command>UPDATE</>或者<command>DELETE</>查询，如果没有不能发送给远程服务器的<literal>WHERE</>子句、没有本地连接并且目标表上没有本地的行级<literal>BEFORE</>或<literal>AFTER</>触发器，<filename>postgres_fdw</>会尝试通过将整个查询发送给远程服务器来优化查询的执行。在<command>UPDATE</>中，赋值给目标列的表达式只能使用内建数据类型、<literal>IMMUTABLE</>操作符或者<literal>IMMUTABLE</>操作符，这样能降低查询被误执行的风险。
+   <filename>postgres_fdw</>尝试优化远程查询来减少从外部服务器传来的数据量。这可以通过把查询的<literal>WHERE</>子句发送给远程服务器执行来完成，并且还可以不检索当前查询不需要的表列。为了降低查询被误执行的风险，除非<literal>WHERE</>子句使用的数据类型、操作符和函数都是内建的或者属于列在该外部服务器的<literal>extensions</>选项中的一个扩展，将不会把<literal>WHERE</>子句发送到远程服务器。这些子句中的操作符合函数也必须是<literal>IMMUTABLE</>。对于<command>UPDATE</>或者<command>DELETE</>查询，
+   如果没有不能发送给远程服务器的<literal>WHERE</>子句、
+   没有查询的本地连接、目标表上没有本地的行级<literal>BEFORE</>或<literal>AFTER</>触发器，
+   并且没有来自父视图的<literal>CHECK OPTION</>约束，<filename>postgres_fdw</>会尝试通过将整个查询发送给远程服务器来优化查询的执行。在<command>UPDATE</>中，赋值给目标列的表达式只能使用内建数据类型、<literal>IMMUTABLE</>操作符或者<literal>IMMUTABLE</>操作符，这样能降低查询被误执行的风险。
   </para>
 
 <!--==========================orignal english content==========================
@@ -840,17 +862,63 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    <filename>postgres_fdw</> likewise establishes remote session settings
-   for the parameters <xref linkend="guc-timezone">,
-   <xref linkend="guc-datestyle">, <xref linkend="guc-intervalstyle">,
-   and <xref linkend="guc-extra-float-digits">.  These are less likely
-   to be problematic than <varname>search_path</>, but can be handled
-   with function <literal>SET</> options if the need arises.
+   for various parameters: 
+   <itemizedlist spacing="compact">
+    <listitem>
+     <para>
+      <xref linkend="guc-timezone"> is set to <literal>UTC</>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <xref linkend="guc-datestyle"> is set to <literal>ISO</>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <xref linkend="guc-intervalstyle"> is set to <literal>postgres</>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <xref linkend="guc-extra-float-digits"> is set to <literal>3</> for remote
+      servers 9.0 and newer and is set to <literal>2</> for older versions
+     </para>
+    </listitem>
+   </itemizedlist>
+   These are less likely to be problematic than <varname>search_path</>, but
+   can be handled with function <literal>SET</> options if the need arises.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <filename>postgres_fdw</>同样也为参数<xref linkend="guc-timezone">、<xref linkend="guc-datestyle">、<xref linkend="guc-intervalstyle">和<xref linkend="guc-extra-float-digits">建立远程会话设置。这些不如<varname>search_path</>有那么多问题，但是如果需要也可以使用函数<literal>SET</>选项来处理。
+   <filename>postgres_fdw</>同样为各种参数建立远程会话设置：
+   <itemizedlist spacing="compact">
+    <listitem>
+     <para>
+      <xref linkend="guc-timezone">设置为<literal>UTC</>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <xref linkend="guc-datestyle">设置为<literal>ISO</>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <xref linkend="guc-intervalstyle">设置为<literal>postgres</>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      对于远程服务器9.0和更新版本，<xref linkend="guc-extra-float-digits">
+	  设置为<literal>3</>，并且针对更老版本设置为<literal>2</>
+     </para>
+    </listitem>
+   </itemizedlist>
+   这些不如<varname>search_path</>有那么多问题，但是如果需要也可以使用函数
+   <literal>SET</>选项来处理。
   </para>
-
+   
 <!--==========================orignal english content==========================
   <para>
    It is <emphasis>not</> recommended that you override this behavior by

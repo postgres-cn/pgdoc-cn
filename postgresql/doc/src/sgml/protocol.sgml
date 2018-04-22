@@ -351,15 +351,18 @@ ____________________________________________________________________________-->
     The server then sends an appropriate authentication request message,
     to which the frontend must reply with an appropriate authentication
     response message (such as a password).
-    For all authentication methods except GSSAPI and SSPI, there is at most
-    one request and one response. In some methods, no response
+    For all authentication methods except GSSAPI, SSPI and SASL, there is at
+    most one request and one response. In some methods, no response
     at all is needed from the frontend, and so no authentication request
-    occurs. For GSSAPI and SSPI, multiple exchanges of packets may be needed
-    to complete the authentication.
+    occurs. For GSSAPI, SSPI and SASL, multiple exchanges of packets may be
+    needed to complete the authentication.
    </para>
 ____________________________________________________________________________-->
    <para>
-    然后服务器就发送合适的认证请求信息，前端必须用合适的认证响应信息来响应（比如一个口令）。对于除了GSSAPI和SSPI之外的所有认证方式都至少有一个请求和一个响应。在有些方法中前端不需要发出任何响应，并且因此就不会由任何认证请求发生。对于GSSAPI和SSPI，可能需要多个包的交换才能完成认证。
+    然后服务器就发送合适的认证请求信息，前端必须用合适的认证响应信息来响应（比如一个口令）。
+	对于除了GSSAPI、SSPI和SASL之外的所有认证方式都至少有一个请求和一个响应。
+	在有些方法中前端不需要发出任何响应，并且因此就不会由任何认证请求发生。
+	对于GSSAPI、SSPI和SASL，可能需要多个包的交换才能完成认证。
    </para>
 
 <!--==========================orignal english content==========================
@@ -463,7 +466,7 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         The frontend must now initiate a GSSAPI negotiation. The frontend
-        will send a PasswordMessage with the first part of the GSSAPI
+        will send a GSSResponse message with the first part of the GSSAPI
         data stream in response to this. If further messages are needed,
         the server will respond with AuthenticationGSSContinue.
        </para>
@@ -475,7 +478,7 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         The frontend must now initiate a SSPI negotiation. The frontend
-        will send a PasswordMessage with the first part of the SSPI
+        will send a GSSResponse with the first part of the SSPI
         data stream in response to this. If further messages are needed,
         the server will respond with AuthenticationGSSContinue.
        </para>
@@ -491,10 +494,50 @@ ____________________________________________________________________________-->
         or a previous AuthenticationGSSContinue). If the GSSAPI
         or SSPI data in this message
         indicates more data is needed to complete the authentication,
-        the frontend must send that data as another PasswordMessage. If
+        the frontend must send that data as another GSSResponse message. If
         GSSAPI or SSPI authentication is completed by this message, the server
         will next send AuthenticationOk to indicate successful authentication
         or ErrorResponse to indicate failure.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSASL</term>
+      <listitem>
+       <para>
+        The frontend must now initiate a SASL negotiation, using one of the
+        SASL mechanisms listed in the message. The frontend will send a
+        SASLInitialResponse with the name of the selected mechanism, and the
+        first part of the SASL data stream in response to this. If further
+        messages are needed, the server will respond with
+        AuthenticationSASLContinue. See <xref linkend="sasl-authentication">
+        for details.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSASLContinue</term>
+      <listitem>
+       <para>
+        This message contains challenge data from the previous step of SASL
+        negotiation (AuthenticationSASL, or a previous
+        AuthenticationSASLContinue). The frontend must respond with a
+        SASLResponse message.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSASLFinal</term>
+      <listitem>
+       <para>
+        SASL authentication has completed with additional mechanism-specific
+        data for the client. The server will next send AuthenticationOk to
+        indicate successful authentication, or an ErrorResponse to indicate
+        failure. This message is sent only if the SASL mechanism specifies
+        additional data to be sent from server to client at completion.
        </para>
       </listitem>
      </varlistentry>
@@ -564,7 +607,7 @@ ____________________________________________________________________________-->
       <term>AuthenticationGSS</term>
       <listitem>
        <para>
-        前端必须现在开始一次GSSAPI谈判。前端将发送一个带有GSSAPI数据流第一部分的PasswordMessage来响应。如果需要进一步的消息，服务器将会响应AuthenticationGSSContinue。
+        前端必须现在开始一次GSSAPI谈判。前端将发送一个带有GSSAPI数据流第一部分的GSSResponse消息来响应。如果需要进一步的消息，服务器将会响应AuthenticationGSSContinue。
        </para>
       </listitem>
      </varlistentry>
@@ -573,7 +616,7 @@ ____________________________________________________________________________-->
       <term>AuthenticationSSPI</term>
       <listitem>
        <para>
-        前端必须现在开始一次SSPI谈判。前端将发送一个带有SSPI数据流第一部分的PasswordMessage来响应。如果需要进一步的消息，服务器将会响应AuthenticationGSSContinue。
+        前端必须现在开始一次SSPI谈判。前端将发送一个带有SSPI数据流第一部分的GSSResponse来响应。如果需要进一步的消息，服务器将会响应AuthenticationGSSContinue。
        </para>
       </listitem>
 
@@ -582,7 +625,40 @@ ____________________________________________________________________________-->
       <term>AuthenticationGSSContinue</term>
       <listitem>
        <para>
-        这个消息包含对于前一步的GSSAPI或SSPI谈判（AuthenticationGSS、AuthenticationSSPI或者前一个AuthenticationGSSContinue）的响应数据。如果这个消息中的GSSAPI或SSPI数据指示需要更多数据来完成认证，前端必须将所需的数据作为另一个PasswordMessage发送。如果这个消息就能完成GSSAPI或SSPI认证，服务器将接着发送AuthenticationOk来指示成功认证，或者发送ErrorResponse来指示失败。
+        这个消息包含对于前一步的GSSAPI或SSPI谈判（AuthenticationGSS、AuthenticationSSPI或者前一个AuthenticationGSSContinue）的响应数据。如果这个消息中的GSSAPI或SSPI数据指示需要更多数据来完成认证，前端必须将所需的数据作为另一个GSSResponse消息发送。如果这个消息就能完成GSSAPI或SSPI认证，服务器将接着发送AuthenticationOk来指示成功认证，或者发送ErrorResponse来指示失败。
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term>AuthenticationSASL</term>
+      <listitem>
+       <para>
+        前端现在必须使用消息中列出的SASL机制之一启动SASL协商。
+		前端将发送SASLInitialResponse以及所选机制的名称以及SASL数据流的第一部分来响应。
+		如果需要更多消息，服务器将使用AuthenticationSASLContinue进行响应。
+		有关详细信息，请参见<xref linkend="sasl-authentication">。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSASLContinue</term>
+      <listitem>
+       <para>
+        该消息包含SASL协商的前一步（AuthenticationSASL，或之前的AuthenticationSASLContinue）
+		中的质询数据。前端必须使用SASLResponse消息进行响应。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>AuthenticationSASLFinal</term>
+      <listitem>
+       <para>
+        SASL身份验证已完成，并为客户端提供了其他机制特定的数据。
+		服务器接下来将发送AuthenticationOk以指示成功的身份验证，
+		或者发送ErrorResponse来指示失败。
+		仅当SASL机制指定完成时从服务器发送附加数据到客户端时，才会发送此消息。
        </para>
       </listitem>
      </varlistentry>
@@ -1107,7 +1183,7 @@ ____________________________________________________________________________-->
      number of parameter symbols (<literal>$</><replaceable>n</>)
      used in the query string.  Another special case is that a parameter's
      type can be specified as <type>void</> (that is, the OID of the
-     <type>void</> pseudotype).  This is meant to allow parameter symbols
+     <type>void</> pseudo-type).  This is meant to allow parameter symbols
      to be used for function parameters that are actually OUT parameters.
      Ordinarily there is no context in which a <type>void</> parameter
      could be used, but if such a parameter symbol appears in a function's
@@ -2068,6 +2144,248 @@ ____________________________________________________________________________-->
    </para>
   </sect2>
  </sect1>
+<sect1 id="sasl-authentication">
+<!--==========================orignal english content==========================
+<title>SASL Authentication</title>
+____________________________________________________________________________-->
+<title>SASL 认证</title>
+
+<!--==========================orignal english content==========================
+<para>
+<firstterm>SASL</> is a framework for authentication in connection-oriented
+protocols. At the moment, <productname>PostgreSQL</> implements only one SASL
+authentication mechanism, SCRAM-SHA-256, but more might be added in the
+future. The below steps illustrate how SASL authentication is performed in
+general, while the next subsection gives more details on SCRAM-SHA-256.
+</para>
+____________________________________________________________________________-->
+<para>
+<firstterm>SASL</>是面向连接的协议中的认证的一个框架。目前，<productname>PostgreSQL</>
+仅实现了一个SASL认证机制SCRAM-SHA-256，但未来可能会添加更多。
+下面的步骤说明了SASL认证通常如何执行，而下一小节给出了关于SCRAM-SHA-256的更多细节。
+</para>
+
+<procedure>
+<!--==========================orignal english content==========================
+<title>SASL Authentication Message Flow</title>
+____________________________________________________________________________-->
+<title>SASL 认证消息流</title>
+
+<step id="sasl-auth-begin">
+<!--==========================orignal english content==========================
+<para>
+  To begin a SASL authentication exchange, the server sends an
+  AuthenticationSASL message. It includes a list of SASL authentication
+  mechanisms that the server can accept, in the server's preferred order.
+</para>
+____________________________________________________________________________-->
+<para>
+  要开始SASL认证交换，服务器将发送一个AuthenticationSASL消息。
+  它包括一个服务器可以接受的SASL认证机制列表，按照服务器的首选顺序。
+</para>
+</step>
+
+<step id="sasl-auth-initial-response">
+<!--==========================orignal english content==========================
+<para>
+  The client selects one of the supported mechanisms from the list, and sends
+  a SASLInitialResponse message to the server. The message includes the name
+  of the selected mechanism, and an optional Initial Client Response, if the
+  selected mechanism uses that.
+</para>
+____________________________________________________________________________-->
+<para>
+  客户端从列表中选择一个受支持的机制，并向服务器发送SASLInitialResponse消息。
+  该消息包含所选机制的名称，以及可选的初始客户端响应（如果所选机制使用该机制）。
+</para>
+</step>
+
+<step id="sasl-auth-continue">
+<!--==========================orignal english content==========================
+<para>
+  One or more server-challenge and client-response message will follow. Each
+  server-challenge is sent in an AuthenticationSASLContinue message, followed
+  by a response from client in an SASLResponse message. The particulars of
+  the messages are mechanism specific.
+</para>
+____________________________________________________________________________-->
+<para>
+  接下来将会有一个或多个服务器质询和客户端响应消息。
+  在AuthenticationSASLContinue消息中发送每个服务器质询，
+  然后在SASLResponse消息中发送来自客户端的响应。消息的细节是机制特定的。
+</para>
+</step>
+
+<step id="sasl-auth-end">
+<!--==========================orignal english content==========================
+<para>
+  Finally, when the authentication exchange is completed successfully, the
+  server sends an AuthenticationSASLFinal message, followed
+  immediately by an AuthenticationOk message. The AuthenticationSASLFinal
+  contains additional server-to-client data, whose content is particular to the
+  selected authentication mechanism. If the authentication mechanism doesn't
+  use additional data that's sent at completion, the AuthenticationSASLFinal
+  message is not sent.
+</para>
+____________________________________________________________________________-->
+<para>
+  最后，当认证交换成功完成时，服务器发送AuthenticationSASLFinal消息，
+  紧接着是AuthenticationOk消息。AuthenticationSASLFinal包含附加的服务器到客户端数据，
+  其内容特定于所选的认证机制。如果认证机制不使用在完成时发送的附加数据，
+  则不会发送AuthenticationSASLFinal消息。
+</para>
+</step>
+</procedure>
+
+<!--==========================orignal english content==========================
+<para>
+On error, the server can abort the authentication at any stage, and send an
+ErrorMessage.
+</para>
+____________________________________________________________________________-->
+<para>
+出错时，服务器可以在任何阶段中止身份验证，并发送一个错误信息。
+</para>
+
+ <sect2 id="sasl-scram-sha256">
+<!--==========================orignal english content==========================
+  <title>SCRAM-SHA-256 authentication</title>
+____________________________________________________________________________-->
+  <title>SCRAM-SHA-256 认证</title>
+
+<!--==========================orignal english content==========================
+  <para>
+    <firstterm>SCRAM-SHA-256</> (called just <firstterm>SCRAM</> from now on) is
+    the only implemented SASL mechanism, at the moment. It is described in detail
+    in RFC 7677 and RFC 5802.
+  </para>
+____________________________________________________________________________-->
+  <para>
+    <firstterm>SCRAM-SHA-256</>（从现在开始只称为<firstterm>SCRAM</>）
+	是目前唯一实现的SASL机制。它在RFC 7677和RFC 5802中有详细描述。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+When SCRAM-SHA-256 is used in PostgreSQL, the server will ignore the user name
+that the client sends in the <structname>client-first-message</>. The user name
+that was already sent in the startup message is used instead.
+<productname>PostgreSQL</> supports multiple character encodings, while SCRAM
+dictates UTF-8 to be used for the user name, so it might be impossible to
+represent the PostgreSQL user name in UTF-8.
+  </para>
+____________________________________________________________________________-->
+  <para>
+在PostgreSQL中使用SCRAM-SHA-256时，服务器将忽略客户端在<structname>client-first-message</>
+中发送的用户名。而是使用在启动消息中发送的用户名。
+<productname>PostgreSQL</>支持多字符编码，而SCRAM指定用户名使用UTF-8，
+因此可能无法用UTF-8表示PostgreSQL用户名。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+The SCRAM specification dictates that the password is also in UTF-8, and is
+processed with the <firstterm>SASLprep</> algorithm.
+<productname>PostgreSQL</>, however, does not require UTF-8 to be used for
+the password. When a user's password is set, it is processed with SASLprep
+as if it was in UTF-8, regardless of the actual encoding used. However, if
+it is not a legal UTF-8 byte sequence, or it contains UTF-8 byte sequences
+that are prohibited by the SASLprep algorithm, the raw password will be used
+without SASLprep processing, instead of throwing an error. This allows the
+password to be normalized when it is in UTF-8, but still allows a non-UTF-8
+password to be used, and doesn't require the system to know which encoding
+the password is in.
+  </para>
+____________________________________________________________________________-->
+  <para>
+SCRAM规范规定密码也使用UTF-8，并使用<firstterm>SASLprep</>算法进行处理。
+然而，<productname>PostgreSQL</>并不要求UTF-8用于密码。当设置了用户密码时，
+无论实际使用何种编码，它都会像使用UTF-8一样使用SASLprep进行处理。但是，
+如果它不是合法的UTF-8字节序列，或者它包含SASLprep算法禁止的UTF-8字节序列，
+则将使用未经SASLprep处理的原始密码，而不是引发错误。
+这允许在UTF-8中对密码进行规范化，但仍允许使用非UTF-8密码，
+并且不要求系统知道密码所使用的编码。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+<firstterm>Channel binding</> has not been implemented yet.
+  </para>
+____________________________________________________________________________-->
+  <para>
+<firstterm>Channel binding</>尚未实现。
+  </para>
+
+<procedure>
+<!--==========================orignal english content==========================
+<title>Example</title>
+____________________________________________________________________________-->
+<title>示例</title>
+  <step id="scram-begin">
+<!--==========================orignal english content==========================
+<para>
+  The server sends an AuthenticationSASL message. It includes a list of
+  SASL authentication mechanisms that the server can accept.
+</para>
+____________________________________________________________________________-->
+<para>
+  服务器发送AuthenticationSASL消息。它包含服务器可以接受的SASL认证机制列表。
+</para>
+</step>
+<step id="scram-client-first">
+<!--==========================orignal english content==========================
+<para>
+  The client responds by sending a SASLInitialResponse message, which
+  indicates the chosen mechanism, <literal>SCRAM-SHA-256</>. In the Initial
+  Client response field, the message contains the SCRAM
+  <structname>client-first-message</>.
+</para>
+____________________________________________________________________________-->
+<para>
+  客户端通过发送SASLInitialResponse消息进行响应，该消息指示选择的机制<literal>SCRAM-SHA-256</>。
+  在初始客户端响应字段中，该消息包含SCRAM <structname>client-first-message</>。
+</para>
+</step>
+<step id="scram-server-first">
+<!--==========================orignal english content==========================
+<para>
+  Server sends an AuthenticationSASLContinue message, with a SCRAM
+  <structname>server-first message</> as the content.
+</para>
+____________________________________________________________________________-->
+<para>
+  服务器发送AuthenticationSASLContinue消息，内容为SCRAM
+  <structname>server-first message</>。
+</para>
+</step>
+<step id="scram-client-final">
+<!--==========================orignal english content==========================
+<para>
+  Client sends a SASLResponse message, with SCRAM
+  <structname>client-final-message</> as the content.
+</para>
+____________________________________________________________________________-->
+<para>
+  客户端发送SASLResponse消息，内容为SCRAM
+  <structname>client-final-message</>。
+</para>
+</step>
+<step id="scram-server-final">
+<!--==========================orignal english content==========================
+<para>
+  Server sends an AuthenticationSASLFinal message, with the SCRAM
+  <structname>server-final-message</>, followed immediately by
+  an AuthenticationOk message.
+</para>
+____________________________________________________________________________-->
+<para>
+  服务器发送AuthenticationSASLFinal消息，内容为SCRAM
+  <structname>server-final-message</>，紧接着是一个AuthenticationOk消息。
+</para>
+</step>
+</procedure>
+</sect2>
+</sect1>
 
 <sect1 id="protocol-replication">
 <!--==========================orignal english content==========================
@@ -2102,7 +2420,7 @@ ____________________________________________________________________________-->
 psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
 </programlisting>
  However, it is often more useful to use
- <xref linkend="app-pgreceivexlog"> (for physical replication) or
+ <xref linkend="app-pgreceivewal"> (for physical replication) or
  <xref linkend="app-pgrecvlogical"> (for logical replication).
 </para>
 ____________________________________________________________________________-->
@@ -2111,7 +2429,7 @@ ____________________________________________________________________________-->
 <programlisting>
 psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
 </programlisting>
- 不过更常用的是：<xref linkend="app-pgreceivexlog">（对于物理复制）或者<xref linkend="app-pgrecvlogical">（对于逻辑复制）。
+ 不过更常用的是：<xref linkend="app-pgreceivewal">（对于物理复制）或者<xref linkend="app-pgrecvlogical">（对于逻辑复制）。
 </para>
 
 <!--==========================orignal english content==========================
@@ -2161,8 +2479,8 @@ The commands accepted in walsender mode are:
       </term>
       <listitem>
       <para>
-       Current xlog flush location. Useful to get a known location in the
-       transaction log where streaming can start.
+       Current WAL flush location. Useful to get a known location in the
+       write-ahead log where streaming can start.
       </para>
       </listitem>
       </varlistentry>
@@ -2180,6 +2498,30 @@ The commands accepted in walsender mode are:
 
       </variablelist>
      </para>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+    <term><literal>SHOW</literal> <replaceable class="parameter">name</replaceable>
+     <indexterm><primary>SHOW</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      Requests the server to send the current setting of a run-time parameter.
+      This is similar to the SQL command <xref linkend="sql-show">.
+     </para>
+
+     <variablelist>
+      <varlistentry>
+       <term><replaceable class="parameter">name</></term>
+       <listitem>
+         <para>
+          The name of a run-time parameter. Available parameters are documented
+          in <xref linkend="runtime-config">.
+         </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
     </listitem>
   </varlistentry>
 
@@ -2223,8 +2565,8 @@ The commands accepted in walsender mode are:
     </listitem>
   </varlistentry>
 
-  <varlistentry>
-   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> { <literal>PHYSICAL</> [ <literal>RESERVE_WAL</> ] | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> }
+  <varlistentry id="protocol-replication-create-slot" xreflabel="CREATE_REPLICATION_SLOT">
+   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> [ <literal>TEMPORARY</> ] { <literal>PHYSICAL</> [ <literal>RESERVE_WAL</> ] | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> [ <literal>EXPORT_SNAPSHOT</> | <literal>NOEXPORT_SNAPSHOT</> | <literal>USE_SNAPSHOT</> ] }
      <indexterm><primary>CREATE_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
@@ -2255,6 +2597,17 @@ The commands accepted in walsender mode are:
       </varlistentry>
 
       <varlistentry>
+       <term><literal>TEMPORARY</></term>
+       <listitem>
+        <para>
+         Specify that this replication slot is a temporary one. Temporary
+         slots are not saved to disk and are automatically dropped on error
+         or when the session has finished.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
        <term><literal>RESERVE_WAL</></term>
        <listitem>
         <para>
@@ -2264,7 +2617,76 @@ The commands accepted in walsender mode are:
         </para>
        </listitem>
       </varlistentry>
+
+      <varlistentry>
+       <term><literal>EXPORT_SNAPSHOT</></term>
+       <term><literal>NOEXPORT_SNAPSHOT</></term>
+       <term><literal>USE_SNAPSHOT</></term>
+       <listitem>
+        <para>
+         Decides what to do with the snapshot created during logical slot
+         initialization. <literal>EXPORT_SNAPSHOT</>, which is the default,
+         will export the snapshot for use in other sessions. This option can't
+         be used inside a transaction.  <literal>USE_SNAPSHOT</> will use the
+         snapshot for the current transaction executing the command. This
+         option must be used in a transaction, and
+         <literal>CREATE_REPLICATION_SLOT</literal> must be the first command
+         run in that transaction.  Finally, <literal>NOEXPORT_SNAPSHOT</> will
+         just use the snapshot for logical decoding as normal but won't do
+         anything else with it.
+        </para>
+       </listitem>
+      </varlistentry>
      </variablelist>
+
+     <para>
+      In response to this command, the server will send a one-row result set
+      containing the following fields:
+
+      <variablelist>
+       <varlistentry>
+        <term><literal>slot_name</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          The name of the newly-created replication slot.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>consistent_point</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          The WAL location at which the slot became consistent.  This is the
+          earliest location from which streaming can start on this replication
+          slot.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>snapshot_name</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          The identifier of the snapshot exported by the command.  The
+          snapshot is valid until a new command is executed on this connection
+          or the replication connection is closed.  Null if the created slot
+          is physical.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>output_plugin</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          The name of the output plugin used by the newly-created replication
+          slot.  Null if the created slot is physical.
+         </para>
+        </listitem>
+       </varlistentry>
+      </variablelist>
+     </para>
     </listitem>
   </varlistentry>
 
@@ -2275,7 +2697,7 @@ The commands accepted in walsender mode are:
     <listitem>
      <para>
       Instructs server to start streaming WAL, starting at
-      WAL position <replaceable class="parameter">XXX/XXX</>.
+      WAL location <replaceable class="parameter">XXX/XXX</>.
       If <literal>TIMELINE</literal> option is specified,
       streaming starts on timeline <replaceable class="parameter">tli</>;
       otherwise, the server's current timeline is selected. The server can
@@ -2307,7 +2729,7 @@ The commands accepted in walsender mode are:
       acknowledges this by also exiting COPY mode, the server sends a result
       set with one row and two columns, indicating the next timeline in this
       server's history. The first column is the next timeline's ID (type <type>int8</type>), and the
-      second column is the WAL position where the switch happened (type <type>text</type>). Usually,
+      second column is the WAL location where the switch happened (type <type>text</type>). Usually,
       the switch position is the end of the WAL that was streamed, but there
       are corner cases where the server can send some WAL from the old
       timeline that it has not itself replayed before promoting. Finally, the
@@ -2573,10 +2995,11 @@ The commands accepted in walsender mode are:
       </term>
       <listitem>
       <para>
-          The standby's current xmin. This may be 0, if the standby is
-          sending notification that Hot Standby feedback will no longer
-          be sent on this connection. Later non-zero messages may
-          reinitiate the feedback mechanism.
+          The standby's current global xmin, excluding the catalog_xmin from any
+          replication slots. If both this value and the following
+          catalog_xmin are 0 this is treated as a notification that Hot Standby
+          feedback will no longer be sent on this connection. Later non-zero
+          messages may reinitiate the feedback mechanism.
       </para>
       </listitem>
       </varlistentry>
@@ -2586,7 +3009,29 @@ The commands accepted in walsender mode are:
       </term>
       <listitem>
       <para>
-          The standby's current epoch.
+          The epoch of the global xmin xid on the standby.
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int32
+      </term>
+      <listitem>
+      <para>
+          The lowest catalog_xmin of any replication slots on the standby. Set to 0
+          if no catalog_xmin exists on the standby or if hot standby feedback is being
+          disabled.
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int32
+      </term>
+      <listitem>
+      <para>
+          The epoch of the catalog_xmin xid on the standby.
       </para>
       </listitem>
       </varlistentry>
@@ -2603,7 +3048,7 @@ The commands accepted in walsender mode are:
     <listitem>
      <para>
       Instructs server to start streaming WAL for logical replication, starting
-      at WAL position <replaceable class="parameter">XXX/XXX</>. The server can
+      at WAL location <replaceable class="parameter">XXX/XXX</>. The server can
       reply with an error, for example if the requested section of WAL has already
       been recycled. On success, server responds with a CopyBothResponse
       message, and then starts to stream WAL to the frontend.
@@ -2635,7 +3080,7 @@ The commands accepted in walsender mode are:
        <term><replaceable class="parameter">XXX/XXX</></term>
        <listitem>
         <para>
-         The WAL position to begin streaming at.
+         The WAL location to begin streaming at.
         </para>
        </listitem>
       </varlistentry>
@@ -2661,13 +3106,15 @@ The commands accepted in walsender mode are:
   </varlistentry>
 
   <varlistentry>
-    <term><literal>DROP_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</>
+    <term>
+     <literal>DROP_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> <optional> <literal>WAIT</> </optional>
      <indexterm><primary>DROP_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
      <para>
-      Drops a replication slot, freeing any reserved server-side resources. If
-      the slot is currently in use by an active connection, this command fails.
+      Drops a replication slot, freeing any reserved server-side resources.
+      If the slot is a logical slot that was created in a database other than
+      the database the walsender is connected to, this command fails.
      </para>
      <variablelist>
       <varlistentry>
@@ -2676,6 +3123,17 @@ The commands accepted in walsender mode are:
          <para>
           The name of the slot to drop.
          </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>WAIT</literal></term>
+       <listitem>
+        <para>
+         This option causes the command to wait if the slot is active until
+         it becomes inactive, instead of the default behavior of raising an
+         error.
+        </para>
        </listitem>
       </varlistentry>
      </variablelist>
@@ -2737,7 +3195,7 @@ The commands accepted in walsender mode are:
          <para>
           Include the necessary WAL segments in the backup. This will include
           all the files between start and stop backup in the
-          <filename>pg_xlog</filename> directory of the base directory tar
+          <filename>pg_wal</filename> directory of the base directory tar
           file.
          </para>
         </listitem>
@@ -2859,26 +3317,33 @@ The commands accepted in walsender mode are:
        </listitem>
        <listitem>
         <para>
-         various temporary files created during the operation of the PostgreSQL server
+         Various temporary files and directories created during the operation
+         of the PostgreSQL server, such as any file or directory beginning
+         with <filename>pgsql_tmp</>.
         </para>
        </listitem>
        <listitem>
         <para>
-         <filename>pg_xlog</>, including subdirectories. If the backup is run
-         with WAL files included, a synthesized version of <filename>pg_xlog</filename> will be
+         <filename>pg_wal</>, including subdirectories. If the backup is run
+         with WAL files included, a synthesized version of <filename>pg_wal</filename> will be
          included, but it will only contain the files necessary for the
          backup to work, not the rest of the contents.
         </para>
        </listitem>
        <listitem>
         <para>
-         <filename>pg_replslot</> is copied as an empty directory.
+         <filename>pg_dynshmem</>, <filename>pg_notify</>,
+         <filename>pg_replslot</>, <filename>pg_serial</>,
+         <filename>pg_snapshots</>, <filename>pg_stat_tmp</>, and
+         <filename>pg_subtrans</> are copied as empty directories (even if
+         they are symbolic links).
         </para>
        </listitem>
        <listitem>
         <para>
          Files other than regular files and directories, such as symbolic
-         links and special device files, are skipped.  (Symbolic links
+         links (other than for the directories listed above) and special
+         device files, are skipped.  (Symbolic links
          in <filename>pg_tblspc</filename> are maintained.)
         </para>
        </listitem>
@@ -2936,7 +3401,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-       当前的 xlog 刷写位置。用于得到一个在事务日志中的已知位置作为流的开始位置。
+       当前的 WAL 刷写位置。用于得到一个在预写日志中的已知位置作为流的开始位置。
       </para>
       </listitem>
       </varlistentry>
@@ -2958,7 +3423,29 @@ ____________________________________________________________________________-->
   </varlistentry>
 
   <varlistentry>
-    <term><literal>TIMELINE_HISTORY</literal> <replaceable class="parameter">tli</replaceable>
+    <term><literal>SHOW</literal> <replaceable class="parameter">name</replaceable>
+     <indexterm><primary>SHOW</primary></indexterm>
+    </term>
+    <listitem>
+     <para>
+      请求服务器发送运行时参数的当前设置。这与SQL命令<xref linkend="sql-show">类似。
+     </para>
+
+     <variablelist>
+      <varlistentry>
+       <term><replaceable class="parameter">name</></term>
+       <listitem>
+         <para>
+          运行时参数的名称。在<xref linkend="runtime-config">中记录了可用的参数。
+         </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+  <term><literal>TIMELINE_HISTORY</literal> <replaceable class="parameter">tli</replaceable>
      <indexterm><primary>TIMELINE_HISTORY</primary></indexterm>
     </term>
     <listitem>
@@ -2995,8 +3482,8 @@ ____________________________________________________________________________-->
     </listitem>
   </varlistentry>
   
-  <varlistentry>
-    <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> { <literal>PHYSICAL</> [ <literal>RESERVE_WAL</> ] | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> }
+  <varlistentry id="protocol-replication-create-slot" xreflabel="CREATE_REPLICATION_SLOT">
+   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> [ <literal>TEMPORARY</> ] { <literal>PHYSICAL</> [ <literal>RESERVE_WAL</> ] | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> [ <literal>EXPORT_SNAPSHOT</> | <literal>NOEXPORT_SNAPSHOT</> | <literal>USE_SNAPSHOT</> ] }
      <indexterm><primary>CREATE_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
@@ -3024,6 +3511,15 @@ ____________________________________________________________________________-->
          </para>
        </listitem>
       </varlistentry>
+
+      <varlistentry>
+       <term><literal>TEMPORARY</></term>
+       <listitem>
+        <para>
+         声明该复制槽是临时的。出错或会话结束时，不保存临时槽并自动将其删除。
+        </para>
+       </listitem>
+      </varlistentry>
       
       <varlistentry>
        <term><literal>RESERVE_WAL</></term>
@@ -3033,8 +3529,67 @@ ____________________________________________________________________________-->
         </para>
        </listitem>
       </varlistentry>
-     </variablelist>
-    </listitem>
+
+      <varlistentry>
+       <term><literal>EXPORT_SNAPSHOT</></term>
+       <term><literal>NOEXPORT_SNAPSHOT</></term>
+       <term><literal>USE_SNAPSHOT</></term>
+       <listitem>
+        <para>
+         决定如何处理逻辑插槽初始化期间创建的快照。默认情况下，
+		 <literal>EXPORT_SNAPSHOT</>将导出快照以用于其他会话。该选项不能在事务中使用。
+		 <literal>USE_SNAPSHOT</>将使用执行命令的当前事务的快照。
+		 该选项必须在事务中使用，并且<literal>CREATE_REPLICATION_SLOT</literal>
+		 必须是在该事务中运行的第一个命令。最后，<literal>NOEXPORT_SNAPSHOT</>
+		 将正常使用快照进行逻辑解码，但不会对其执行任何操作。
+        </para>
+       </listitem>
+      </varlistentry>
+	  </variablelist>
+
+     <para>
+      为了响应此命令，服务器将发送包含以下字段的单行结果集：
+
+      <variablelist>
+       <varlistentry>
+        <term><literal>slot_name</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          新创建的复制槽的名称。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>consistent_point</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          插槽一致的WAL位置。这是从此复制插槽开始流式传输的最早位置。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>snapshot_name</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          该命令导出的快照标识符。在此连接上执行新命令或复制连接关闭之前，
+		  快照有效。如果创建的插槽是物理的，则为空。
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>output_plugin</literal> (<type>text</type>)</term>
+        <listitem>
+         <para>
+          新创建的复制插槽使用的输出插件的名称。如果创建的插槽是物理的，则为空。
+         </para>
+        </listitem>
+       </varlistentry>
+      </variablelist>
+     </para>
+	</listitem>
   </varlistentry>
 
   <varlistentry>
@@ -3297,7 +3852,9 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          后备机当前的xmin。如果后备机正在发送通知告知热备机反馈将不再通过此连接发送，这个值可能为0。后来的非0消息将重新启动反馈机制。
+          备用数据库的当前全局xmin，不包括来自任何复制插槽的catalog_xmin。
+		  如果此值和以下catalog_xmin均为0，则将此视为热备机反馈将不再在此连接上发送的通知。
+		  稍后的非零消息可以重新启动反馈机制。
       </para>
       </listitem>
       </varlistentry>
@@ -3307,7 +3864,28 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          后备机的当前世代。
+          备用服务器上全局xmin xid的时代。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int32
+      </term>
+      <listitem>
+      <para>
+          备用数据库中任何复制插槽的最低catalog_xmin。
+		  如果备用数据库上不存在catalog_xmin或者热备份反馈被禁用，则设置为0。
+      </para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+      <term>
+          Int32
+      </term>
+      <listitem>
+      <para>
+          备用服务器上catalog_xmin xid的时代。
       </para>
       </listitem>
       </varlistentry>
@@ -3373,12 +3951,14 @@ ____________________________________________________________________________-->
   </varlistentry>
 
   <varlistentry>
-    <term><literal>DROP_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</>
+    <term>
+     <literal>DROP_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> <optional> <literal>WAIT</> </optional>
      <indexterm><primary>DROP_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
      <para>
-      删除一个复制槽，释放任何保留的服务器端资源。如果该槽当前正在被一个活动连接使用，这个命令会失败。
+      删除一个复制槽，释放任何保留的服务器端资源。
+	  如果插槽是在walsender连接到的数据库以外的数据库中创建的逻辑插槽，则此命令将失败。
      </para>
      <variablelist>
       <varlistentry>
@@ -3389,7 +3969,17 @@ ____________________________________________________________________________-->
          </para>
        </listitem>
       </varlistentry>
-     </variablelist>
+
+      <varlistentry>
+       <term><literal>WAIT</literal></term>
+       <listitem>
+        <para>
+         此选项会导致命令等待处于活动状态的插槽，直到它变为非活动状态，
+		 而不是默认的引发错误行为。
+        </para>
+       </listitem>
+      </varlistentry>
+	  </variablelist>
     </listitem>
   </varlistentry>
 
@@ -3432,7 +4022,7 @@ ____________________________________________________________________________-->
         <term><literal>WAL</literal></term>
         <listitem>
          <para>
-          在备份中包含必需的WAL段。这将把开始和停止备份之间的所有文件包括在base目录tar文件中的<filename>pg_xlog</filename>目录中。
+          在备份中包含必需的WAL段。这将把开始和停止备份之间的所有文件包括在base目录tar文件中的<filename>pg_wal</filename>目录中。
          </para>
         </listitem>
        </varlistentry>
@@ -3519,22 +4109,27 @@ ____________________________________________________________________________-->
        </listitem>
        <listitem>
         <para>
-         在 PostgreSQL 服务器操作期间创建的多个临时文件
+         在PostgreSQL服务器运行期间创建的各种临时文件和目录，
+		 例如任何以<filename>pgsql_tmp</>开头的文件或目录。
         </para>
        </listitem>
        <listitem>
         <para>
-         <filename>pg_xlog</>及其子目录。如果备份运行时要求包括WAL文件，一个<filename>pg_xlog</filename>的合成版本将被包括进来，但是只会包含那些备份工作必需的文件，而不是包含剩下的内容。
+         <filename>pg_wal</>及其子目录。如果备份运行时要求包括WAL文件，一个<filename>pg_wal</filename>的合成版本将被包括进来，但是只会包含那些备份工作必需的文件，而不是包含剩下的内容。
         </para>
        </listitem>
        <listitem>
         <para>
-         <filename>pg_replslot</>被复制为一个空目录。
+         <filename>pg_dynshmem</>、<filename>pg_notify</>、
+         <filename>pg_replslot</>、<filename>pg_serial</>、
+         <filename>pg_snapshots</>、<filename>pg_stat_tmp</>和
+         <filename>pg_subtrans</>被复制为一个空目录（即使它们是符号链接）。
         </para>
        </listitem>
        <listitem>
         <para>
-         除常规文件和目录之外的其他文件（例如符号链接和特殊设备文件）会被跳过（<filename>pg_tblspc</filename>中的符号链接会被保留）。
+         除常规文件和目录之外的其他文件，例如符号链接（除了上面列出的目录之外）
+		 和特殊设备文件，会被跳过（<filename>pg_tblspc</filename>中的符号链接会被保留）。
         </para>
        </listitem>
       </itemizedlist>
@@ -3546,6 +4141,220 @@ ____________________________________________________________________________-->
 
 </para>
 
+</sect1>
+
+<sect1 id="protocol-logical-replication">
+<!--==========================orignal english content==========================
+ <title>Logical Streaming Replication Protocol</title>
+____________________________________________________________________________-->
+ <title>逻辑流式复制协议</title>
+
+<!--==========================orignal english content==========================
+ <para>
+  This section describes the logical replication protocol, which is the message
+  flow started by the <literal>START_REPLICATION</literal>
+  <literal>SLOT</literal> <replaceable class="parameter">slot_name</>
+  <literal>LOGICAL</literal> replication command.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  本节介绍逻辑复制协议，它是由<literal>START_REPLICATION</literal>
+  <literal>SLOT</literal> <replaceable class="parameter">slot_name</>
+  <literal>LOGICAL</literal>复制命令启动的消息流。
+ </para>
+
+<!--==========================orignal english content==========================
+ <para>
+  The logical streaming replication protocol builds on the primitives of
+  the physical streaming replication protocol.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  逻辑流式复制协议建立在物理流式复制协议的基元上。
+ </para>
+
+ <sect2 id="protocol-logical-replication-params">
+<!--==========================orignal english content==========================
+  <title>Logical Streaming Replication Parameters</title>
+____________________________________________________________________________-->
+  <title>逻辑流式复制参数</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   The logical replication <literal>START_REPLICATION</literal> command
+   accepts following parameters:
+
+   <variablelist>
+    <varlistentry>
+     <term>
+      proto_version
+     </term>
+     <listitem>
+      <para>
+       Protocol version. Currently only version <literal>1</literal> is
+       supported.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      publication_names
+     </term>
+     <listitem>
+      <para>
+       Comma separated list of publication names for which to subscribe
+       (receive changes). The individual publication names are treated
+       as standard objects names and can be quoted the same as needed.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+  </para>
+____________________________________________________________________________-->
+  <para>
+   逻辑复制<literal>START_REPLICATION</literal>命令接受下列参数：
+
+   <variablelist>
+    <varlistentry>
+     <term>
+      proto_version
+     </term>
+     <listitem>
+      <para>
+       协议版本。当前仅支持版本<literal>1</literal>。
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      publication_names
+     </term>
+     <listitem>
+      <para>
+       逗号分隔的要订阅的发布名称列表（接收更改）。
+	   单个发布名称被视为标准对象名称，并可根据需要引用。
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+  </para>
+ </sect2>
+
+ <sect2 id="protocol-logical-messages">
+<!--==========================orignal english content==========================
+  <title>Logical Replication Protocol Messages</title>
+____________________________________________________________________________-->
+  <title>逻辑复制协议消息</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   The individual protocol messages are discussed in the following
+   subsections. Individual messages are described in
+   <xref linkend="protocol-logicalrep-message-formats">.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   单个协议消息在以下小节中讨论。
+   单独的消息在<xref linkend="protocol-logicalrep-message-formats">中描述。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   All top-level protocol messages begin with a message type byte.
+   While represented in code as a character, this is a signed byte with no
+   associated encoding.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   所有顶级协议消息都以消息类型字节开头。虽然在代码中表示为字符，
+   但这是一个带符号的字节，没有关联的编码。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Since the streaming replication protocol supplies a message length there
+   is no need for top-level protocol messages to embed a length in their
+   header.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   由于流式复制协议提供消息长度，因此顶层协议消息不需要在头中嵌入一个长度。
+  </para>
+
+ </sect2>
+
+ <sect2 id="protocol-logical-messages-flow">
+<!--==========================orignal english content==========================
+  <title>Logical Replication Protocol Message Flow</title>
+____________________________________________________________________________-->
+  <title>逻辑复制协议消息流</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   With the exception of the <literal>START_REPLICATION</literal> command and
+   the replay progress messages, all information flows only from the backend
+   to the frontend.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   除了<literal>START_REPLICATION</literal>命令和重放进度消息之外，
+   所有信息仅从后端流向前端。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   The logical replication protocol sends individual transactions one by one.
+   This means that all messages between a pair of Begin and Commit messages
+   belong to the same transaction.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   逻辑复制协议逐个发送单个事务。
+   这意味着一对Begin和Commit消息之间的所有消息都属于同一个事务。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Every sent transaction contains zero or more DML messages (Insert,
+   Update, Delete). In case of a cascaded setup it can also contain Origin
+   messages. The origin message indicated that the transaction originated on
+   different replication node. Since a replication node in the scope of logical
+   replication protocol can be pretty much anything, the only identifier
+   is the origin name. It's downstream's responsibility to handle this as
+   needed (if needed). The Origin message is always sent before any DML
+   messages in the transaction.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   每个发送的事务包含零个或多个DML消息（插入、更新、删除）。在级联设置的情况下，
+   它也可以包含起始消息。起始消息表明事务发起于不同的复制节点。
+   由于逻辑复制协议范围内的复制节点几乎可以做任何事情，唯一的标识符是起始名称。
+   下游负责根据需要处理（如果需要）。起始消息始终在事务中的任何DML消息之前发送。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Every DML message contains an arbitrary relation ID, which can be mapped to
+   an ID in the Relation messages. The Relation messages describe the schema of the
+   given relation. The Relation message is sent for a given relation either
+   because it is the first time we send a DML message for given relation in the
+   current session or because the relation definition has changed since the
+   last Relation message was sent for it. The protocol assumes that the client
+   is capable of caching the metadata for as many relations as needed.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   每个DML消息都包含一个任意的关系ID，它可以映射到Relation消息中的ID。
+   Relation消息描述给定关系的模式。Relation消息是为给定关系发送的，
+   因为它是我们第一次在当前会话中为给定关系发送DML消息，
+   或者是因为自从发送最后一个Relation消息以来关系定义已更改。
+   该协议假定客户端能够为尽可能多的关系缓存元数据。
+  </para>
+ </sect2>
 </sect1>
 
 <sect1 id="protocol-message-types">
@@ -4445,6 +5254,342 @@ ____________________________________________________________________________-->
 <listitem>
 <para>
                 GSSAPI或SSPI认证数据。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+AuthenticationSASL (B)
+</term>
+____________________________________________________________________________-->
+<term>
+AuthenticationSASL (B)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                Identifies the message as an authentication request.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(10)
+</term>
+<listitem>
+<para>
+                Specifies that SASL authentication is required.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+The message body is a list of SASL authentication mechanisms, in the
+server's order of preference. A zero byte is required as terminator after
+the last authentication mechanism name. For each mechanism, there is the
+following:
+<variablelist>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Name of a SASL authentication mechanism.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                将消息标识为认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                以字节为单位的消息内容长度，包括自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(10)
+</term>
+<listitem>
+<para>
+                指定需要SASL认证。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+消息正文是SASL身份验证机制的列表，按服务器的优先顺序排列。
+最后一个认证机制名称后需要一个零字节作为终结符。对于每个机制，有以下几点：
+<variablelist>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                SASL认证机制的名称。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+AuthenticationSASLContinue (B)
+</term>
+____________________________________________________________________________-->
+<term>
+AuthenticationSASLContinue (B)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                Identifies the message as an authentication request.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(11)
+</term>
+<listitem>
+<para>
+                Specifies that this message contains a SASL challenge.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL data, specific to the SASL mechanism being used.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                将消息标识为认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                以字节为单位的消息内容长度，包括自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(11)
+</term>
+<listitem>
+<para>
+                指定此消息包含SASL质询。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL数据，特定于正在使用的SASL机制。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+</listitem>
+</varlistentry>
+
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+AuthenticationSASLFinal (B)
+</term>
+____________________________________________________________________________-->
+<term>
+AuthenticationSASLFinal (B)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                Identifies the message as an authentication request.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(12)
+</term>
+<listitem>
+<para>
+                Specifies that SASL authentication has completed.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL outcome "additional data", specific to the SASL mechanism
+                being used.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                将消息标识为认证请求。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                以字节为单位的消息内容长度，包括自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(12)
+</term>
+<listitem>
+<para>
+                指定SASL认证已完成。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL结果“附加数据”，特定于正在使用的SASL机制。
 </para>
 </listitem>
 </varlistentry>
@@ -6986,6 +8131,94 @@ ____________________________________________________________________________-->
 </listitem>
 </varlistentry>
 
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+GSSResponse (F)
+</term>
+____________________________________________________________________________-->
+<term>
+GSSResponse (F)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+                Identifies the message as a GSSAPI or SSPI response. Note that
+                this is also used for SASL and password response messages.
+                The exact message type can be deduced from the context.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                GSSAPI/SSPI specific message data.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+                将消息标识为GSSAPI或SSPI响应。请注意，这也用于SASL和密码响应消息。
+				确切的消息类型可以从上下文中推导出来。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                以字节为单位的消息内容长度，包括自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                GSSAPI/SSPI特定的消息数据。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
 
 <varlistentry>
 <!--==========================orignal english content==========================
@@ -7772,10 +9005,8 @@ PasswordMessage (F)
 <listitem>
 <para>
                 Identifies the message as a password response. Note that
-                this is also used for GSSAPI and SSPI response messages
-                (which is really a design error, since the contained data
-                is not a null-terminated string in that case, but can be
-                arbitrary binary data).
+                this is also used for GSSAPI, SSPI and SASL response messages.
+                The exact message type can be deduced from the context.
 </para>
 </listitem>
 </varlistentry>
@@ -7811,7 +9042,8 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                标识该消息是一个口令响应。注意这也被用于GSSAPI和SSPI响应消息（这实际是一个设计错误，因为在这种情况下包含的数据不是一个空值终止的字符串，而可能是任意二进制数据）。
+                标识该消息是一个口令响应。注意这也被用于GSSAPI、SSPI和SASL响应消息。
+				确切的消息类型可以从上下文中推导出来。
 </para>
 </listitem>
 </varlistentry>
@@ -8336,6 +9568,224 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
+SASLInitialResponse (F)
+</term>
+____________________________________________________________________________-->
+<term>
+SASLInitialResponse (F)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+                Identifies the message as an initial SASL response. Note that
+                this is also used for GSSAPI, SSPI and password response messages.
+                The exact message type is deduced from the context.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Name of the SASL authentication mechanism that the client
+                selected.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of SASL mechanism specific "Initial Client Response" that
+                follows, or -1 if there is no Initial Response.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL mechanism specific "Initial Response".
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+                将该消息标识为初始SASL响应。请注意，这也用于GSSAPI、SSPI和密码响应消息。
+				确切的消息类型是从上下文中推导出来的。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                以字节为单位的消息内容长度，包括自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                客户端选择的SASL认证机制的名称。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                接下来SASL机制特定的“初始客户端响应”的长度，如果没有初始响应，则为-1。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL机制特定的“初始响应”。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+SASLResponse (F)
+</term>
+____________________________________________________________________________-->
+<term>
+SASLResponse (F)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+                Identifies the message as a SASL response. Note that
+                this is also used for GSSAPI, SSPI and password response messages.
+                The exact message type can be deduced from the context.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL mechanism specific message data.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('p')
+</term>
+<listitem>
+<para>
+                将该消息标识为SASL响应。请注意，这也用于GSSAPI、SSPI和密码响应消息。
+				确切的消息类型可以从上下文中推导出来。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                以字节为单位的消息内容长度，包括自身。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                SASL机制特定的消息数据。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
 SSLRequest (F)
 </term>
 ____________________________________________________________________________-->
@@ -8494,6 +9944,22 @@ StartupMessage (F)
 </para>
 </listitem>
 </varlistentry>
+<varlistentry>
+<term>
+                <literal>replication</>
+</term>
+<listitem>
+<para>
+                        Used to connect in streaming replication mode, where
+                        a small set of replication commands can be issued
+                        instead of SQL statements. Value can be
+                        <literal>true</>, <literal>false</>, or
+                        <literal>database</>, and the default is
+                        <literal>false</>. See
+                        <xref linkend="protocol-replication"> for details.
+</para>
+</listitem>
+</varlistentry>
 </variablelist>
 
                 In addition to the above, any run-time parameter that can be
@@ -8585,6 +10051,21 @@ ____________________________________________________________________________-->
 </para>
 </listitem>
 </varlistentry>
+<varlistentry>
+<term>
+                <literal>replication</>
+</term>
+<listitem>
+<para>
+                        用于在流式复制模式下连接，
+						其中可以发出一小组复制命令而不是SQL语句。
+						值可以是<literal>true</>，<literal>false</>或
+						<literal>database</>，默认值是<literal>false</>。
+						有关详细信息，请参见<xref linkend="protocol-replication">。
+</para>
+</listitem>
+</varlistentry>
+
 </variablelist>
 
                 除了上文提到的外，在后端启动时可设置的任何运行时参数都可以被列出来。 这样的设置将在后端启动时被应用（在分析了可能出现的命令行参数之后）。这些值将成为会话缺省。
@@ -9221,6 +10702,1361 @@ ____________________________________________________________________________-->
 <para>
 客户端负责格式化要显示的信息以符合需要；特别是它应该根据需要断开长的行。在错误消息域里出现的新行字符应该被当作一个分段的符号，而不是换行。
 </para>
+
+</sect1>
+
+<sect1 id="protocol-logicalrep-message-formats">
+<!--==========================orignal english content==========================
+<title>Logical Replication Message Formats</title>
+____________________________________________________________________________-->
+<title>逻辑复制消息格式</title>
+
+<!--==========================orignal english content==========================
+<para>
+This section describes the detailed format of each logical replication message.
+These messages are returned either by the replication slot SQL interface or are
+sent by a walsender. In case of a walsender they are encapsulated inside the replication
+protocol WAL messages as described in <xref linkend="protocol-replication">
+and generally obey same message flow as physical replication.
+</para>
+____________________________________________________________________________-->
+<para>
+本节介绍每个逻辑复制消息的详细格式。
+这些消息由复制插槽SQL接口返回或由walsender发送。对于walsender，
+它们被封装在复制协议WAL消息中，如<xref linkend="protocol-replication">中所述，
+并且通常遵循与物理复制相同的消息流。
+</para>
+
+<variablelist>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Begin
+</term>
+____________________________________________________________________________-->
+<term>
+Begin
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('B')
+</term>
+<listitem>
+<para>
+                Identifies the message as a begin message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The final LSN of the transaction.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                Commit timestamp of the transaction. The value is in number
+                of microseconds since PostgreSQL epoch (2000-01-01).
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Xid of the transaction.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('B')
+</term>
+<listitem>
+<para>
+                将消息标识为开始消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                事务的结束LSN。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                提交事务的时间戳。自PostgreSQL纪元（2000-01-01）以来的数值是微秒数。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                事务的Xid。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Commit
+</term>
+____________________________________________________________________________-->
+<term>
+Commit
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('C')
+</term>
+<listitem>
+<para>
+                Identifies the message as a commit message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                Flags; currently unused (must be 0).
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The LSN of the commit.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The end LSN of the transaction.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                Commit timestamp of the transaction. The value is in number
+                of microseconds since PostgreSQL epoch (2000-01-01).
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('C')
+</term>
+<listitem>
+<para>
+                将消息标识为提交消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                标志；目前未使用（必须为0）。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                提交的LSN。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                事务的结束LSN。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                提交事务的时间戳。自PostgreSQL纪元（2000-01-01）以来的数值是微秒数。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Origin
+</term>
+____________________________________________________________________________-->
+<term>
+Origin
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('O')
+</term>
+<listitem>
+<para>
+                Identifies the message as an origin message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The LSN of the commit on the origin server.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Name of the origin.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('O')
+</term>
+<listitem>
+<para>
+                将消息标识为原始消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                源服务器上提交的LSN。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                起始的名称。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+
+<!--==========================orignal english content==========================
+<para>
+  Note that there can be multiple Origin messages inside a single transaction.
+</para>
+____________________________________________________________________________-->
+<para>
+  请注意，单个事务内可能有多个Origin消息。
+</para>
+
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Relation
+</term>
+____________________________________________________________________________-->
+<term>
+Relation
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                Identifies the message as a relation message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the relation.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Namespace (empty string for <literal>pg_catalog</literal>).
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Relation name.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                Replica identity setting for the relation (same as
+                <structfield>relreplident</structfield> in <structname>pg_class</structname>).
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+                Number of columns.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        Next, the following message part appears for each column:
+<variablelist>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                Flags for the column. Currently can be either 0 for no flags
+                or 1 which marks the column as part of the key.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Name of the column.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the column's data type.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Type modifier of the column (<structfield>atttypmod</structfield>).
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('R')
+</term>
+<listitem>
+<para>
+                将消息标识为关系消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                关系的ID。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                命名空间（<literal>pg_catalog</literal>的空字符串）。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                关系名称。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                该关系的副本标识设置（与<structname>pg_class</structname>
+				中的<structfield>relreplident</structfield>相同）。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+                列数。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        接下来，每列显示以下消息部分：
+<variablelist>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                列的标志。当前可以是0表示没有标记或1表示将列标记为关键字的一部分。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                列的名称。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                列的数据类型的ID。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                列的类型修饰符(<structfield>atttypmod</structfield>).
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Type
+</term>
+____________________________________________________________________________-->
+<term>
+Type
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('Y')
+</term>
+<listitem>
+<para>
+                Identifies the message as a type message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the data type.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Namespace (empty string for <literal>pg_catalog</literal>).
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                Name of the data type.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('Y')
+</term>
+<listitem>
+<para>
+                将消息标识为类型消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                数据类型的ID。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                命名空间（<literal>pg_catalog</literal>的空字符串）。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                数据类型的名称。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Insert
+</term>
+____________________________________________________________________________-->
+<term>
+Insert
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('I')
+</term>
+<listitem>
+<para>
+                Identifies the message as an insert message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the relation corresponding to the ID in the relation
+                message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte1('N')
+</term>
+<listitem>
+<para>
+                Identifies the following TupleData message as a new tuple.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData message part representing the contents of new tuple.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('I')
+</term>
+<listitem>
+<para>
+                将消息标识为插入消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                与关系消息中的ID对应的关系的ID。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte1('N')
+</term>
+<listitem>
+<para>
+                将以下TupleData消息标识为新元组。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData消息部分表示新元组的内容。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Update
+</term>
+____________________________________________________________________________-->
+<term>
+Update
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('U')
+</term>
+<listitem>
+<para>
+                Identifies the message as an update message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the relation corresponding to the ID in the relation
+                message.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('K')
+</term>
+<listitem>
+<para>
+                Identifies the following TupleData submessage as a key.
+                This field is optional and is only present if
+                the update changed data in any of the column(s) that are
+                part of the REPLICA IDENTITY index.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('O')
+</term>
+<listitem>
+<para>
+                Identifies the following TupleData submessage as an old tuple.
+                This field is optional and is only present if table in which
+                the update happened has REPLICA IDENTITY set to FULL.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData message part representing the contents of the old tuple
+                or primary key. Only present if the previous 'O' or 'K' part
+                is present.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('N')
+</term>
+<listitem>
+<para>
+                Identifies the following TupleData message as a new tuple.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData message part representing the contents of a new tuple.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('U')
+</term>
+<listitem>
+<para>
+                将消息标识为更新消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                与关系消息中的ID对应的关系的ID。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('K')
+</term>
+<listitem>
+<para>
+                将以下TupleData子消息标识为键。该字段是可选的，
+				并且只有在更新改变了REPLICA IDENTITY索引一部分的任何一列中的数据时才存在。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('O')
+</term>
+<listitem>
+<para>
+                将以下TupleData子消息标识为旧元组。此字段是可选的，
+				并且仅当发生更新的表的REPLICA IDENTITY设置为FULL时才存在。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData消息部分表示旧元组或主键的内容。
+				只有在前面的'O'或'K'部分存在时才存在。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('N')
+</term>
+<listitem>
+<para>
+                将以下TupleData消息标识为新元组。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData消息部分表示新元组的内容。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+
+<!--==========================orignal english content==========================
+<para>
+    The Update message may contain either a 'K' message part or an 'O' message part
+    or neither of them, but never both of them.
+</para>
+____________________________________________________________________________-->
+<para>
+    更新消息可以包含'K'消息部分或者'O'消息部分或者都不包含它们，但不同时包括它们两者。
+</para>
+
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Delete
+</term>
+____________________________________________________________________________-->
+<term>
+Delete
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('D')
+</term>
+<listitem>
+<para>
+                Identifies the message as a delete message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the relation corresponding to the ID in the relation
+                message.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('K')
+</term>
+<listitem>
+<para>
+                Identifies the following TupleData submessage as a key.
+                This field is present if the table in which the delete has
+                happened uses an index as REPLICA IDENTITY.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('O')
+</term>
+<listitem>
+<para>
+                Identifies the following TupleData message as a old tuple.
+                This field is is present if the table in which the delete has
+                happened has REPLICA IDENTITY set to FULL.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData message part representing the contents of the old tuple
+                or primary key, depending on the previous field.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('D')
+</term>
+<listitem>
+<para>
+                将消息标识为删除消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                与关系消息中的ID对应的关系的ID。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('K')
+</term>
+<listitem>
+<para>
+                将以下TupleData子消息标识为键。
+				如果发生删除的表使用索引作为REPLICA IDENTITY，则此字段存在。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte1('O')
+</term>
+<listitem>
+<para>
+                将以下TupleData消息标识为旧元组。
+				如果发生删除的表的REPLICA IDENTITY设置为FULL，则此字段存在。
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        TupleData
+</term>
+<listitem>
+<para>
+                TupleData消息部分，表示旧元组或主键的内容，具体取决于前一个字段。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+
+<!--==========================orignal english content==========================
+<para>
+    The Delete message may contain either a 'K' message part or an 'O' message part,
+    but never both of them.
+</para>
+____________________________________________________________________________-->
+<para>
+    删除消息可能包含'K'消息部分或'O'消息部分，但不会同时包含这两个部分。
+</para>
+
+</listitem>
+</varlistentry>
+
+</variablelist>
+
+<!--==========================orignal english content==========================
+<para>
+
+The following message parts are shared by the above messages.
+
+</para>
+____________________________________________________________________________-->
+<para>
+
+以下消息部分由上述消息共享。
+
+</para>
+
+<variablelist>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+TupleData
+</term>
+____________________________________________________________________________-->
+<term>
+TupleData
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+                Number of columns.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        Next, one of the following submessages appears for each column:
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('n')
+</term>
+<listitem>
+<para>
+                Identifies the data as NULL value.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        Or
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('u')
+</term>
+<listitem>
+<para>
+                Identifies unchanged TOASTed value (the actual value is not
+                sent).
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        Or
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('t')
+</term>
+<listitem>
+<para>
+                Identifies the data as text formatted value.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of the column value.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                The value of the column, in text format.  (A future release
+                might support additional formats.)
+                <replaceable>n</replaceable> is the above length.
+
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Int16
+</term>
+<listitem>
+<para>
+                列数。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        接下来，为每列显示以下子消息之一：
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('n')
+</term>
+<listitem>
+<para>
+                将数据标识为NULL值。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        或者
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('u')
+</term>
+<listitem>
+<para>
+                识别未更改的TOASTed值（实际值未发送）。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        或者
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('t')
+</term>
+<listitem>
+<para>
+                将数据标识为文本格式的值。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                列值的长度。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                该列的值，以文本格式显示。（未来版本可能支持其他格式。）
+				<replaceable>n</replaceable>是上面的长度。
+
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
 
 </sect1>
 
