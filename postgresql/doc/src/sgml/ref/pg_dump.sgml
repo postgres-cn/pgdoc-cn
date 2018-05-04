@@ -208,8 +208,27 @@ ____________________________________________________________________________-->
        <para>
         Include large objects in the dump.  This is the default behavior
         except when <option>-&minus;schema</>, <option>-&minus;table</>, or
-        <option>-&minus;schema-only</> is specified, so the <option>-b</>
-        switch is only useful to add large objects to selective dumps.
+        <option>-&minus;schema-only</> is specified.  The <option>-b</>
+        switch is therefore only useful to add large objects to dumps
+        where a specific schema or table has been requested.  Note that
+        blobs are considered data and therefore will be included when
+        -&minus;data-only is used, but not when -&minus;schema-only is.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-B</></term>
+      <term><option>-&minus;no-blobs</></term>
+      <listitem>
+       <para>
+        Exclude large objects in the dump.
+       </para>
+
+       <para>
+        When both <option>-b</> and <option>-B</> are given, the behavior
+        is to output large objects, when data is being dumped, see the
+        <option>-b</> documentation.
        </para>
       </listitem>
      </varlistentry>
@@ -388,14 +407,16 @@ ____________________________________________________________________________-->
         but to abort the dump.
        </para>
        <para>
-        For a consistent backup, the database server needs to support synchronized snapshots,
-        a feature that was introduced in <productname>PostgreSQL</productname> 9.2. With this
-        feature, database clients can ensure they see the same data set even though they use
-        different connections. <command>pg_dump -j</command> uses multiple database
-        connections; it connects to the database once with the master process and
-        once again for each worker job. Without the synchronized snapshot feature, the
-        different worker jobs wouldn't be guaranteed to see the same data in each connection,
-        which could lead to an inconsistent backup.
+        For a consistent backup, the database server needs to support
+        synchronized snapshots, a feature that was introduced in
+        <productname>PostgreSQL</productname> 9.2 for primary servers and 10
+        for standbys. With this feature, database clients can ensure they see
+        the same data set even though they use different connections.
+        <command>pg_dump -j</command> uses multiple database connections; it
+        connects to the database once with the master process and once again
+        for each worker job. Without the synchronized snapshot feature, the
+        different worker jobs wouldn't be guaranteed to see the same data in
+        each connection, which could lead to an inconsistent backup.
        </para>
        <para>
         If you want to run a parallel dump of a pre-9.2 server, you need to make sure that the
@@ -769,6 +790,11 @@ ____________________________________________________________________________-->
         to dump the parts of the contents of the table that they have access to.
        </para>
 
+       <para>
+        Note that if you use this option currently, you probably also want
+        the dump be in <command>INSERT</command> format, as the
+        <command>COPY FROM</command> during restore does not support row security.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -828,10 +854,18 @@ ____________________________________________________________________________-->
         the dump. Instead fail if unable to lock a table within the specified
         <replaceable class="parameter">timeout</>. The timeout may be
         specified in any of the formats accepted by <command>SET
-        statement_timeout</>.  (Allowed values vary depending on the server
+        statement_timeout</>.  (Allowed formats vary depending on the server
         version you are dumping from, but an integer number of milliseconds
-        is accepted by all versions since 7.3.  This option is ignored when
-        dumping from a pre-7.3 server.)
+        is accepted by all versions.)
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-&minus;no-publications</option></term>
+      <listitem>
+       <para>
+        Do not dump publications.
        </para>
       </listitem>
      </varlistentry>
@@ -841,6 +875,29 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         Do not dump security labels.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-&minus;no-subscriptions</option></term>
+      <listitem>
+       <para>
+        Do not dump subscriptions.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-&minus;no-sync</option></term>
+      <listitem>
+       <para>
+        By default, <command>pg_dump</command> will wait for all files
+        to be written safely to disk.  This option causes
+        <command>pg_dump</command> to return without waiting, which is
+        faster, but means that a subsequent operating system crash can leave
+        the dump corrupt.  Generally, this option is useful for testing
+        but should not be used when dumping data from production installation.
        </para>
       </listitem>
      </varlistentry>
@@ -1061,7 +1118,26 @@ ____________________________________________________________________________-->
       <term><option>--blobs</></term>
       <listitem>
        <para>
-        在转储中包括大对象。这是当<option>--schema</>、<option>--table</>或<option>--schema-only</>被指定时的默认行为，因此<option>-b</>开关只对在有选择性的转储中增加大对象有用。
+        在转储中包括大对象。这是当<option>--schema</>、<option>--table</>或
+		<option>--schema-only</>被指定时的默认行为，因此<option>-b</>
+		开关仅对于将大对象添加到已请求特定模式或表的转储中时有用。
+		请注意，blob被视为数据，因此仅在使用--data-only时才会包含，
+		但在--schema-only时不会包含。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-B</></term>
+      <term><option>--no-blobs</></term>
+      <listitem>
+       <para>
+        排除转储中的大对象。
+       </para>
+
+       <para>
+        当给定<option>-b</>和<option>-B</>时，行为是当数据被转储时输出大对象，
+		请参阅<option>-b</>文档。
        </para>
       </listitem>
      </varlistentry>
@@ -1180,7 +1256,7 @@ ____________________________________________________________________________-->
         在运行一次并行转储时请求数据库对象上的排他锁可能导致转储失败。其原因是，<application>pg_dump</>主控进程会在工作者进程将要稍后转储的对象上请求共享锁，以便确保在转储运行时不会有人删除它们并让它们出错。如果另一个客户端接着请求一个表上的排他锁，那个锁将不会被授予但是会被排入队列等待主控进程的共享锁被释放。因此，任何其他对该表的访问将不会被授予或者将排在排他锁请求之后。这包括尝试转储该表的工作者进程。如果没有任何防范措施，这可能会是一种经典的死锁情况。要检测这种冲突，<application>pg_dump</>工作者进程使用<literal>NOWAIT</>选项请求另一个共享锁。 如果该工作者进程没有被授予这个共享锁，其他某人必定已经在同时请求了一个排他锁并且没有办法继续转储，因此<application>pg_dump</>除了中止转储之外别无选择。
        </para>
        <para>
-        对于一个一致的备份，数据库服务器需要支持同步的快照，在<productname>PostgreSQL</productname> 9.2中引入了一种特性。有了这种特性，即便数据库客户端使用不同的连接，也可以保证他们看到相同的数据集。<command>pg_dump -j</command>使用多个数据库连接，它用主控进程连接到数据一次，并且为每一个工作者任务再一次连接数据库。如果没有同步快照特征，在每一个连接中不同的工作者任务将不能被保证看到相同的数据，这可能导致一个不一致的备份。
+        对于一个一致的备份，数据库服务器需要支持同步的快照，在<productname>PostgreSQL</productname> 9.2中引入了一种针对主服务器特性和10个针对备用服务器的特性。有了这种特性，即便数据库客户端使用不同的连接，也可以保证他们看到相同的数据集。<command>pg_dump -j</command>使用多个数据库连接，它用主控进程连接到数据一次，并且为每一个工作者任务再一次连接数据库。如果没有同步快照特征，在每一个连接中不同的工作者任务将不能被保证看到相同的数据，这可能导致一个不一致的备份。
        </para>
        <para>
         如果你希望运行一个 9.2 之前服务器的并行转储，你需要确保数据库内容从主控进程连接到数据库一直到最后一个工作者任务连接到数据库之间不会改变。做这些最简单的方法是在开始备份之前停止任何访问数据库的数据修改进程（DDL 以及 DML）。当对一个 9.2 之前的<productname>PostgreSQL</productname>服务器运行<command>pg_dump -j</command>时，你还需要指定<option>--no-synchronized-snapshots</option>参数。
@@ -1430,7 +1506,11 @@ ____________________________________________________________________________-->
         <xref linkend="guc-row-security">设置为 on，允许用户只转储该表中
         它们能够访问到的部分内容。
        </para>
-      </listitem>
+       <para>
+        请注意，如果您当前使用此选项，则可能还需要以<command>INSERT</command>格式转储，
+		因为还原期间的<command>COPY FROM</command>不支持行安全性。
+       </para>
+	   </listitem>
      </varlistentry>
 
      <varlistentry>
@@ -1468,7 +1548,16 @@ ____________________________________________________________________________-->
       <term><option>--lock-wait-timeout=<replaceable class="parameter">timeout</replaceable></option></term>
       <listitem>
        <para>
-        在转储的开始从不等待共享表锁的获得。而是在指定的<replaceable class="parameter">timeout</>内不能锁定一个表时失败。超时时长可以用<command>SET statement_timeout</>接受的任何格式指定（允许的值根据你从其转出的服务器版本变化，但是从 7.3 以来的所有版本都接受一个整数表示的毫秒数。如果从 7.3 以前的服务器转出，这个选项会被忽略。）。
+        在转储的开始从不等待共享表锁的获得。而是在指定的<replaceable class="parameter">timeout</>内不能锁定一个表时失败。超时时长可以用<command>SET statement_timeout</>接受的任何格式指定（允许的格式根据你从其转出的服务器版本变化，但是所有版本都接受一个整数表示的毫秒数。）。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-publications</option></term>
+      <listitem>
+       <para>
+        不转储发布。
        </para>
       </listitem>
      </varlistentry>
@@ -1478,6 +1567,27 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         不转储安全标签。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-subscriptions</option></term>
+      <listitem>
+       <para>
+        不转储订阅。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-sync</option></term>
+      <listitem>
+       <para>
+        默认情况下，<command>pg_dump</command>将等待所有文件安全写入磁盘。
+		这个选项会导致<command>pg_dump</command>无需等待而返回，这更快，
+		但意味着后续的操作系统崩溃可能会导致转储损坏。通常，
+		此选项对于测试非常有用，但在从生产安装中转储数据时不应使用此选项。
        </para>
       </listitem>
      </varlistentry>
@@ -1962,7 +2072,7 @@ ____________________________________________________________________________-->
    <productname>PostgreSQL</> server versions newer than
    <application>pg_dump</>'s version.  <application>pg_dump</> can also
    dump from <productname>PostgreSQL</> servers older than its own version.
-   (Currently, servers back to version 7.0 are supported.)
+   (Currently, servers back to version 8.0 are supported.)
    However, <application>pg_dump</> cannot dump from
    <productname>PostgreSQL</> servers newer than its own major version;
    it will refuse to even try, rather than risk making an invalid dump.
@@ -1977,9 +2087,32 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   因为<application>pg_dump</application>被用来传输数据到更新版本的<productname>PostgreSQL</>，<application>pg_dump</application>的输出被认为可以载入到比<application>pg_dump</>版本更新的<productname>PostgreSQL</>服务器中。<application>pg_dump</>也能够从比其版本更旧的<productname>PostgreSQL</>服务器中转储（当前支持回退到版本 7.0）。不过，<application>pg_dump</>无法从比起主版本号更新的<productname>PostgreSQL</>服务器中转储，它甚至将拒绝冒着创建一个非法转储的风险尝试。还有，不保证<application>pg_dump</>的输出能被载入到一个更旧主版本的服务器 &mdash; 即使该转储是从该版本的服务器中被取得也不行。将一个转储文件载入到一个更旧的服务器可能需要手工编辑该转储文件来移除旧服务器无法理解的语法。在跨版本的情况下，推荐使用<option>--quote-all-identifiers</option>选项，因为它可以避免因为不同<productname>PostgreSQL</>版本间的保留词列表变化而发生问题。
+   因为<application>pg_dump</application>被用来传输数据到更新版本的<productname>PostgreSQL</>，<application>pg_dump</application>的输出被认为可以载入到比<application>pg_dump</>版本更新的<productname>PostgreSQL</>服务器中。<application>pg_dump</>也能够从比其版本更旧的<productname>PostgreSQL</>服务器中转储（当前支持回退到版本 8.0）。不过，<application>pg_dump</>无法从比起主版本号更新的<productname>PostgreSQL</>服务器中转储，它甚至将拒绝冒着创建一个非法转储的风险尝试。还有，不保证<application>pg_dump</>的输出能被载入到一个更旧主版本的服务器 &mdash; 即使该转储是从该版本的服务器中被取得也不行。将一个转储文件载入到一个更旧的服务器可能需要手工编辑该转储文件来移除旧服务器无法理解的语法。在跨版本的情况下，推荐使用<option>--quote-all-identifiers</option>选项，因为它可以避免因为不同<productname>PostgreSQL</>版本间的保留词列表变化而发生问题。
   </para>
- </refsect1>
+
+<!--==========================orignal english content==========================
+  <para>
+   When dumping logical replication subscriptions,
+   <application>pg_dump</application> will generate <command>CREATE
+   SUBSCRIPTION</command> commands that use the <literal>NOCONNECT</literal>
+   option, so that restoring the subscription does not make remote connections
+   for creating a replication slot or for initial table copy.  That way, the
+   dump can be restored without requiring network access to the remote
+   servers.  It is then up to the user to reactivate the subscriptions in a
+   suitable way.  If the involved hosts have changed, the connection
+   information might have to be changed.  It might also be appropriate to
+   truncate the target tables before initiating a new full table copy.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   在转储逻辑复制订阅时，<application>pg_dump</application>将生成使用
+   <literal>NOCONNECT</literal>选项的<command>CREATE SUBSCRIPTION</command>命令，
+   以便恢复订阅不会创建远程连接复制插槽或初始表副本。这样，可以恢复转储，
+   而不需要网络访问远程服务器。然后由用户以合适的方式重新激活订阅。
+   如果涉及的主机已更改，则可能必须更改连接信息。
+   在启动新的全表副本之前截断目标表也许是适当的。
+  </para>
+  </refsect1>
 
  <refsect1 id="pg-dump-examples">
 <!--==========================orignal english content==========================
