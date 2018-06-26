@@ -280,7 +280,43 @@ ____________________________________________________________________________-->
        <literal>~&gt;~</>
       </entry>
      </row>
-    </tbody>
+<!--==========================orignal english content==========================
+     <row>
+      <entry><literal>inet_ops</></entry>
+      <entry><type>inet</>, <type>cidr</></entry>
+      <entry>
+       <literal>&amp;&amp;</>
+       <literal>&gt;&gt;</>
+       <literal>&gt;&gt;=</>
+       <literal>&gt;</>
+       <literal>&gt;=</>
+       <literal>&lt;&gt;</>
+       <literal>&lt;&lt;</>
+       <literal>&lt;&lt;=</>
+       <literal>&lt;</>
+       <literal>&lt;=</>
+       <literal>=</>
+      </entry>
+     </row>
+____________________________________________________________________________-->
+     <row>
+      <entry><literal>inet_ops</></entry>
+      <entry><type>inet</>, <type>cidr</></entry>
+      <entry>
+       <literal>&amp;&amp;</>
+       <literal>&gt;&gt;</>
+       <literal>&gt;&gt;=</>
+       <literal>&gt;</>
+       <literal>&gt;=</>
+       <literal>&lt;&gt;</>
+       <literal>&lt;&lt;</>
+       <literal>&lt;&lt;=</>
+       <literal>&lt;</>
+       <literal>&lt;=</>
+       <literal>=</>
+      </entry>
+     </row>
+	 </tbody>
    </tgroup>
   </table>
 
@@ -572,10 +608,13 @@ typedef struct spgChooseOut
         }           addNode;
         struct                  /* results for spgSplitTuple */
         {
-            /* Info to form new inner tuple with one node */
+            /* Info to form new upper-level inner tuple with one child tuple */
             bool        prefixHasPrefix;    /* tuple should have a prefix? */
             Datum       prefixPrefixDatum;  /* if so, its value */
-            Datum       nodeLabel;          /* node's label */
+            int         prefixNNodes;       /* number of nodes */
+            Datum      *prefixNodeLabels;   /* their labels (or NULL for
+                                             * no labels) */
+            int         childNodeN;         /* which node gets child tuple */
 
             /* Info to form new lower-level inner tuple with all old nodes */
             bool        postfixHasPrefix;   /* tuple should have a prefix? */
@@ -653,10 +692,12 @@ typedef struct spgChooseOut
         }           addNode;
         struct                  /* 用于spgSplitTuple的结果 */
         {
-            /* 来自有一个结点的新内部元组的信息 */
+            /* 以一个子元组形成新的上层内部元组的信息*/
             bool        prefixHasPrefix;    /* 元组能有前缀吗？ */
             Datum       prefixPrefixDatum;  /* 如果有，前缀值 */
-            Datum       nodeLabel;          /* 结点的标签 */
+            int         prefixNNodes;       /* 节点数 */
+            Datum      *prefixNodeLabels;   /* 它们的标签 (没有标签为NULL) */
+            int         childNodeN;         /* 哪个节点获取子元组 */
 
             /* 来自放有所有旧结点的新下层内部元组的信息 */
             bool        postfixHasPrefix;   /* 元组能有前缀吗？ */
@@ -723,33 +764,55 @@ ____________________________________________________________________________-->
        set <structfield>resultType</> to <literal>spgSplitTuple</>.
        This action moves all the existing nodes into a new lower-level
        inner tuple, and replaces the existing inner tuple with a tuple
-       having a single node that links to the new lower-level inner tuple.
+       having a single downlink pointing to the new lower-level inner tuple.
        Set <structfield>prefixHasPrefix</> to indicate whether the new
        upper tuple should have a prefix, and if so set
        <structfield>prefixPrefixDatum</> to the prefix value.  This new
        prefix value must be sufficiently less restrictive than the original
-       to accept the new value to be indexed, and it should be no longer
-       than the original prefix.
-       Set <structfield>nodeLabel</> to the label to be used for the
-       node that will point to the new lower-level inner tuple.
+       to accept the new value to be indexed.
+       Set <structfield>prefixNNodes</> to the number of nodes needed in the
+       new tuple, and set <structfield>prefixNodeLabels</> to a palloc'd array
+       holding their labels, or to NULL if node labels are not required.
+       Note that the total size of the new upper tuple must be no more
+       than the total size of the tuple it is replacing; this constrains
+       the lengths of the new prefix and new labels.
+       Set <structfield>childNodeN</> to the index (from zero) of the node
+       that will downlink to the new lower-level inner tuple.
        Set <structfield>postfixHasPrefix</> to indicate whether the new
        lower-level inner tuple should have a prefix, and if so set
        <structfield>postfixPrefixDatum</> to the prefix value.  The
-       combination of these two prefixes and the additional label must
-       have the same meaning as the original prefix, because there is
-       no opportunity to alter the node labels that are moved to the new
-       lower-level tuple, nor to change any child index entries.
+       combination of these two prefixes and the downlink node's label
+       (if any) must have the same meaning as the original prefix, because
+       there is no opportunity to alter the node labels that are moved to
+       the new lower-level tuple, nor to change any child index entries.
        After the node has been split, the <function>choose</function>
        function will be called again with the replacement inner tuple.
-       That call will usually result in an <literal>spgAddNode</> result,
-       since presumably the node label added in the split step will not
-       match the new value; so after that, there will be a third call
-       that finally returns <literal>spgMatchNode</> and allows the
-       insertion to descend to the leaf level.
+       That call may return an <literal>spgAddNode</> result, if no suitable
+       node was created by the <literal>spgSplitTuple</> action.  Eventually
+       <function>choose</function> must return <literal>spgMatchNode</> to
+       allow the insertion to descend to the next level.
       </para>
 ____________________________________________________________________________-->
       <para>
-       如果新值和元组的前缀不一致，将<structfield>resultType</>设置为<literal>spgSplitTuple</>。这个动作将所有现有的结点移动到一个新的下层内部元组，并且将现有的内部元组用一个新元组替换，该元组只有一个结点链接到那个新的下层内部元组。将<structfield>prefixHasPrefix</>设置为指示新的上层元组是否具有一个前缀，并且在如果有前缀时设置<structfield>prefixPrefixDatum</>为前缀值。这个新的前缀值必须比原来的值要足够宽松以便能够接受将被索引的新值，并且它不能比原来的前缀长。将<structfield>nodeLabel</>设置为要用于指向新下层内部元组的结点的标签。将<structfield>postfixHasPrefix</>设置为指示新下层内部元组是否具有一个前缀，并且如果有前缀则设置<structfield>postfixPrefixDatum</>为前缀值。这两个前缀和额外的标签的组合必须和原来的前缀具有相同的含义，因为我们没有机会修改被移动到新下层元组的结点标签，也没有机会改变任何子索引项。在结点被分裂后，<function>choose</function>函数将被再次调用并使用替换内部元组。该次调用通常会导致一个<literal>spgAddNode</>结果，因为有可能在分裂步骤中增加的节点标签不能匹配新值；那么这样会有第三次调用最终返回<literal>spgMatchNode</>并且允许插入下降到叶子层。
+       如果新值和元组的前缀不一致，将<structfield>resultType</>设置为<literal>spgSplitTuple</>。
+	   这个动作将所有现有的结点移动到一个新的下层内部元组，并且将现有的内部元组用一个新元组替换，
+	   该元组有个下行链路指向那个新的下层内部元组。将<structfield>prefixHasPrefix</>
+	   设置为指示新的上层元组是否具有一个前缀，并且在如果有前缀时设置
+	   <structfield>prefixPrefixDatum</>为前缀值。
+	   这个新的前缀值必须比原来的值要足够宽松以便能够接受将被索引的新值。
+	   将<structfield>prefixNNodes</>设置为新元组中所需的节点数，
+	   并将<structfield>prefixNodeLabels</>设置为保存其标签的palloc'd数组，
+	   或者如果不需要节点标签，则将其设置为NULL。请注意，
+	   新的上层元组的总大小必须不大于它所替换的元组的总大小；这约束了新前缀和新标签的长度。
+	   将<structfield>childNodeN</>设置为将下行链路到新的较低级内部元组的节点的索引（从零开始）。
+	   将<structfield>postfixHasPrefix</>设置为指示新下层内部元组是否具有一个前缀，
+	   并且如果有前缀则设置<structfield>postfixPrefixDatum</>为前缀值。
+	   这两个前缀和下行链路节点的标签（如果有）的组合必须和原来的前缀具有相同的含义，
+	   因为我们没有机会修改被移动到新下层元组的结点标签，也没有机会改变任何子索引项。
+	   在结点被分裂后，<function>choose</function>函数将被再次调用并使用替换内部元组。
+	   如果没有合适的节点由<literal>spgSplitTuple</>动作创建，该次调用可能会返回一个
+	   <literal>spgAddNode</>结果。最终<function>choose</function>必须返回
+	   <literal>spgMatchNode</>以允许插入下降到下一个级别。
       </para>
      </listitem>
     </varlistentry>
@@ -1103,8 +1166,8 @@ typedef struct spgLeafConsistentIn
     ScanKey     scankeys;       /* array of operators and comparison values */
     int         nkeys;          /* length of array */
 
-    void       *traversalValue; /* opclass-specific traverse value */
     Datum       reconstructedValue;     /* value reconstructed at parent */
+    void       *traversalValue; /* opclass-specific traverse value */
     int         level;          /* current level (counting from zero) */
     bool        returnData;     /* original data must be returned? */
 
@@ -1157,8 +1220,8 @@ typedef struct spgLeafConsistentIn
     ScanKey     scankeys;       /* 操作符和比较值的数组 */
     int         nkeys;          /* 数组的长度 */
 
-    void       *traversalValue; /* 操作符类相关的贯穿值 */
     Datum       reconstructedValue;     /* 在父结点中的重构值 */
+    void       *traversalValue; /* 操作符类相关的贯穿值 */
     int         level;          /* 当前层次（从零开始计） */
     bool        returnData;     /* 是否必须返回原始数据？ */
 
@@ -1308,7 +1371,10 @@ ____________________________________________________________________________-->
    point.  In such a case the code typically works with the nodes by
    number, and there is no need for explicit node labels.  To suppress
    node labels (and thereby save some space), the <function>picksplit</>
-   function can return NULL for the <structfield>nodeLabels</> array.
+   function can return NULL for the <structfield>nodeLabels</> array,
+   and likewise the <function>choose</> function can return NULL for
+   the <structfield>prefixNodeLabels</> array during
+   a <literal>spgSplitTuple</> action.
    This will in turn result in <structfield>nodeLabels</> being NULL during
    subsequent calls to <function>choose</> and <function>inner_consistent</>.
    In principle, node labels could be used for some inner tuples and omitted
@@ -1316,21 +1382,25 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   某些树算法对每个内部元组都使用一种固定的节点集合。例如，在一个四叉树中总是正好有四个节点对应于围绕内部节点中心点的四个象限。在这种情况下，代码总是通过编号来处理节点，而不需要显式的节点标签。为了压缩节点标签（并且因此节省一些空间），<function>picksplit</>函数可以为<structfield>nodeLabels</>数组返回 NULL。这将会导致后续对<function>choose</>和<function>inner_consistent</>调用时<structfield>nodeLabels</>也为 NULL。原则上，可以为同一个索引中的某些内部元组使用节点标签而对其他内部节点省略节点标签。
+   某些树算法对每个内部元组都使用一种固定的节点集合。例如，
+   在一个四叉树中总是正好有四个节点对应于围绕内部节点中心点的四个象限。在这种情况下，
+   代码总是通过编号来处理节点，而不需要显式的节点标签。为了压缩节点标签（并且因此节省一些空间），
+   <function>picksplit</>函数可以为<structfield>nodeLabels</>数组返回 NULL，
+   同样，在<literal>spgSplitTuple</>操作期间，<function>choose</>函数可以为
+   <structfield>prefixNodeLabels</>数组返回NULL。
+   这将会导致后续对<function>choose</>和<function>inner_consistent</>调用时<structfield>nodeLabels</>也为 NULL。原则上，可以为同一个索引中的某些内部元组使用节点标签而对其他内部节点省略节点标签。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
    When working with an inner tuple having unlabeled nodes, it is an error
    for <function>choose</> to return <literal>spgAddNode</>, since the set
-   of nodes is supposed to be fixed in such cases.  Also, there is no
-   provision for generating an unlabeled node in <literal>spgSplitTuple</>
-   actions, since it is expected that an <literal>spgAddNode</> action will
-   be needed as well.
+   of nodes is supposed to be fixed in such cases.
   </para>
 ____________________________________________________________________________-->
   <para>
-   在处理具有无标签节点的内部元组时，让<function>choose</>返回<literal>spgAddNode</>是一种错误，因为该节点集合在这种情况下被假定为固定的集合。还有，没有规定要在<literal>spgSplitTuple</>动作中生成一个无标签节点，因为那样也将需要一个<literal>spgAddNode</>动作。
+   在处理具有无标签节点的内部元组时，让<function>choose</>返回<literal>spgAddNode</>是一种错误，
+   因为该节点集合在这种情况下被假定为固定的集合。
   </para>
  </sect2>
 
