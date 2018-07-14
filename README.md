@@ -90,20 +90,15 @@ make html
 
 postgresql-10.1/doc/src/sgml/html/index.html
 
-## PDF文件生成
+## 编译生成PDF文件
 
-### 1. 编译生成postgres-A4.po
+执行以下步骤将生成PDF文件postgres-A4.pdf
 
 	make -C postgresql-10.1/doc/src/sgml postgres-A4.po
+    cp postgresql-10.1/doc/src/sgml/postgres-A4.po pgdoc-cn/tools/fo2pdf/
+    cd pgdoc-cn/tools/fo2pdf/
+    sh fo2pdf.sh
 
-### 2. 编译生成PDF
-
-	git clone https://github.com/ChenHuajun/pgdoctools
-    cp postgresql-10.1/doc/src/sgml/postgres-A4.po pgdoctools/fo2pdf/
-	cd pgdoctools/fo2pdf
-	sh fo2pdf.sh
-
-编译将生成PDF文件postgres-A4.pdf
 
 ## 在线中文手册
 - http://www.postgres.cn/docs/9.3  
