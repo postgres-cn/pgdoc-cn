@@ -58,7 +58,7 @@ $cmd =
 system($cmd);
 die "features_unsupported" if $?;
 $cmd =
-"perl generate-errcodes-table.pl \"../../../src/backend/utils/errcodes.txt\" "
+  "perl generate-errcodes-table.pl \"../../../src/backend/utils/errcodes.txt\" "
   . "> errcodes-table.sgml";
 system($cmd);
 die "errcodes-table" if $?;
@@ -84,6 +84,7 @@ $cmd =
   . "| findstr /V \"DTDDECL catalog entries are not supported\" ";
 
 system($cmd);    # die "openjade" if $?;
+
 copy "stylesheet.css", "html/stylesheet.css";
 
 print "Docs build complete.\n";
@@ -106,7 +107,7 @@ sub renamefiles
 		move $f, $nf;
 	}
 	chdir $savedir;
-
+	return;
 }
 
 sub missing

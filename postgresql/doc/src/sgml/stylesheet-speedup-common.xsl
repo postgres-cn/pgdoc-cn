@@ -95,6 +95,6 @@
 
 <!-- Just hardcode the language for the whole document, to make it faster. -->
 
-<xsl:template name="l10n.language">zh_cn</xsl:template>
+<xsl:template name="l10n.language">en</xsl:template>
 
 </xsl:stylesheet>
