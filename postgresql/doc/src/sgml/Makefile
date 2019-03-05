@@ -132,13 +132,13 @@ endif
 html: html-stamp
 
 html-stamp: stylesheet.xsl postgres.sgml $(ALLSGML)
-	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^)
+	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^) || true
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(XSLTPROC_HTML_FLAGS) $(wordlist 1,2,$^)
 	cp $(srcdir)/stylesheet.css html/
 	touch $@
 
 htmlhelp: stylesheet-hh.xsl postgres.sgml $(ALLSGML)
-	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^)
+	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^) || true
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) $(wordlist 1,2,$^)
 
 # single-page HTML
