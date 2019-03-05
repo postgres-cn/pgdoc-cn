@@ -11,7 +11,7 @@ import html2sgml_map
 patternInsertPos=re.compile(r'.*<body>',re.S)
 InsertHTML="""<div style="text-align:right">
 <a style="margin : 0px 0px 0px 10px;" href="https://github.com/postgres-cn/pgdoc-cn/issues/new" target="_blank" title="在Github上报告问题（请注明问题内容及所在章节）">问题报告</a>
-<a style="margin : 0px 0px 0px 10px;" href="https://github.com/postgres-cn/pgdoc-cn/edit/10/postgresql/doc/src/sgml/{0}" target="_blank" title="直接在Github上纠错本页面">纠错本页面</a>
+<a style="margin : 0px 0px 0px 10px;" href="https://github.com/postgres-cn/pgdoc-cn/edit/master/postgresql/doc/src/sgml/{0}" target="_blank" title="直接在Github上纠错本页面">纠错本页面</a>
 </div>"""
 
 sgmlDir="../build/doc/src/sgml"
