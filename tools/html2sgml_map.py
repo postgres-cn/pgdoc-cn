@@ -9,7 +9,7 @@ patternId=re.compile(r'.*<(book|part|chapter|sect1|refentry|appendix|bibliograph
 
 
 def process(file,sgmlprefix,html2sgmlDict):
-	f=open(file,"r",encoding='GBK')
+	f=open(file,"r",encoding='UTF-8')
 	filename=os.path.basename(file)
 	for line in f:
 		match=patternId.match(line)
