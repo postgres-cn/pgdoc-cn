@@ -159,15 +159,15 @@ postgres.pdf:
 	$(error Invalid target;  use postgres-A4.pdf or postgres-US.pdf as targets)
 
 %-A4.fo: stylesheet-fo.xsl %.sgml $(ALLSGML)
-	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^)
+	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^) || true
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) --stringparam paper.type A4 -o $@ $(wordlist 1,2,$^)
 
 %-US.fo: stylesheet-fo.xsl %.sgml $(ALLSGML)
-	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^)
+	$(XMLLINT) $(XMLINCLUDE) --noout --valid $(word 2,$^) || true
 	$(XSLTPROC) $(XMLINCLUDE) $(XSLTPROCFLAGS) --stringparam paper.type USletter -o $@ $(wordlist 1,2,$^)
 
 %.pdf: %.fo
-	$(FOP) -fo $< -pdf $@
+	ADDITIONAL_OPTIONS="-Xms1800m" $(FOP) -fo $< -pdf $@
 
 
 ##
