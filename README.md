@@ -27,29 +27,8 @@ master分支对于正在翻译的版本，当前是11.2，各个分支对应于P
 - master：11.2
 
 ## 文档的编译
-### Windows上的编译（10以后版本的编译有问题）
-  1 . 安装Perl
 
-http://www.activestate.com/activeperl/downloads
-
-  2 . 下载本Github仓库
-```shell
-git clone https://github.com/postgres-cn/pgdoc-cn.git
-```
-
-  3 . 进入pgdoc-cn目录双击执行builddoc.bat
-```shell
-cd pgdoc-cn
-builddoc.bat
-```
-
-  4 . 查看编译效果
-
-打开以下html文件查看编译效果
-
-pgdoc-cn/build/doc/src/sgml/html/index.html
-
-### Linux/UNIX上的编译
+PG 10以后的文档编译需要在Linux/UNIX上执行
 
 以下说明以10.1为例
 
