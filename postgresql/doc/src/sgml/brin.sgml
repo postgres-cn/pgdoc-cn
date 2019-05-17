@@ -1,6 +1,6 @@
 <!-- doc/src/sgml/brin.sgml -->
 
-<chapter id="BRIN">
+<chapter id="brin">
 <!--==========================orignal english content==========================
 <title>BRIN Indexes</title>
 ____________________________________________________________________________-->
@@ -29,7 +29,7 @@ ____________________________________________________________________________-->
   <acronym>BRIN</acronym> is designed for handling very large tables
   in which certain columns have some natural correlation with their
   physical location within the table.
-  A <firstterm>block range</> is a group of pages that are physically
+  A <firstterm>block range</firstterm> is a group of pages that are physically
   adjacent in the table; for each block range, some summary info is stored
   by the index.
   For example, a table storing a store's sale orders might have
@@ -40,10 +40,7 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  <acronym>BRIN</acronym>表示块范围索引。 
-  <acronym>BRIN</acronym>是为处理这样的表而设计的：表的规模非常大，
-  并且其中某些列与它们在表中的物理位置存在某种自然关联。一个
-  <firstterm>块范围</firstterm>是一组在表中物理上相邻的页面，对于每一个块范围在
+  <acronym>BRIN</acronym>表示块范围索引。 <acronym>BRIN</acronym>是为处理这样的表而设计的：表的规模非常大，并且其中某些列与它们在表中的物理位置存在某种自然关联。一个<firstterm>块范围</firstterm>是一组在表中物理上相邻的页面，对于每一个块范围在
   索引中存储了一些摘要信息。例如，一个存储商店销售订单的表可能有一个日期
   列记录每个订单产生的时间，并且很多时候较早的订单项也将出现在表中较早的
   地方。一个存储 ZIP 代码列的表中一个城市的所有代码可能自然地聚在一起。
@@ -53,7 +50,7 @@ ____________________________________________________________________________-->
  <para>
   <acronym>BRIN</acronym> indexes can satisfy queries via regular bitmap
   index scans, and will return all tuples in all pages within each range if
-  the summary info stored by the index is <firstterm>consistent</> with the
+  the summary info stored by the index is <firstterm>consistent</firstterm> with the
   query conditions.
   The query executor is in charge of rechecking these tuples and discarding
   those that do not match the query conditions &mdash; in other words, these
@@ -93,9 +90,9 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
  <para>
   The size of the block range is determined at index creation time by
-  the <literal>pages_per_range</> storage parameter.  The number of index
+  the <literal>pages_per_range</literal> storage parameter.  The number of index
   entries will be equal to the size of the relation in pages divided by
-  the selected value for <literal>pages_per_range</>.  Therefore, the smaller
+  the selected value for <literal>pages_per_range</literal>.  Therefore, the smaller
   the number, the larger the index becomes (because of the need to
   store more index entries), but at the same time the summary data stored can
   be more precise and more data blocks can be skipped during an index scan.
@@ -143,18 +140,32 @@ ____________________________________________________________________________-->
   <para>
    在创建时，所有已有的堆页面将被扫描并且会为每一个范围创建一个摘要
    索引元组，对于末尾的可能不完整的范围也是这样做。随着新页面被数据填
-   充，已经创建摘要的页面范围的摘要信息会被来自新元组的数据所更新。
-   当一个创建的新页面没有落在最后一个被摘要的范围内时，该范围不会自
+   充，已经被创建摘要的页面范围的摘要信息会被来自新元组的数据所更新。
+   当一个被创建的新页面没有落在最后一个被摘要的范围内时，该范围不会自
    动获得一个摘要元组，那些元组将保持未被摘要的状态，直到后面调用一次
-   摘要操作来创建初始的摘要。这种处理可以用
-   <function>brin_summarize_range(regclass, bigint)</function>或
-   <function>brin_summarize_new_values(regclass)</function>函数手工
-   调用，或者在<command>VACUUM</command>处理该表时自动调用。
-   或者在发生插入时通过autovacuum执行自动汇总。
-   （最后一个触发器默认是禁用的，可以使用<literal>autosummarize</literal>
-   参数启用。）相反，可以使用<function>brin_desummarize_range(regclass, bigint)</function>
-   函数对范围进行解除摘要 ，当现有的值已经改变，索引元组不再是一个很好的表示形式时，
-   这是很有用的。
+   摘要操作来创建初始的摘要。可以使用<function>brin_summarize_range(regclass, bigint)</function>或<function>brin_summarize_new_values(regclass)</function>函数手动调用这种处理，而当<command>VACUUM</command>处理表时或者插入发生时由autovacuum执行的自动摘要过程都会自动调用这种处理（最后这一个触发器默认是被禁用的，可以用<literal>autosummarize</literal>参数启用。相对地，可以用<function>brin_desummarize_range(regclass, bigint)</function>函数解除一个范围的摘要，在现有值发生变化导致索引元组不再是一个很好的表达式，这样做是很有用的。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   When autosummarization is enabled, each time a page range is filled a
+   request is sent to autovacuum for it to execute a targeted summarization
+   for that range, to be fulfilled at the end of the next worker run on the
+   same database.  If the request queue is full, the request is not recorded
+   and a message is sent to the server log:
+<screen>
+LOG:  request for BRIN range summarization for index "brin_wi_idx" page 128 was not recorded
+</screen>
+   When this happens, the range will be summarized normally during the next
+   regular vacuum of the table.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当自动摘要被启用时，每次一个页面范围会被装进一个请求中发送给autovacuum，以便autovacuum为那个范围执行定向的摘要，这个请求会在运行在同一个数据库的下一个工作者的末尾被满足。如果请求队列满了，该请求不会被记录，并且在服务器日志中会有一条消息：
+<screen>
+LOG:  request for BRIN range summarization for index "brin_wi_idx" page 128 was not recorded
+</screen>
+   如果这种情况发生，在该表的下一次常规vacuum时将会正常对这个范围做摘要。
   </para>
  </sect2>
 </sect1>
@@ -169,7 +180,7 @@ ____________________________________________________________________________-->
  <para>
   The core <productname>PostgreSQL</productname> distribution
   includes the <acronym>BRIN</acronym> operator classes shown in
-  <xref linkend="brin-builtin-opclasses-table">.
+  <xref linkend="brin-builtin-opclasses-table"/>.
  </para>
 ____________________________________________________________________________-->
  <para>
@@ -180,9 +191,9 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
  <para>
-  The <firstterm>minmax</>
+  The <firstterm>minmax</firstterm>
   operator classes store the minimum and the maximum values appearing
-  in the indexed column within the range.  The <firstterm>inclusion</>
+  in the indexed column within the range.  The <firstterm>inclusion</firstterm>
   operator classes store a value which includes the values in the indexed
   column within the range.
  </para>
@@ -311,21 +322,21 @@ ____________________________________________________________________________-->
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry><literal>box_inclusion_ops</></entry>
+     <entry><literal>box_inclusion_ops</literal></entry>
      <entry><type>box</type></entry>
      <entry>
-      <literal>&lt;&lt;</>
-      <literal>&amp;&lt;</>
-      <literal>&amp;&amp;</>
-      <literal>&amp;&gt;</>
-      <literal>&gt;&gt;</>
-      <literal>~=</>
-      <literal>@&gt;</>
-      <literal>&lt;@</>
-      <literal>&amp;&lt;|</>
-      <literal>&lt;&lt;|</>
+      <literal>&lt;&lt;</literal>
+      <literal>&amp;&lt;</literal>
+      <literal>&amp;&amp;</literal>
+      <literal>&amp;&gt;</literal>
+      <literal>&gt;&gt;</literal>
+      <literal>~=</literal>
+      <literal>@&gt;</literal>
+      <literal>&lt;@</literal>
+      <literal>&amp;&lt;|</literal>
+      <literal>&lt;&lt;|</literal>
       <literal>|&gt;&gt;</literal>
-      <literal>|&amp;&gt;</>
+      <literal>|&amp;&gt;</literal>
      </entry>
     </row>
 ____________________________________________________________________________-->
@@ -496,11 +507,11 @@ ____________________________________________________________________________-->
      <entry><literal>network_inclusion_ops</literal></entry>
      <entry><type>inet</type></entry>
      <entry>
-      <literal>&amp;&amp;</>
-      <literal>&gt;&gt;=</>
+      <literal>&amp;&amp;</literal>
+      <literal>&gt;&gt;=</literal>
       <literal>&lt;&lt;=</literal>
       <literal>=</literal>
-      <literal>&gt;&gt;</>
+      <literal>&gt;&gt;</literal>
       <literal>&lt;&lt;</literal>
      </entry>
     </row>
@@ -590,7 +601,7 @@ ____________________________________________________________________________-->
      </entry>
     </row>
 <!--==========================orignal english content==========================
-	<row>
+    <row>
      <entry><literal>macaddr8_minmax_ops</literal></entry>
      <entry><type>macaddr8</type></entry>
      <entry>
@@ -602,7 +613,7 @@ ____________________________________________________________________________-->
      </entry>
     </row>
 ____________________________________________________________________________-->
-	<row>
+    <row>
      <entry><literal>macaddr8_minmax_ops</literal></entry>
      <entry><type>macaddr8</type></entry>
      <entry>
@@ -612,8 +623,7 @@ ____________________________________________________________________________-->
       <literal>&gt;=</literal>
       <literal>&gt;</literal>
      </entry>
-    </row>	
-	
+    </row>
 <!--==========================orignal english content==========================
     <row>
      <entry><literal>name_minmax_ops</literal></entry>
@@ -712,18 +722,18 @@ ____________________________________________________________________________-->
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry><literal>range_inclusion_ops</></entry>
+     <entry><literal>range_inclusion_ops</literal></entry>
      <entry><type>any range type</type></entry>
      <entry>
-      <literal>&lt;&lt;</>
-      <literal>&amp;&lt;</>
-      <literal>&amp;&amp;</>
-      <literal>&amp;&gt;</>
-      <literal>&gt;&gt;</>
-      <literal>@&gt;</>
-      <literal>&lt;@</>
-      <literal>-|-</>
-      <literal>=</>
+      <literal>&lt;&lt;</literal>
+      <literal>&amp;&lt;</literal>
+      <literal>&amp;&amp;</literal>
+      <literal>&amp;&gt;</literal>
+      <literal>&gt;&gt;</literal>
+      <literal>@&gt;</literal>
+      <literal>&lt;@</literal>
+      <literal>-|-</literal>
+      <literal>=</literal>
       <literal>&lt;</literal>
       <literal>&lt;=</literal>
       <literal>=</literal>
@@ -1041,11 +1051,11 @@ ____________________________________________________________________________-->
 
   <variablelist>
    <varlistentry>
-    <term><function>BrinOpcInfo *opcInfo(Oid type_oid)</></term>
+    <term><function>BrinOpcInfo *opcInfo(Oid type_oid)</function></term>
     <listitem>
      <para>
       Returns internal information about the indexed columns' summary data.
-      The return value must point to a palloc'd <structname>BrinOpcInfo</>,
+      The return value must point to a palloc'd <structname>BrinOpcInfo</structname>,
       which has this definition:
 <programlisting>
 typedef struct BrinOpcInfo
@@ -1060,8 +1070,8 @@ typedef struct BrinOpcInfo
     TypeCacheEntry *oi_typcache[FLEXIBLE_ARRAY_MEMBER];
 } BrinOpcInfo;
 </programlisting>
-      <structname>BrinOpcInfo</>.<structfield>oi_opaque</> can be used by the
-      operator class routines to pass information between support procedures
+      <structname>BrinOpcInfo</structname>.<structfield>oi_opaque</structfield> can be used by the
+      operator class routines to pass information between support functions
       during an index scan.
      </para>
     </listitem>
@@ -1111,7 +1121,7 @@ typedef struct BrinOpcInfo
   defined by the user for other data types using equivalent definitions,
   without having to write any source code; appropriate catalog entries being
   declared is enough.  Note that assumptions about the semantics of operator
-  strategies are embedded in the support procedures' source code.
+  strategies are embedded in the support functions' source code.
  </para>
 ____________________________________________________________________________-->
  <para>
@@ -1138,7 +1148,7 @@ typedef struct BrinOpcInfo
 } BrinOpcInfo;
 </programlisting>
       <structname>BrinOpcInfo</structname>.<structfield>oi_opaque</structfield>可以被操作符类
-      例程用来在索引扫描期间在支持过程之间传递信息。
+      例程用来在索引扫描期间在支持函数之间传递信息。
      </para>
     </listitem>
    </varlistentry>
@@ -1180,16 +1190,16 @@ typedef struct BrinOpcInfo
   核心发布中包括了对两种类型的操作符类的支持：minmax 和 inclusion。
   发布中也酌情为核心中的数据类型提供了使用它们的操作符类定义。用户可以用等效
   的定义为其他数据类型定义额外的操作符类，而不需要编写任何源代码，只需要声明
-  一些适当的目录项就足够了。注意有关操作符策略的语义的假设是嵌在支持过程的源
+  一些适当的目录项就足够了。注意有关操作符策略的语义的假设是嵌在支持函数的源
   代码中的。
  </para>
 
 <!--==========================orignal english content==========================
  <para>
   Operator classes that implement completely different semantics are also
-  possible, provided implementations of the four main support procedures
+  possible, provided implementations of the four main support functions
   described above are written.  Note that backwards compatibility across major
-  releases is not guaranteed: for example, additional support procedures might
+  releases is not guaranteed: for example, additional support functions might
   be required in later releases.
  </para>
 ____________________________________________________________________________-->
@@ -1202,23 +1212,22 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
  <para>
   To write an operator class for a data type that implements a totally
-  ordered set, it is possible to use the minmax support procedures
+  ordered set, it is possible to use the minmax support functions
   alongside the corresponding operators, as shown in
-  <xref linkend="brin-extensibility-minmax-table">.
-  All operator class members (procedures and operators) are mandatory.
+  <xref linkend="brin-extensibility-minmax-table"/>.
+  All operator class members (functions and operators) are mandatory.
  </para>
 ____________________________________________________________________________-->
  <para>
-  要为一种实现了线性有序集的数据类型编写一个操作符类，可以使用 minmax 支持过
-  程配上对应的操作符（如<xref linkend="brin-extensibility-minmax-table"/>所示）。
-  所有的操作符类成员（过程和操作符）都是强制性的。
+  要为一种实现了线性有序集的数据类型编写一个操作符类，可以使用 minmax 支持函数配上对应的操作符（如<xref linkend="brin-extensibility-minmax-table"/>所示）。
+  所有的操作符类成员（函数和操作符）都是强制性的。
  </para>
 
  <table id="brin-extensibility-minmax-table">
 <!--==========================orignal english content==========================
-  <title>Procedure and Support Numbers for Minmax Operator Classes</title>
+  <title>Function and Support Numbers for Minmax Operator Classes</title>
 ____________________________________________________________________________-->
-  <title>Minmax 操作符类的过程和支持编号</title>
+  <title>Minmax 操作符类的函数和支持编号</title>
   <tgroup cols="2">
    <thead>
 <!--==========================orignal english content==========================
@@ -1235,42 +1244,42 @@ ____________________________________________________________________________-->
    <tbody>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 1</entry>
+     <entry>Support Function 1</entry>
      <entry>internal function <function>brin_minmax_opcinfo()</function></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 1</entry>
+     <entry>支持函数 1</entry>
      <entry>内部函数<function>brin_minmax_opcinfo()</function></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 2</entry>
+     <entry>Support Function 2</entry>
      <entry>internal function <function>brin_minmax_add_value()</function></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 2</entry>
+     <entry>支持函数 2</entry>
      <entry>内部函数<function>brin_minmax_add_value()</function></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 3</entry>
+     <entry>Support Function 3</entry>
      <entry>internal function <function>brin_minmax_consistent()</function></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 3</entry>
+     <entry>支持函数 3</entry>
      <entry>内部函数<function>brin_minmax_consistent()</function></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 4</entry>
+     <entry>Support Function 4</entry>
      <entry>internal function <function>brin_minmax_union()</function></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 4</entry>
+     <entry>支持函数 4</entry>
      <entry>内部函数<function>brin_minmax_union()</function></entry>
     </row>
 <!--==========================orignal english content==========================
@@ -1331,8 +1340,8 @@ ____________________________________________________________________________-->
  <para>
   To write an operator class for a complex data type which has values
   included within another type, it's possible to use the inclusion support
-  procedures alongside the corresponding operators, as shown
-  in <xref linkend="brin-extensibility-inclusion-table">.  It requires
+  functions alongside the corresponding operators, as shown
+  in <xref linkend="brin-extensibility-inclusion-table"/>.  It requires
   only a single additional function, which can be written in any language.
   More functions can be defined for additional functionality.  All operators
   are optional.  Some operators require other operators, as shown as
@@ -1340,8 +1349,7 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  要为值被包括在另一种类型的复杂数据类型编写操作符类，可以使用 inclusion 支持
-  过程配上相应的操作符（如
+  要为值被包括在另一种类型的复杂数据类型编写操作符类，可以使用 inclusion 支持函数配上相应的操作符（如
   <xref linkend="brin-extensibility-inclusion-table"/>所示）。它只要求一个
   可用任何语言编写的附加函数。可以定义更多函数来提供额外的功能。所有的
   操作符都是可选的。如该表中的依赖性所示，某些操作符需要其他操作符。
@@ -1349,9 +1357,9 @@ ____________________________________________________________________________-->
 
  <table id="brin-extensibility-inclusion-table">
 <!--==========================orignal english content==========================
-  <title>Procedure and Support Numbers for Inclusion Operator Classes</title>
+  <title>Function and Support Numbers for Inclusion Operator Classes</title>
 ____________________________________________________________________________-->
-  <title>Inclusion 操作符类的过程和支持编号</title>
+  <title>Inclusion 操作符类的函数和支持编号</title>
   <tgroup cols="3">
    <thead>
 <!--==========================orignal english content==========================
@@ -1370,97 +1378,97 @@ ____________________________________________________________________________-->
    <tbody>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 1</entry>
+     <entry>Support Function 1</entry>
      <entry>internal function <function>brin_inclusion_opcinfo()</function></entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 1</entry>
+     <entry>支持函数 1</entry>
      <entry>内部函数<function>brin_inclusion_opcinfo()</function></entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 2</entry>
+     <entry>Support Function 2</entry>
      <entry>internal function <function>brin_inclusion_add_value()</function></entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 2</entry>
+     <entry>支持函数 2</entry>
      <entry>内部函数<function>brin_inclusion_add_value()</function></entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 3</entry>
+     <entry>Support Function 3</entry>
      <entry>internal function <function>brin_inclusion_consistent()</function></entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 3</entry>
+     <entry>支持函数 3</entry>
      <entry>内部函数<function>brin_inclusion_consistent()</function></entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 4</entry>
+     <entry>Support Function 4</entry>
      <entry>internal function <function>brin_inclusion_union()</function></entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 4</entry>
+     <entry>支持函数 4</entry>
      <entry>内部函数<function>brin_inclusion_union()</function></entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 11</entry>
+     <entry>Support Function 11</entry>
      <entry>function to merge two elements</entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 11</entry>
+     <entry>支持函数 11</entry>
      <entry>合并两个元素的函数</entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 12</entry>
+     <entry>Support Function 12</entry>
      <entry>optional function to check whether two elements are mergeable</entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 12</entry>
+     <entry>支持函数 12</entry>
      <entry>可选函数，检查两个元素是否可以合并</entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 13</entry>
+     <entry>Support Function 13</entry>
      <entry>optional function to check if an element is contained within another</entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 13</entry>
+     <entry>支持函数 13</entry>
      <entry>可选函数，检查一个元素是否被包含在另一个中</entry>
      <entry></entry>
     </row>
 <!--==========================orignal english content==========================
     <row>
-     <entry>Support Procedure 14</entry>
+     <entry>Support Function 14</entry>
      <entry>optional function to check whether an element is empty</entry>
      <entry></entry>
     </row>
 ____________________________________________________________________________-->
     <row>
-     <entry>支持过程 14</entry>
+     <entry>支持函数 14</entry>
      <entry>optional function to check whether an element is empty</entry>
      <entry></entry>
     </row>
@@ -1662,14 +1670,14 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
  <para>
-    Support procedure numbers 1-10 are reserved for the BRIN internal
+    Support function numbers 1-10 are reserved for the BRIN internal
     functions, so the SQL level functions start with number 11.  Support
     function number 11 is the main function required to build the index.
     It should accept two arguments with the same data type as the operator class,
     and return the union of them.  The inclusion operator class can store union
     values with different data types if it is defined with the
-    <literal>STORAGE</> parameter.  The return value of the union
-    function should match the <literal>STORAGE</> data type.
+    <literal>STORAGE</literal> parameter.  The return value of the union
+    function should match the <literal>STORAGE</literal> data type.
  </para>
 ____________________________________________________________________________-->
  <para>
@@ -1683,11 +1691,11 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
  <para>
-    Support procedure numbers 12 and 14 are provided to support
-    irregularities of built-in data types.  Procedure number 12
+    Support function numbers 12 and 14 are provided to support
+    irregularities of built-in data types.  Function number 12
     is used to support network addresses from different families which
-    are not mergeable.  Procedure number 14 is used to support
-    empty ranges.  Procedure number 13 is an optional but
+    are not mergeable.  Function number 14 is used to support
+    empty ranges.  Function number 13 is an optional but
     recommended one, which allows the new value to be checked before
     it is passed to the union function.  As the BRIN framework can shortcut
     some operations when the union is not changed, using this
@@ -1695,9 +1703,9 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-    支持过程编号 12 和 14 被提供用来支持内建数据类型的不规则性。过程编号
-    12 被用来支持来自不同地址族的不能合并的网络地址。过程编号 14 被用来
-    支持空范围。过程编号 13 是可选的，但是我们推荐提供它。它允许在新值
+    支持函数编号 12 和 14 被提供用来支持内建数据类型的不规则性。函数编号
+    12 被用来支持来自不同地址族的不能合并的网络地址。函数编号 14 被用来
+    支持空范围。函数编号 13 是可选的，但是我们推荐提供它。它允许在新值
     被传递给并集函数前对其进行检查。因为 BRIN 框架在并集没有改变时可以
     越过某些操作，所以使用这个函数可以提升索引性能。
  </para>
@@ -1711,13 +1719,13 @@ ____________________________________________________________________________-->
     additional data types to be supported by defining extra sets
     of operators.  Inclusion operator class operator strategies are dependent
     on another operator strategy as shown in
-    <xref linkend="brin-extensibility-inclusion-table">, or the same
+    <xref linkend="brin-extensibility-inclusion-table"/>, or the same
     operator strategy as themselves.  They require the dependency
-    operator to be defined with the <literal>STORAGE</> data type as the
+    operator to be defined with the <literal>STORAGE</literal> data type as the
     left-hand-side argument and the other supported data type to be the
     right-hand-side argument of the supported operator.  See
-    <literal>float4_minmax_ops</> as an example of minmax, and
-    <literal>box_inclusion_ops</> as an example of inclusion.
+    <literal>float4_minmax_ops</literal> as an example of minmax, and
+    <literal>box_inclusion_ops</literal> as an example of inclusion.
  </para>
 ____________________________________________________________________________-->
  <para>

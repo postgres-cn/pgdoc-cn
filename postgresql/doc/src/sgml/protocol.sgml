@@ -37,25 +37,33 @@ ____________________________________________________________________________-->
   <productname>PostgreSQL</productname> 7.4 and later.  For descriptions
   of the earlier protocol versions, see previous releases of the
   <productname>PostgreSQL</productname> documentation.  A single server
-  can support multiple protocol versions.  The initial
-  startup-request message tells the server which protocol version the
-  client is attempting to use, and then the server follows that protocol
-  if it is able.
+  can support multiple protocol versions.  The initial startup-request
+  message tells the server which protocol version the client is attempting to
+  use.  If the major version requested by the client is not supported by
+  the server, the connection will be rejected (for example, this would occur
+  if the client requested protocol version 4.0, which does not exist as of
+  this writing).  If the minor version requested by the client is not
+  supported by the server (e.g. the client requests version 3.1, but the
+  server supports only 3.0), the server may either reject the connection or
+  may respond with a NegotiateProtocolVersion message containing the highest
+  minor protocol version which it supports.  The client may then choose either
+  to continue with the connection using the specified protocol version or
+  to abort the connection.
  </para>
 ____________________________________________________________________________-->
  <para>
-  这份文档描述了版本3.0的协议，它在<productname>PostgreSQL</productname>版本 7.4 和以后的版本中实现。对于以前版本协议的描述，请参考以前版本的<productname>PostgreSQL</productname>文档。 一个服务器可以支持多种协议版本。最开始的启动请求信息会告诉服务器客户端尝试使用的协议版本，然后服务器则遵循该版本的协议——如果它能做到的话。
+  这份文档描述了版本3.0的协议，它在<productname>PostgreSQL</productname>版本 7.4 和以后的版本中实现。对于以前版本协议的描述，请参考以前版本的<productname>PostgreSQL</productname>文档。一台服务器能够支持多种协议版本。初始的启动请求消息告诉服务器客户端尝试使用哪个协议版本。如果客户端请求的主版本不被服务器支持，连接将被拒绝（例如，如果客户端请求的协议版本是4.0就会发生这种情况，因为在写作这份文档时，4.0根本还不存在）。如果客户端请求的次版本不被服务器支持（例如客户端请求版本3.1，但服务器仅支持3.0），服务器可能会拒绝该连接或者用一个包含它支持的最高次协议版本的NegotiateProtocolVersion消息进行响应。然后客户端可以选择使用指定的协议版本继续连接或者中止连接。
  </para>
 
 <!--==========================orignal english content==========================
   <para>
    In order to serve multiple clients efficiently, the server launches
-   a new <quote>backend</> process for each client.
+   a new <quote>backend</quote> process for each client.
    In the current implementation, a new child
    process is created immediately after an incoming connection is detected.
    This is transparent to the protocol, however.  For purposes of the
-   protocol, the terms <quote>backend</> and <quote>server</> are
-   interchangeable; likewise <quote>frontend</> and <quote>client</>
+   protocol, the terms <quote>backend</quote> and <quote>server</quote> are
+   interchangeable; likewise <quote>frontend</quote> and <quote>client</quote>
    are interchangeable.
   </para>
 ____________________________________________________________________________-->
@@ -89,7 +97,7 @@ ____________________________________________________________________________-->
   <para>
    During normal operation, the frontend sends queries and
    other commands to the backend, and the backend sends back query results
-   and other responses.  There are a few cases (such as <command>NOTIFY</>)
+   and other responses.  There are a few cases (such as <command>NOTIFY</command>)
    wherein the
    backend will send unsolicited messages, but for the most part this portion
    of a session is driven by frontend requests.
@@ -114,9 +122,9 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    Within normal operation, SQL commands can be executed through either of
-   two sub-protocols.  In the <quote>simple query</> protocol, the frontend
+   two sub-protocols.  In the <quote>simple query</quote> protocol, the frontend
    just sends a textual query string, which is parsed and immediately
-   executed by the backend.  In the <quote>extended query</> protocol,
+   executed by the backend.  In the <quote>extended query</quote> protocol,
    processing of queries is separated into multiple steps: parsing,
    binding of parameter values, and execution.  This offers flexibility
    and performance benefits, at the cost of extra complexity.
@@ -129,7 +137,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    Normal operation has additional sub-protocols for special operations
-   such as <command>COPY</>.
+   such as <command>COPY</command>.
   </para>
 ____________________________________________________________________________-->
   <para>
@@ -191,21 +199,21 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <title>Extended Query Overview</title>
 ____________________________________________________________________________-->
-   <title> 扩展查询概述</title>
+   <title>扩展查询概述</title>
 
 <!--==========================orignal english content==========================
    <para>
     In the extended-query protocol, execution of SQL commands is divided
     into multiple steps.  The state retained between steps is represented
-    by two types of objects: <firstterm>prepared statements</> and
-    <firstterm>portals</>.  A prepared statement represents the result of
+    by two types of objects: <firstterm>prepared statements</firstterm> and
+    <firstterm>portals</firstterm>.  A prepared statement represents the result of
     parsing and semantic analysis of a textual query string.
     A prepared statement is not in itself ready to execute, because it might
-    lack specific values for <firstterm>parameters</>.  A portal represents
+    lack specific values for <firstterm>parameters</firstterm>.  A portal represents
     a ready-to-execute or already-partially-executed statement, with any
-    missing parameter values filled in.  (For <command>SELECT</> statements,
+    missing parameter values filled in.  (For <command>SELECT</command> statements,
     a portal is equivalent to an open cursor, but we choose to use a different
-    term since cursors don't handle non-<command>SELECT</> statements.)
+    term since cursors don't handle non-<command>SELECT</command> statements.)
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -214,19 +222,19 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    The overall execution cycle consists of a <firstterm>parse</> step,
+    The overall execution cycle consists of a <firstterm>parse</firstterm> step,
     which creates a prepared statement from a textual query string; a
-    <firstterm>bind</> step, which creates a portal given a prepared
+    <firstterm>bind</firstterm> step, which creates a portal given a prepared
     statement and values for any needed parameters; and an
-    <firstterm>execute</> step that runs a portal's query.  In the case of
-    a query that returns rows (<command>SELECT</>, <command>SHOW</>, etc),
+    <firstterm>execute</firstterm> step that runs a portal's query.  In the case of
+    a query that returns rows (<command>SELECT</command>, <command>SHOW</command>, etc),
     the execute step can be told to fetch only
     a limited number of rows, so that multiple execute steps might be needed
     to complete the operation.
    </para>
 ____________________________________________________________________________-->
    <para>
-    完整的执行周期包括一个<firstterm>分析</firstterm>步骤， 它从一个文本的查询字符串里创建一个预备语句； 一个<firstterm>绑定</firstterm>步骤， 它用一个预备语句和任何所需的参数值创建一个入口；以及一个 <firstterm>执行</firstterm>步骤，它运行一个入口中的查询。如果查询会返回数据行（<command>SELECT</command>、<command>SHOW</command>等）， 执行步骤会被告知只抓取有限的一些行，这样就可能需要多个执行步骤来完成操作。
+    完整的执行周期包括一个<firstterm>分析</firstterm>步骤， 它从一个文本的查询字符串里创建一个预备语句； 一个<firstterm>绑定</firstterm>步骤， 它用一个预备语句和任何所需的参数值创建一个入口；以及一个<firstterm>执行</firstterm>步骤，它运行一个入口中的查询。如果查询会返回数据行（<command>SELECT</command>、<command>SHOW</command>等）， 执行步骤会被告知只抓取有限的一些行，这样就可能需要多个执行步骤来完成操作。
    </para>
 
 <!--==========================orignal english content==========================
@@ -235,7 +243,7 @@ ____________________________________________________________________________-->
     (but note that these exist only within a session, and are never shared
     across sessions).  Existing prepared statements and portals are
     referenced by names assigned when they were created.  In addition,
-    an <quote>unnamed</> prepared statement and portal exist.  Although these
+    an <quote>unnamed</quote> prepared statement and portal exist.  Although these
     behave largely the same as named objects, operations on them are optimized
     for the case of executing a query only once and then discarding it,
     whereas operations on named objects are optimized on the expectation
@@ -256,10 +264,10 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     Data of a particular data type might be transmitted in any of several
-    different <firstterm>formats</>.  As of <productname>PostgreSQL</> 7.4
-    the only supported formats are <quote>text</> and <quote>binary</>,
+    different <firstterm>formats</firstterm>.  As of <productname>PostgreSQL</productname> 7.4
+    the only supported formats are <quote>text</quote> and <quote>binary</quote>,
     but the protocol makes provision for future extensions.  The desired
-    format for any value is specified by a <firstterm>format code</>.
+    format for any value is specified by a <firstterm>format code</firstterm>.
     Clients can specify a format code for each transmitted parameter value
     and for each column of a query result.  Text has format code zero,
     binary has format code one, and all other format codes are reserved
@@ -309,7 +317,7 @@ ____________________________________________________________________________-->
   <para>
    This section describes the message flow and the semantics of each
    message type.  (Details of the exact representation of each message
-   appear in <xref linkend="protocol-message-formats">.)  There are
+   appear in <xref linkend="protocol-message-formats"/>.)  There are
    several different sub-protocols depending on the state of the
    connection: start-up, query, function call,
    <command>COPY</command>, and termination.  There are also special
@@ -359,10 +367,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    然后服务器就发送合适的认证请求信息，前端必须用合适的认证响应信息来响应（比如一个口令）。
-	对于除了GSSAPI、SSPI和SASL之外的所有认证方式都至少有一个请求和一个响应。
-	在有些方法中前端不需要发出任何响应，并且因此就不会由任何认证请求发生。
-	对于GSSAPI、SSPI和SASL，可能需要多个包的交换才能完成认证。
+    然后服务器就发送合适的认证请求信息，前端必须用合适的认证响应信息来响应（比如一个口令）。对于除了GSSAPI、SSPI和SASL之外的所有认证方式都至少有一个请求和一个响应。在有些方法中前端不需要发出任何响应，并且因此就不会由任何认证请求发生。对于GSSAPI、SSPI和SASL，可能需要多个包的交换才能完成认证。
    </para>
 
 <!--==========================orignal english content==========================
@@ -436,8 +441,8 @@ ____________________________________________________________________________-->
         password, the server responds with an AuthenticationOk,
         otherwise it responds with an ErrorResponse.  The actual
         PasswordMessage can be computed in SQL as <literal>concat('md5',
-        md5(concat(md5(concat(password, username)), random-salt)))</>.
-        (Keep in mind the <function>md5()</> function returns its
+        md5(concat(md5(concat(password, username)), random-salt)))</literal>.
+        (Keep in mind the <function>md5()</function> function returns its
         result as a hex string.)
        </para>
       </listitem>
@@ -511,7 +516,7 @@ ____________________________________________________________________________-->
         SASLInitialResponse with the name of the selected mechanism, and the
         first part of the SASL data stream in response to this. If further
         messages are needed, the server will respond with
-        AuthenticationSASLContinue. See <xref linkend="sasl-authentication">
+        AuthenticationSASLContinue. See <xref linkend="sasl-authentication"/>
         for details.
        </para>
       </listitem>
@@ -538,6 +543,21 @@ ____________________________________________________________________________-->
         indicate successful authentication, or an ErrorResponse to indicate
         failure. This message is sent only if the SASL mechanism specifies
         additional data to be sent from server to client at completion.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>NegotiateProtocolVersion</term>
+      <listitem>
+       <para>
+        The server does not support the minor protocol version requested
+        by the client, but does support an earlier version of the protocol;
+        this message indicates the highest supported minor version.  This
+        message will also be sent if the client requested unsupported protocol
+        options (i.e. beginning with <literal>_pq_.</literal>) in the
+        startup packet.  This message will be followed by an ErrorResponse or
+        a message indicating the success or failure of authentication.
        </para>
       </listitem>
      </varlistentry>
@@ -625,18 +645,16 @@ ____________________________________________________________________________-->
       <term>AuthenticationGSSContinue</term>
       <listitem>
        <para>
-        这个消息包含对于前一步的GSSAPI或SSPI谈判（AuthenticationGSS、AuthenticationSSPI或者前一个AuthenticationGSSContinue）的响应数据。如果这个消息中的GSSAPI或SSPI数据指示需要更多数据来完成认证，前端必须将所需的数据作为另一个GSSResponse消息发送。如果这个消息就能完成GSSAPI或SSPI认证，服务器将接着发送AuthenticationOk来指示成功认证，或者发送ErrorResponse来指示失败。
+        这个消息包含对于前一步的GSSAPI或SSPI谈判（AuthenticationGSS、AuthenticationSSPI或者前一个AuthenticationGSSContinue）的响应数据。如果这个消息中的GSSAPI或SSPI数据指示需要更多数据来完成认证，前端必须将所需的数据作为另一个GSSResponse发送。如果这个消息就能完成GSSAPI或SSPI认证，服务器将接着发送AuthenticationOk来指示成功认证，或者发送ErrorResponse来指示失败。
        </para>
       </listitem>
      </varlistentry>
+
      <varlistentry>
       <term>AuthenticationSASL</term>
       <listitem>
        <para>
-        前端现在必须使用消息中列出的SASL机制之一启动SASL协商。
-		前端将发送SASLInitialResponse以及所选机制的名称以及SASL数据流的第一部分来响应。
-		如果需要更多消息，服务器将使用AuthenticationSASLContinue进行响应。
-		有关详细信息，请参见<xref linkend="sasl-authentication"/>。
+        前端现在必须发起一次SASL协商，使用该消息中列出的一种SASL机制。前端将用选中机制的名字发送一个SASLInitialResponse，并且SASL数据流的第一部分对应于此。如果需要进一步的消息，服务器将用AuthenticationSASLContinue回复。详见<xref linkend="sasl-authentication"/>。
        </para>
       </listitem>
      </varlistentry>
@@ -645,8 +663,7 @@ ____________________________________________________________________________-->
       <term>AuthenticationSASLContinue</term>
       <listitem>
        <para>
-        该消息包含SASL协商的前一步（AuthenticationSASL，或之前的AuthenticationSASLContinue）
-		中的质询数据。前端必须使用SASLResponse消息进行响应。
+        这个消息包含从SASL协商（AuthenticationSASL或者一个之前的AuthenticationSASLContinue）的前一步中得到的挑战数据。前端必须用一个SASLResponse消息响应。
        </para>
       </listitem>
      </varlistentry>
@@ -655,10 +672,16 @@ ____________________________________________________________________________-->
       <term>AuthenticationSASLFinal</term>
       <listitem>
        <para>
-        SASL身份验证已完成，并为客户端提供了其他机制特定的数据。
-		服务器接下来将发送AuthenticationOk以指示成功的身份验证，
-		或者发送ErrorResponse来指示失败。
-		仅当SASL机制指定完成时从服务器发送附加数据到客户端时，才会发送此消息。
+        已经用额外的与机制相关的数据为该客户端完成SASL认证。服务器接下来将发送AuthenticationOk来表示认证成功，或者发送ErrorResponse表示失败。只有在SASL机制指定要在完成时从服务器发送额外数据到客户端的情况下才会发送这个消息。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>NegotiateProtocolVersion</term>
+      <listitem>
+       <para>
+        服务器不支持客户端请求的次协议版本，但是支持该协议更早的一个版本，这个消息会指出受支持的最高次版本。如果客户端在启动包中请求了不受支持的协议选项（例如以<literal>_pq_.</literal>开始），则这个消息也会被发出。这个消息后面将会跟着一个ErrorResponse或者一个指示认证成功或失败的消息。
        </para>
       </listitem>
      </varlistentry>
@@ -683,12 +706,14 @@ ____________________________________________________________________________-->
     for further messages from the server.  In this phase a backend process
     is being started, and the frontend is just an interested bystander.
     It is still possible for the startup attempt
-    to fail (ErrorResponse), but in the normal case the backend will send
-    some ParameterStatus messages, BackendKeyData, and finally ReadyForQuery.
+    to fail (ErrorResponse) or the server to decline support for the requested
+    minor protocol version (NegotiateProtocolVersion), but in the normal case
+    the backend will send some ParameterStatus messages, BackendKeyData, and
+    finally ReadyForQuery.
    </para>
 ____________________________________________________________________________-->
    <para>
-    在收到AuthenticationOk包之后， 前端必须等待来自服务器的进一步消息。在这个阶段会启动一个后端进程， 而前端只是一个感兴趣的旁观者。启动后端进程的尝试仍然有可能失败（ErrorResponse），但是通常情况下，后端将发送一些ParameterStatus消息、BackendKeyData以及最后的ReadyForQuery。
+    在收到AuthenticationOk包之后，前端必须等待来自服务器的进一步消息。在这个阶段会启动一个后端进程， 而前端只是一个感兴趣的旁观者。启动尝试仍有可能失败（ErrorResponse），服务器也有可能拒绝支持所请求的次协议版本（NegotiateProtocolVersion），但是通常情况下，后端将发送一些ParameterStatus消息、BackendKeyData以及最后的ReadyForQuery。
    </para>
 
 <!--==========================orignal english content==========================
@@ -726,9 +751,9 @@ ____________________________________________________________________________-->
        <para>
         This message informs the frontend about the current (initial)
          setting of backend parameters, such as <xref
-         linkend="guc-client-encoding"> or <xref linkend="guc-datestyle">.
+         linkend="guc-client-encoding"/> or <xref linkend="guc-datestyle"/>.
          The frontend can ignore this message, or record the settings
-         for its future use; see <xref linkend="protocol-async"> for
+         for its future use; see <xref linkend="protocol-async"/> for
          more details.  The frontend should not respond to this
          message, but should continue listening for a ReadyForQuery
          message.
@@ -877,7 +902,7 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         The backend is ready to copy data from the frontend to a
-        table; see <xref linkend="protocol-copy">.
+        table; see <xref linkend="protocol-copy"/>.
        </para>
       </listitem>
      </varlistentry>
@@ -887,7 +912,7 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         The backend is ready to copy data from a table to the
-        frontend; see <xref linkend="protocol-copy">.
+        frontend; see <xref linkend="protocol-copy"/>.
        </para>
       </listitem>
      </varlistentry>
@@ -1051,12 +1076,12 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    The response to a <command>SELECT</> query (or other queries that
-    return row sets, such as <command>EXPLAIN</> or <command>SHOW</>)
+    The response to a <command>SELECT</command> query (or other queries that
+    return row sets, such as <command>EXPLAIN</command> or <command>SHOW</command>)
     normally consists of RowDescription, zero or more
     DataRow messages, and then CommandComplete.
-    <command>COPY</> to or from the frontend invokes special protocol
-    as described in <xref linkend="protocol-copy">.
+    <command>COPY</command> to or from the frontend invokes special protocol
+    as described in <xref linkend="protocol-copy"/>.
     All other query types normally produce only
     a CommandComplete message.
    </para>
@@ -1104,8 +1129,8 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     In simple Query mode, the format of retrieved values is always text,
-    except when the given command is a <command>FETCH</> from a cursor
-    declared with the <literal>BINARY</> option.  In that case, the
+    except when the given command is a <command>FETCH</command> from a cursor
+    declared with the <literal>BINARY</literal> option.  In that case, the
     retrieved values are in binary format.  The format codes given in
     the RowDescription message tell which format is being used.
    </para>
@@ -1118,7 +1143,7 @@ ____________________________________________________________________________-->
    <para>
     A frontend must be prepared to accept ErrorResponse and
     NoticeResponse messages whenever it is expecting any other type of
-    message.  See also <xref linkend="protocol-async"> concerning messages
+    message.  See also <xref linkend="protocol-async"/> concerning messages
     that the backend might generate due to outside events.
    </para>
 ____________________________________________________________________________-->
@@ -1136,6 +1161,196 @@ ____________________________________________________________________________-->
    <para>
     我们建议的方法是把前端代码写成状态机的风格，它可以在任何时刻接受任何有意义的消息类型，而不是假设消息的序列总是准确。
    </para>
+
+   <sect3 id="protocol-flow-multi-statement">
+<!--==========================orignal english content==========================
+    <title>Multiple Statements in a Simple Query</title>
+____________________________________________________________________________-->
+    <title>一个简单查询中的多条语句</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     When a simple Query message contains more than one SQL statement
+     (separated by semicolons), those statements are executed as a single
+     transaction, unless explicit transaction control commands are included
+     to force a different behavior.  For example, if the message contains
+<programlisting>
+INSERT INTO mytable VALUES(1);
+SELECT 1/0;
+INSERT INTO mytable VALUES(2);
+</programlisting>
+     then the divide-by-zero failure in the <command>SELECT</command> will force
+     rollback of the first <command>INSERT</command>.  Furthermore, because
+     execution of the message is abandoned at the first error, the second
+     <command>INSERT</command> is never attempted at all.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     当一个简单查询消息中包含多于一条SQL语句（被分号分隔）时，那些语句会被当做一个事务中执行，除非其中包括显式事务控制命令来强制不同的行为。例如，如果消息包括
+<programlisting>
+INSERT INTO mytable VALUES(1);
+SELECT 1/0;
+INSERT INTO mytable VALUES(2);
+</programlisting>
+     则<command>SELECT</command>中的除零失败将强制回滚第一个<command>INSERT</command>。进而，因为该消息的执行在第一个错误时就被放弃，第二个<command>INSERT</command>根本都不会被尝试。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If instead the message contains
+<programlisting>
+BEGIN;
+INSERT INTO mytable VALUES(1);
+COMMIT;
+INSERT INTO mytable VALUES(2);
+SELECT 1/0;
+</programlisting>
+     then the first <command>INSERT</command> is committed by the
+     explicit <command>COMMIT</command> command.  The second <command>INSERT</command>
+     and the <command>SELECT</command> are still treated as a single transaction,
+     so that the divide-by-zero failure will roll back the
+     second <command>INSERT</command>, but not the first one.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果该消息包含的是
+<programlisting>
+BEGIN;
+INSERT INTO mytable VALUES(1);
+COMMIT;
+INSERT INTO mytable VALUES(2);
+SELECT 1/0;
+</programlisting>
+     那么第一个<command>INSERT</command>会被这个显式的<command>COMMIT</command>命令提交。第二个<command>INSERT</command>以及<command>SELECT</command>仍会被当作一个单一事务，这样除零失败将回滚第二个<command>INSERT</command>，但不会回滚第一个。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     This behavior is implemented by running the statements in a
+     multi-statement Query message in an <firstterm>implicit transaction
+     block</firstterm> unless there is some explicit transaction block for them to
+     run in.  The main difference between an implicit transaction block and
+     a regular one is that an implicit block is closed automatically at the
+     end of the Query message, either by an implicit commit if there was no
+     error, or an implicit rollback if there was an error.  This is similar
+     to the implicit commit or rollback that happens for a statement
+     executed by itself (when not in a transaction block).
+    </para>
+____________________________________________________________________________-->
+    <para>
+     这种行为通过在一个<firstterm>隐式事务块</firstterm>中的一个多语句Query消息中运行那些语句来实现，除非它们运行在某个显式事务块中。隐式事务块与常规事务块之间的区别在于隐式块会在Query消息结束时自动被关闭，或者是在没有错误的情况下由一个隐式提交关闭，或者是在有错误时由一个隐式的回滚关闭。这类似于一个语句自己执行（当不在事务块中时）时发生的隐式提交或回滚。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the session is already in a transaction block, as a result of
+     a <command>BEGIN</command> in some previous message, then the Query message
+     simply continues that transaction block, whether the message contains
+     one statement or several.  However, if the Query message contains
+     a <command>COMMIT</command> or <command>ROLLBACK</command> closing the existing
+     transaction block, then any following statements are executed in an
+     implicit transaction block.
+     Conversely, if a <command>BEGIN</command> appears in a multi-statement Query
+     message, then it starts a regular transaction block that will only be
+     terminated by an explicit <command>COMMIT</command> or <command>ROLLBACK</command>,
+     whether that appears in this Query message or a later one.
+     If the <command>BEGIN</command> follows some statements that were executed as
+     an implicit transaction block, those statements are not immediately
+     committed; in effect, they are retroactively included into the new
+     regular transaction block.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果会话已经在一个事务块中，作为前面某个消息中<command>BEGIN</command>的结果，那么Query消息会简单地继续那个事务块，不管该消息包含一个语句还是多个语句。不过，如果该Query消息包含一个关闭现有事务块的<command>COMMIT</command>或者<command>ROLLBACK</command>，那么任何接下来的语句都会在一个隐式事务块中被执行。反过来，如果在多语句Query消息中出现一个<command>BEGIN</command>，那么它会开始一个常规事务块，这个常规事务块将只能被一个显式的<command>COMMIT</command>或者<command>ROLLBACK</command>终止，不管这两种命令是出现在这个Query消息还是后面的一个Query消息中。如果<command>BEGIN</command>跟在一些作为隐式事务块执行的语句后面，那些语句不会被立刻提交。实际上，它们会被包括到新的常规事务块中。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     A <command>COMMIT</command> or <command>ROLLBACK</command> appearing in an implicit
+     transaction block is executed as normal, closing the implicit block;
+     however, a warning will be issued since a <command>COMMIT</command>
+     or <command>ROLLBACK</command> without a previous <command>BEGIN</command> might
+     represent a mistake.  If more statements follow, a new implicit
+     transaction block will be started for them.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     出现在一个隐式事务块中的<command>COMMIT</command>或者<command>ROLLBACK</command>会被正常执行并且关闭该隐式块。不过，由于没有先前的<command>BEGIN</command>配对的<command>COMMIT</command>或者<command>ROLLBACK</command>表示一种错误，所以将会发出一个警告。如果后面还有更多语句，将会为它们开始一个新的隐式事务块。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Savepoints are not allowed in an implicit transaction block, since
+     they would conflict with the behavior of automatically closing the
+     block upon any error.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在隐式事务块中不允许保存点，因为它们会与发生错误时自动关闭块的行为发生冲突。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Remember that, regardless of any transaction control commands that may
+     be present, execution of the Query message stops at the first error.
+     Thus for example given
+<programlisting>
+BEGIN;
+SELECT 1/0;
+ROLLBACK;
+</programlisting>
+     in a single Query message, the session will be left inside a failed
+     regular transaction block, since the <command>ROLLBACK</command> is not
+     reached after the divide-by-zero error.  Another <command>ROLLBACK</command>
+     will be needed to restore the session to a usable state.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     记住，不管任何事务控制命令存不存在，Query消息的执行会在第一个错误时停止。因此，对于下面的在一个Query消息中的例子
+<programlisting>
+BEGIN;
+SELECT 1/0;
+ROLLBACK;
+</programlisting>
+     会话中将留下一个失败的常规事务块，因为在出现除零错误后不会到达<command>ROLLBACK</command>。将需要另一个<command>ROLLBACK</command>把会话恢复到一种可用的状态。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Another behavior of note is that initial lexical and syntactic
+     analysis is done on the entire query string before any of it is
+     executed.  Thus simple errors (such as a misspelled keyword) in later
+     statements can prevent execution of any of the statements.  This
+     is normally invisible to users since the statements would all roll
+     back anyway when done as an implicit transaction block.  However,
+     it can be visible when attempting to do multiple transactions within a
+     multi-statement Query.  For instance, if a typo turned our previous
+     example into
+<programlisting>
+BEGIN;
+INSERT INTO mytable VALUES(1);
+COMMIT;
+INSERT INTO mytable VALUES(2);
+SELCT 1/0;
+</programlisting>
+     then none of the statements would get run, resulting in the visible
+     difference that the first <command>INSERT</command> is not committed.
+     Errors detected at semantic analysis or later, such as a misspelled
+     table or column name, do not have this effect.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     另一种要注意的行为是，最初的词法和语法分析是在整个查询字符串被执行之前进行的。因此后面的语句中的简单错误（例如拼写错误的关键词）可能会阻止任何语句的执行。这通常对用户是不可见的，因为在当作一个隐式事务块执行时，这些语句不管怎样都会全部被回滚。不过，在尝试于一个多语句Query中执行多个事务时，这种现象可能是可见的。例如，如果一个拼写错误把我们之前的例子变成
+<programlisting>
+BEGIN;
+INSERT INTO mytable VALUES(1);
+COMMIT;
+INSERT INTO mytable VALUES(2);
+SELCT 1/0;
+</programlisting>
+     那么这些语句都不会被运行，导致可见的差别，即第一个<command>INSERT</command>没有被提交。在语义分析及其后阶段检测到的错误（例如拼错的表名或者列名）不会有这种效果。
+    </para>
+   </sect3>
   </sect2>
 
   <sect2 id="protocol-flow-ext-query">
@@ -1180,17 +1395,17 @@ ____________________________________________________________________________-->
     <para>
      A parameter data type can be left unspecified by setting it to zero,
      or by making the array of parameter type OIDs shorter than the
-     number of parameter symbols (<literal>$</><replaceable>n</>)
+     number of parameter symbols (<literal>$</literal><replaceable>n</replaceable>)
      used in the query string.  Another special case is that a parameter's
-     type can be specified as <type>void</> (that is, the OID of the
-     <type>void</> pseudo-type).  This is meant to allow parameter symbols
+     type can be specified as <type>void</type> (that is, the OID of the
+     <type>void</type> pseudo-type).  This is meant to allow parameter symbols
      to be used for function parameters that are actually OUT parameters.
-     Ordinarily there is no context in which a <type>void</> parameter
+     Ordinarily there is no context in which a <type>void</type> parameter
      could be used, but if such a parameter symbol appears in a function's
      parameter list, it is effectively ignored.  For example, a function
-     call such as <literal>foo($1,$2,$3,$4)</> could match a function with
-     two IN and two OUT arguments, if <literal>$3</> and <literal>$4</>
-     are specified as having type <type>void</>.
+     call such as <literal>foo($1,$2,$3,$4)</literal> could match a function with
+     two IN and two OUT arguments, if <literal>$3</literal> and <literal>$4</literal>
+     are specified as having type <type>void</type>.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -1224,7 +1439,7 @@ ____________________________________________________________________________-->
     statements must be explicitly closed before they can be redefined by
     another Parse message, but this is not required for the unnamed statement.
     Named prepared statements can also be created and accessed at the SQL
-    command level, using <command>PREPARE</> and <command>EXECUTE</>.
+    command level, using <command>PREPARE</command> and <command>EXECUTE</command>.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1240,7 +1455,7 @@ ____________________________________________________________________________-->
     the values to use for any parameter placeholders present in the prepared
     statement.  The
     supplied parameter set must match those needed by the prepared statement.
-    (If you declared any <type>void</> parameters in the Parse message,
+    (If you declared any <type>void</type> parameters in the Parse message,
     pass NULL values for them in the Bind message.)
     Bind also specifies the format to use for any data returned
     by the query; the format can be specified overall, or per-column.
@@ -1256,7 +1471,7 @@ ____________________________________________________________________________-->
     <para>
      The choice between text and binary output is determined by the format
      codes given in Bind, regardless of the SQL command involved.  The
-     <literal>BINARY</> attribute in cursor declarations is irrelevant when
+     <literal>BINARY</literal> attribute in cursor declarations is irrelevant when
      using extended query protocol.
     </para>
 ____________________________________________________________________________-->
@@ -1290,7 +1505,7 @@ ____________________________________________________________________________-->
     portals must be explicitly closed before they can be redefined by another
     Bind message, but this is not required for the unnamed portal.
     Named portals can also be created and accessed at the SQL
-    command level, using <command>DECLARE CURSOR</> and <command>FETCH</>.
+    command level, using <command>DECLARE CURSOR</command> and <command>FETCH</command>.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1302,7 +1517,7 @@ ____________________________________________________________________________-->
     Once a portal exists, it can be executed using an Execute message.
     The Execute message specifies the portal name (empty string denotes the
     unnamed portal) and
-    a maximum result-row count (zero meaning <quote>fetch all rows</>).
+    a maximum result-row count (zero meaning <quote>fetch all rows</quote>).
     The result-row count is only meaningful for portals
     containing commands that return row sets; in other cases the command is
     always executed to completion, and the row count is ignored.
@@ -1339,7 +1554,7 @@ ____________________________________________________________________________-->
     At completion of each series of extended-query messages, the frontend
     should issue a Sync message.  This parameterless message causes the
     backend to close the current transaction if it's not inside a
-    <command>BEGIN</>/<command>COMMIT</> transaction block (<quote>close</>
+    <command>BEGIN</command>/<command>COMMIT</command> transaction block (<quote>close</quote>
     meaning to commit if no error, or roll back if error).  Then a
     ReadyForQuery response is issued.  The purpose of Sync is to provide
     a resynchronization point for error recovery.  When an error is detected
@@ -1347,7 +1562,7 @@ ____________________________________________________________________________-->
     ErrorResponse, then reads and discards messages until a Sync is reached,
     then issues ReadyForQuery and returns to normal message processing.
     (But note that no skipping occurs if an error is detected
-    <emphasis>while</> processing Sync &mdash; this ensures that there is one
+    <emphasis>while</emphasis> processing Sync &mdash; this ensures that there is one
     and only one ReadyForQuery sent for each Sync.)
    </para>
 ____________________________________________________________________________-->
@@ -1358,7 +1573,7 @@ ____________________________________________________________________________-->
    <note>
 <!--==========================orignal english content==========================
     <para>
-     Sync does not cause a transaction block opened with <command>BEGIN</>
+     Sync does not cause a transaction block opened with <command>BEGIN</command>
      to be closed.  It is possible to detect this situation since the
      ReadyForQuery message includes transaction status information.
     </para>
@@ -1493,7 +1708,7 @@ ____________________________________________________________________________-->
     <para>
      The Function Call sub-protocol is a legacy feature that is probably best
      avoided in new code.  Similar results can be accomplished by setting up
-     a prepared statement that does <literal>SELECT function($1, ...)</>.
+     a prepared statement that does <literal>SELECT function($1, ...)</literal>.
      The Function Call cycle can then be replaced with Bind/Execute.
     </para>
 ____________________________________________________________________________-->
@@ -1617,7 +1832,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    The <command>COPY</> command allows high-speed bulk data transfer
+    The <command>COPY</command> command allows high-speed bulk data transfer
     to or from the server.  Copy-in and copy-out operations each switch
     the connection into a distinct sub-protocol, which lasts until the
     operation is completed.
@@ -1630,16 +1845,16 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     Copy-in mode (data transfer to the server) is initiated when the
-    backend executes a <command>COPY FROM STDIN</> SQL statement.  The backend
+    backend executes a <command>COPY FROM STDIN</command> SQL statement.  The backend
     sends a CopyInResponse message to the frontend.  The frontend should
     then send zero or more CopyData messages, forming a stream of input
     data.  (The message boundaries are not required to have anything to do
     with row boundaries, although that is often a reasonable choice.)
     The frontend can terminate the copy-in mode by sending either a CopyDone
     message (allowing successful termination) or a CopyFail message (which
-    will cause the <command>COPY</> SQL statement to fail with an
+    will cause the <command>COPY</command> SQL statement to fail with an
     error).  The backend then reverts to the command-processing mode it was
-    in before the <command>COPY</> started, which will be either simple or
+    in before the <command>COPY</command> started, which will be either simple or
     extended query protocol.  It will next send either CommandComplete
     (if successful) or ErrorResponse (if not).
    </para>
@@ -1652,10 +1867,10 @@ ____________________________________________________________________________-->
    <para>
     In the event of a backend-detected error during copy-in mode (including
     receipt of a CopyFail message), the backend will issue an ErrorResponse
-    message.  If the <command>COPY</> command was issued via an extended-query
+    message.  If the <command>COPY</command> command was issued via an extended-query
     message, the backend will now discard frontend messages until a Sync
     message is received, then it will issue ReadyForQuery and return to normal
-    processing.  If the <command>COPY</> command was issued in a simple
+    processing.  If the <command>COPY</command> command was issued in a simple
     Query message, the rest of that message is discarded and ReadyForQuery
     is issued.  In either case, any subsequent CopyData, CopyDone, or CopyFail
     messages issued by the frontend will simply be dropped.
@@ -1672,7 +1887,7 @@ ____________________________________________________________________________-->
     that will abort the copy-in state as described above.  (The exception for
     Flush and Sync is for the convenience of client libraries that always
     send Flush or Sync after an Execute message, without checking whether
-    the command to be executed is a <command>COPY FROM STDIN</>.)
+    the command to be executed is a <command>COPY FROM STDIN</command>.)
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1682,11 +1897,11 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     Copy-out mode (data transfer from the server) is initiated when the
-    backend executes a <command>COPY TO STDOUT</> SQL statement.  The backend
+    backend executes a <command>COPY TO STDOUT</command> SQL statement.  The backend
     sends a CopyOutResponse message to the frontend, followed by
     zero or more CopyData messages (always one per row), followed by CopyDone.
     The backend then reverts to the command-processing mode it was
-    in before the <command>COPY</> started, and sends CommandComplete.
+    in before the <command>COPY</command> started, and sends CommandComplete.
     The frontend cannot abort the transfer (except by closing the connection
     or issuing a Cancel request),
     but it can discard unwanted CopyData and CopyDone messages.
@@ -1713,7 +1928,7 @@ ____________________________________________________________________________-->
     It is possible for NoticeResponse and ParameterStatus messages to be
     interspersed between CopyData messages; frontends must handle these cases,
     and should be prepared for other asynchronous message types as well (see
-    <xref linkend="protocol-async">).  Otherwise, any message type other than
+    <xref linkend="protocol-async"/>).  Otherwise, any message type other than
     CopyData or CopyDone may be treated as terminating copy-out mode.
    </para>
 ____________________________________________________________________________-->
@@ -1724,7 +1939,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     There is another Copy-related mode called copy-both, which allows
-    high-speed bulk data transfer to <emphasis>and</> from the server.
+    high-speed bulk data transfer to <emphasis>and</emphasis> from the server.
     Copy-both mode is initiated when a backend in walsender mode
     executes a <command>START_REPLICATION</command> statement.  The
     backend sends a CopyBothResponse message to the frontend.  Both
@@ -1741,7 +1956,7 @@ ____________________________________________________________________________-->
     until a Sync message is received, and then issue ReadyForQuery and return
     to normal processing.  The frontend should treat receipt of ErrorResponse
     as terminating the copy in both directions; no CopyDone should be sent
-    in this case.  See <xref linkend="protocol-replication"> for more
+    in this case.  See <xref linkend="protocol-replication"/> for more
     information on the subprotocol transmitted over copy-both mode.
    </para>
 ____________________________________________________________________________-->
@@ -1754,7 +1969,7 @@ ____________________________________________________________________________-->
     The CopyInResponse, CopyOutResponse and CopyBothResponse messages
     include fields that inform the frontend of the number of columns
     per row and the format codes being used for each column.  (As of
-    the present implementation, all columns in a given <command>COPY</>
+    the present implementation, all columns in a given <command>COPY</command>
     operation will use the same format, but the message design does not
     assume this.)
    </para>
@@ -1789,7 +2004,7 @@ ____________________________________________________________________________-->
    <para>
     It is possible for NoticeResponse messages to be generated due to
     outside activity; for example, if the database administrator commands
-    a <quote>fast</> database shutdown, the backend will send a NoticeResponse
+    a <quote>fast</quote> database shutdown, the backend will send a NoticeResponse
     indicating this fact before closing the connection.  Accordingly,
     frontends should always be prepared to accept and display NoticeResponse
     messages, even when the connection is nominally idle.
@@ -1804,7 +2019,7 @@ ____________________________________________________________________________-->
     ParameterStatus messages will be generated whenever the active
     value changes for any of the parameters the backend believes the
     frontend should know about.  Most commonly this occurs in response
-    to a <command>SET</> SQL command executed by the frontend, and
+    to a <command>SET</command> SQL command executed by the frontend, and
     this case is effectively synchronous &mdash; but it is also possible
     for parameter status changes to occur because the administrator
     changed a configuration file and then sent the
@@ -1815,34 +2030,34 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    如果任何时候有任何参数值的活跃值改变且后端认为前端应该知道这些，那么都会产生ParameterStatus消息。这种情况最常见发生的情形是对前端执行的一个<command>SET</command>命令进行响应，并且这种情况实际上是同步的 &mdash; 但是也有可能是数据库管理员改变了配置文件然后项服务器发出<systemitem>SIGHUP</systemitem>信号导致了参数状态的变化。同样，如果一个<command>SET</command>命令回滚，那么也会生成一个合适的ParameterStatus消息以报告当前有效值。
+    如果任何时候有任何参数值的活跃值改变且后端认为前端应该知道这些，那么都会产生ParameterStatus消息。这种情况最常见发生的情形是对前端执行的一个<command>SET</command>命令进行响应，并且这种情况实际上是同步的 &mdash; 但是也有可能是数据库管理员改变了配置文件然后项服务器发出<systemitem>SIGHUP</systemitem>信号导致了参数状态的变化。同样，如果一个<command>SET</command>命令回滚，那么也会生成一个合适的ParameterStatus	消息以报告当前有效值。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
     At present there is a hard-wired set of parameters for which
     ParameterStatus will be generated: they are
-    <varname>server_version</>,
-    <varname>server_encoding</>,
-    <varname>client_encoding</>,
-    <varname>application_name</>,
-    <varname>is_superuser</>,
-    <varname>session_authorization</>,
-    <varname>DateStyle</>,
-    <varname>IntervalStyle</>,
-    <varname>TimeZone</>,
-    <varname>integer_datetimes</>, and
-    <varname>standard_conforming_strings</>.
-    (<varname>server_encoding</>, <varname>TimeZone</>, and
-    <varname>integer_datetimes</> were not reported by releases before 8.0;
-    <varname>standard_conforming_strings</> was not reported by releases
+    <varname>server_version</varname>,
+    <varname>server_encoding</varname>,
+    <varname>client_encoding</varname>,
+    <varname>application_name</varname>,
+    <varname>is_superuser</varname>,
+    <varname>session_authorization</varname>,
+    <varname>DateStyle</varname>,
+    <varname>IntervalStyle</varname>,
+    <varname>TimeZone</varname>,
+    <varname>integer_datetimes</varname>, and
+    <varname>standard_conforming_strings</varname>.
+    (<varname>server_encoding</varname>, <varname>TimeZone</varname>, and
+    <varname>integer_datetimes</varname> were not reported by releases before 8.0;
+    <varname>standard_conforming_strings</varname> was not reported by releases
     before 8.1;
-    <varname>IntervalStyle</> was not reported by releases before 8.4;
-    <varname>application_name</> was not reported by releases before 9.0.)
+    <varname>IntervalStyle</varname> was not reported by releases before 8.4;
+    <varname>application_name</varname> was not reported by releases before 9.0.)
     Note that
-    <varname>server_version</>,
-    <varname>server_encoding</> and
-    <varname>integer_datetimes</>
+    <varname>server_version</varname>,
+    <varname>server_encoding</varname> and
+    <varname>integer_datetimes</varname>
     are pseudo-parameters that cannot change after startup.
     This set might change in the future, or even become configurable.
     Accordingly, a frontend should simply ignore ParameterStatus for
@@ -2051,7 +2266,7 @@ ____________________________________________________________________________-->
     frontend disconnects while a non-<command>SELECT</command> query
     is being processed, the backend will probably finish the query
     before noticing the disconnection.  If the query is outside any
-    transaction block (<command>BEGIN</> ... <command>COMMIT</>
+    transaction block (<command>BEGIN</command> ... <command>COMMIT</command>
     sequence) then its results might be committed before the
     disconnection is recognized.
    </para>
@@ -2069,13 +2284,13 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    If <productname>PostgreSQL</> was built with
+    If <productname>PostgreSQL</productname> was built with
     <acronym>SSL</acronym> support, frontend/backend communications
     can be encrypted using <acronym>SSL</acronym>.  This provides
     communication security in environments where attackers might be
     able to capture the session traffic. For more information on
     encrypting <productname>PostgreSQL</productname> sessions with
-    <acronym>SSL</acronym>, see <xref linkend="ssl-tcp">.
+    <acronym>SSL</acronym>, see <xref linkend="ssl-tcp"/>.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -2087,17 +2302,17 @@ ____________________________________________________________________________-->
     To initiate an <acronym>SSL</acronym>-encrypted connection, the
     frontend initially sends an SSLRequest message rather than a
     StartupMessage.  The server then responds with a single byte
-    containing <literal>S</> or <literal>N</>, indicating that it is
+    containing <literal>S</literal> or <literal>N</literal>, indicating that it is
     willing or unwilling to perform <acronym>SSL</acronym>,
     respectively.  The frontend might close the connection at this point
     if it is dissatisfied with the response.  To continue after
-    <literal>S</>, perform an <acronym>SSL</acronym> startup handshake
+    <literal>S</literal>, perform an <acronym>SSL</acronym> startup handshake
     (not described here, part of the <acronym>SSL</acronym>
     specification) with the server.  If this is successful, continue
     with sending the usual StartupMessage.  In this case the
     StartupMessage and all subsequent data will be
     <acronym>SSL</acronym>-encrypted.  To continue after
-    <literal>N</>, send the usual StartupMessage and proceed without
+    <literal>N</literal>, send the usual StartupMessage and proceed without
     encryption.
    </para>
 ____________________________________________________________________________-->
@@ -2110,7 +2325,7 @@ ____________________________________________________________________________-->
     The frontend should also be prepared to handle an ErrorMessage
     response to SSLRequest from the server.  This would only occur if
     the server predates the addition of <acronym>SSL</acronym> support
-    to <productname>PostgreSQL</>.  (Such servers are now very ancient,
+    to <productname>PostgreSQL</productname>.  (Such servers are now very ancient,
     and likely do not exist in the wild anymore.)
     In this case the connection must
     be closed, but the frontend might choose to open a fresh connection
@@ -2144,32 +2359,32 @@ ____________________________________________________________________________-->
    </para>
   </sect2>
  </sect1>
+
 <sect1 id="sasl-authentication">
 <!--==========================orignal english content==========================
 <title>SASL Authentication</title>
 ____________________________________________________________________________-->
-<title>SASL 认证</title>
+<title>SASL认证</title>
 
 <!--==========================orignal english content==========================
 <para>
-<firstterm>SASL</> is a framework for authentication in connection-oriented
-protocols. At the moment, <productname>PostgreSQL</> implements only one SASL
-authentication mechanism, SCRAM-SHA-256, but more might be added in the
-future. The below steps illustrate how SASL authentication is performed in
-general, while the next subsection gives more details on SCRAM-SHA-256.
+<firstterm>SASL</firstterm> is a framework for authentication in connection-oriented
+protocols. At the moment, <productname>PostgreSQL</productname> implements two SASL
+authentication mechanisms, SCRAM-SHA-256 and SCRAM-SHA-256-PLUS. More
+might be added in the future. The below steps illustrate how SASL
+authentication is performed in general, while the next subsection gives
+more details on SCRAM-SHA-256 and SCRAM-SHA-256-PLUS.
 </para>
 ____________________________________________________________________________-->
 <para>
-<firstterm>SASL</firstterm>是面向连接的协议中的认证的一个框架。目前，<productname>PostgreSQL</productname>
-仅实现了一个SASL认证机制SCRAM-SHA-256，但未来可能会添加更多。
-下面的步骤说明了SASL认证通常如何执行，而下一小节给出了关于SCRAM-SHA-256的更多细节。
+<firstterm>SASL</firstterm>是一种针对面向连接协议的认证框架。当前，<productname>PostgreSQL</productname>实现了两种SASL认证机制，即SCRAM-SHA-256和SCRAM-SHA-256-PLUS。未来可能会增加更多。下面的步骤展示了通常SASL认证是如何执行的，而接下来的小节会给出更多有关SCRAM-SHA-256和SCRAM-SHA-256-PLUS的细节。
 </para>
 
 <procedure>
 <!--==========================orignal english content==========================
 <title>SASL Authentication Message Flow</title>
 ____________________________________________________________________________-->
-<title>SASL 认证消息流</title>
+<title>SASL认证消息流</title>
 
 <step id="sasl-auth-begin">
 <!--==========================orignal english content==========================
@@ -2180,8 +2395,7 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-  要开始SASL认证交换，服务器将发送一个AuthenticationSASL消息。
-  它包括一个服务器可以接受的SASL认证机制列表，按照服务器的首选顺序。
+  为了开始一次SASL认证交换，服务器发送一个AuthenticationSASL消息。它包括一个服务器能够接受的SASL认证机制的列表，这个列表按照服务器喜欢的顺序组织。
 </para>
 </step>
 
@@ -2195,8 +2409,7 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-  客户端从列表中选择一个受支持的机制，并向服务器发送SASLInitialResponse消息。
-  该消息包含所选机制的名称，以及可选的初始客户端响应（如果所选机制使用该机制）。
+  客户端从该列表中选取一种受支持的机制，并且发送一个SASLInitialResponse消息给服务器。该消息包括选中的机制名称以及一个可选的初始客户端响应（如果选中的机制要用到）。
 </para>
 </step>
 
@@ -2210,9 +2423,7 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-  接下来将会有一个或多个服务器质询和客户端响应消息。
-  在AuthenticationSASLContinue消息中发送每个服务器质询，
-  然后在SASLResponse消息中发送来自客户端的响应。消息的细节是机制特定的。
+  接下来将是一个或者多个服务器挑战和客户端响应消息。每一次的服务器挑战都通过一个AuthenticationSASLContinue消息发送，后面会跟着客户端通过SASLResponse消息发送的响应。这些消息的细节与机制有关。
 </para>
 </step>
 
@@ -2229,10 +2440,7 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-  最后，当认证交换成功完成时，服务器发送AuthenticationSASLFinal消息，
-  紧接着是AuthenticationOk消息。AuthenticationSASLFinal包含附加的服务器到客户端数据，
-  其内容特定于所选的认证机制。如果认证机制不使用在完成时发送的附加数据，
-  则不会发送AuthenticationSASLFinal消息。
+  最后，当认证交换成功完成，服务器发送一个AuthenticationSASLFinal消息，后面马上跟上一个AuthenticationOk消息。AuthenticationSASLFinal包含服务器发给客户端的额外数据，其内容与选中的认证机制有关。如果认证机制不使用在完成时发送的额外数据，则不发送AuthenticationSASLFinal消息。
 </para>
 </step>
 </procedure>
@@ -2244,49 +2452,46 @@ ErrorMessage.
 </para>
 ____________________________________________________________________________-->
 <para>
-出错时，服务器可以在任何阶段中止身份验证，并发送一个错误信息。
+在出错时，服务器可以在任何阶段中止认证，并且发送一个ErrorMessage。
 </para>
 
- <sect2 id="sasl-scram-sha256">
+ <sect2 id="sasl-scram-sha-256">
 <!--==========================orignal english content==========================
   <title>SCRAM-SHA-256 authentication</title>
 ____________________________________________________________________________-->
-  <title>SCRAM-SHA-256 认证</title>
+  <title>SCRAM-SHA-256认证</title>
 
 <!--==========================orignal english content==========================
   <para>
-    <firstterm>SCRAM-SHA-256</> (called just <firstterm>SCRAM</> from now on) is
-    the only implemented SASL mechanism, at the moment. It is described in detail
-    in RFC 7677 and RFC 5802.
+   The implemented SASL mechanisms at the moment
+   are <literal>SCRAM-SHA-256</literal> and its variant with channel
+   binding <literal>SCRAM-SHA-256-PLUS</literal>. They are described in
+   detail in RFC 7677 and RFC 5802.
   </para>
 ____________________________________________________________________________-->
   <para>
-    <firstterm>SCRAM-SHA-256</firstterm>（从现在开始只称为<firstterm>SCRAM</firstterm>）
-	是目前唯一实现的SASL机制。它在RFC 7677和RFC 5802中有详细描述。
+   目前实现的SASL机制是<literal>SCRAM-SHA-256</literal>及其带有通道绑定的变体<literal>SCRAM-SHA-256-PLUS</literal>。它们在RFC 7677和RFC 5802中有详细描述。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
 When SCRAM-SHA-256 is used in PostgreSQL, the server will ignore the user name
-that the client sends in the <structname>client-first-message</>. The user name
+that the client sends in the <structname>client-first-message</structname>. The user name
 that was already sent in the startup message is used instead.
-<productname>PostgreSQL</> supports multiple character encodings, while SCRAM
+<productname>PostgreSQL</productname> supports multiple character encodings, while SCRAM
 dictates UTF-8 to be used for the user name, so it might be impossible to
 represent the PostgreSQL user name in UTF-8.
   </para>
 ____________________________________________________________________________-->
   <para>
-在PostgreSQL中使用SCRAM-SHA-256时，服务器将忽略客户端在<structname>client-first-message</structname>
-中发送的用户名。而是使用在启动消息中发送的用户名。
-<productname>PostgreSQL</productname>支持多字符编码，而SCRAM指定用户名使用UTF-8，
-因此可能无法用UTF-8表示PostgreSQL用户名。
+当PostgreSQL使用SCRAM-SHA-256时，服务器将忽略客户端在<structname>client-first-message</structname>中发送的用户名，而是使用在启动消息中已经发过来的用户名。<productname>PostgreSQL</productname>支持多字符编码，然而SCRAM要求用户名使用UTF-8，因此可能无法表示PostgreSQL中的UTF-8用户名。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
 The SCRAM specification dictates that the password is also in UTF-8, and is
-processed with the <firstterm>SASLprep</> algorithm.
-<productname>PostgreSQL</>, however, does not require UTF-8 to be used for
+processed with the <firstterm>SASLprep</firstterm> algorithm.
+<productname>PostgreSQL</productname>, however, does not require UTF-8 to be used for
 the password. When a user's password is set, it is processed with SASLprep
 as if it was in UTF-8, regardless of the actual encoding used. However, if
 it is not a legal UTF-8 byte sequence, or it contains UTF-8 byte sequences
@@ -2298,22 +2503,48 @@ the password is in.
   </para>
 ____________________________________________________________________________-->
   <para>
-SCRAM规范规定密码也使用UTF-8，并使用<firstterm>SASLprep</firstterm>算法进行处理。
-然而，<productname>PostgreSQL</productname>并不要求UTF-8用于密码。当设置了用户密码时，
-无论实际使用何种编码，它都会像使用UTF-8一样使用SASLprep进行处理。但是，
-如果它不是合法的UTF-8字节序列，或者它包含SASLprep算法禁止的UTF-8字节序列，
-则将使用未经SASLprep处理的原始密码，而不是引发错误。
-这允许在UTF-8中对密码进行规范化，但仍允许使用非UTF-8密码，
-并且不要求系统知道密码所使用的编码。
+SCRAM规范要求口令也是UTF-8，并且要用<firstterm>SASLprep</firstterm>算法对口令进行处理。但是，<productname>PostgreSQL</productname>不要求对口令使用UTF-8。在设置一个用户的口令时，会把口令当作是UTF-8一样用SASLprep处理，而不管实际使用的编码是什么。不过，如果口令不是一种合法的UTF-8字节序列或者含有SASLprep算法禁止的UTF-8字节序列，将直接使用未被SASLprep处理过的原始口令，而不是抛出错误。这使得不是UTF-8的口令能够被规范化，但是也允许使用非UTF-8的口令，并且不要求系统了解口令到底是什么编码。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
-<firstterm>Channel binding</> has not been implemented yet.
+<firstterm>Channel binding</firstterm> is supported in PostgreSQL builds with
+SSL support. The SASL mechanism name for SCRAM with channel binding is
+<literal>SCRAM-SHA-256-PLUS</literal>.  The channel binding type used by
+PostgreSQL is <literal>tls-server-end-point</literal>.
   </para>
 ____________________________________________________________________________-->
   <para>
-<firstterm>Channel binding</firstterm>尚未实现。
+在编译了SSL支持的PostgreSQL中支持<firstterm>通道绑定</firstterm>。带有通道绑定的SCRAM的SASL机制名是<literal>SCRAM-SHA-256-PLUS</literal>。被PostgreSQL使用的通道绑定类型是<literal>tls-server-end-point</literal>。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   In <acronym>SCRAM</acronym> without channel binding, the server chooses
+   a random number that is transmitted to the client to be mixed with the
+   user-supplied password in the transmitted password hash.  While this
+   prevents the password hash from being successfully retransmitted in
+   a later session, it does not prevent a fake server between the real
+   server and client from passing through the server's random value 
+   and successfully authenticating.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   在没有通道绑定的<acronym>SCRAM</acronym>中，服务器选择一个随机数，它被传送给客户端，客户端会把这个随机数与用户提供的口令混合在被传输的口令哈希中。虽然这能够防止在后面的会话中成功地重新传送这个口令哈希，但是却无法防止位于真实服务器和客户端之间的伪服务器经手服务器的随机值并且认证成功。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   <acronym>SCRAM</acronym> with channel binding prevents such
+   man-in-the-middle attacks by mixing the signature of the server's
+   certificate into the transmitted password hash. While a fake server can
+   retransmit the real server's certificate, it doesn't have access to the
+   private key matching that certificate, and therefore cannot prove it is
+   the owner, causing SSL connection failure.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   带有通道绑定的<acronym>SCRAM</acronym>通过将服务器证书的签名混入被传输的口令哈希来防止这类中间人攻击。虽然伪服务器能够重新传输真实服务器的证书，但是它无法访问匹配该证书的私钥，因此无法证明它是其拥有者，进而导致SSL连接失败。
   </para>
 
 <procedure>
@@ -2326,61 +2557,64 @@ ____________________________________________________________________________-->
 <para>
   The server sends an AuthenticationSASL message. It includes a list of
   SASL authentication mechanisms that the server can accept.
+  This will be <literal>SCRAM-SHA-256-PLUS</literal>
+  and <literal>SCRAM-SHA-256</literal> if the server is built with SSL
+  support, or else just the latter.
 </para>
 ____________________________________________________________________________-->
 <para>
-  服务器发送AuthenticationSASL消息。它包含服务器可以接受的SASL认证机制列表。
+  服务器发送一个AuthenticationSASL消息。它包括一个服务器能够接受的SASL认证机制列表。如果服务器编译有SSL支持，这个列表将会是<literal>SCRAM-SHA-256-PLUS</literal>和<literal>SCRAM-SHA-256</literal>，否则列表中只会有后者。
 </para>
 </step>
 <step id="scram-client-first">
 <!--==========================orignal english content==========================
 <para>
   The client responds by sending a SASLInitialResponse message, which
-  indicates the chosen mechanism, <literal>SCRAM-SHA-256</>. In the Initial
-  Client response field, the message contains the SCRAM
-  <structname>client-first-message</>.
+  indicates the chosen mechanism, <literal>SCRAM-SHA-256</literal> or
+  <literal>SCRAM-SHA-256-PLUS</literal>. (A client is free to choose either
+  mechanism, but for better security it should choose the channel-binding
+  variant if it can support it.) In the Initial Client response field, the
+  message contains the SCRAM <structname>client-first-message</structname>.
+  The <structname>client-first-message</structname> also contains the channel
+  binding type chosen by the client.
 </para>
 ____________________________________________________________________________-->
 <para>
-  客户端通过发送SASLInitialResponse消息进行响应，该消息指示选择的机制<literal>SCRAM-SHA-256</literal>。
-  在初始客户端响应字段中，该消息包含SCRAM <structname>client-first-message</structname>。
+  客户端通过发送一个SASLInitialResponse消息进行响应，该消息指出选中的机制，即<literal>SCRAM-SHA-256</literal>或者<literal>SCRAM-SHA-256-PLUS</literal>（客户端可以自由地选择机制，但是为了更安全在可以支持通道绑定变体时应该选择它）。在Initial Client响应字段中，该消息包含SCRAM的<structname>client-first-message</structname>。<structname>client-first-message</structname>还包含客户端选中的通道绑定类型。
 </para>
 </step>
 <step id="scram-server-first">
 <!--==========================orignal english content==========================
 <para>
   Server sends an AuthenticationSASLContinue message, with a SCRAM
-  <structname>server-first message</> as the content.
+  <structname>server-first-message</structname> as the content.
 </para>
 ____________________________________________________________________________-->
 <para>
-  服务器发送AuthenticationSASLContinue消息，内容为SCRAM
-  <structname>server-first message</structname>。
+  服务器发送一个AuthenticationSASLContinue消息，其内容是一个SCRAM的<structname>server-first message</structname>。
 </para>
 </step>
 <step id="scram-client-final">
 <!--==========================orignal english content==========================
 <para>
   Client sends a SASLResponse message, with SCRAM
-  <structname>client-final-message</> as the content.
+  <structname>client-final-message</structname> as the content.
 </para>
 ____________________________________________________________________________-->
 <para>
-  客户端发送SASLResponse消息，内容为SCRAM
-  <structname>client-final-message</structname>。
+  客户端发送一个SASLResponse消息，其内容是SCRAM的<structname>client-final-message</structname>。
 </para>
 </step>
 <step id="scram-server-final">
 <!--==========================orignal english content==========================
 <para>
   Server sends an AuthenticationSASLFinal message, with the SCRAM
-  <structname>server-final-message</>, followed immediately by
+  <structname>server-final-message</structname>, followed immediately by
   an AuthenticationOk message.
 </para>
 ____________________________________________________________________________-->
 <para>
-  服务器发送AuthenticationSASLFinal消息，内容为SCRAM
-  <structname>server-final-message</structname>，紧接着是一个AuthenticationOk消息。
+  服务器发送一个AuthenticationSASLFinal消息，其中是SCRAM的<structname>server-final-message</structname>，后面紧接着一个AuthenticationOk消息。
 </para>
 </step>
 </procedure>
@@ -2396,20 +2630,41 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <para>
 To initiate streaming replication, the frontend sends the
-<literal>replication</> parameter in the startup message. A Boolean value
-of <literal>true</> tells the backend to go into walsender mode, wherein a
-small set of replication commands can be issued instead of SQL statements. Only
-the simple query protocol can be used in walsender mode.
-Replication commands are logged in the server log when
-<xref linkend="guc-log-replication-commands"> is enabled.
-Passing <literal>database</> as the value instructs walsender to connect to
-the database specified in the <literal>dbname</> parameter, which will allow
-the connection to be used for logical replication from that database.
+<literal>replication</literal> parameter in the startup message. A Boolean
+value of <literal>true</literal> (or <literal>on</literal>,
+<literal>yes</literal>, <literal>1</literal>) tells the backend to go into
+physical replication walsender mode, wherein a small set of replication
+commands, shown below, can be issued instead of SQL statements.
 </para>
 ____________________________________________________________________________-->
 <para>
-要启动流复制，前端在启动消息中发送<literal>replication</literal>参数。一个布尔值<literal>true</literal>会告诉后端进入到walsender模式，在其中一小组复制命令而不是SQL命令可以被发出。只有简单查询协议可以在walsender模式中使用。在启用<xref linkend="guc-log-replication-commands"/>时，服务器日志中会记录复制命令。传递<literal>database</literal>作为值指示 walsender 连接到<literal>dbname</literal>参数指定的数据库，这将允许该连接被用于来自哪个数据库的逻辑复制。
+要启动流复制，前端在启动消息中发送<literal>replication</literal>参数。布尔值<literal>true</literal>（或者<literal>on</literal>、<literal>yes</literal>、<literal>1</literal>）告诉后端进入到物理复制的walsender模式，在其中可以发出一个小型的复制命令集合（见下文）而不是普通的SQL命令。
 </para>
+
+<!--==========================orignal english content==========================
+<para>
+Passing <literal>database</literal> as the value for the
+<literal>replication</literal> parameter instructs the backend to go into
+logical replication walsender mode, connecting to the database specified in
+the <literal>dbname</literal> parameter.  In logical replication walsender
+mode, the replication commands shown below as well as normal SQL commands can
+be issued.
+</para>
+____________________________________________________________________________-->
+<para>
+将<literal>database</literal>作为<literal>replication</literal>参数的值传递会指示后端进入到逻辑复制的walsender模式，连接到<literal>dbname</literal>参数指定的数据库。在逻辑复制的walsender模式中，可以发出下文所示的复制命令以及普通的SQL命令。
+</para>
+
+<!--==========================orignal english content==========================
+<para>
+In either physical replication or logical replication walsender mode, only the
+simple query protocol can be used.
+</para>
+____________________________________________________________________________-->
+<para>
+在物理复制或者逻辑复制的walsender模式中，只能使用简单查询协议。
+</para>
+
 <!--==========================orignal english content==========================
 <para>
  For the purpose of testing replication commands, you can make a replication
@@ -2420,8 +2675,8 @@ ____________________________________________________________________________-->
 psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
 </programlisting>
  However, it is often more useful to use
- <xref linkend="app-pgreceivewal"> (for physical replication) or
- <xref linkend="app-pgrecvlogical"> (for logical replication).
+ <xref linkend="app-pgreceivewal"/> (for physical replication) or
+ <xref linkend="app-pgrecvlogical"/> (for logical replication).
 </para>
 ____________________________________________________________________________-->
 <para>
@@ -2434,7 +2689,17 @@ psql "dbname=postgres replication=database" -c "IDENTIFY_SYSTEM;"
 
 <!--==========================orignal english content==========================
 <para>
-The commands accepted in walsender mode are:
+Replication commands are logged in the server log when
+<xref linkend="guc-log-replication-commands"/> is enabled.
+</para>
+____________________________________________________________________________-->
+<para>
+当<xref linkend="guc-log-replication-commands"/>被启用时，复制命令会被记录在服务器日志中。
+</para>
+
+<!--==========================orignal english content==========================
+<para>
+The commands accepted in replication mode are:
 <variablelist>
   <varlistentry>
     <term><literal>IDENTIFY_SYSTEM</literal>
@@ -2508,16 +2773,16 @@ The commands accepted in walsender mode are:
     <listitem>
      <para>
       Requests the server to send the current setting of a run-time parameter.
-      This is similar to the SQL command <xref linkend="sql-show">.
+      This is similar to the SQL command <xref linkend="sql-show"/>.
      </para>
 
      <variablelist>
       <varlistentry>
-       <term><replaceable class="parameter">name</></term>
+       <term><replaceable class="parameter">name</replaceable></term>
        <listitem>
          <para>
           The name of a run-time parameter. Available parameters are documented
-          in <xref linkend="runtime-config">.
+          in <xref linkend="runtime-config"/>.
          </para>
        </listitem>
       </varlistentry>
@@ -2544,7 +2809,7 @@ The commands accepted in walsender mode are:
       </term>
       <listitem>
       <para>
-       File name of the timeline history file, e.g., <filename>00000002.history</>.
+       File name of the timeline history file, e.g., <filename>00000002.history</filename>.
       </para>
       </listitem>
       </varlistentry>
@@ -2566,38 +2831,38 @@ The commands accepted in walsender mode are:
   </varlistentry>
 
   <varlistentry id="protocol-replication-create-slot" xreflabel="CREATE_REPLICATION_SLOT">
-   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> [ <literal>TEMPORARY</> ] { <literal>PHYSICAL</> [ <literal>RESERVE_WAL</> ] | <literal>LOGICAL</> <replaceable class="parameter">output_plugin</> [ <literal>EXPORT_SNAPSHOT</> | <literal>NOEXPORT_SNAPSHOT</> | <literal>USE_SNAPSHOT</> ] }
+   <term><literal>CREATE_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</replaceable> [ <literal>TEMPORARY</literal> ] { <literal>PHYSICAL</literal> [ <literal>RESERVE_WAL</literal> ] | <literal>LOGICAL</literal> <replaceable class="parameter">output_plugin</replaceable> [ <literal>EXPORT_SNAPSHOT</literal> | <literal>NOEXPORT_SNAPSHOT</literal> | <literal>USE_SNAPSHOT</literal> ] }
      <indexterm><primary>CREATE_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
      <para>
       Create a physical or logical replication
-      slot. See <xref linkend="streaming-replication-slots"> for more about
+      slot. See <xref linkend="streaming-replication-slots"/> for more about
       replication slots.
      </para>
      <variablelist>
       <varlistentry>
-       <term><replaceable class="parameter">slot_name</></term>
+       <term><replaceable class="parameter">slot_name</replaceable></term>
        <listitem>
          <para>
           The name of the slot to create. Must be a valid replication slot
-          name (see <xref linkend="streaming-replication-slots-manipulation">).
+          name (see <xref linkend="streaming-replication-slots-manipulation"/>).
          </para>
        </listitem>
       </varlistentry>
 
       <varlistentry>
-       <term><replaceable class="parameter">output_plugin</></term>
+       <term><replaceable class="parameter">output_plugin</replaceable></term>
        <listitem>
          <para>
           The name of the output plugin used for logical decoding
-          (see <xref linkend="logicaldecoding-output-plugin">).
+          (see <xref linkend="logicaldecoding-output-plugin"/>).
          </para>
        </listitem>
       </varlistentry>
 
       <varlistentry>
-       <term><literal>TEMPORARY</></term>
+       <term><literal>TEMPORARY</literal></term>
        <listitem>
         <para>
          Specify that this replication slot is a temporary one. Temporary
@@ -2608,30 +2873,30 @@ The commands accepted in walsender mode are:
       </varlistentry>
 
       <varlistentry>
-       <term><literal>RESERVE_WAL</></term>
+       <term><literal>RESERVE_WAL</literal></term>
        <listitem>
         <para>
-         Specify that this physical replication slot reserves <acronym>WAL</>
-         immediately.  Otherwise, <acronym>WAL</> is only reserved upon
+         Specify that this physical replication slot reserves <acronym>WAL</acronym>
+         immediately.  Otherwise, <acronym>WAL</acronym> is only reserved upon
          connection from a streaming replication client.
         </para>
        </listitem>
       </varlistentry>
 
       <varlistentry>
-       <term><literal>EXPORT_SNAPSHOT</></term>
-       <term><literal>NOEXPORT_SNAPSHOT</></term>
-       <term><literal>USE_SNAPSHOT</></term>
+       <term><literal>EXPORT_SNAPSHOT</literal></term>
+       <term><literal>NOEXPORT_SNAPSHOT</literal></term>
+       <term><literal>USE_SNAPSHOT</literal></term>
        <listitem>
         <para>
          Decides what to do with the snapshot created during logical slot
-         initialization. <literal>EXPORT_SNAPSHOT</>, which is the default,
+         initialization. <literal>EXPORT_SNAPSHOT</literal>, which is the default,
          will export the snapshot for use in other sessions. This option can't
-         be used inside a transaction.  <literal>USE_SNAPSHOT</> will use the
+         be used inside a transaction.  <literal>USE_SNAPSHOT</literal> will use the
          snapshot for the current transaction executing the command. This
          option must be used in a transaction, and
          <literal>CREATE_REPLICATION_SLOT</literal> must be the first command
-         run in that transaction.  Finally, <literal>NOEXPORT_SNAPSHOT</> will
+         run in that transaction.  Finally, <literal>NOEXPORT_SNAPSHOT</literal> will
          just use the snapshot for logical decoding as normal but won't do
          anything else with it.
         </para>
@@ -2691,15 +2956,15 @@ The commands accepted in walsender mode are:
   </varlistentry>
 
   <varlistentry>
-    <term><literal>START_REPLICATION</literal> [ <literal>SLOT</literal> <replaceable class="parameter">slot_name</> ] [ <literal>PHYSICAL</literal> ] <replaceable class="parameter">XXX/XXX</> [ <literal>TIMELINE</literal> <replaceable class="parameter">tli</> ]
+    <term><literal>START_REPLICATION</literal> [ <literal>SLOT</literal> <replaceable class="parameter">slot_name</replaceable> ] [ <literal>PHYSICAL</literal> ] <replaceable class="parameter">XXX/XXX</replaceable> [ <literal>TIMELINE</literal> <replaceable class="parameter">tli</replaceable> ]
      <indexterm><primary>START_REPLICATION</primary></indexterm>
     </term>
     <listitem>
      <para>
       Instructs server to start streaming WAL, starting at
-      WAL location <replaceable class="parameter">XXX/XXX</>.
+      WAL location <replaceable class="parameter">XXX/XXX</replaceable>.
       If <literal>TIMELINE</literal> option is specified,
-      streaming starts on timeline <replaceable class="parameter">tli</>;
+      streaming starts on timeline <replaceable class="parameter">tli</replaceable>;
       otherwise, the server's current timeline is selected. The server can
       reply with an error, for example if the requested section of WAL has already
       been recycled. On success, server responds with a CopyBothResponse
@@ -2708,9 +2973,9 @@ The commands accepted in walsender mode are:
 
      <para>
       If a slot's name is provided
-      via <replaceable class="parameter">slot_name</>, it will be updated
+      via <replaceable class="parameter">slot_name</replaceable>, it will be updated
       as replication progresses so that the server knows which WAL segments,
-      and if <varname>hot_standby_feedback</> is on which transactions,
+      and if <varname>hot_standby_feedback</varname> is on which transactions,
       are still needed by the standby.
      </para>
 
@@ -3044,11 +3309,11 @@ The commands accepted in walsender mode are:
     </listitem>
   </varlistentry>
   <varlistentry>
-    <term><literal>START_REPLICATION</literal> <literal>SLOT</literal> <replaceable class="parameter">slot_name</> <literal>LOGICAL</literal> <replaceable class="parameter">XXX/XXX</> [ ( <replaceable>option_name</replaceable> [ <replaceable>option_value</replaceable> ] [, ...] ) ]</term>
+    <term><literal>START_REPLICATION</literal> <literal>SLOT</literal> <replaceable class="parameter">slot_name</replaceable> <literal>LOGICAL</literal> <replaceable class="parameter">XXX/XXX</replaceable> [ ( <replaceable>option_name</replaceable> [ <replaceable>option_value</replaceable> ] [, ...] ) ]</term>
     <listitem>
      <para>
       Instructs server to start streaming WAL for logical replication, starting
-      at WAL location <replaceable class="parameter">XXX/XXX</>. The server can
+      at WAL location <replaceable class="parameter">XXX/XXX</replaceable>. The server can
       reply with an error, for example if the requested section of WAL has already
       been recycled. On success, server responds with a CopyBothResponse
       message, and then starts to stream WAL to the frontend.
@@ -3066,7 +3331,7 @@ The commands accepted in walsender mode are:
 
      <variablelist>
       <varlistentry>
-       <term><literal>SLOT</literal> <replaceable class="parameter">slot_name</></term>
+       <term><literal>SLOT</literal> <replaceable class="parameter">slot_name</replaceable></term>
        <listitem>
          <para>
           The name of the slot to stream changes from. This parameter is required,
@@ -3077,7 +3342,7 @@ The commands accepted in walsender mode are:
        </listitem>
       </varlistentry>
       <varlistentry>
-       <term><replaceable class="parameter">XXX/XXX</></term>
+       <term><replaceable class="parameter">XXX/XXX</replaceable></term>
        <listitem>
         <para>
          The WAL location to begin streaming at.
@@ -3085,7 +3350,7 @@ The commands accepted in walsender mode are:
        </listitem>
       </varlistentry>
       <varlistentry>
-       <term><replaceable class="parameter">option_name</></term>
+       <term><replaceable class="parameter">option_name</replaceable></term>
        <listitem>
         <para>
          The name of an option passed to the slot's logical decoding plugin.
@@ -3093,7 +3358,7 @@ The commands accepted in walsender mode are:
        </listitem>
       </varlistentry>
       <varlistentry>
-       <term><replaceable class="parameter">option_value</></term>
+       <term><replaceable class="parameter">option_value</replaceable></term>
        <listitem>
         <para>
          Optional value, in the form of a string constant, associated with the
@@ -3107,7 +3372,7 @@ The commands accepted in walsender mode are:
 
   <varlistentry>
     <term>
-     <literal>DROP_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</> <optional> <literal>WAIT</> </optional>
+     <literal>DROP_REPLICATION_SLOT</literal> <replaceable class="parameter">slot_name</replaceable> <optional> <literal>WAIT</literal> </optional>
      <indexterm><primary>DROP_REPLICATION_SLOT</primary></indexterm>
     </term>
     <listitem>
@@ -3118,7 +3383,7 @@ The commands accepted in walsender mode are:
      </para>
      <variablelist>
       <varlistentry>
-       <term><replaceable class="parameter">slot_name</></term>
+       <term><replaceable class="parameter">slot_name</replaceable></term>
        <listitem>
          <para>
           The name of the slot to drop.
@@ -3141,7 +3406,7 @@ The commands accepted in walsender mode are:
   </varlistentry>
 
   <varlistentry>
-    <term><literal>BASE_BACKUP</literal> [ <literal>LABEL</literal> <replaceable>'label'</replaceable> ] [ <literal>PROGRESS</literal> ] [ <literal>FAST</literal> ] [ <literal>WAL</literal> ] [ <literal>NOWAIT</literal> ] [ <literal>MAX_RATE</literal> <replaceable>rate</replaceable> ] [ <literal>TABLESPACE_MAP</literal> ]
+    <term><literal>BASE_BACKUP</literal> [ <literal>LABEL</literal> <replaceable>'label'</replaceable> ] [ <literal>PROGRESS</literal> ] [ <literal>FAST</literal> ] [ <literal>WAL</literal> ] [ <literal>NOWAIT</literal> ] [ <literal>MAX_RATE</literal> <replaceable>rate</replaceable> ] [ <literal>TABLESPACE_MAP</literal> ] [ <literal>NOVERIFY_CHECKSUMS</literal> ]
      <indexterm><primary>BASE_BACKUP</primary></indexterm>
     </term>
     <listitem>
@@ -3158,13 +3423,13 @@ The commands accepted in walsender mode are:
           Sets the label of the backup. If none is specified, a backup label
           of <literal>base backup</literal> will be used. The quoting rules
           for the label are the same as a standard SQL string with
-          <xref linkend="guc-standard-conforming-strings"> turned on.
+          <xref linkend="guc-standard-conforming-strings"/> turned on.
          </para>
         </listitem>
        </varlistentry>
 
        <varlistentry>
-        <term><literal>PROGRESS</></term>
+        <term><literal>PROGRESS</literal></term>
         <listitem>
          <para>
           Request information required to generate a progress report. This will
@@ -3181,7 +3446,7 @@ The commands accepted in walsender mode are:
        </varlistentry>
 
        <varlistentry>
-        <term><literal>FAST</></term>
+        <term><literal>FAST</literal></term>
         <listitem>
          <para>
           Request a fast checkpoint.
@@ -3215,7 +3480,7 @@ The commands accepted in walsender mode are:
        </varlistentry>
 
        <varlistentry>
-        <term><literal>MAX_RATE</literal> <replaceable>rate</></term>
+        <term><literal>MAX_RATE</literal> <replaceable>rate</replaceable></term>
         <listitem>
          <para>
           Limit (throttle) the maximum amount of data transferred from server
@@ -3236,7 +3501,18 @@ The commands accepted in walsender mode are:
           <filename>pg_tblspc</filename> in a file named
           <filename>tablespace_map</filename>. The tablespace map file includes
           each symbolic link name as it exists in the directory
-          <filename>pg_tblspc/</> and the full path of that symbolic link.
+          <filename>pg_tblspc/</filename> and the full path of that symbolic link.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>NOVERIFY_CHECKSUMS</literal></term>
+        <listitem>
+         <para>
+          By default, checksums are verified during a base backup if they are
+          enabled. Specifying <literal>NOVERIFY_CHECKSUMS</literal> disables
+          this verification.
          </para>
         </listitem>
        </varlistentry>
@@ -3289,9 +3565,9 @@ The commands accepted in walsender mode are:
      <para>
       After the second regular result set, one or more CopyResponse results
       will be sent, one for the main data directory and one for each additional tablespace other
-      than <literal>pg_default</> and <literal>pg_global</>. The data in
+      than <literal>pg_default</literal> and <literal>pg_global</literal>. The data in
       the CopyResponse results will be a tar format (following the
-      <quote>ustar interchange format</> specified in the POSIX 1003.1-2008
+      <quote>ustar interchange format</quote> specified in the POSIX 1003.1-2008
       standard) dump of the tablespace contents, except that the two trailing
       blocks of zeroes specified in the standard are omitted.
       After the tar data is complete, a final ordinary result set will be sent,
@@ -3302,29 +3578,40 @@ The commands accepted in walsender mode are:
      <para>
       The tar archive for the data directory and each tablespace will contain
       all files in the directories, regardless of whether they are
-      <productname>PostgreSQL</> files or other files added to the same
+      <productname>PostgreSQL</productname> files or other files added to the same
       directory. The only excluded files are:
       <itemizedlist spacing="compact" mark="bullet">
        <listitem>
         <para>
-         <filename>postmaster.pid</>
+         <filename>postmaster.pid</filename>
         </para>
        </listitem>
        <listitem>
         <para>
-         <filename>postmaster.opts</>
+         <filename>postmaster.opts</filename>
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         <filename>pg_internal.init</filename> (found in multiple directories)
         </para>
        </listitem>
        <listitem>
         <para>
          Various temporary files and directories created during the operation
          of the PostgreSQL server, such as any file or directory beginning
-         with <filename>pgsql_tmp</>.
+         with <filename>pgsql_tmp</filename> and temporary relations.
         </para>
        </listitem>
        <listitem>
         <para>
-         <filename>pg_wal</>, including subdirectories. If the backup is run
+         Unlogged relations, except for the init fork which is required to
+         recreate the (empty) unlogged relation on recovery.
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         <filename>pg_wal</filename>, including subdirectories. If the backup is run
          with WAL files included, a synthesized version of <filename>pg_wal</filename> will be
          included, but it will only contain the files necessary for the
          backup to work, not the rest of the contents.
@@ -3332,10 +3619,10 @@ The commands accepted in walsender mode are:
        </listitem>
        <listitem>
         <para>
-         <filename>pg_dynshmem</>, <filename>pg_notify</>,
-         <filename>pg_replslot</>, <filename>pg_serial</>,
-         <filename>pg_snapshots</>, <filename>pg_stat_tmp</>, and
-         <filename>pg_subtrans</> are copied as empty directories (even if
+         <filename>pg_dynshmem</filename>, <filename>pg_notify</filename>,
+         <filename>pg_replslot</filename>, <filename>pg_serial</filename>,
+         <filename>pg_snapshots</filename>, <filename>pg_stat_tmp</filename>, and
+         <filename>pg_subtrans</filename> are copied as empty directories (even if
          they are symbolic links).
         </para>
        </listitem>
@@ -3359,7 +3646,7 @@ The commands accepted in walsender mode are:
 ____________________________________________________________________________-->
 <para>
 
-在walsender模式中可以接受的命令有：
+在复制模式中可以接受的命令有：
 
 <variablelist>
   <varlistentry>
@@ -3401,7 +3688,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-       当前的 WAL 刷写位置。用于得到一个在预写日志中的已知位置作为流的开始位置。
+       当前的WAL刷写位置。用于得到一个在预写式日志中的已知位置作为流的开始位置。
       </para>
       </listitem>
       </varlistentry>
@@ -3428,7 +3715,7 @@ ____________________________________________________________________________-->
     </term>
     <listitem>
      <para>
-      请求服务器发送运行时参数的当前设置。这与SQL命令<xref linkend="sql-show"/>类似。
+      请求服务器发送一个运行时参数的当前设置。这类似于SQL命令<xref linkend="sql-show"/>。
      </para>
 
      <variablelist>
@@ -3436,7 +3723,7 @@ ____________________________________________________________________________-->
        <term><replaceable class="parameter">name</replaceable></term>
        <listitem>
          <para>
-          运行时参数的名称。在<xref linkend="runtime-config"/>中记录了可用的参数。
+          运行时参数的名称。可用的参数在<xref linkend="runtime-config"/>中。
          </para>
        </listitem>
       </varlistentry>
@@ -3445,7 +3732,7 @@ ____________________________________________________________________________-->
   </varlistentry>
 
   <varlistentry>
-  <term><literal>TIMELINE_HISTORY</literal> <replaceable class="parameter">tli</replaceable>
+    <term><literal>TIMELINE_HISTORY</literal> <replaceable class="parameter">tli</replaceable>
      <indexterm><primary>TIMELINE_HISTORY</primary></indexterm>
     </term>
     <listitem>
@@ -3516,7 +3803,7 @@ ____________________________________________________________________________-->
        <term><literal>TEMPORARY</literal></term>
        <listitem>
         <para>
-         声明该复制槽是临时的。出错或会话结束时，不保存临时槽并自动将其删除。
+         指定这个复制槽是一个临时复制槽。临时复制槽不会被保存在磁盘上并且在发生错误或者会话结束时会被自动删除。
         </para>
        </listitem>
       </varlistentry>
@@ -3536,19 +3823,14 @@ ____________________________________________________________________________-->
        <term><literal>USE_SNAPSHOT</literal></term>
        <listitem>
         <para>
-         决定如何处理逻辑插槽初始化期间创建的快照。默认情况下，
-		 <literal>EXPORT_SNAPSHOT</literal>将导出快照以用于其他会话。该选项不能在事务中使用。
-		 <literal>USE_SNAPSHOT</literal>将使用执行命令的当前事务的快照。
-		 该选项必须在事务中使用，并且<literal>CREATE_REPLICATION_SLOT</literal>
-		 必须是在该事务中运行的第一个命令。最后，<literal>NOEXPORT_SNAPSHOT</literal>
-		 将正常使用快照进行逻辑解码，但不会对其执行任何操作。
+         决定如何处理在逻辑槽初始化期间取到的快照。默认值<literal>EXPORT_SNAPSHOT</literal>将把该快照导出以备在其他会话中使用。这个选项不能在事务外面使用。<literal>USE_SNAPSHOT</literal>将把该快照用于正在执行命令的当前事务。这个选项必须被用在一个事务中，并且<literal>CREATE_REPLICATION_SLOT</literal>必须是该事务中运行的第一个命令。最后，<literal>NOEXPORT_SNAPSHOT</literal>将按照正常把该快照用于逻辑解码，但是不会对它做其他事情。
         </para>
        </listitem>
       </varlistentry>
-	  </variablelist>
+     </variablelist>
 
      <para>
-      为了响应此命令，服务器将发送包含以下字段的单行结果集：
+      作为对这个命令的响应，服务器将发送一个一行的结果集，其中包含下列字段：
 
       <variablelist>
        <varlistentry>
@@ -3564,7 +3846,7 @@ ____________________________________________________________________________-->
         <term><literal>consistent_point</literal> (<type>text</type>)</term>
         <listitem>
          <para>
-          插槽一致的WAL位置。这是从此复制插槽开始流式传输的最早位置。
+          该槽达到一致的WAL位置。这是在该复制槽上可以开始流的最早位置。
          </para>
         </listitem>
        </varlistentry>
@@ -3573,8 +3855,7 @@ ____________________________________________________________________________-->
         <term><literal>snapshot_name</literal> (<type>text</type>)</term>
         <listitem>
          <para>
-          该命令导出的快照标识符。在此连接上执行新命令或复制连接关闭之前，
-		  快照有效。如果创建的插槽是物理的，则为空。
+          被这个命令导出的快照的标识符。该快照一直是有效的，直到在这个连接中执行了新的命令或者该复制连接被关闭。如果被创建的槽是物理槽，则为空。
          </para>
         </listitem>
        </varlistentry>
@@ -3583,13 +3864,13 @@ ____________________________________________________________________________-->
         <term><literal>output_plugin</literal> (<type>text</type>)</term>
         <listitem>
          <para>
-          新创建的复制插槽使用的输出插件的名称。如果创建的插槽是物理的，则为空。
+          新创建的复制槽使用的输出插件的名称。如果被创建的槽是物理槽，则为空。
          </para>
         </listitem>
        </varlistentry>
       </variablelist>
      </para>
-	</listitem>
+    </listitem>
   </varlistentry>
 
   <varlistentry>
@@ -3662,7 +3943,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          在传送时服务器的系统时钟，以从2000-01-01午夜开始的微秒计。
+          在传送时服务器的系统时钟，以从2000-01-01午夜开始的微妙计。
       </para>
       </listitem>
       </varlistentry>
@@ -3716,7 +3997,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          在传送时服务器的系统时钟，以从2000-01-01午夜开始的微秒计。
+          在传送时服务器的系统时钟，以从2000-01-01午夜开始的微妙计。
       </para>
       </listitem>
       </varlistentry>
@@ -3796,7 +4077,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          在传送时客户端的系统时钟，以从2000-01-01午夜开始的微秒计。
+          在传送时客户端的系统时钟，以从2000-01-01午夜开始的微妙计。
       </para>
       </listitem>
       </varlistentry>
@@ -3842,7 +4123,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          在传送时客户端的系统时钟，以从2000-01-01午夜开始的微秒计。
+          在传送时客户端的系统时钟，以从2000-01-01午夜开始的微妙计。
       </para>
       </listitem>
       </varlistentry>
@@ -3852,9 +4133,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          备用数据库的当前全局xmin，不包括来自任何复制插槽的catalog_xmin。
-		  如果此值和以下catalog_xmin均为0，则将此视为热备机反馈将不再在此连接上发送的通知。
-		  稍后的非零消息可以重新启动反馈机制。
+          后备机的当前全局xmin，排除来自任何复制槽的catalog_xmin。如果这个值和接下来的catalog_xmin都为0，这会被当作一个通知表示在这个连接上将不会再发送热备反馈。后来的非0消息将重新启动反馈机制。
       </para>
       </listitem>
       </varlistentry>
@@ -3864,7 +4143,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          备用服务器上全局xmin xid的时代。
+          后备机上全局xmin事务ID的世代。
       </para>
       </listitem>
       </varlistentry>
@@ -3874,8 +4153,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          备用数据库中任何复制插槽的最低catalog_xmin。
-		  如果备用数据库上不存在catalog_xmin或者热备份反馈被禁用，则设置为0。
+          后备机上任意复制槽中的最小catalog_xmin。如果在后备机上不存在catalog_xmin或者热备反馈被禁用，这个值被设置为0。
       </para>
       </listitem>
       </varlistentry>
@@ -3885,7 +4163,7 @@ ____________________________________________________________________________-->
       </term>
       <listitem>
       <para>
-          备用服务器上catalog_xmin xid的时代。
+          后备机上全局catalog_xmin事务ID的世代。
       </para>
       </listitem>
       </varlistentry>
@@ -3957,8 +4235,7 @@ ____________________________________________________________________________-->
     </term>
     <listitem>
      <para>
-      删除一个复制槽，释放任何保留的服务器端资源。
-	  如果插槽是在walsender连接到的数据库以外的数据库中创建的逻辑插槽，则此命令将失败。
+      删除一个复制槽，释放任何保留的服务器端资源。如果该槽是一个在不同于walsender所连接的数据库中创建的逻辑槽，这个命令会失败。
      </para>
      <variablelist>
       <varlistentry>
@@ -3974,12 +4251,11 @@ ____________________________________________________________________________-->
        <term><literal>WAIT</literal></term>
        <listitem>
         <para>
-         此选项会导致命令等待处于活动状态的插槽，直到它变为非活动状态，
-		 而不是默认的引发错误行为。
+         如果槽正处于活跃状态，这个选项会导致命令等待，直到槽变得不活跃，而不是像默认行为那样直接报错。
         </para>
        </listitem>
       </varlistentry>
-	  </variablelist>
+     </variablelist>
     </listitem>
   </varlistentry>
 
@@ -4053,6 +4329,15 @@ ____________________________________________________________________________-->
          </para>
         </listitem>
        </varlistentry>
+
+       <varlistentry>
+        <term><literal>NOVERIFY_CHECKSUMS</literal></term>
+        <listitem>
+         <para>
+          默认情况下，如果启用了校验码，在基础备份期间会验证校验码。指定<literal>NOVERIFY_CHECKSUMS</literal>可以禁用这种验证。
+         </para>
+        </listitem>
+       </varlistentry>
       </variablelist>
      </para>
      <para>
@@ -4109,8 +4394,17 @@ ____________________________________________________________________________-->
        </listitem>
        <listitem>
         <para>
-         在PostgreSQL服务器运行期间创建的各种临时文件和目录，
-		 例如任何以<filename>pgsql_tmp</filename>开头的文件或目录。
+         <filename>pg_internal.init</filename>（在多个目录中都有）
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         在PostgreSQL服务器操作过程中创建的各种临时文件和目录，例如任何以<filename>pgsql_tmp</filename>开头的文件或目录以及临时关系。
+        </para>
+       </listitem>
+       <listitem>
+        <para>
+         不做日志的关系，init分支除外，恢复时重建（空的）不做日志关系时需要它。
         </para>
        </listitem>
        <listitem>
@@ -4122,14 +4416,13 @@ ____________________________________________________________________________-->
         <para>
          <filename>pg_dynshmem</filename>、<filename>pg_notify</filename>、
          <filename>pg_replslot</filename>、<filename>pg_serial</filename>、
-         <filename>pg_snapshots</filename>、<filename>pg_stat_tmp</filename>和
-         <filename>pg_subtrans</filename>被复制为一个空目录（即使它们是符号链接）。
+         <filename>pg_snapshots</filename>、<filename>pg_stat_tmp</filename>以及
+         <filename>pg_subtrans</filename>会被拷贝为空目录（即使它们是符号链接）。
         </para>
        </listitem>
        <listitem>
         <para>
-         除常规文件和目录之外的其他文件，例如符号链接（除了上面列出的目录之外）
-		 和特殊设备文件，会被跳过（<filename>pg_tblspc</filename>中的符号链接会被保留）。
+         跳过除常规文件和目录之外的其他文件，例如符号链接（不同于上面所列出的目录）和特殊设备文件。（<filename>pg_tblspc</filename>中的符号链接会被保留）。
         </para>
        </listitem>
       </itemizedlist>
@@ -4147,20 +4440,20 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
  <title>Logical Streaming Replication Protocol</title>
 ____________________________________________________________________________-->
- <title>逻辑流式复制协议</title>
+ <title>逻辑流复制协议</title>
 
 <!--==========================orignal english content==========================
  <para>
   This section describes the logical replication protocol, which is the message
   flow started by the <literal>START_REPLICATION</literal>
-  <literal>SLOT</literal> <replaceable class="parameter">slot_name</>
+  <literal>SLOT</literal> <replaceable class="parameter">slot_name</replaceable>
   <literal>LOGICAL</literal> replication command.
  </para>
 ____________________________________________________________________________-->
  <para>
-  本节介绍逻辑复制协议，它是由<literal>START_REPLICATION</literal>
+  这一节介绍逻辑复制协议，它是一种以复制命令<literal>START_REPLICATION</literal>
   <literal>SLOT</literal> <replaceable class="parameter">slot_name</replaceable>
-  <literal>LOGICAL</literal>复制命令启动的消息流。
+  <literal>LOGICAL</literal>开始的消息流。
  </para>
 
 <!--==========================orignal english content==========================
@@ -4170,14 +4463,14 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  逻辑流式复制协议建立在物理流式复制协议的基元上。
+  逻辑流复制协议建立在物理流复制协议的原始积累之上。
  </para>
 
  <sect2 id="protocol-logical-replication-params">
 <!--==========================orignal english content==========================
   <title>Logical Streaming Replication Parameters</title>
 ____________________________________________________________________________-->
-  <title>逻辑流式复制参数</title>
+  <title>逻辑流复制参数</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -4214,7 +4507,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   逻辑复制<literal>START_REPLICATION</literal>命令接受下列参数：
+   逻辑复制命令<literal>START_REPLICATION</literal>接受下列参数：
 
    <variablelist>
     <varlistentry>
@@ -4223,7 +4516,7 @@ ____________________________________________________________________________-->
      </term>
      <listitem>
       <para>
-       协议版本。当前仅支持版本<literal>1</literal>。
+       协议版本。当前支持版本<literal>1</literal>。
       </para>
      </listitem>
     </varlistentry>
@@ -4234,8 +4527,7 @@ ____________________________________________________________________________-->
      </term>
      <listitem>
       <para>
-       逗号分隔的要订阅的发布名称列表（接收更改）。
-	   单个发布名称被视为标准对象名称，并可根据需要引用。
+       要订阅（接收更改）的publication名称列表，用逗号分隔。每一个publication名称个体都被当作一个标准的对象名称，并且可以根据需要加上引号。
       </para>
      </listitem>
     </varlistentry>
@@ -4254,12 +4546,11 @@ ____________________________________________________________________________-->
   <para>
    The individual protocol messages are discussed in the following
    subsections. Individual messages are described in
-   <xref linkend="protocol-logicalrep-message-formats">.
+   <xref linkend="protocol-logicalrep-message-formats"/>.
   </para>
 ____________________________________________________________________________-->
   <para>
-   单个协议消息在以下小节中讨论。
-   单独的消息在<xref linkend="protocol-logicalrep-message-formats"/>中描述。
+   协议消息的个体在接下来的小节中讨论。个体的消息在<xref linkend="protocol-logicalrep-message-formats"/>中介绍。
   </para>
 
 <!--==========================orignal english content==========================
@@ -4270,8 +4561,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   所有顶级协议消息都以消息类型字节开头。虽然在代码中表示为字符，
-   但这是一个带符号的字节，没有关联的编码。
+   所有的顶层协议消息都以一个消息类型字节开头。虽然被表示为字符代码，但这是一个没有相关编码的有符号字节。
   </para>
 
 <!--==========================orignal english content==========================
@@ -4282,7 +4572,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   由于流式复制协议提供消息长度，因此顶层协议消息不需要在头中嵌入一个长度。
+   由于流复制协议提供了一个消息长度，因此不需要顶层协议消息在其头部嵌入长度。
   </para>
 
  </sect2>
@@ -4291,7 +4581,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <title>Logical Replication Protocol Message Flow</title>
 ____________________________________________________________________________-->
-  <title>逻辑复制协议消息流</title>
+  <title>逻辑复制协议的消息流</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -4301,8 +4591,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   除了<literal>START_REPLICATION</literal>命令和重放进度消息之外，
-   所有信息仅从后端流向前端。
+   除<literal>START_REPLICATION</literal>命令和重放进度消息之外，所有信息流的方向都是从后端到前端。
   </para>
 
 <!--==========================orignal english content==========================
@@ -4313,8 +4602,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   逻辑复制协议逐个发送单个事务。
-   这意味着一对Begin和Commit消息之间的所有消息都属于同一个事务。
+   逻辑复制协议会逐个发送事务个体。这意味着在一对Begin消息和Commit消息之间的所有消息都属于同一个事务。
   </para>
 
 <!--==========================orignal english content==========================
@@ -4330,10 +4618,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   每个发送的事务包含零个或多个DML消息（插入、更新、删除）。在级联设置的情况下，
-   它也可以包含起始消息。起始消息表明事务发起于不同的复制节点。
-   由于逻辑复制协议范围内的复制节点几乎可以做任何事情，唯一的标识符是起始名称。
-   下游负责根据需要处理（如果需要）。起始消息始终在事务中的任何DML消息之前发送。
+   每一个被发送的事务都包含零个或者多个DML消息（插入、更新、删除）。在级联设置的情况下，它还包括Origin消息。Origin消息表示该事务是在不同的复制节点上产生的。由于逻辑复制协议范围内的复制节点可以是任何东西，所以唯一的标识符是源头的名称。其下游的责任是根据需要处理这一信息（如果需要处理）。Origin消息总是在事务中任何DML消息之前被发送。
   </para>
 
 <!--==========================orignal english content==========================
@@ -4348,11 +4633,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   每个DML消息都包含一个任意的关系ID，它可以映射到Relation消息中的ID。
-   Relation消息描述给定关系的模式。Relation消息是为给定关系发送的，
-   因为它是我们第一次在当前会话中为给定关系发送DML消息，
-   或者是因为自从发送最后一个Relation消息以来关系定义已更改。
-   该协议假定客户端能够为尽可能多的关系缓存元数据。
+   每个DML消息中都包含一个任意的关系ID，它可以被映射到Relation消息中的一个ID。Relation消息描述给定关系的模式。为一个给定的关系发送Relation消息的时机是：在当前会话中第一次为该关系发送DML消息，或者从上一次该关系的Relation消息以后该关系的定义发生改变。协议假定客户端有能力缓存够用的关系元数据。
   </para>
  </sect2>
 </sect1>
@@ -5263,7 +5544,6 @@ ____________________________________________________________________________-->
 </listitem>
 </varlistentry>
 
-
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
@@ -5337,7 +5617,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为认证请求。
+                标识该消息是一个认证请求。
 </para>
 </listitem>
 </varlistentry>
@@ -5347,7 +5627,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                以字节为单位的消息内容长度，包括自身。
+                消息内容的长度，以字节为单位，包括其自身。
 </para>
 </listitem>
 </varlistentry>
@@ -5357,13 +5637,12 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                指定需要SASL认证。
+                指定SASL认证被要求。
 </para>
 </listitem>
 </varlistentry>
 </variablelist>
-消息正文是SASL身份验证机制的列表，按服务器的优先顺序排列。
-最后一个认证机制名称后需要一个零字节作为终结符。对于每个机制，有以下几点：
+消息体是一个SASL认证机制的列表，该列表按照服务器偏爱的顺序组织。在最后一个认证机制名称的后面需要一个零字节作为终结符。对于每一种机制，有下列信息：
 <variablelist>
 <varlistentry>
 <term>
@@ -5371,7 +5650,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                SASL认证机制的名称。
+                一种SASL认证机制的名称。
 </para>
 </listitem>
 </varlistentry>
@@ -5449,7 +5728,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为认证请求。
+                标识该消息是一个认证请求。
 </para>
 </listitem>
 </varlistentry>
@@ -5459,7 +5738,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                以字节为单位的消息内容长度，包括自身。
+                消息内容的长度，以字节为单位，包括其自身。
 </para>
 </listitem>
 </varlistentry>
@@ -5469,7 +5748,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                指定此消息包含SASL质询。
+                指定这个消息包含一个SASL挑战。
 </para>
 </listitem>
 </varlistentry>
@@ -5479,7 +5758,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                SASL数据，特定于正在使用的SASL机制。
+                SASL数据，与使用的SASL机制有关。
 </para>
 </listitem>
 </varlistentry>
@@ -5553,13 +5832,12 @@ ____________________________________________________________________________-->
 
 <variablelist>
 <varlistentry>
-
 <term>
         Byte1('R')
 </term>
 <listitem>
 <para>
-                将消息标识为认证请求。
+                标识该消息是一个认证请求。
 </para>
 </listitem>
 </varlistentry>
@@ -5569,7 +5847,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                以字节为单位的消息内容长度，包括自身。
+                消息内容的长度，以字节为单位，包括其自身。
 </para>
 </listitem>
 </varlistentry>
@@ -5579,7 +5857,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                指定SASL认证已完成。
+                指定SASL认证已经完成。
 </para>
 </listitem>
 </varlistentry>
@@ -5589,7 +5867,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                SASL结果“附加数据”，特定于正在使用的SASL机制。
+                SASL产出的“额外数据”，与使用的SASL机制有关。
 </para>
 </listitem>
 </varlistentry>
@@ -5598,7 +5876,6 @@ ____________________________________________________________________________-->
 </para>
 </listitem>
 </varlistentry>
-
 
 <varlistentry>
 <!--==========================orignal english content==========================
@@ -5773,7 +6050,7 @@ Bind (F)
 <listitem>
 <para>
                 The number of parameter format codes that follow
-                (denoted <replaceable>C</> below).
+                (denoted <replaceable>C</replaceable> below).
                 This can be zero to indicate that there are no parameters
                 or that the parameters all use the default format (text);
                 or one, in which case the specified format code is applied
@@ -5784,7 +6061,7 @@ Bind (F)
 </varlistentry>
 <varlistentry>
 <term>
-        Int16[<replaceable>C</>]
+        Int16[<replaceable>C</replaceable>]
 </term>
 <listitem>
 <para>
@@ -5842,7 +6119,7 @@ Bind (F)
 <listitem>
 <para>
                 The number of result-column format codes that follow
-                (denoted <replaceable>R</> below).
+                (denoted <replaceable>R</replaceable> below).
                 This can be zero to indicate that there are no result columns
                 or that the result columns should all use the default format
                 (text);
@@ -5854,7 +6131,7 @@ Bind (F)
 </varlistentry>
 <varlistentry>
 <term>
-        Int16[<replaceable>R</>]
+        Int16[<replaceable>R</replaceable>]
 </term>
 <listitem>
 <para>
@@ -6090,7 +6367,7 @@ CancelRequest (F)
 <listitem>
 <para>
                 The cancel request code.  The value is chosen to contain
-                <literal>1234</> in the most significant 16 bits, and <literal>5678</> in the
+                <literal>1234</literal> in the most significant 16 bits, and <literal>5678</literal> in the
                 least significant 16 bits.  (To avoid confusion, this code
                 must not be the same as any protocol version number.)
 </para>
@@ -6210,8 +6487,8 @@ Close (F)
 </term>
 <listitem>
 <para>
-                '<literal>S</>' to close a prepared statement; or
-                '<literal>P</>' to close a portal.
+                '<literal>S</literal>' to close a prepared statement; or
+                '<literal>P</literal>' to close a portal.
 </para>
 </listitem>
 </varlistentry>
@@ -6807,7 +7084,7 @@ CopyInResponse (B)
                 characters, etc).
                 1 indicates the overall copy format is binary (similar
                 to DataRow format).
-                See <xref linkend="sql-copy">
+                See <xref linkend="sql-copy"/>
                 for more information.
 </para>
 </listitem>
@@ -6819,13 +7096,13 @@ CopyInResponse (B)
 <listitem>
 <para>
                 The number of columns in the data to be copied
-                (denoted <replaceable>N</> below).
+                (denoted <replaceable>N</replaceable> below).
 </para>
 </listitem>
 </varlistentry>
 <varlistentry>
 <term>
-        Int16[<replaceable>N</>]
+        Int16[<replaceable>N</replaceable>]
 </term>
 <listitem>
 <para>
@@ -6944,7 +7221,7 @@ CopyOutResponse (B)
                 is textual (rows separated by newlines, columns
                 separated by separator characters, etc). 1 indicates
                 the overall copy format is binary (similar to DataRow
-                format). See <xref linkend="sql-copy"> for more information.
+                format). See <xref linkend="sql-copy"/> for more information.
 </para>
 </listitem>
 </varlistentry>
@@ -6955,13 +7232,13 @@ CopyOutResponse (B)
 <listitem>
 <para>
                 The number of columns in the data to be copied
-                (denoted <replaceable>N</> below).
+                (denoted <replaceable>N</replaceable> below).
 </para>
 </listitem>
 </varlistentry>
 <varlistentry>
 <term>
-        Int16[<replaceable>N</>]
+        Int16[<replaceable>N</replaceable>]
 </term>
 <listitem>
 <para>
@@ -7080,7 +7357,7 @@ CopyBothResponse (B)
                 is textual (rows separated by newlines, columns
                 separated by separator characters, etc). 1 indicates
                 the overall copy format is binary (similar to DataRow
-                format). See <xref linkend="sql-copy"> for more information.
+                format). See <xref linkend="sql-copy"/> for more information.
 </para>
 </listitem>
 </varlistentry>
@@ -7091,13 +7368,13 @@ CopyBothResponse (B)
 <listitem>
 <para>
                 The number of columns in the data to be copied
-                (denoted <replaceable>N</> below).
+                (denoted <replaceable>N</replaceable> below).
 </para>
 </listitem>
 </varlistentry>
 <varlistentry>
 <term>
-        Int16[<replaceable>N</>]
+        Int16[<replaceable>N</replaceable>]
 </term>
 <listitem>
 <para>
@@ -7348,8 +7625,8 @@ Describe (F)
 </term>
 <listitem>
 <para>
-                '<literal>S</>' to describe a prepared statement; or
-                '<literal>P</>' to describe a portal.
+                '<literal>S</literal>' to describe a prepared statement; or
+                '<literal>P</literal>' to describe a portal.
 </para>
 </listitem>
 </varlistentry>
@@ -7534,7 +7811,7 @@ ErrorResponse (B)
                 A code identifying the field type; if zero, this is
                 the message terminator and no string follows.
                 The presently defined field types are listed in
-                <xref linkend="protocol-error-fields">.
+                <xref linkend="protocol-error-fields"/>.
                 Since more field types might be added in future,
                 frontends should silently ignore fields of unrecognized
                 type.
@@ -7661,7 +7938,7 @@ Execute (F)
 <para>
                 Maximum number of rows to return, if portal contains
                 a query that returns rows (ignored otherwise).  Zero
-                denotes <quote>no limit</>.
+                denotes <quote>no limit</quote>.
 </para>
 </listitem>
 </varlistentry>
@@ -7836,7 +8113,7 @@ FunctionCall (F)
 <listitem>
 <para>
                 The number of argument format codes that follow
-                (denoted <replaceable>C</> below).
+                (denoted <replaceable>C</replaceable> below).
                 This can be zero to indicate that there are no arguments
                 or that the arguments all use the default format (text);
                 or one, in which case the specified format code is applied
@@ -7847,7 +8124,7 @@ FunctionCall (F)
 </varlistentry>
 <varlistentry>
 <term>
-        Int16[<replaceable>C</>]
+        Int16[<replaceable>C</replaceable>]
 </term>
 <listitem>
 <para>
@@ -8131,6 +8408,7 @@ ____________________________________________________________________________-->
 </listitem>
 </varlistentry>
 
+
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
@@ -8189,8 +8467,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为GSSAPI或SSPI响应。请注意，这也用于SASL和密码响应消息。
-				确切的消息类型可以从上下文中推导出来。
+                标识该消息是一个GSSAPI或SSPI响应。注意这也被用于SASL和口令响应消息。准确的消息类型可以从上下文中得出。
 </para>
 </listitem>
 </varlistentry>
@@ -8200,7 +8477,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                以字节为单位的消息内容长度，包括自身。
+                消息内容的长度，以字节为单位，包括其自身。
 </para>
 </listitem>
 </varlistentry>
@@ -8210,7 +8487,141 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                GSSAPI/SSPI特定的消息数据。
+                GSSAPI/SSPI相关的消息数据。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+NegotiateProtocolVersion (B)
+</term>
+____________________________________________________________________________-->
+<term>
+NegotiateProtocolVersion (B)
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('v')
+</term>
+<listitem>
+<para>
+                Identifies the message as a protocol version negotiation
+                message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Newest minor protocol version supported by the server
+                for the major protocol version requested by the client.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Number of protocol options not recognized by the server.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        Then, for protocol option not recognized by the server, there
+        is the following:
+<variablelist>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                The option name.
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('v')
+</term>
+<listitem>
+<para>
+                标识该消息是一个协议版本协商消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                消息内容的长度，以字节为单位，包括其自身。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                对于客户端请求的主协议版本，服务器能支持的最新的次协议版本。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                服务器无法识别的协议选项数目。
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+        然后，对于服务器无法识别的协议选项，还有下列信息：
+<variablelist>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                选项名称。
 </para>
 </listitem>
 </varlistentry>
@@ -8336,7 +8747,7 @@ NoticeResponse (B)
                 A code identifying the field type; if zero, this is
                 the message terminator and no string follows.
                 The presently defined field types are listed in
-                <xref linkend="protocol-error-fields">.
+                <xref linkend="protocol-error-fields"/>.
                 Since more field types might be added in future,
                 frontends should silently ignore fields of unrecognized
                 type.
@@ -8470,7 +8881,7 @@ NotificationResponse (B)
 </term>
 <listitem>
 <para>
-                The <quote>payload</> string passed from the notifying process.
+                The <quote>payload</quote> string passed from the notifying process.
 </para>
 </listitem>
 </varlistentry>
@@ -9042,8 +9453,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                标识该消息是一个口令响应。注意这也被用于GSSAPI、SSPI和SASL响应消息。
-				确切的消息类型可以从上下文中推导出来。
+                标识该消息是一个口令响应。注意这也被用于GSSAPI、SSPI以及SASL响应消息。确切的消息类型可以从上下文推出。
 </para>
 </listitem>
 </varlistentry>
@@ -9273,9 +9683,9 @@ ReadyForQuery (B)
 <listitem>
 <para>
                 Current backend transaction status indicator.
-                Possible values are '<literal>I</>' if idle (not in
-                a transaction block); '<literal>T</>' if in a transaction
-                block; or '<literal>E</>' if in a failed transaction
+                Possible values are '<literal>I</literal>' if idle (not in
+                a transaction block); '<literal>T</literal>' if in a transaction
+                block; or '<literal>E</literal>' if in a failed transaction
                 block (queries will be rejected until block is ended).
 </para>
 </listitem>
@@ -9419,7 +9829,7 @@ RowDescription (B)
 </term>
 <listitem>
 <para>
-                The data type size (see <varname>pg_type.typlen</>).
+                The data type size (see <varname>pg_type.typlen</varname>).
                 Note that negative values denote variable-width types.
 </para>
 </listitem>
@@ -9430,7 +9840,7 @@ RowDescription (B)
 </term>
 <listitem>
 <para>
-                The type modifier (see <varname>pg_attribute.atttypmod</>).
+                The type modifier (see <varname>pg_attribute.atttypmod</varname>).
                 The meaning of the modifier is type-specific.
 </para>
 </listitem>
@@ -9645,8 +10055,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将该消息标识为初始SASL响应。请注意，这也用于GSSAPI、SSPI和密码响应消息。
-				确切的消息类型是从上下文中推导出来的。
+                标识该消息是一个初始SASL响应。注意这也被用于GSSAPI、SSPI以及口令响应消息。确切的消息类型可以从上下文推知。
 </para>
 </listitem>
 </varlistentry>
@@ -9656,7 +10065,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                以字节为单位的消息内容长度，包括自身。
+                消息内容的长度，以字节为单位，包括其自身。
 </para>
 </listitem>
 </varlistentry>
@@ -9676,7 +10085,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                接下来SASL机制特定的“初始客户端响应”的长度，如果没有初始响应，则为-1。
+                后面跟着的SASL机制相关的"Initial Client Response"的长度，如果没有Initial Response则为-1。
 </para>
 </listitem>
 </varlistentry>
@@ -9686,7 +10095,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                SASL机制特定的“初始响应”。
+                SASL机制相关的"Initial Response"。
 </para>
 </listitem>
 </varlistentry>
@@ -9694,6 +10103,7 @@ ____________________________________________________________________________-->
 </para>
 </listitem>
 </varlistentry>
+
 
 <varlistentry>
 <!--==========================orignal english content==========================
@@ -9753,8 +10163,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将该消息标识为SASL响应。请注意，这也用于GSSAPI、SSPI和密码响应消息。
-				确切的消息类型可以从上下文中推导出来。
+                标识该消息是一个初始SASL响应。注意这也被用于GSSAPI、SSPI以及口令响应消息。确切的消息类型可以从上下文推知。
 </para>
 </listitem>
 </varlistentry>
@@ -9764,18 +10173,17 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                以字节为单位的消息内容长度，包括自身。
+                消息内容的长度，以字节为单位，包括其自身。
 </para>
 </listitem>
 </varlistentry>
-
 <varlistentry>
 <term>
         Byte<replaceable>n</replaceable>
 </term>
 <listitem>
 <para>
-                SASL机制特定的消息数据。
+                SASL机制相关的消息数据。
 </para>
 </listitem>
 </varlistentry>
@@ -9783,6 +10191,8 @@ ____________________________________________________________________________-->
 </para>
 </listitem>
 </varlistentry>
+
+
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
@@ -9814,7 +10224,7 @@ SSLRequest (F)
 <listitem>
 <para>
                 The <acronym>SSL</acronym> request code.  The value is chosen to contain
-                <literal>1234</> in the most significant 16 bits, and <literal>5679</> in the
+                <literal>1234</literal> in the most significant 16 bits, and <literal>5679</literal> in the
                 least significant 16 bits.  (To avoid confusion, this code
                 must not be the same as any protocol version number.)
 </para>
@@ -9896,7 +10306,7 @@ StartupMessage (F)
         parameter name and value strings.  A zero byte is required as a
         terminator after the last name/value pair.
         Parameters can appear in any
-        order.  <literal>user</> is required, others are optional.
+        order.  <literal>user</literal> is required, others are optional.
         Each parameter is specified as:
 <variablelist>
 <varlistentry>
@@ -9910,7 +10320,7 @@ StartupMessage (F)
 <variablelist>
 <varlistentry>
 <term>
-                <literal>user</>
+                <literal>user</literal>
 </term>
 <listitem>
 <para>
@@ -9921,7 +10331,7 @@ StartupMessage (F)
 </varlistentry>
 <varlistentry>
 <term>
-                <literal>database</>
+                <literal>database</literal>
 </term>
 <listitem>
 <para>
@@ -9931,7 +10341,7 @@ StartupMessage (F)
 </varlistentry>
 <varlistentry>
 <term>
-                <literal>options</>
+                <literal>options</literal>
 </term>
 <listitem>
 <para>
@@ -9939,34 +10349,36 @@ StartupMessage (F)
                         deprecated in favor of setting individual run-time
                         parameters.)  Spaces within this string are
                         considered to separate arguments, unless escaped with
-                        a backslash (<literal>\</>); write <literal>\\</> to
+                        a backslash (<literal>\</literal>); write <literal>\\</literal> to
                         represent a literal backslash.
 </para>
 </listitem>
 </varlistentry>
 <varlistentry>
 <term>
-                <literal>replication</>
+                <literal>replication</literal>
 </term>
 <listitem>
 <para>
                         Used to connect in streaming replication mode, where
                         a small set of replication commands can be issued
                         instead of SQL statements. Value can be
-                        <literal>true</>, <literal>false</>, or
-                        <literal>database</>, and the default is
-                        <literal>false</>. See
-                        <xref linkend="protocol-replication"> for details.
+                        <literal>true</literal>, <literal>false</literal>, or
+                        <literal>database</literal>, and the default is
+                        <literal>false</literal>. See
+                        <xref linkend="protocol-replication"/> for details.
 </para>
 </listitem>
 </varlistentry>
 </variablelist>
 
-                In addition to the above, any run-time parameter that can be
-                set at backend start time might be listed.  Such settings
-                will be applied during backend start (after parsing the
-                command-line arguments if any).  The values will act as
-                session defaults.
+                In addition to the above, other parameters may be listed.
+                Parameter names beginning with <literal>_pq_.</literal> are
+                reserved for use as protocol extensions, while others are
+                treated as run-time parameters to be set at backend start
+                time.  Such settings will be applied during backend start
+                (after parsing the command-line arguments if any) and will
+                act as session defaults.
 </para>
 </listitem>
 </varlistentry>
@@ -10057,18 +10469,13 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                        用于在流式复制模式下连接，
-						其中可以发出一小组复制命令而不是SQL语句。
-						值可以是<literal>true</literal>，<literal>false</literal>或
-						<literal>database</literal>，默认值是<literal>false</literal>。
-						有关详细信息，请参见<xref linkend="protocol-replication"/>。
+                        用于连入流复制模式，其中可以发出复制命令的一个小型集合而不是SQL语句。值可以是<literal>true</literal>、<literal>false</literal>或者<literal>database</literal>，默认值是<literal>false</literal>。详情请参考<xref linkend="protocol-replication"/>。
 </para>
 </listitem>
 </varlistentry>
-
 </variablelist>
 
-                除了上文提到的外，在后端启动时可设置的任何运行时参数都可以被列出来。 这样的设置将在后端启动时被应用（在分析了可能出现的命令行参数之后）。这些值将成为会话缺省。
+                除了上述参数之外，还可以列出其他参数。以<literal>_pq_.</literal>开头的参数名被保留给协议扩展之用，而其他的参数名被当做在后端开始时要设置的运行时参数。这类设置将在后端启动期间被应用（如果有命令行参数，则在解析完命令行参数之后）并且将作为会话的默认值。
 </para>
 </listitem>
 </varlistentry>
@@ -10253,7 +10660,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>S</>
+<literal>S</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10263,10 +10670,10 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <para>
         Severity: the field contents are
-        <literal>ERROR</>, <literal>FATAL</>, or
-        <literal>PANIC</> (in an error message), or
-        <literal>WARNING</>, <literal>NOTICE</>, <literal>DEBUG</>,
-        <literal>INFO</>, or <literal>LOG</> (in a notice message),
+        <literal>ERROR</literal>, <literal>FATAL</literal>, or
+        <literal>PANIC</literal> (in an error message), or
+        <literal>WARNING</literal>, <literal>NOTICE</literal>, <literal>DEBUG</literal>,
+        <literal>INFO</literal>, or <literal>LOG</literal> (in a notice message),
         or a localized translation of one of these.  Always present.
 </para>
 ____________________________________________________________________________-->
@@ -10279,7 +10686,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>V</>
+<literal>V</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10289,13 +10696,13 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <para>
         Severity: the field contents are
-        <literal>ERROR</>, <literal>FATAL</>, or
-        <literal>PANIC</> (in an error message), or
-        <literal>WARNING</>, <literal>NOTICE</>, <literal>DEBUG</>,
-        <literal>INFO</>, or <literal>LOG</> (in a notice message).
-        This is identical to the <literal>S</> field except
+        <literal>ERROR</literal>, <literal>FATAL</literal>, or
+        <literal>PANIC</literal> (in an error message), or
+        <literal>WARNING</literal>, <literal>NOTICE</literal>, <literal>DEBUG</literal>,
+        <literal>INFO</literal>, or <literal>LOG</literal> (in a notice message).
+        This is identical to the <literal>S</literal> field except
         that the contents are never localized.  This is present only in
-        messages generated by <productname>PostgreSQL</> versions 9.6
+        messages generated by <productname>PostgreSQL</productname> versions 9.6
         and later.
 </para>
 ____________________________________________________________________________-->
@@ -10308,7 +10715,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>C</>
+<literal>C</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10318,7 +10725,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <para>
         Code: the SQLSTATE code for the error (see <xref
-        linkend="errcodes-appendix">).  Not localizable.  Always present.
+        linkend="errcodes-appendix"/>).  Not localizable.  Always present.
 </para>
 ____________________________________________________________________________-->
 <para>
@@ -10330,7 +10737,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>M</>
+<literal>M</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10353,7 +10760,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>D</>
+<literal>D</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10375,7 +10782,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>H</>
+<literal>H</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10399,7 +10806,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>P</>
+<literal>P</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10423,7 +10830,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>p</>
+<literal>p</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10432,10 +10839,10 @@ ____________________________________________________________________________-->
 <listitem>
 <!--==========================orignal english content==========================
 <para>
-        Internal position: this is defined the same as the <literal>P</>
+        Internal position: this is defined the same as the <literal>P</literal>
         field, but it is used when the cursor position refers to an internally
         generated command rather than the one submitted by the client.
-        The <literal>q</> field will always appear when this field appears.
+        The <literal>q</literal> field will always appear when this field appears.
 </para>
 ____________________________________________________________________________-->
 <para>
@@ -10447,7 +10854,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>q</>
+<literal>q</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10469,7 +10876,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>W</>
+<literal>W</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10493,7 +10900,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>s</>
+<literal>s</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10515,7 +10922,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>t</>
+<literal>t</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10538,7 +10945,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>c</>
+<literal>c</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10561,7 +10968,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>d</>
+<literal>d</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10584,7 +10991,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>n</>
+<literal>n</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10609,7 +11016,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>F</>
+<literal>F</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10631,7 +11038,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>L</>
+<literal>L</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10653,7 +11060,7 @@ ____________________________________________________________________________-->
 <varlistentry>
 <!--==========================orignal english content==========================
 <term>
-<literal>R</>
+<literal>R</literal>
 </term>
 ____________________________________________________________________________-->
 <term>
@@ -10678,7 +11085,7 @@ ____________________________________________________________________________-->
  <para>
   The fields for schema name, table name, column name, data type name, and
   constraint name are supplied only for a limited number of error types;
-  see <xref linkend="errcodes-appendix">.  Frontends should not assume that
+  see <xref linkend="errcodes-appendix"/>.  Frontends should not assume that
   the presence of any of these fields guarantees the presence of another
   field.  Core error sources observe the interrelationships noted above, but
   user-defined functions may use these fields in other ways.  In the same
@@ -10716,15 +11123,12 @@ ____________________________________________________________________________-->
 This section describes the detailed format of each logical replication message.
 These messages are returned either by the replication slot SQL interface or are
 sent by a walsender. In case of a walsender they are encapsulated inside the replication
-protocol WAL messages as described in <xref linkend="protocol-replication">
+protocol WAL messages as described in <xref linkend="protocol-replication"/>
 and generally obey same message flow as physical replication.
 </para>
 ____________________________________________________________________________-->
 <para>
-本节介绍每个逻辑复制消息的详细格式。
-这些消息由复制插槽SQL接口返回或由walsender发送。对于walsender，
-它们被封装在复制协议WAL消息中，如<xref linkend="protocol-replication"/>中所述，
-并且通常遵循与物理复制相同的消息流。
+这一节介绍每一种逻辑复制消息的详细格式。这些消息会通过复制槽的SQL接口返回或者由walsender发送。在由walsender发送的情况下，它们被封装在<xref linkend="protocol-replication"/>中所述的复制协议WAL消息中，并且通常服从和物理复制相同的消息流。
 </para>
 
 <variablelist>
@@ -10797,7 +11201,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为开始消息。
+                标识该消息是一个开始消息。
 </para>
 </listitem>
 </varlistentry>
@@ -10807,7 +11211,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                事务的结束LSN。
+                该事务的最终LSN。
 </para>
 </listitem>
 </varlistentry>
@@ -10817,7 +11221,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                提交事务的时间戳。自PostgreSQL纪元（2000-01-01）以来的数值是微秒数。
+                该事务的提交时间戳。该值是自PostgreSQL纪元（2000-01-01）以来的微秒数。
 </para>
 </listitem>
 </varlistentry>
@@ -10827,7 +11231,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                事务的Xid。
+                事务的XID。
 </para>
 </listitem>
 </varlistentry>
@@ -10915,7 +11319,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为提交消息。
+                标识该消息是一个提交消息。
 </para>
 </listitem>
 </varlistentry>
@@ -10925,7 +11329,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                标志；目前未使用（必须为0）。
+                标志，当前未使用（必须为0）。
 </para>
 </listitem>
 </varlistentry>
@@ -10945,7 +11349,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                事务的结束LSN。
+                该事务的结束LSN。
 </para>
 </listitem>
 </varlistentry>
@@ -10955,7 +11359,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                提交事务的时间戳。自PostgreSQL纪元（2000-01-01）以来的数值是微秒数。
+                该事务的提交时间戳。该值是自PostgreSQL纪元（2000-01-01）以来的微秒数。
 </para>
 </listitem>
 </varlistentry>
@@ -11022,7 +11426,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为原始消息。
+                标识该消息是一个源头消息。
 </para>
 </listitem>
 </varlistentry>
@@ -11032,7 +11436,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                源服务器上提交的LSN。
+                源头服务器上的提交LSN。
 </para>
 </listitem>
 </varlistentry>
@@ -11042,7 +11446,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                起始的名称。
+                源头的名称。
 </para>
 </listitem>
 </varlistentry>
@@ -11056,7 +11460,7 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-  请注意，单个事务内可能有多个Origin消息。
+  注意在一个单一事务中可能有多个Origin消息。
 </para>
 
 </listitem>
@@ -11196,7 +11600,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为关系消息。
+                标识该消息是一个关系消息。
 </para>
 </listitem>
 </varlistentry>
@@ -11216,7 +11620,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                命名空间（<literal>pg_catalog</literal>的空字符串）。
+                名字空间（<literal>pg_catalog</literal>是空字符串）。
 </para>
 </listitem>
 </varlistentry>
@@ -11226,7 +11630,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                关系名称。
+                关系名。
 </para>
 </listitem>
 </varlistentry>
@@ -11237,8 +11641,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                该关系的副本标识设置（与<structname>pg_class</structname>
-				中的<structfield>relreplident</structfield>相同）。
+                该关系的副本标识设置（和<structname>pg_class</structname>中的<structfield>relreplident</structfield>相同）。
 </para>
 </listitem>
 </varlistentry>
@@ -11254,7 +11657,7 @@ ____________________________________________________________________________-->
 </listitem>
 </varlistentry>
 </variablelist>
-        接下来，每列显示以下消息部分：
+        接下来，会为每一列出现下面的消息部分：
 <variablelist>
 <varlistentry>
 <term>
@@ -11262,7 +11665,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                列的标志。当前可以是0表示没有标记或1表示将列标记为关键字的一部分。
+                该列的标志。当前可以是0（无标志）或者1（标记该列为键的一部分）。
 </para>
 </listitem>
 </varlistentry>
@@ -11292,7 +11695,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                列的类型修饰符(<structfield>atttypmod</structfield>).
+                列的类型修饰符（<structfield>atttypmod</structfield>）。
 </para>
 </listitem>
 </varlistentry>
@@ -11369,7 +11772,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为类型消息。
+                标识该消息是一个类型消息。
 </para>
 </listitem>
 </varlistentry>
@@ -11389,7 +11792,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                命名空间（<literal>pg_catalog</literal>的空字符串）。
+                名字空间（<literal>pg_catalog</literal>的是空字符串）。
 </para>
 </listitem>
 </varlistentry>
@@ -11478,7 +11881,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为插入消息。
+                标识该消息是一个插入消息。
 </para>
 </listitem>
 </varlistentry>
@@ -11488,7 +11891,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                与关系消息中的ID对应的关系的ID。
+                对应于关系消息中的ID的关系的ID。
 </para>
 </listitem>
 </varlistentry>
@@ -11498,7 +11901,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将以下TupleData消息标识为新元组。
+                标识接下来的TupleData消息是一个新元组。
 </para>
 </listitem>
 </varlistentry>
@@ -11629,7 +12032,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为更新消息。
+                标识该消息是一个更新消息。
 </para>
 </listitem>
 </varlistentry>
@@ -11639,7 +12042,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                与关系消息中的ID对应的关系的ID。
+                对应于关系消息中的ID的关系的ID。
 </para>
 </listitem>
 </varlistentry>
@@ -11650,8 +12053,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将以下TupleData子消息标识为键。该字段是可选的，
-				并且只有在更新改变了REPLICA IDENTITY索引一部分的任何一列中的数据时才存在。
+                标识接下来的TupleData子消息为一个键。这个字段是可选的并且仅当任意列中被更新更改的数据是REPLICA IDENTITY索引的一部分时才存在。
 </para>
 </listitem>
 </varlistentry>
@@ -11662,8 +12064,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将以下TupleData子消息标识为旧元组。此字段是可选的，
-				并且仅当发生更新的表的REPLICA IDENTITY设置为FULL时才存在。
+                标识接下来的TupleData子消息为一个旧元组。这个字段是可选的并且仅当发生更新的表的REPLICA IDENTITY被设置为FULL时才存在。
 </para>
 </listitem>
 </varlistentry>
@@ -11674,8 +12075,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                TupleData消息部分表示旧元组或主键的内容。
-				只有在前面的'O'或'K'部分存在时才存在。
+                TupleData消息部分表示旧元组或主键的内容。仅当之前的'0'或'K'部分存在时才存在。
 </para>
 </listitem>
 </varlistentry>
@@ -11686,7 +12086,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将以下TupleData消息标识为新元组。
+                标识接下来的TupleData消息是一个新元组。
 </para>
 </listitem>
 </varlistentry>
@@ -11697,7 +12097,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                TupleData消息部分表示新元组的内容。
+                TupleData消息部分表示一个新元组的内容。
 </para>
 </listitem>
 </varlistentry>
@@ -11712,7 +12112,7 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-    更新消息可以包含'K'消息部分或者'O'消息部分或者都不包含它们，但不同时包括它们两者。
+    Update消息可能包含一个'K'消息部分或者一个'O'消息部分，或者两者都不包含，但是绝不会同时包含两者。
 </para>
 
 </listitem>
@@ -11774,7 +12174,7 @@ Delete
 <listitem>
 <para>
                 Identifies the following TupleData message as a old tuple.
-                This field is is present if the table in which the delete has
+                This field is present if the table in which the delete has
                 happened has REPLICA IDENTITY set to FULL.
 </para>
 </listitem>
@@ -11803,7 +12203,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将消息标识为删除消息。
+                标识该消息是一个删除消息。
 </para>
 </listitem>
 </varlistentry>
@@ -11813,7 +12213,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                与关系消息中的ID对应的关系的ID。
+                对应于关系消息中的ID的关系的ID。
 </para>
 </listitem>
 </varlistentry>
@@ -11824,8 +12224,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将以下TupleData子消息标识为键。
-				如果发生删除的表使用索引作为REPLICA IDENTITY，则此字段存在。
+                标识接下来的TupleData子消息是一个键。如果发生删除的表正好用一个索引作为REPLICA IDENTITY，那么就会存在这个字段。
 </para>
 </listitem>
 </varlistentry>
@@ -11836,8 +12235,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将以下TupleData消息标识为旧元组。
-				如果发生删除的表的REPLICA IDENTITY设置为FULL，则此字段存在。
+                标识接下来的TupleData子消息为一个旧元组。这个字段是可选的并且仅当发生删除的表的REPLICA IDENTITY被设置为FULL时才存在。
 </para>
 </listitem>
 </varlistentry>
@@ -11848,7 +12246,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                TupleData消息部分，表示旧元组或主键的内容，具体取决于前一个字段。
+                TupleData消息部分表示旧元组或主键的内容，取决于前面的字段。
 </para>
 </listitem>
 </varlistentry>
@@ -11862,9 +12260,118 @@ ____________________________________________________________________________-->
 </para>
 ____________________________________________________________________________-->
 <para>
-    删除消息可能包含'K'消息部分或'O'消息部分，但不会同时包含这两个部分。
+    Delete消息可能包含一个'K'消息部分或者一个'O'消息部分，或者两者都不包含，但是绝不会同时包含两者。
 </para>
 
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Truncate
+</term>
+____________________________________________________________________________-->
+<term>
+Truncate
+</term>
+<listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('T')
+</term>
+<listitem>
+<para>
+                Identifies the message as a truncate message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Number of relations
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                Option bits for <command>TRUNCATE</command>:
+                1 for <literal>CASCADE</literal>, 2 for <literal>RESTART IDENTITY</literal>
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                ID of the relation corresponding to the ID in the relation
+                message.  This field is repeated for each relation.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('T')
+</term>
+<listitem>
+<para>
+                标识该消息是一个截断消息。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                关系的数目。
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                <command>TRUNCATE</command>的选项位：1表示<literal>CASCADE</literal>，2表示<literal>RESTART IDENTITY</literal>
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                对应于关系消息中的ID的关系的ID。这个字段会为每个关系重复出现。
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
 </listitem>
 </varlistentry>
 
@@ -11879,7 +12386,7 @@ The following message parts are shared by the above messages.
 ____________________________________________________________________________-->
 <para>
 
-以下消息部分由上述消息共享。
+下面的消息部分由上面的消息共享。
 
 </para>
 
@@ -11990,7 +12497,7 @@ ____________________________________________________________________________-->
 </listitem>
 </varlistentry>
 </variablelist>
-        接下来，为每列显示以下子消息之一：
+        接下来，为每一列会有下列子消息之一出现：
 <variablelist>
 <varlistentry>
 <term>
@@ -11998,7 +12505,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将数据标识为NULL值。
+                标识该数据为NULL值。
 </para>
 </listitem>
 </varlistentry>
@@ -12011,7 +12518,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                识别未更改的TOASTed值（实际值未发送）。
+                标识未更改的被TOAST过的值（实际值没有被发送）。
 </para>
 </listitem>
 </varlistentry>
@@ -12024,7 +12531,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                将数据标识为文本格式的值。
+                标识数据为文本格式化的值。
 </para>
 </listitem>
 </varlistentry>
@@ -12044,8 +12551,7 @@ ____________________________________________________________________________-->
 </term>
 <listitem>
 <para>
-                该列的值，以文本格式显示。（未来版本可能支持其他格式。）
-				<replaceable>n</replaceable>是上面的长度。
+                该列的值的文本格式（未来的发行可能会支持额外的格式）。<replaceable>n</replaceable>是上面的长度。
 
 </para>
 </listitem>
@@ -12081,8 +12587,8 @@ ____________________________________________________________________________-->
 The initial startup packet uses a flexible list-of-strings format
 instead of a fixed format.  Notice that session default values for run-time
 parameters can now be specified directly in the startup packet.  (Actually,
-you could do that before using the <literal>options</> field, but given the
-limited width of <literal>options</> and the lack of any way to quote
+you could do that before using the <literal>options</literal> field, but given the
+limited width of <literal>options</literal> and the lack of any way to quote
 whitespace in the values, it wasn't a very safe technique.)
 </para>
 ____________________________________________________________________________-->
@@ -12103,7 +12609,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
 <para>
-ErrorResponse and NoticeResponse ('<literal>E</>' and '<literal>N</>')
+ErrorResponse and NoticeResponse ('<literal>E</literal>' and '<literal>N</literal>')
 messages now contain multiple fields, from which the client code can
 assemble an error message of the desired level of verbosity.  Note that
 individual fields will typically not end with a newline, whereas the single
@@ -12116,7 +12622,7 @@ ErrorResponse和NoticeResponse（'<literal>E</literal>' 和 '<literal>N</literal
 
 <!--==========================orignal english content==========================
 <para>
-The ReadyForQuery ('<literal>Z</>') message includes a transaction status
+The ReadyForQuery ('<literal>Z</literal>') message includes a transaction status
 indicator.
 </para>
 ____________________________________________________________________________-->
@@ -12139,7 +12645,7 @@ BinaryRow和DataRow消息类型之间的区别不再存在了；单个DataRow消
 
 <!--==========================orignal english content==========================
 <para>
-There is a new <quote>extended query</> sub-protocol, which adds the frontend
+There is a new <quote>extended query</quote> sub-protocol, which adds the frontend
 message types Parse, Bind, Execute, Describe, Close, Flush, and Sync, and the
 backend message types ParseComplete, BindComplete, PortalSuspended,
 ParameterDescription, NoData, and CloseComplete.  Existing clients do not
@@ -12155,7 +12661,7 @@ ____________________________________________________________________________-->
 <para>
 <command>COPY</command> data is now encapsulated into CopyData and CopyDone messages.  There
 is a well-defined way to recover from errors during <command>COPY</command>.  The special
-<quote><literal>\.</></quote> last line is not needed anymore, and is not sent
+<quote><literal>\.</literal></quote> last line is not needed anymore, and is not sent
 during <command>COPY OUT</command>.
 (It is still recognized as a terminator during <command>COPY IN</command>, but its use is
 deprecated and will eventually be removed.)  Binary <command>COPY</command> is supported.
@@ -12183,7 +12689,7 @@ FunctionCall和FunctionCallResponse消息的布局变化了。FunctionCall现在
 
 <!--==========================orignal english content==========================
 <para>
-The backend sends ParameterStatus ('<literal>S</>') messages during connection
+The backend sends ParameterStatus ('<literal>S</literal>') messages during connection
 startup for all parameters it considers interesting to the client library.
 Subsequently, a ParameterStatus message is sent whenever the active value
 changes for any of these parameters.
@@ -12195,7 +12701,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
 <para>
-The RowDescription ('<literal>T</>') message carries new table OID and column
+The RowDescription ('<literal>T</literal>') message carries new table OID and column
 number fields for each column of the described row.  It also shows the format
 code for each column.
 </para>
@@ -12206,7 +12712,7 @@ RowDescription（'<literal>T</literal>'）消息为所描述的行的每个列�
 
 <!--==========================orignal english content==========================
 <para>
-The CursorResponse ('<literal>P</>') message is no longer generated by
+The CursorResponse ('<literal>P</literal>') message is no longer generated by
 the backend.
 </para>
 ____________________________________________________________________________-->
@@ -12216,8 +12722,8 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
 <para>
-The NotificationResponse ('<literal>A</>') message has an additional string
-field, which can carry a <quote>payload</> string passed
+The NotificationResponse ('<literal>A</literal>') message has an additional string
+field, which can carry a <quote>payload</quote> string passed
 from the <command>NOTIFY</command> event sender.
 </para>
 ____________________________________________________________________________-->
@@ -12227,7 +12733,7 @@ NotificationResponse（'<literal>A</literal>'）消息有一个附加的字符�
 
 <!--==========================orignal english content==========================
 <para>
-The EmptyQueryResponse ('<literal>I</>') message used to include an empty
+The EmptyQueryResponse ('<literal>I</literal>') message used to include an empty
 string parameter; this has been removed.
 </para>
 ____________________________________________________________________________-->

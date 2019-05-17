@@ -3,7 +3,7 @@ doc/src/sgml/ref/alter_index.sgml
 PostgreSQL documentation
 -->
 
-<refentry id="SQL-ALTERINDEX">
+<refentry id="sql-alterindex">
 <!--==========================orignal english content==========================
  <indexterm zone="sql-alterindex">
   <primary>ALTER INDEX</primary>
@@ -42,9 +42,12 @@ ____________________________________________________________________________-->
 <synopsis>
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> RENAME TO <replaceable class="parameter">new_name</replaceable>
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> SET TABLESPACE <replaceable class="parameter">tablespace_name</replaceable>
+ALTER INDEX <replaceable class="parameter">name</replaceable> ATTACH PARTITION <replaceable class="parameter">index_name</replaceable>
 ALTER INDEX <replaceable class="parameter">name</replaceable> DEPENDS ON EXTENSION <replaceable class="parameter">extension_name</replaceable>
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> SET ( <replaceable class="parameter">storage_parameter</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> RESET ( <replaceable class="parameter">storage_parameter</replaceable> [, ... ] )
+ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> ALTER [ COLUMN ] <replaceable class="parameter">column_number</replaceable>
+    SET STATISTICS <replaceable class="parameter">integer</replaceable>
 ALTER INDEX ALL IN TABLESPACE <replaceable class="parameter">name</replaceable> [ OWNED BY <replaceable class="parameter">role_name</replaceable> [, ... ] ]
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable> [ NOWAIT ]
 </synopsis>
@@ -52,9 +55,12 @@ ____________________________________________________________________________-->
 <synopsis>
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> RENAME TO <replaceable class="parameter">new_name</replaceable>
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> SET TABLESPACE <replaceable class="parameter">tablespace_name</replaceable>
+ALTER INDEX <replaceable class="parameter">name</replaceable> ATTACH PARTITION <replaceable class="parameter">index_name</replaceable>
 ALTER INDEX <replaceable class="parameter">name</replaceable> DEPENDS ON EXTENSION <replaceable class="parameter">extension_name</replaceable>
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> SET ( <replaceable class="parameter">storage_parameter</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )
 ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> RESET ( <replaceable class="parameter">storage_parameter</replaceable> [, ... ] )
+ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">name</replaceable> ALTER [ COLUMN ] <replaceable class="parameter">column_number</replaceable>
+    SET STATISTICS <replaceable class="parameter">integer</replaceable>
 ALTER INDEX ALL IN TABLESPACE <replaceable class="parameter">name</replaceable> [ OWNED BY <replaceable class="parameter">role_name</replaceable> [, ... ] ]
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable> [ NOWAIT ]
 </synopsis>
@@ -78,6 +84,9 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       The <literal>RENAME</literal> form changes the name of the index.
+      If the index is associated with a table constraint (either
+      <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal>,
+      or <literal>EXCLUDE</literal>), the constraint is renamed as well.
       There is no effect on the stored data.
      </para>
     </listitem>
@@ -101,7 +110,20 @@ ____________________________________________________________________________-->
       this command, use <command>ALTER DATABASE</command> or explicit
       <command>ALTER INDEX</command> invocations instead if desired.
       See also
-      <xref linkend="SQL-CREATETABLESPACE">.
+      <xref linkend="sql-createtablespace"/>.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ATTACH PARTITION</literal></term>
+    <listitem>
+     <para>
+      Causes the named index to become attached to the altered index.
+      The named index must be on a partition of the table containing the
+      index being altered, and have an equivalent definition.  An attached
+      index cannot be dropped by itself, and will automatically be dropped
+      if its parent index is dropped.
      </para>
     </listitem>
    </varlistentry>
@@ -122,11 +144,11 @@ ____________________________________________________________________________-->
      <para>
       This form changes one or more index-method-specific storage parameters
       for the index.  See
-      <xref linkend="SQL-CREATEINDEX">
+      <xref linkend="sql-createindex"/>
       for details on the available parameters.  Note that the index contents
       will not be modified immediately by this command; depending on the
       parameter you might need to rebuild the index with
-      <xref linkend="SQL-REINDEX">
+      <xref linkend="sql-reindex"/>
       to get the desired effects.
      </para>
     </listitem>
@@ -137,8 +159,27 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       This form resets one or more index-method-specific storage parameters to
-      their defaults.  As with <literal>SET</>, a <literal>REINDEX</literal>
+      their defaults.  As with <literal>SET</literal>, a <literal>REINDEX</literal>
       might be needed to update the index entirely.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALTER [ COLUMN ] <replaceable class="parameter">column_number</replaceable> SET STATISTICS <replaceable class="parameter">integer</replaceable></literal></term>
+    <listitem>
+     <para>
+      This form sets the per-column statistics-gathering target for
+      subsequent <xref linkend="sql-analyze"/> operations, though can
+      be used only on index columns that are defined as an expression.
+      Since expressions lack a unique name, we refer to them using the
+      ordinal number of the index column.
+      The target can be set in the range 0 to 10000; alternatively, set it
+      to -1 to revert to using the system default statistics
+      target (<xref linkend="guc-default-statistics-target"/>).
+      For more information on the use of statistics by the
+      <productname>PostgreSQL</productname> query planner, refer to
+      <xref linkend="planner-stats"/>.
      </para>
     </listitem>
    </varlistentry>
@@ -156,8 +197,7 @@ ____________________________________________________________________________-->
     <term><literal>RENAME</literal></term>
     <listitem>
      <para>
-      <literal>RENAME</literal>形式更改该索引的名称。这对已存储的数据没有
-      影响。
+      <literal>RENAME</literal>形式更改该索引的名称。如果索引与一个表约束（<literal>UNIQUE</literal>、<literal>PRIMARY KEY</literal>或者<literal>EXCLUDE</literal>）关联，该约束也会被重命名。这对已存储的数据没有影响。
      </para>
     </listitem>
    </varlistentry>
@@ -176,7 +216,16 @@ ____________________________________________________________________________-->
       得所有锁时将会失败。注意这个命令不会移动系统目录，如果想要移动系统目录，
       应使用<command>ALTER DATABASE</command>或者显式的
       <command>ALTER INDEX</command>调用。另见
-      <xref linkend="SQL-CREATETABLESPACE"/>。
+      <xref linkend="sql-createtablespace"/>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ATTACH PARTITION</literal></term>
+    <listitem>
+     <para>
+      导致提到的索引变成附着于被修改的索引。提及的索引必须在包含被修改索引的表的一个分区上，并且具有一种等效的定义。一个附着索引不能被单独删除，它会在其父索引被删除时自动连带删除。
      </para>
     </listitem>
    </varlistentry>
@@ -196,8 +245,8 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       这种形式为该索引更改一个或者多个索引方法相关的存储参数。可用的参数详见
-      <xref linkend="SQL-CREATEINDEX"/>。注意这个命令不会立刻修改索引内容，
-      根据参数你可能需要用<xref linkend="SQL-REINDEX"/>重建索引来得到想要的
+      <xref linkend="sql-createindex"/>。注意这个命令不会立刻修改索引内容，
+      根据参数你可能需要用<xref linkend="sql-reindex"/>重建索引来得到想要的
       效果。
      </para>
     </listitem>
@@ -210,6 +259,15 @@ ____________________________________________________________________________-->
       这种形式把一个或者多个索引方法相关的存储参数重置为其默认值。正如
       <literal>SET</literal>一样，可能需要一次<literal>REINDEX</literal>来完全更新
       该索引。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALTER [ COLUMN ] <replaceable class="parameter">column_number</replaceable> SET STATISTICS <replaceable class="parameter">integer</replaceable></literal></term>
+    <listitem>
+     <para>
+      这种形式为后续的<xref linkend="sql-analyze"/>操作设置针对每个列的统计信息收集目标，不过只能用在被定义为表达式的索引列上。由于表达式缺少唯一的名称，我们通过该索引列的顺序号来引用它们。收集目标可以被设置为范围0到10000之间的值。另外，把它设置为-1会恢复到使用系统的默认统计信息目标（<xref linkend="guc-default-statistics-target"/>）。更多有关<productname>PostgreSQL</productname>查询规划器使用统计信息的内容，请参考<xref linkend="planner-stats"/>。
      </para>
     </listitem>
    </varlistentry>
@@ -241,6 +299,24 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
        <para>
         如果该索引不存在不要抛出错误。这种情况下将发出一个提示。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+<!--==========================orignal english content==========================
+      <term><replaceable class="parameter">column_number</replaceable></term>
+____________________________________________________________________________-->
+      <term><replaceable class="parameter">column_number</replaceable></term>
+      <listitem>
+<!--==========================orignal english content==========================
+       <para>
+        The ordinal number refers to the ordinal (left-to-right) position
+        of the index column.
+       </para>
+____________________________________________________________________________-->
+       <para>
+        引用该索引列的顺序（从左往右）位置的顺序号。
        </para>
       </listitem>
      </varlistentry>
@@ -362,20 +438,20 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     These operations are also possible using
-    <xref linkend="SQL-ALTERTABLE">.
-    <command>ALTER INDEX</> is in fact just an alias for the forms
-    of <command>ALTER TABLE</> that apply to indexes.
+    <xref linkend="sql-altertable"/>.
+    <command>ALTER INDEX</command> is in fact just an alias for the forms
+    of <command>ALTER TABLE</command> that apply to indexes.
    </para>
 ____________________________________________________________________________-->
    <para>
-    也可以用<xref linkend="SQL-ALTERTABLE"/>来做这些操作。实际上，
+    也可以用<xref linkend="sql-altertable"/>来做这些操作。实际上，
     <command>ALTER INDEX</command>只是<command>ALTER TABLE</command>应用在索引
     上的形式的别名而已。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
-    There was formerly an <command>ALTER INDEX OWNER</> variant, but
+    There was formerly an <command>ALTER INDEX OWNER</command> variant, but
     this is now ignored (with a warning).  An index cannot have an owner
     different from its table's owner.  Changing the table's owner
     automatically changes the index as well.
@@ -448,6 +524,21 @@ ALTER INDEX distributors SET (fillfactor = 75);
 REINDEX INDEX distributors;
 </programlisting></para>
 
+<!--==========================orignal english content==========================
+  <para>
+   Set the statistics-gathering target for an expression index:
+<programlisting>
+CREATE INDEX coord_idx ON measured (x, y, (z + t));
+ALTER INDEX coord_idx ALTER COLUMN 3 SET STATISTICS 1000;
+</programlisting></para>
+____________________________________________________________________________-->
+  <para>
+   为一个表达式索引设置统计信息收集目标：
+<programlisting>
+CREATE INDEX coord_idx ON measured (x, y, (z + t));
+ALTER INDEX coord_idx ALTER COLUMN 3 SET STATISTICS 1000;
+</programlisting></para>
+
  </refsect1>
 
  <refsect1>
@@ -458,7 +549,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   <command>ALTER INDEX</> is a <productname>PostgreSQL</productname>
+   <command>ALTER INDEX</command> is a <productname>PostgreSQL</productname>
    extension.
   </para>
 ____________________________________________________________________________-->
