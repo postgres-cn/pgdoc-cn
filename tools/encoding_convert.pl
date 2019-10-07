@@ -1,7 +1,7 @@
 # convert all sgml files from UTF8 to GBK
 
 use strict;
-use autodie;
+#use autodie;
 use File::Copy;
 use encoding "utf8";
 use encoding  "gbk";
