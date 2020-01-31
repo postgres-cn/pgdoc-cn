@@ -1,0 +1,478 @@
+<!-- doc/src/sgml/jit.sgml -->
+
+<chapter id="jit">
+<!--==========================orignal english content==========================
+ <title>Just-in-Time Compilation (<acronym>JIT</acronym>)</title>
+____________________________________________________________________________-->
+ <title>即时编译（<acronym>JIT</acronym>）</title>
+
+<!--==========================orignal english content==========================
+ <indexterm zone="jit">
+  <primary><acronym>JIT</acronym></primary>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm zone="jit">
+  <primary><acronym>JIT</acronym></primary>
+ </indexterm>
+
+<!--==========================orignal english content==========================
+ <indexterm>
+  <primary>Just-In-Time compilation</primary>
+  <see><acronym>JIT</acronym></see>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm>
+  <primary>Just-In-Time compilation</primary>
+  <see><acronym>JIT</acronym></see>
+ </indexterm>
+
+<!--==========================orignal english content==========================
+ <para>
+  This chapter explains what just-in-time compilation is, and how it can be
+  configured in <productname>PostgreSQL</productname>.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  这一章解释什么是即时编译以及如何在<productname>PostgreSQL</productname>中配置即时编译。
+ </para>
+
+ <sect1 id="jit-reason">
+<!--==========================orignal english content==========================
+  <title>What is <acronym>JIT</acronym> compilation?</title>
+____________________________________________________________________________-->
+  <title>什么是<acronym>JIT</acronym>编译？</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   Just-in-Time (<acronym>JIT</acronym>) compilation is the process of turning
+   some form of interpreted program evaluation into a native program, and
+   doing so at run time.
+   For example, instead of using general-purpose code that can evaluate
+   arbitrary SQL expressions to evaluate a particular SQL predicate
+   like <literal>WHERE a.col = 3</literal>, it is possible to generate a
+   function that is specific to that expression and can be natively executed
+   by the CPU, yielding a speedup.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   即时（Just-In-Time，<acronym>JIT</acronym>）编译是将某种形式的解释程序计算转变成原生程序的过程，并且这一过程是在运行时完成的。例如，与使用能够计算任意SQL表达式的通用代码来计算一个特定的SQL谓词（如<literal>WHERE a.col = 3</literal>）不同，可以产生一个专门针对该表达式的函数并且可以由CPU原生执行，从而得到加速。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   <productname>PostgreSQL</productname> has builtin support to perform
+   <acronym>JIT</acronym> compilation using <ulink
+   url="https://llvm.org/"><productname>LLVM</productname></ulink> when
+   <productname>PostgreSQL</productname> is built with
+   <link linkend="configure-with-llvm"><literal>-&minus;with-llvm</literal></link>.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当使用<link linkend="configure-with-llvm"><literal>--with-llvm</literal></link>编译<productname>PostgreSQL</productname>后，<productname>PostgreSQL</productname>内建支持用<ulink url="https://llvm.org/"><productname>LLVM</productname></ulink>执行<acronym>JIT</acronym>编译。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   See <filename>src/backend/jit/README</filename> for further details.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   进一步的细节请参考<filename>src/backend/jit/README</filename>。
+  </para>
+
+  <sect2 id="jit-accelerated-operations">
+<!--==========================orignal english content==========================
+   <title><acronym>JIT</acronym> Accelerated Operations</title>
+____________________________________________________________________________-->
+   <title><acronym>JIT</acronym>加速的操作</title>
+<!--==========================orignal english content==========================
+   <para>
+    Currently <productname>PostgreSQL</productname>'s <acronym>JIT</acronym>
+    implementation has support for accelerating expression evaluation and
+    tuple deforming.  Several other operations could be accelerated in the
+    future.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当前，<productname>PostgreSQL</productname>的<acronym>JIT</acronym>实现支持对表达式计算以及元组拆解的加速。未来可能有更多其他操作采用这种技术加速。
+   </para>
+<!--==========================orignal english content==========================
+   <para>
+    Expression evaluation is used to evaluate <literal>WHERE</literal>
+    clauses, target lists, aggregates and projections. It can be accelerated
+    by generating code specific to each case.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    表达式计算被用来计算<literal>WHERE</literal>子句、目标列表、聚集以及投影。通过为每一种情况生成专门的代码来实现加速。
+   </para>
+<!--==========================orignal english content==========================
+   <para>
+    Tuple deforming is the process of transforming an on-disk tuple (see <xref
+    linkend="storage-tuple-layout"/>) into its in-memory representation.
+    It can be accelerated by creating a function specific to the table layout
+    and the number of columns to be extracted.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    元组拆解是把一个磁盘上的元组（见<xref linkend="storage-tuple-layout"/>）转换成其在内存中表示的过程。通过创建一个专门针对该表布局和要被抽取的列数的函数来实现加速。
+   </para>
+  </sect2>
+
+  <sect2 id="jit-inlining">
+<!--==========================orignal english content==========================
+   <title>Inlining</title>
+____________________________________________________________________________-->
+   <title>内联</title>
+<!--==========================orignal english content==========================
+   <para>
+    <productname>PostgreSQL</productname> is very extensible and allows new
+    data types, functions, operators and other database objects to be defined;
+    see <xref linkend="extend"/>. In fact the built-in objects are implemented
+    using nearly the same mechanisms.  This extensibility implies some
+    overhead, for example due to function calls (see <xref linkend="xfunc"/>).
+    To reduce that overhead, <acronym>JIT</acronym> compilation can inline the
+    bodies of small functions into the expressions using them. That allows a
+    significant percentage of the overhead to be optimized away.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>PostgreSQL</productname>有很好的扩展性并且允许定义新的数据类型、函数、操作符以及其他数据库对象，见<xref linkend="extend"/>。实际上，内建对象都使用近乎完全相同的机制来实现。这种可扩展性隐含了一些开销，例如函数调用带来的开销（见<xref linkend="xfunc"/>）。为了降低这类开销，<acronym>JIT</acronym>编译可以把小函数的函数体内联到使用它们的表达式中。这种方式可以优化掉可观的开销。
+   </para>
+  </sect2>
+
+  <sect2 id="jit-optimization">
+<!--==========================orignal english content==========================
+   <title>Optimization</title>
+____________________________________________________________________________-->
+   <title>优化</title>
+<!--==========================orignal english content==========================
+   <para>
+    <productname>LLVM</productname> has support for optimizing generated
+    code. Some of the optimizations are cheap enough to be performed whenever
+    <acronym>JIT</acronym> is used, while others are only beneficial for
+    longer-running queries.
+    See <ulink url="https://llvm.org/docs/Passes.html#transform-passes"/> for
+    more details about optimizations.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>LLVM</productname>支持对生成的代码进行优化。一些优化代价很低，以至于可以在每次使用<acronym>JIT</acronym>时都执行，而另一些优化则只有在运行时间较长的查询中才能获益。更多有关优化的细节请参考<ulink url="https://llvm.org/docs/Passes.html#transform-passes"/>。
+   </para>
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="jit-decision">
+<!--==========================orignal english content==========================
+  <title>When to <acronym>JIT</acronym>?</title>
+____________________________________________________________________________-->
+  <title>什么时候会用<acronym>JIT</acronym>？</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   <acronym>JIT</acronym> compilation is beneficial primarily for long-running
+   CPU-bound queries. Frequently these will be analytical queries.  For short
+   queries the added overhead of performing <acronym>JIT</acronym> compilation
+   will often be higher than the time it can save.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <acronym>JIT</acronym>编译主要可以让长时间运行的CPU密集型的查询受益。对于短查询，执行<acronym>JIT</acronym>编译增加的开销常常比它节省的时间还要多。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   To determine whether <acronym>JIT</acronym> compilation should be used,
+   the total estimated cost of a query (see
+   <xref linkend="planner-stats-details"/> and
+   <xref linkend="runtime-config-query-constants"/>) is used.
+   The estimated cost of the query will be compared with the setting of <xref
+   linkend="guc-jit-above-cost"/>. If the cost is higher,
+   <acronym>JIT</acronym> compilation will be performed.
+   Two further decisions are then needed.
+   Firstly, if the estimated cost is more
+   than the setting of <xref linkend="guc-jit-inline-above-cost"/>, short
+   functions and operators used in the query will be inlined.
+   Secondly, if the estimated cost is more than the setting of <xref
+   linkend="guc-jit-optimize-above-cost"/>, expensive optimizations are
+   applied to improve the generated code.
+   Each of these options increases the <acronym>JIT</acronym> compilation
+   overhead, but can reduce query execution time considerably.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   为了判断是否应该使用<acronym>JIT</acronym>编译，会用到一个查询的总的估计代价（见<xref linkend="planner-stats-details"/>和<xref linkend="runtime-config-query-constants"/>）。查询的估计代价将与<xref linkend="guc-jit-above-cost"/>的设置进行比较。如果代价更高，<acronym>JIT</acronym>编译将被执行。然后需要两个进一步的决定。首先，如果估计代价超过<xref linkend="guc-jit-inline-above-cost"/>的设置，该查询中使用的短函数和操作符都将被内联。其次，如果估计代价超过<xref
+   linkend="guc-jit-optimize-above-cost"/>的设置，会应用昂贵的优化来改进产生的代码。这些选项中的每一种都会增加<acronym>JIT</acronym>编译的开销，但是可以可观地降低查询执行时间。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   These cost-based decisions will be made at plan time, not execution
+   time. This means that when prepared statements are in use, and a generic
+   plan is used (see <xref linkend="sql-prepare"/>), the values of the
+   configuration parameters in effect at prepare time control the decisions,
+   not the settings at execution time.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   这些基于代价的决定将在规划时做出，而不是在执行时做出。这意味着，在使用预备语句并且使用了一个一般性的计划时（见<xref linkend="sql-prepare"/>），配置参数的值实际上是在预备时控制这些决定，而不是由执行时的设置来决定。
+  </para>
+
+  <note>
+<!--==========================orignal english content==========================
+   <para>
+    If <xref linkend="guc-jit"/> is set to <literal>off</literal>, or if no
+    <acronym>JIT</acronym> implementation is available (for example because
+    the server was compiled without <literal>-&minus;with-llvm</literal>),
+    <acronym>JIT</acronym> will not be performed, even if it would be
+    beneficial based on the above criteria.  Setting <xref linkend="guc-jit"/>
+    to <literal>off</literal> has effects at both plan and execution time.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果<xref linkend="guc-jit"/>被设置为<literal>off</literal>或者没有<acronym>JIT</acronym>实现可用（例如因为服务器没有用<literal>--with-llvm</literal>编译），即便基于上述原则能带来很大的好处，<acronym>JIT</acronym>也不会被执行。把<xref linkend="guc-jit"/>设置成<literal>off</literal>对规划时和执行时都有影响。
+   </para>
+  </note>
+
+<!--==========================orignal english content==========================
+  <para>
+   <xref linkend="sql-explain"/> can be used to see whether
+   <acronym>JIT</acronym> is used or not.  As an example, here is a query that
+   is not using <acronym>JIT</acronym>:
+<screen>
+=# EXPLAIN ANALYZE SELECT SUM(relpages) FROM pg_class;
+                                                 QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Aggregate  (cost=16.27..16.29 rows=1 width=8) (actual time=0.303..0.303 rows=1 loops=1)
+   ->  Seq Scan on pg_class  (cost=0.00..15.42 rows=342 width=4) (actual time=0.017..0.111 rows=356 loops=1)
+ Planning Time: 0.116 ms
+ Execution Time: 0.365 ms
+(4 rows)
+</screen>
+   Given the cost of the plan, it is entirely reasonable that no
+   <acronym>JIT</acronym> was used; the cost of <acronym>JIT</acronym> would
+   have been bigger than the potential savings. Adjusting the cost limits
+   will lead to <acronym>JIT</acronym> use:
+<screen>
+=# SET jit_above_cost = 10;
+SET
+=# EXPLAIN ANALYZE SELECT SUM(relpages) FROM pg_class;
+                                                 QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Aggregate  (cost=16.27..16.29 rows=1 width=8) (actual time=6.049..6.049 rows=1 loops=1)
+   ->  Seq Scan on pg_class  (cost=0.00..15.42 rows=342 width=4) (actual time=0.019..0.052 rows=356 loops=1)
+ Planning Time: 0.133 ms
+ JIT:
+   Functions: 3
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 1.259 ms, Inlining 0.000 ms, Optimization 0.797 ms, Emission 5.048 ms, Total 7.104 ms
+ Execution Time: 7.416 ms
+</screen>
+   As visible here, <acronym>JIT</acronym> was used, but inlining and
+   expensive optimization were not. If <xref
+   linkend="guc-jit-inline-above-cost"/> or <xref
+   linkend="guc-jit-optimize-above-cost"/> were also lowered,
+   that would change.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <xref linkend="sql-explain"/>可以被用来看看是否使用了<acronym>JIT</acronym>。例如，这是一个没有使用<acronym>JIT</acronym>的查询：
+<screen>
+=# EXPLAIN ANALYZE SELECT SUM(relpages) FROM pg_class;
+                                                 QUERY PLAN
+-------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=16.27..16.29 rows=1 width=8) (actual time=0.303..0.303 rows=1 loops=1)
+   ->  Seq Scan on pg_class  (cost=0.00..15.42 rows=342 width=4) (actual time=0.017..0.111 rows=356 loops=1)
+ Planning Time: 0.116 ms
+ Execution Time: 0.365 ms
+(4 rows)
+</screen>
+   看看给出的计划代价，不使用<acronym>JIT</acronym>是非常合理的，<acronym>JIT</acronym>的代价会比可能得到的节省更高。调整代价限制会导致用到<acronym>JIT</acronym>：
+<screen>
+=# SET jit_above_cost = 10;
+SET
+=# EXPLAIN ANALYZE SELECT SUM(relpages) FROM pg_class;
+                                                 QUERY PLAN
+-------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=16.27..16.29 rows=1 width=8) (actual time=6.049..6.049 rows=1 loops=1)
+   ->  Seq Scan on pg_class  (cost=0.00..15.42 rows=342 width=4) (actual time=0.019..0.052 rows=356 loops=1)
+ Planning Time: 0.133 ms
+ JIT:
+   Functions: 3
+   Options: Inlining false, Optimization false, Expressions true, Deforming true
+   Timing: Generation 1.259 ms, Inlining 0.000 ms, Optimization 0.797 ms, Emission 5.048 ms, Total 7.104 ms
+ Execution Time: 7.416 ms
+</screen>
+   如这里所看到的，<acronym>JIT</acronym>被用到了，但是内联和昂贵的优化没有被用到。如果<xref linkend="guc-jit-inline-above-cost"/>或者<xref linkend="guc-jit-optimize-above-cost"/>也被降低，这种情况会被改变。
+  </para>
+ </sect1>
+
+ <sect1 id="jit-configuration" xreflabel="JIT Configuration">
+<!--==========================orignal english content==========================
+  <title>Configuration</title>
+____________________________________________________________________________-->
+  <title>配置</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   The configuration variable
+   <xref linkend="guc-jit"/> determines whether <acronym>JIT</acronym>
+   compilation is enabled or disabled.
+   If it is enabled, the configuration variables
+   <xref linkend="guc-jit-above-cost"/>, <xref
+   linkend="guc-jit-inline-above-cost"/>, and <xref
+   linkend="guc-jit-optimize-above-cost"/> determine
+   whether <acronym>JIT</acronym> compilation is performed for a query,
+   and how much effort is spent doing so.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   配置变量<xref linkend="guc-jit"/>决定启用或者禁用<acronym>JIT</acronym>编译。如果它被启用，配置变量<xref linkend="guc-jit-above-cost"/>、<xref linkend="guc-jit-inline-above-cost"/>以及<xref linkend="guc-jit-optimize-above-cost"/>判断是否要为一个查询执行<acronym>JIT</acronym>编译以及在执行中花费多大的努力。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   <xref linkend="guc-jit-provider"/> determines which <acronym>JIT</acronym>
+   implementation is used. It is rarely required to be changed. See <xref
+   linkend="jit-pluggable"/>.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <xref linkend="guc-jit-provider"/>决定使用哪一种<acronym>JIT</acronym>实现。很少需要改变这一设置。见<xref linkend="jit-pluggable"/>。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   For development and debugging purposes a few additional configuration
+   parameters exist, as described in
+   <xref linkend="runtime-config-developer"/>.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   如<xref linkend="runtime-config-developer"/>中所述，对于开发和调试目的，还有一些额外的配置参数存在。
+  </para>
+ </sect1>
+
+ <sect1 id="jit-extensibility">
+<!--==========================orignal english content==========================
+  <title>Extensibility</title>
+____________________________________________________________________________-->
+  <title>可扩展性</title>
+
+  <sect2 id="jit-extensibility-bitcode">
+<!--==========================orignal english content==========================
+   <title>Inlining Support for Extensions</title>
+____________________________________________________________________________-->
+   <title>对扩展的内联支持</title>
+<!--==========================orignal english content==========================
+   <para>
+    <productname>PostgreSQL</productname>'s <acronym>JIT</acronym>
+    implementation can inline the bodies of functions
+    of types <literal>C</literal> and <literal>internal</literal>, as well as
+    operators based on such functions.  To do so for functions in extensions,
+    the definitions of those functions need to be made available.
+    When using <link linkend="extend-pgxs">PGXS</link> to build an extension
+    against a server that has been compiled with LLVM JIT support, the
+    relevant files will be built and installed automatically.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>PostgreSQL</productname>的<acronym>JIT</acronym>实现可以内联<literal>C</literal>以及<literal>internal</literal>类型的函数体，还有基于这类函数的操作符。为了能对扩展中的函数这样做，需要让那些函数的定义可用。在使用<link linkend="extend-pgxs">PGXS</link>对一个已经编译有LLVM JIT支持的服务器构建一个扩展时，相关的文件将被自动构建并且安装。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The relevant files have to be installed into
+    <filename>$pkglibdir/bitcode/$extension/</filename> and a summary of them
+    into <filename>$pkglibdir/bitcode/$extension.index.bc</filename>, where
+    <literal>$pkglibdir</literal> is the directory returned by
+    <literal>pg_config -&minus;pkglibdir</literal> and <literal>$extension</literal>
+    is the base name of the extension's shared library.
+
+    <note>
+     <para>
+      For functions built into <productname>PostgreSQL</productname> itself,
+      the bitcode is installed into
+      <literal>$pkglibdir/bitcode/postgres</literal>.
+     </para>
+    </note>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    相关的文件必须被安装在<filename>$pkglibdir/bitcode/$extension/</filename>中并且对它们的一份概要必须被安装在<filename>$pkglibdir/bitcode/$extension.index.bc</filename>中，其中<literal>$pkglibdir</literal>是<literal>pg_config --pkglibdir</literal>返回的目录里，而<literal>$extension</literal>是扩展的共享库的基础名称。
+
+    <note>
+     <para>
+      对于编译在<productname>PostgreSQL</productname>本身中的函数，其bitcode被安装在<literal>$pkglibdir/bitcode/postgres</literal>。
+     </para>
+    </note>
+   </para>
+  </sect2>
+
+  <sect2 id="jit-pluggable">
+<!--==========================orignal english content==========================
+   <title>Pluggable <acronym>JIT</acronym> Providers</title>
+____________________________________________________________________________-->
+   <title>可插拔的<acronym>JIT</acronym>提供者</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    <productname>PostgreSQL</productname> provides a <acronym>JIT</acronym>
+    implementation based on <productname>LLVM</productname>.  The interface to
+    the <acronym>JIT</acronym> provider is pluggable and the provider can be
+    changed without recompiling (although currently, the build process only
+    provides inlining support data for <productname>LLVM</productname>).
+    The active provider is chosen via the setting
+    <xref linkend="guc-jit-provider"/>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>PostgreSQL</productname>提供一种基于<productname>LLVM</productname>的<acronym>JIT</acronym>实现。<acronym>JIT</acronym>提供者的接口是可插拔的，可以无需重编译就能改变提供者（尽管当前构建过程仅提供了对<productname>LLVM</productname>的内联支持数据）。活跃的提供者通过设置<xref linkend="guc-jit-provider"/>来选择。
+   </para>
+
+   <sect3>
+<!--==========================orignal english content==========================
+    <title><acronym>JIT</acronym> Provider Interface</title>
+____________________________________________________________________________-->
+    <title><acronym>JIT</acronym>提供者接口</title>
+<!--==========================orignal english content==========================
+    <para>
+     A <acronym>JIT</acronym> provider is loaded by dynamically loading the
+     named shared library. The normal library search path is used to locate
+     the library. To provide the required <acronym>JIT</acronym> provider
+     callbacks and to indicate that the library is actually a
+     <acronym>JIT</acronym> provider, it needs to provide a C function named
+     <function>_PG_jit_provider_init</function>. This function is passed a
+     struct that needs to be filled with the callback function pointers for
+     individual actions:
+<programlisting>
+struct JitProviderCallbacks
+{
+    JitProviderResetAfterErrorCB reset_after_error;
+    JitProviderReleaseContextCB release_context;
+    JitProviderCompileExprCB compile_expr;
+};
+
+extern void _PG_jit_provider_init(JitProviderCallbacks *cb);
+</programlisting>
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <acronym>JIT</acronym>提供者需要通过动态装载其共享库来载入。正常的搜索路径被用来定位该库。为了提供所要求的<acronym>JIT</acronym>提供者回调并且表示该库实际上是一个<acronym>JIT</acronym>提供者，它需要提供一个名为<function>_PG_jit_provider_init</function>的C函数。会有一个结构被传入这个函数，在函数中应该用回调函数指针来填充该结构：
+<programlisting>
+struct JitProviderCallbacks
+{
+    JitProviderResetAfterErrorCB reset_after_error;
+    JitProviderReleaseContextCB release_context;
+    JitProviderCompileExprCB compile_expr;
+};
+
+extern void _PG_jit_provider_init(JitProviderCallbacks *cb);
+</programlisting>
+    </para>
+   </sect3>
+  </sect2>
+ </sect1>
+
+</chapter>

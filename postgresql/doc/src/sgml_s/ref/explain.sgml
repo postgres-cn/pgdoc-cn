@@ -1,0 +1,783 @@
+<!--
+doc/src/sgml/ref/explain.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="SQL-EXPLAIN">
+<!--==========================orignal english content==========================
+ <indexterm zone="sql-explain">
+  <primary>EXPLAIN</primary>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm zone="sql-explain">
+  <primary>EXPLAIN</primary>
+ </indexterm>
+
+<!--==========================orignal english content==========================
+ <indexterm zone="sql-explain">
+  <primary>prepared statements</primary>
+  <secondary>showing the query plan</secondary>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm zone="sql-explain">
+  <primary>预备语句</primary>
+  <secondary>显示查询计划</secondary>
+ </indexterm>
+
+<!--==========================orignal english content==========================
+ <indexterm zone="sql-explain">
+  <primary>cursor</primary>
+  <secondary>showing the query plan</secondary>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm zone="sql-explain">
+  <primary>游标</primary>
+  <secondary>显示查询计划</secondary>
+ </indexterm>
+ 
+<!--==========================orignal english content==========================
+ <refmeta>
+  <refentrytitle>EXPLAIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - Language Statements</refmiscinfo>
+ </refmeta>
+____________________________________________________________________________-->
+ <refmeta>
+  <refentrytitle>EXPLAIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>SQL - 语言语句</refmiscinfo>
+ </refmeta>
+
+<!--==========================orignal english content==========================
+ <refnamediv>
+  <refname>EXPLAIN</refname>
+  <refpurpose>show the execution plan of a statement</refpurpose>
+ </refnamediv>
+____________________________________________________________________________-->
+ <refnamediv>
+  <refname>EXPLAIN</refname>
+  <refpurpose>显示一个语句的执行计划</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<!--==========================orignal english content==========================
+<synopsis>
+EXPLAIN [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] <replaceable class="parameter">statement</replaceable>
+EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">statement</replaceable>
+
+<phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
+
+    ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
+    COSTS [ <replaceable class="parameter">boolean</replaceable> ]
+    BUFFERS [ <replaceable class="parameter">boolean</replaceable> ]
+    TIMING [ <replaceable class="parameter">boolean</replaceable> ]
+    SUMMARY [ <replaceable class="parameter">boolean</replaceable> ]
+    FORMAT { TEXT | XML | JSON | YAML }
+</synopsis>
+____________________________________________________________________________-->
+<synopsis>
+EXPLAIN [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] <replaceable class="parameter">statement</replaceable>
+EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">statement</replaceable>
+
+<phrase>这里 <replaceable class="parameter">option</replaceable>可以是：</phrase>
+
+    ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
+    COSTS [ <replaceable class="parameter">boolean</replaceable> ]
+    BUFFERS [ <replaceable class="parameter">boolean</replaceable> ]
+    TIMING [ <replaceable class="parameter">boolean</replaceable> ]
+    SUMMARY [ <replaceable class="parameter">boolean</replaceable> ]
+    FORMAT { TEXT | XML | JSON | YAML }
+</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>Description</title>
+____________________________________________________________________________-->
+  <title>描述</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   This command displays the execution plan that the
+   <productname>PostgreSQL</productname> planner generates for the
+   supplied statement.  The execution plan shows how the table(s)
+   referenced by the statement will be scanned &mdash; by plain sequential scan,
+   index scan, etc. &mdash; and if multiple tables are referenced, what join
+   algorithms will be used to bring together the required rows from
+   each input table.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   这个命令显示<productname>PostgreSQL</productname>计划器为提供的语句所生成的执行计划。该执行计划会显示将怎样扫描语句中引用的表 &mdash; 普通的顺序扫描、索引扫描等等 &mdash; 以及在引用多个表时使用何种连接算法来把来自每个输入表的行连接在一起。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   The most critical part of the display is the estimated statement execution
+   cost, which is the planner's guess at how long it will take to run the
+   statement (measured in cost units that are arbitrary, but conventionally
+   mean disk page fetches).  Actually two numbers
+   are shown: the start-up cost before the first row can be returned, and
+   the total cost to return all the rows.  For most queries the total cost
+   is what matters, but in contexts such as a subquery in <literal>EXISTS</literal>, the planner
+   will choose the smallest start-up cost instead of the smallest total cost
+   (since the executor will stop after getting one row, anyway).
+   Also, if you limit the number of rows to return with a <literal>LIMIT</literal> clause,
+   the planner makes an appropriate interpolation between the endpoint
+   costs to estimate which plan is really the cheapest.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   显示中最重要的部分是估计出的语句执行代价，它是计划器对于该语句要运行多久的猜测（以任意的代价单位度量，但是习惯上表示取磁盘页面的次数）。事实上会显示两个数字：在第一行能被返回前的启动代价，以及返回所有行的总代价。对于大部分查询来说总代价是最重要的，但是在一些情景中（如<literal>EXISTS</literal>中的子查询），计划器将选择更小的启动代价来代替最小的总代价（因为因为执行器将在得到一行后停止）。此外，如果你用一个<literal>LIMIT</literal>子句限制返回行的数量，计划器会在终端代价之间做出适当的插值来估计到底哪个计划是真正代价最低的。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   The <literal>ANALYZE</literal> option causes the statement to be actually
+   executed, not only planned.  Then actual run time statistics are added to
+   the display, including the total elapsed time expended within each plan
+   node (in milliseconds) and the total number of rows it actually returned.
+   This is useful for seeing whether the planner's estimates
+   are close to reality.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <literal>ANALYZE</literal>选项导致该语句被实际执行，而不仅仅是被计划。那么实际的运行时间统计会被显示出来，包括在每个计划结点上花费的总时间（以毫秒计）以及它实际返回的行数。这对观察计划器的估计是否与实际相近很有用。
+  </para>
+
+  <important>
+<!--==========================orignal english content==========================
+   <para>
+    Keep in mind that the statement is actually executed when
+    the <literal>ANALYZE</literal> option is used.  Although
+    <command>EXPLAIN</command> will discard any output that a
+    <command>SELECT</command> would return, other side effects of the
+    statement will happen as usual.  If you wish to use
+    <command>EXPLAIN ANALYZE</command> on an
+    <command>INSERT</command>, <command>UPDATE</command>,
+    <command>DELETE</command>, <command>CREATE TABLE AS</command>,
+    or <command>EXECUTE</command> statement
+    without letting the command affect your data, use this approach:
+<programlisting>
+BEGIN;
+EXPLAIN ANALYZE ...;
+ROLLBACK;
+</programlisting>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    记住当使用了<literal>ANALYZE</literal>选项时语句会被实际执行。尽管<command>EXPLAIN</command>将丢弃<command>SELECT</command>所返回的任何输出，照例该语句的其他副作用还是会发生。如果你希望在<command>INSERT</command>、<command>UPDATE</command>、<command>DELETE</command>、<command>CREATE TABLE AS</command>或者<command>EXECUTE</command>上使用<command>EXPLAIN ANALYZE</command>而不希望它们影响你的数据，可以使用下面的方法：
+<programlisting>
+BEGIN;
+EXPLAIN ANALYZE ...;
+ROLLBACK;
+</programlisting>
+   </para>
+  </important>
+
+<!--==========================orignal english content==========================
+  <para>
+   Only the <literal>ANALYZE</literal> and <literal>VERBOSE</literal> options
+   can be specified, and only in that order, without surrounding the option
+   list in parentheses.  Prior to <productname>PostgreSQL</productname> 9.0,
+   the unparenthesized syntax was the only one supported.  It is expected that
+   all new options will be supported only in the parenthesized syntax.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   只有<literal>ANALYZE</literal>和<literal>VERBOSE</literal>选项能被指定，并且必须按照上述的顺序，不要把选项列表放在圆括号内。在<productname>PostgreSQL</productname> 9.0 之前，只支持没有圆括号的语法。我们期望所有新的选项将只在圆括号语法中支持。
+  </para>
+ </refsect1>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>Parameters</title>
+____________________________________________________________________________-->
+  <title>参数</title>
+
+  <variablelist>
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>ANALYZE</literal></term>
+____________________________________________________________________________-->
+    <term><literal>ANALYZE</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Carry out the command and show actual run times and other statistics.
+      This parameter defaults to <literal>FALSE</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      执行命令并且显示实际的运行时间和其他统计信息。这个参数默认被设置为<literal>FALSE</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>VERBOSE</literal></term>
+____________________________________________________________________________-->
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Display additional information regarding the plan.  Specifically, include
+      the output column list for each node in the plan tree, schema-qualify
+      table and function names, always label variables in expressions with
+      their range table alias, and always print the name of each trigger for
+      which statistics are displayed.  This parameter defaults to
+      <literal>FALSE</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      显示关于计划的额外信息。特别是：计划树中每个结点的输出列列表、模式限定的表和函数名、总是把表达式中的变量标上它们的范围表别名，以及总是打印统计信息被显示的每个触发器的名称。这个参数默认被设置为<literal>FALSE</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>COSTS</literal></term>
+____________________________________________________________________________-->
+    <term><literal>COSTS</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Include information on the estimated startup and total cost of each
+      plan node, as well as the estimated number of rows and the estimated
+      width of each row.
+      This parameter defaults to <literal>TRUE</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      包括每一个计划结点的估计启动和总代价，以及估计的行数和每行的宽度。这个参数默认被设置为<literal>TRUE</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>BUFFERS</literal></term>
+____________________________________________________________________________-->
+    <term><literal>BUFFERS</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Include information on buffer usage. Specifically, include the number of
+      shared blocks hit, read, dirtied, and written, the number of local blocks
+      hit, read, dirtied, and written, and the number of temp blocks read and
+      written.
+      A <emphasis>hit</> means that a read was avoided because the block was
+      found already in cache when needed.
+      Shared blocks contain data from regular tables and indexes;
+      local blocks contain data from temporary tables and indexes;
+      while temp blocks contain short-term working data used in sorts, hashes,
+      Materialize plan nodes, and similar cases.
+      The number of blocks <emphasis>dirtied</> indicates the number of
+      previously unmodified blocks that were changed by this query; while the
+      number of blocks <emphasis>written</> indicates the number of
+      previously-dirtied blocks evicted from cache by this backend during
+      query processing.
+      The number of blocks shown for an
+      upper-level node includes those used by all its child nodes.  In text
+      format, only non-zero values are printed.  This parameter may only be
+      used when <literal>ANALYZE</literal> is also enabled.  It defaults to
+      <literal>FALSE</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      包括缓冲区使用的信息。特别是：共享块命中、读取、标记为脏和写入的次数、本地块命中、读取、标记为脏和写入的次数、以及临时块读取和写入的次数。一次<emphasis>命中</emphasis>表示避免了一次读取，因为需要的块已经在缓存中找到了。共享块包含着来自于常规表和索引的数据，本地块包含着来自于临时表和索引的数据，而临时块包含着在排序、哈希、物化计划结点和类似情况中使用的短期工作数据。<emphasis>脏</emphasis>块的数量表示被这个查询改变的之前未被修改块的数量，而<emphasis>写入</emphasis>块的数量表示这个后台在查询处理期间从缓存中替换出去的脏块的数量。为一个较高层结点显示的块数包括它的所有子结点所用到的块数。在文本格式中，只会打印非零值。只有当<literal>ANALYZE</literal>也被启用时，这个参数才能使用。它的默认被设置为<literal>FALSE</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>TIMING</literal></term>
+____________________________________________________________________________-->
+    <term><literal>TIMING</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Include actual startup time and time spent in each node in the output.
+      The overhead of repeatedly reading the system clock can slow down the
+      query significantly on some systems, so it may be useful to set this
+      parameter to <literal>FALSE</literal> when only actual row counts, and
+      not exact times, are needed.  Run time of the entire statement is
+      always measured, even when node-level timing is turned off with this
+      option.
+      This parameter may only be used when <literal>ANALYZE</literal> is also
+      enabled.  It defaults to <literal>TRUE</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      在输出中包括实际启动时间以及在每个结点中花掉的时间。反复读取系统时钟的负荷在某些系统上会显著地拖慢查询，因此在只需要实际的行计数而不是实际时间时，把这个参数设置为<literal>FALSE</literal>可能会有用。即便用这个选项关闭结点层的计时，整个语句的运行时间也总是会被度量。只有当<literal>ANALYZE</literal>也被启用时，这个参数才能使用。它的默认被设置为<literal>TRUE</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SUMMARY</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Include summary information (e.g., totaled timing information) after the
+      query plan.  Summary information is included by default when
+      <literal>ANALYZE</literal> is used but otherwise is not included by
+      default, but can be enabled using this option.  Planning time in
+      <command>EXPLAIN EXECUTE</command> includes the time required to fetch
+      the plan from the cache and the time required for re-planning, if
+      necessary.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      在查询计划之后包含摘要信息（例如，总计的时间信息）。当使用<literal>ANALYZE</literal>
+	  时默认包含摘要信息，但默认情况下不包含摘要信息，但可以使用此选项启用摘要信息。
+	  使用<command>EXPLAIN EXECUTE</command>中的计划时间包括从缓存中获取计划所需的时间
+	  以及重新计划所需的时间（如有必要）。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>FORMAT</literal></term>
+____________________________________________________________________________-->
+    <term><literal>FORMAT</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Specify the output format, which can be TEXT, XML, JSON, or YAML.
+      Non-text output contains the same information as the text output
+      format, but is easier for programs to parse.  This parameter defaults to
+      <literal>TEXT</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      指定输出格式，可以是 TEXT、XML、JSON 或者 YAML。非文本输出包含和文本输出格式相同的信息，但是更容易被程序解析。这个参数默认被设置为<literal>TEXT</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><replaceable class="parameter">boolean</replaceable></term>
+____________________________________________________________________________-->
+    <term><replaceable class="parameter">boolean</replaceable></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Specifies whether the selected option should be turned on or off.
+      You can write <literal>TRUE</literal>, <literal>ON</>, or
+      <literal>1</literal> to enable the option, and <literal>FALSE</literal>,
+      <literal>OFF</>, or <literal>0</literal> to disable it.  The
+      <replaceable class="parameter">boolean</replaceable> value can also
+      be omitted, in which case <literal>TRUE</literal> is assumed.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      指定被选中的选项是否应该被打开或关闭。可以写<literal>TRUE</literal>、<literal>ON</literal>或<literal>1</literal>来启用选项，写<literal>FALSE</literal>、<literal>OFF</literal>或<literal>0</literal>禁用它。<replaceable class="parameter">boolean</replaceable>值也能被忽略，在这种情况下会假定值为<literal>TRUE</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><replaceable class="parameter">statement</replaceable></term>
+____________________________________________________________________________-->
+    <term><replaceable class="parameter">statement</replaceable></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Any <command>SELECT</>, <command>INSERT</>, <command>UPDATE</>,
+      <command>DELETE</>, <command>VALUES</>, <command>EXECUTE</>,
+      <command>DECLARE</>, <command>CREATE TABLE AS</>, or
+      <command>CREATE MATERIALIZED VIEW AS</> statement, whose execution
+      plan you wish to see.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      你想查看其执行计划的任何<command>SELECT</command>、<command>INSERT</command>、<command>UPDATE</command>、<command>DELETE</command>、<command>VALUES</command>、<command>EXECUTE</command>、<command>DECLARE</command>、<command>CREATE TABLE AS</command>或者<command>CREATE MATERIALIZED VIEW AS</command>语句。
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>Outputs</title>
+____________________________________________________________________________-->
+  <title>输出</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    The command's result is a textual description of the plan selected
+    for the <replaceable class="parameter">statement</replaceable>,
+    optionally annotated with execution statistics.
+    <xref linkend="using-explain"> describes the information provided.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这个命令的结果是为<replaceable class="parameter">statement</replaceable>选中的计划的文本描述，可能还标注了执行统计信息。<xref linkend="using-explain"/>描述了所提供的信息。
+   </para>
+ </refsect1>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>Notes</title>
+____________________________________________________________________________-->
+  <title>注解</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   In order to allow the <productname>PostgreSQL</productname> query
+   planner to make reasonably informed decisions when optimizing
+   queries, the <link
+   linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+   data should be up-to-date for all tables used in the query.  Normally
+   the <link linkend="autovacuum">autovacuum daemon</link> will take care
+   of that automatically.  But if a table has recently had substantial
+   changes in its contents, you might need to do a manual
+   <xref linkend="sql-analyze"> rather than wait for autovacuum to catch up
+   with the changes.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   为了允许<productname>PostgreSQL</productname>查询计划器在优化查询时能做出合理的知情决策，查询中用到的所有表的<link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>数据应该能保持为最新。通常这个工作会由<link linkend="autovacuum">autovacuum daemon</link>负责自动完成。但是如果一个表最近在内容上有大量的改变，我们可能需要做一次手动的<xref linkend="sql-analyze"/>而不是等待 autovacuum 捕捉这些改变。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   In order to measure the run-time cost of each node in the execution
+   plan, the current implementation of <command>EXPLAIN
+   ANALYZE</command> adds profiling overhead to query execution.
+   As a result, running <command>EXPLAIN ANALYZE</command>
+   on a query can sometimes take significantly longer than executing
+   the query normally. The amount of overhead depends on the nature of
+   the query, as well as the platform being used.  The worst case occurs
+   for plan nodes that in themselves require very little time per
+   execution, and on machines that have relatively slow operating
+   system calls for obtaining the time of day.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   为了执行计划中每个结点的运行时间开销，当前的In order to measure the run-time cost of each node in the execution
+   plan, the current implementation of <command>EXPLAIN
+   ANALYZE</command>实现为查询执行增加了 profiling overhead 。这样，在一个查询上运行<command>EXPLAIN ANALYZE</command>有时候比正常执行该查询要慢很多。开销的量取决于该查询的性质，以及使用的平台。最坏的情况会发生在那些自身执行时间很短的结点上，以及在那些具有相对较慢的有关时间的操作系统调用的机器上。
+  </para>
+ </refsect1>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>Examples</title>
+____________________________________________________________________________-->
+  <title>例子</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   To show the plan for a simple query on a table with a single
+   <type>integer</type> column and 10000 rows:
+
+<programlisting>
+EXPLAIN SELECT * FROM foo;
+
+                       QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on foo  (cost=0.00..155.00 rows=10000 width=4)
+(1 row)
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   有一个具有单个<type>integer</type>列和 10000 行的表，要显示在其上的一个简单查询的计划：
+
+<programlisting>
+EXPLAIN SELECT * FROM foo;
+
+                       QUERY PLAN
+---------------------------------------------------------
+ Seq Scan on foo  (cost=0.00..155.00 rows=10000 width=4)
+(1 row)
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+  Here is the same query, with JSON output formatting:
+<programlisting>
+EXPLAIN (FORMAT JSON) SELECT * FROM foo;
+           QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ [                             +
+   {                           +
+     "Plan": {                 +
+       "Node Type": "Seq Scan",+
+       "Relation Name": "foo", +
+       "Alias": "foo",         +
+       "Startup Cost": 0.00,   +
+       "Total Cost": 155.00,   +
+       "Plan Rows": 10000,     +
+       "Plan Width": 4         +
+     }                         +
+   }                           +
+ ]
+(1 row)
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+  这里有同样一个查询的 JSON 输出格式：
+<programlisting>
+EXPLAIN (FORMAT JSON) SELECT * FROM foo;
+           QUERY PLAN
+--------------------------------
+ [                             +
+   {                           +
+     "Plan": {                 +
+       "Node Type": "Seq Scan",+
+       "Relation Name": "foo", +
+       "Alias": "foo",         +
+       "Startup Cost": 0.00,   +
+       "Total Cost": 155.00,   +
+       "Plan Rows": 10000,     +
+       "Plan Width": 4         +
+     }                         +
+   }                           +
+ ]
+(1 row)
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   If there is an index and we use a query with an indexable
+   <literal>WHERE</literal> condition, <command>EXPLAIN</command>
+   might show a different plan:
+
+<programlisting>
+EXPLAIN SELECT * FROM foo WHERE i = 4;
+
+                         QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Index Scan using fi on foo  (cost=0.00..5.98 rows=1 width=4)
+   Index Cond: (i = 4)
+(2 rows)
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   如果有一个索引，并且我们使用了一个带有可索引<literal>WHERE</literal>条件的查询，<command>EXPLAIN</command>可能会显示一个不同的计划：
+
+<programlisting>
+EXPLAIN SELECT * FROM foo WHERE i = 4;
+
+                         QUERY PLAN
+--------------------------------------------------------------
+ Index Scan using fi on foo  (cost=0.00..5.98 rows=1 width=4)
+   Index Cond: (i = 4)
+(2 rows)
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+  Here is the same query, but in YAML format:
+<programlisting>
+EXPLAIN (FORMAT YAML) SELECT * FROM foo WHERE i='4';
+          QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ - Plan:                      +
+     Node Type: "Index Scan"  +
+     Scan Direction: "Forward"+
+     Index Name: "fi"         +
+     Relation Name: "foo"     +
+     Alias: "foo"             +
+     Startup Cost: 0.00       +
+     Total Cost: 5.98         +
+     Plan Rows: 1             +
+     Plan Width: 4            +
+     Index Cond: "(i = 4)"    
+(1 row)
+</programlisting>
+
+    XML format is left as an exercise for the reader.
+  </para>
+____________________________________________________________________________-->
+  <para>
+  这里是同一查询的 YAML 格式：
+<programlisting>
+EXPLAIN (FORMAT YAML) SELECT * FROM foo WHERE i='4';
+          QUERY PLAN
+-------------------------------
+ - Plan:                      +
+     Node Type: "Index Scan"  +
+     Scan Direction: "Forward"+
+     Index Name: "fi"         +
+     Relation Name: "foo"     +
+     Alias: "foo"             +
+     Startup Cost: 0.00       +
+     Total Cost: 5.98         +
+     Plan Rows: 1             +
+     Plan Width: 4            +
+     Index Cond: "(i = 4)"
+(1 row)
+</programlisting>
+
+    XML 格式我们留给读者做练习。
+  </para>
+<!--==========================orignal english content==========================
+  <para>
+   Here is the same plan with cost estimates suppressed:
+
+<programlisting>
+EXPLAIN (COSTS FALSE) SELECT * FROM foo WHERE i = 4;
+
+        QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Index Scan using fi on foo
+   Index Cond: (i = 4)
+(2 rows)
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   这里是去掉了代价估计的同样一个计划：
+
+<programlisting>
+EXPLAIN (COSTS FALSE) SELECT * FROM foo WHERE i = 4;
+
+        QUERY PLAN
+----------------------------
+ Index Scan using fi on foo
+   Index Cond: (i = 4)
+(2 rows)
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Here is an example of a query plan for a query using an aggregate
+   function:
+
+<programlisting>
+EXPLAIN SELECT sum(i) FROM foo WHERE i &lt; 10;
+
+                             QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Aggregate  (cost=23.93..23.93 rows=1 width=4)
+   -&gt;  Index Scan using fi on foo  (cost=0.00..23.92 rows=6 width=4)
+         Index Cond: (i &lt; 10)
+(3 rows)
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   这里是一个使用聚集函数的查询的查询计划例子：
+
+<programlisting>
+EXPLAIN SELECT sum(i) FROM foo WHERE i &lt; 10;
+
+                             QUERY PLAN
+---------------------------------------------------------------------
+ Aggregate  (cost=23.93..23.93 rows=1 width=4)
+   -&gt;  Index Scan using fi on foo  (cost=0.00..23.92 rows=6 width=4)
+         Index Cond: (i &lt; 10)
+(3 rows)
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Here is an example of using <command>EXPLAIN EXECUTE</command> to
+   display the execution plan for a prepared query:
+
+<programlisting>
+PREPARE query(int, int) AS SELECT sum(bar) FROM test
+    WHERE id &gt; $1 AND id &lt; $2
+    GROUP BY foo;
+
+EXPLAIN ANALYZE EXECUTE query(100, 200);
+
+                                                       QUERY PLAN                                                       
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ HashAggregate  (cost=9.54..9.54 rows=1 width=8) (actual time=0.156..0.161 rows=11 loops=1)
+   Group Key: foo
+   -&gt;  Index Scan using test_pkey on test  (cost=0.29..9.29 rows=50 width=8) (actual time=0.039..0.091 rows=99 loops=1)
+         Index Cond: ((id &gt; $1) AND (id &lt; $2))
+ Planning time: 0.197 ms
+ Execution time: 0.225 ms
+(6 rows)
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   这里是一个使用<command>EXPLAIN EXECUTE</command>显示预备查询的执行计划的例子：
+
+<programlisting>
+PREPARE query(int, int) AS SELECT sum(bar) FROM test
+    WHERE id &gt; $1 AND id &lt; $2
+    GROUP BY foo;
+
+EXPLAIN ANALYZE EXECUTE query(100, 200);
+
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=9.54..9.54 rows=1 width=8) (actual time=0.156..0.161 rows=11 loops=1)
+   Group Key: foo
+   -&gt;  Index Scan using test_pkey on test  (cost=0.29..9.29 rows=50 width=8) (actual time=0.039..0.091 rows=99 loops=1)
+         Index Cond: ((id &gt; $1) AND (id &lt; $2))
+ Planning time: 0.197 ms
+ Execution time: 0.225 ms
+(6 rows)
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Of course, the specific numbers shown here depend on the actual
+   contents of the tables involved.  Also note that the numbers, and
+   even the selected query strategy, might vary between
+   <productname>PostgreSQL</productname> releases due to planner
+   improvements. In addition, the <command>ANALYZE</command> command
+   uses random sampling to estimate data statistics; therefore, it is
+   possible for cost estimates to change after a fresh run of
+   <command>ANALYZE</command>, even if the actual distribution of data
+   in the table has not changed.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当然，这里显示的有关数字取决于表涉及到的实际内容。还要注意这些数字甚至选中的查询策略，可能在<productname>PostgreSQL</productname>的不同版本之间变化，因为计划器可能被改进。此外，<command>ANALYZE</command>命令使用随机采样来估计数据统计。因此，在一次新的<command>ANALYZE</command>运行之后，代价估计可能会改变，即便是表中数据的实际分布没有改变也是如此。
+  </para>
+ </refsect1>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>Compatibility</title>
+____________________________________________________________________________-->
+  <title>兼容性</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   There is no <command>EXPLAIN</command> statement defined in the SQL standard.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   在 SQL 标准中没有定义<command>EXPLAIN</command>语句。
+  </para>
+ </refsect1>
+
+ <refsect1>
+<!--==========================orignal english content==========================
+  <title>See Also</title>
+____________________________________________________________________________-->
+  <title>参见</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-analyze"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,529 @@
+<!-- doc/src/sgml/amcheck.sgml -->
+
+<sect1 id="amcheck" xreflabel="amcheck">
+<!--==========================orignal english content==========================
+ <title>amcheck</title>
+____________________________________________________________________________-->
+ <title>amcheck</title>
+
+<!--==========================orignal english content==========================
+ <indexterm zone="amcheck">
+  <primary>amcheck</primary>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm zone="amcheck">
+  <primary>amcheck</primary>
+ </indexterm>
+
+<!--==========================orignal english content==========================
+ <para>
+  The <filename>amcheck</filename> module provides functions that allow you to
+  verify the logical consistency of the structure of relations.  If the
+  structure appears to be valid, no error is raised.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  <filename>amcheck</filename> 模块提供的函数让用户能验证关系结构的逻辑一致性。如果结构有效，则不会发生错误。
+ </para>
+
+<!--==========================orignal english content==========================
+ <para>
+  The functions verify various <emphasis>invariants</emphasis> in the
+  structure of the representation of particular relations.  The
+  correctness of the access method functions behind index scans and
+  other important operations relies on these invariants always
+  holding.  For example, certain functions verify, among other things,
+  that all B-Tree pages have items in <quote>logical</quote> order (e.g.,
+  for B-Tree indexes on <type>text</type>, index tuples should be in
+  collated lexical order).  If that particular invariant somehow fails
+  to hold, we can expect binary searches on the affected page to
+  incorrectly guide index scans, resulting in wrong answers to SQL
+  queries.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  这些函数验证特定关系的结构表达中的各种<emphasis>不变条件</emphasis>。索引扫描以及其他重要操作背后的访问方法的正确性都要依仗这些不变条件的成立。例如，在这些函数中，有一些负责验证所有B树页面中的项都按照<quote>逻辑</quote>顺序（比如，对于<type>text</type>上的B树索引，索引元组应该按照词典顺序排列）摆放。如果特定的不变条件由于某种原因无法成立，则我们可以预料受影响页面上的二分搜索将无法正确地引导索引扫描，最终导致SQL查询得到错误的答案。
+ </para>
+<!--==========================orignal english content==========================
+ <para>
+  Verification is performed using the same procedures as those used by
+  index scans themselves, which may be user-defined operator class
+  code.  For example, B-Tree index verification relies on comparisons
+  made with one or more B-Tree support function 1 routines.  See <xref
+  linkend="xindex-support"/> for details of operator class support
+  functions.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  验证过程采用索引扫描自身使用的同种过程来执行，这些过程可能是用户定义的操作符类代码。例如，B树索引验证依赖于由一个或者多个B树支持函数1例程构成的比较。操作符类支持函数的详情请见<xref linkend="xindex-support"/>。
+ </para>
+<!--==========================orignal english content==========================
+ <para>
+  <filename>amcheck</filename> functions may only be used by superusers.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  <filename>amcheck</filename>函数只能由超级用户使用。
+ </para>
+
+ <sect2>
+<!--==========================orignal english content==========================
+  <title>Functions</title>
+____________________________________________________________________________-->
+  <title>函数</title>
+
+  <variablelist>
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term>
+     <function>bt_index_check(index regclass, heapallindexed boolean) returns void</function>
+     <indexterm>
+      <primary>bt_index_check</primary>
+     </indexterm>
+    </term>
+____________________________________________________________________________-->
+    <term>
+     <function>bt_index_check(index regclass, heapallindexed boolean) returns void</function>
+     <indexterm>
+      <primary>bt_index_check</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      <function>bt_index_check</function> tests that its target, a
+      B-Tree index, respects a variety of invariants.  Example usage:
+<screen>
+test=# SELECT bt_index_check(index =&gt; c.oid, heapallindexed =&gt; i.indisunique),
+               c.relname,
+               c.relpages
+FROM pg_index i
+JOIN pg_opclass op ON i.indclass[0] = op.oid
+JOIN pg_am am ON op.opcmethod = am.oid
+JOIN pg_class c ON i.indexrelid = c.oid
+JOIN pg_namespace n ON c.relnamespace = n.oid
+WHERE am.amname = 'btree' AND n.nspname = 'pg_catalog'
+-&minus; Don't check temp tables, which may be from another session:
+AND c.relpersistence != 't'
+-&minus; Function may throw an error when this is omitted:
+AND c.relkind = 'i' AND i.indisready AND i.indisvalid
+ORDER BY c.relpages DESC LIMIT 10;
+ bt_index_check |             relname             | relpages 
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;
+                | pg_depend_reference_index       |       43
+                | pg_depend_depender_index        |       40
+                | pg_proc_proname_args_nsp_index  |       31
+                | pg_description_o_c_o_index      |       21
+                | pg_attribute_relid_attnam_index |       14
+                | pg_proc_oid_index               |       10
+                | pg_attribute_relid_attnum_index |        9
+                | pg_amproc_fam_proc_index        |        5
+                | pg_amop_opr_fam_index           |        5
+                | pg_amop_fam_strat_index         |        5
+(10 rows)
+</screen>
+      This example shows a session that performs verification of the
+      10 largest catalog indexes in the database <quote>test</quote>.
+      Verification of the presence of heap tuples as index tuples is
+      requested for the subset that are unique indexes.  Since no
+      error is raised, all indexes tested appear to be logically
+      consistent.  Naturally, this query could easily be changed to
+      call <function>bt_index_check</function> for every index in the
+      database where verification is supported.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>bt_index_check</function>测试一个B树索引，检查各种不变条件。用法实例：
+<screen>
+test=# SELECT bt_index_check(index =&gt; c.oid, heapallindexed =&gt; i.indisunique),
+               c.relname,
+               c.relpages
+FROM pg_index i
+JOIN pg_opclass op ON i.indclass[0] = op.oid
+JOIN pg_am am ON op.opcmethod = am.oid
+JOIN pg_class c ON i.indexrelid = c.oid
+JOIN pg_namespace n ON c.relnamespace = n.oid
+WHERE am.amname = 'btree' AND n.nspname = 'pg_catalog'
+-- Don't check temp tables, which may be from another session:
+AND c.relpersistence != 't'
+-- Function may throw an error when this is omitted:
+AND c.relkind = 'i' AND i.indisready AND i.indisvalid
+ORDER BY c.relpages DESC LIMIT 10;
+ bt_index_check |             relname             | relpages 
+----------------+---------------------------------+----------
+                | pg_depend_reference_index       |       43
+                | pg_depend_depender_index        |       40
+                | pg_proc_proname_args_nsp_index  |       31
+                | pg_description_o_c_o_index      |       21
+                | pg_attribute_relid_attnam_index |       14
+                | pg_proc_oid_index               |       10
+                | pg_attribute_relid_attnum_index |        9
+                | pg_amproc_fam_proc_index        |        5
+                | pg_amop_opr_fam_index           |        5
+                | pg_amop_fam_strat_index         |        5
+(10 rows)
+</screen>
+      这个例子中的会话执行对数据库<quote>test</quote>中10个最大目录索引的验证。对于唯一索引会要求验证堆元组是否有对应的索引元组存在。由于没有错误报出，所有的被测索引都处于逻辑一致的状态。自然地，很容易将这个查询改为对支持验证的数据库中的每一个索引调用<function>bt_index_check</function>。
+     </para>
+<!--==========================orignal english content==========================
+     <para>
+      <function>bt_index_check</function> acquires an <literal>AccessShareLock</literal>
+      on the target index and the heap relation it belongs to. This lock mode
+      is the same lock mode acquired on relations by simple
+      <literal>SELECT</literal> statements.
+      <function>bt_index_check</function> does not verify invariants
+      that span child/parent relationships, but will verify the
+      presence of all heap tuples as index tuples within the index
+      when <parameter>heapallindexed</parameter> is
+      <literal>true</literal>.  When a routine, lightweight test for
+      corruption is required in a live production environment, using
+      <function>bt_index_check</function> often provides the best
+      trade-off between thoroughness of verification and limiting the
+      impact on application performance and availability.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>bt_index_check</function>要求目标索引及其所属的堆关系上的<literal>AccessShareLock</literal>。这种锁模式与简单<literal>SELECT</literal>语句在关系上所要求的锁模式相同。<function>bt_index_check</function>不验证跨越父子关系的不变条件，但是在<parameter>heapallindexed</parameter>为<literal>true</literal>时将验证所有堆元组是否作为索引中的索引元组存在。当在生产环境中要求一个使用<function>bt_index_check</function>的例程进行轻量化损坏测试时，它常常需要在验证彻底性和减小对应用性能及可用性的影响之间做出权衡。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term>
+     <function>bt_index_parent_check(index regclass, heapallindexed boolean) returns void</function>
+     <indexterm>
+      <primary>bt_index_parent_check</primary>
+     </indexterm>
+    </term>
+____________________________________________________________________________-->
+    <term>
+     <function>bt_index_parent_check(index regclass, heapallindexed boolean) returns void</function>
+     <indexterm>
+      <primary>bt_index_parent_check</primary>
+     </indexterm>
+    </term>
+
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      <function>bt_index_parent_check</function> tests that its
+      target, a B-Tree index, respects a variety of invariants.
+      Optionally, when the <parameter>heapallindexed</parameter>
+      argument is <literal>true</literal>, the function verifies the
+      presence of all heap tuples that should be found within the
+      index, and that there are no missing downlinks in the index
+      structure.  The checks that can be performed by
+      <function>bt_index_parent_check</function> are a superset of the
+      checks that can be performed by <function>bt_index_check</function>.
+      <function>bt_index_parent_check</function> can be thought of as
+      a more thorough variant of <function>bt_index_check</function>:
+      unlike <function>bt_index_check</function>,
+      <function>bt_index_parent_check</function> also checks
+      invariants that span parent/child relationships.
+      <function>bt_index_parent_check</function> follows the general
+      convention of raising an error if it finds a logical
+      inconsistency or other problem.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>bt_index_parent_check</function>测试一个B树索引，检查多种不变条件。可选地，当<parameter>heapallindexed</parameter>参数为<literal>true</literal>时，该函数验证所有应该在索引中找到的堆元组的存在，同时验证在索引结构中没有缺失的下链。<function>bt_index_parent_check</function>能够执行的检查是<function>bt_index_check</function>能执行的检查的超集。<function>bt_index_parent_check</function>可以被想成是<function>bt_index_check</function>的一种更全面的变体：和<function>bt_index_check</function>不同，<function>bt_index_parent_check</function>还检查跨越父/子关系的不变条件。如果找到逻辑不一致或者其他问题，<function>bt_index_parent_check</function>遵循通常的报错习惯。
+     </para>
+<!--==========================orignal english content==========================
+     <para>
+      A <literal>ShareLock</literal> is required on the target index by
+      <function>bt_index_parent_check</function> (a
+      <literal>ShareLock</literal> is also acquired on the heap relation).
+      These locks prevent concurrent data modification from
+      <command>INSERT</command>, <command>UPDATE</command>, and <command>DELETE</command>
+      commands.  The locks also prevent the underlying relation from
+      being concurrently processed by <command>VACUUM</command>, as well as
+      all other utility commands.  Note that the function holds locks
+      only while running, not for the entire transaction.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>bt_index_parent_check</function>要求目标索引上的一个<literal>ShareLock</literal>（还要求对关系上的一个<literal>ShareLock</literal>）。这些锁阻止来自<command>INSERT</command>、<command>UPDATE</command>以及<command>DELETE</command>命令的并发数据修改。这些锁同时防止底层关系被并发的<command>VACUUM</command>以及其他工具命令处理。注意该函数只在其运行期间而不是整个事务期间持有锁。
+     </para>
+<!--==========================orignal english content==========================
+     <para>
+      <function>bt_index_parent_check</function>'s additional
+      verification is more likely to detect various pathological
+      cases.  These cases may involve an incorrectly implemented
+      B-Tree operator class used by the index that is checked, or,
+      hypothetically, undiscovered bugs in the underlying B-Tree index
+      access method code.  Note that
+      <function>bt_index_parent_check</function> cannot be used when
+      Hot Standby mode is enabled (i.e., on read-only physical
+      replicas), unlike <function>bt_index_check</function>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>bt_index_parent_check</function>的额外验证更有可能检测到多种病态的情况。这些情况可能涉及到被查索引使用的一种不正确实现的B-树操作符类，或者说不定是底层B-树索引访问方法代码中未被发现的缺陷。注意与<function>bt_index_check</function>不同，当热备模式被启用时（即在只读的物理复制机上）不能使用<function>bt_index_parent_check</function>。
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+<!--==========================orignal english content==========================
+  <title>Optional <parameter>heapallindexed</parameter> verification</title>
+____________________________________________________________________________-->
+  <title>可选的<parameter>heapallindexed</parameter>验证</title>
+<!--==========================orignal english content==========================
+ <para>
+  When the <parameter>heapallindexed</parameter> argument to
+  verification functions is <literal>true</literal>, an additional
+  phase of verification is performed against the table associated with
+  the target index relation.  This consists of a <quote>dummy</quote>
+  <command>CREATE INDEX</command> operation, which checks for the
+  presence of all hypothetical new index tuples against a temporary,
+  in-memory summarizing structure (this is built when needed during
+  the basic first phase of verification).  The summarizing structure
+  <quote>fingerprints</quote> every tuple found within the target
+  index.  The high level principle behind
+  <parameter>heapallindexed</parameter> verification is that a new
+  index that is equivalent to the existing, target index must only
+  have entries that can be found in the existing structure.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  当验证函数的<parameter>heapallindexed</parameter>参数为<literal>true</literal>时，会针对与目标索引关系关联的表执行一个额外的验证过程。这种验证由一个<quote>假的</quote><command>CREATE INDEX</command>操作组成，它针对一个临时的、内存中的汇总结构（根据需要在基础的第一阶段验证过程中建立）检查所有假想的新索引元组的存在。这个汇总结构对目标索引中的每一个元组<quote>采集指纹</quote>。<parameter>heapallindexed</parameter>验证背后的高层原则是：等效于现有目标索引的新索引必须仅拥有能在现有结构中找得到的项。
+ </para>
+<!--==========================orignal english content==========================
+ <para>
+  The additional <parameter>heapallindexed</parameter> phase adds
+  significant overhead: verification will typically take several times
+  longer.  However, there is no change to the relation-level locks
+  acquired when <parameter>heapallindexed</parameter> verification is
+  performed.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  额外的<parameter>heapallindexed</parameter>阶段会增加明显的开销：验证的时间通常将会延长几倍。不过，在执行<parameter>heapallindexed</parameter>验证时，所要求的关系级锁没有变化。
+ </para>
+<!--==========================orignal english content==========================
+ <para>
+  The summarizing structure is bound in size by
+  <varname>maintenance_work_mem</varname>.  In order to ensure that
+  there is no more than a 2% probability of failure to detect an
+  inconsistency for each heap tuple that should be represented in the
+  index, approximately 2 bytes of memory are needed per tuple.  As
+  less memory is made available per tuple, the probability of missing
+  an inconsistency slowly increases.  This approach limits the
+  overhead of verification significantly, while only slightly reducing
+  the probability of detecting a problem, especially for installations
+  where verification is treated as a routine maintenance task.  Any
+  single absent or malformed tuple has a new opportunity to be
+  detected with each new verification attempt.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  这一汇总结构的尺寸以<varname>maintenance_work_mem</varname>为界。为了确保对于每个堆元组应该存在于索引中这一检测有不超过2%的失效概率能检测到不一致，每个元组需要大约2个字节的内存。因为每个元组可用的内存变少，错失一处不一致的概率就会慢慢增加。这种方法显著地限制了验证的开销，但仅仅略微降低了检测到问题的概率，对于将验证当作例行维护任务的安装来说更是如此。对于每一次新的验证尝试，任何单一的缺失或者畸形元组都有新的机会被检测到。
+ </para>
+
+ </sect2>
+
+ <sect2>
+<!--==========================orignal english content==========================
+  <title>Using <filename>amcheck</filename> effectively</title>
+____________________________________________________________________________-->
+  <title>有效地使用<filename>amcheck</filename></title>
+
+<!--==========================orignal english content==========================
+ <para>
+  <filename>amcheck</filename> can be effective at detecting various types of
+  failure modes that <link
+  linkend="app-initdb-data-checksums"><application>data page
+  checksums</application></link> will always fail to catch.  These include:
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     Structural inconsistencies caused by incorrect operator class
+     implementations.
+    </para>
+    <para>
+     This includes issues caused by the comparison rules of operating
+     system collations changing. Comparisons of datums of a collatable
+     type like <type>text</type> must be immutable (just as all
+     comparisons used for B-Tree index scans must be immutable), which
+     implies that operating system collation rules must never change.
+     Though rare, updates to operating system collation rules can
+     cause these issues. More commonly, an inconsistency in the
+     collation order between a master server and a standby server is
+     implicated, possibly because the <emphasis>major</emphasis> operating
+     system version in use is inconsistent.  Such inconsistencies will
+     generally only arise on standby servers, and so can generally
+     only be detected on standby servers.
+    </para>
+    <para>
+     If a problem like this arises, it may not affect each individual
+     index that is ordered using an affected collation, simply because
+     <emphasis>indexed</emphasis> values might happen to have the same
+     absolute ordering regardless of the behavioral inconsistency. See
+     <xref linkend="locale"/> and <xref linkend="collation"/> for
+     further details about how <productname>PostgreSQL</productname> uses
+     operating system locales and collations.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Structural inconsistencies between indexes and the heap relations
+     that are indexed (when <parameter>heapallindexed</parameter>
+     verification is performed).
+    </para>
+    <para>
+     There is no cross-checking of indexes against their heap relation
+     during normal operation.  Symptoms of heap corruption can be subtle.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Corruption caused by hypothetical undiscovered bugs in the
+     underlying <productname>PostgreSQL</productname> access method
+     code, sort code, or transaction management code.
+    </para>
+    <para>
+     Automatic verification of the structural integrity of indexes
+     plays a role in the general testing of new or proposed
+     <productname>PostgreSQL</productname> features that could plausibly allow a
+     logical inconsistency to be introduced.  Verification of table
+     structure and associated visibility and transaction status
+     information plays a similar role.  One obvious testing strategy
+     is to call <filename>amcheck</filename> functions continuously
+     when running the standard regression tests.  See <xref
+     linkend="regress-run"/> for details on running the tests.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     File system or storage subsystem faults where checksums happen to
+     simply not be enabled.
+    </para>
+    <para>
+     Note that <filename>amcheck</filename> examines a page as represented in some
+     shared memory buffer at the time of verification if there is only a
+     shared buffer hit when accessing the block. Consequently,
+     <filename>amcheck</filename> does not necessarily examine data read from the
+     file system at the time of verification. Note that when checksums are
+     enabled, <filename>amcheck</filename> may raise an error due to a checksum
+     failure when a corrupt block is read into a buffer.
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     Corruption caused by faulty RAM, or the broader memory subsystem.
+    </para>
+    <para>
+     <productname>PostgreSQL</productname> does not protect against correctable
+     memory errors and it is assumed you will operate using RAM that
+     uses industry standard Error Correcting Codes (ECC) or better
+     protection.  However, ECC memory is typically only immune to
+     single-bit errors, and should not be assumed to provide
+     <emphasis>absolute</emphasis> protection against failures that
+     result in memory corruption.
+    </para>
+    <para>
+     When <parameter>heapallindexed</parameter> verification is
+     performed, there is generally a greatly increased chance of
+     detecting single-bit errors, since strict binary equality is
+     tested, and the indexed attributes within the heap are tested.
+    </para>
+   </listitem>
+  </itemizedlist>
+  In general, <filename>amcheck</filename> can only prove the presence of
+  corruption; it cannot prove its absence.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  <filename>amcheck</filename>对于检测多种<link linkend="app-initdb-data-checksums"><application>数据页面校验和</application></link>无法捕捉到的失效模式非常有效。包括：
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     由不正确的操作符类实现导致的结构性不一致。
+    </para>
+    <para>
+     这包括操作系统排序规则的比较规则变化导致的问题。<type>text</type>之类的可排序类型数据的比较必须是不变的（正如用于B-树索引扫描的所有比较必须不变一样），这意味着操作系统排序规则必须保持不变。但是在很少的情况下，操作系统排序规则的更新会导致这些问题。更常见的，主服务器和后备服务器之间排序顺序的不一致会相互牵连，这可能是因为使用的<emphasis>主</emphasis>操作系统版本不一致。这类不一致通常仅出现在后备服务器上，因此通常也仅能在后备服务器上检测到。
+    </para>
+    <para>
+     如果这类问题出现，则它可能不会影响使用受影响排序规则排序的每一个索引，其原因是<emphasis>被索引</emphasis>值可能正好具有与行为不一致无关的相同的绝对顺序。关于<productname>PostgreSQL</productname>如何使用操作系统locale和排序规则的进一步细节请参考<xref linkend="locale"/>和<xref linkend="collation"/>。
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     索引和被索引的对关系之间的结构不一致（在执行<parameter>heapallindexed</parameter>验证时）。
+    </para>
+    <para>
+     在普通操作时没有将索引针对其对关系进行交叉检查。堆损坏的症状可能是很微妙的。
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     由于底层<productname>PostgreSQL</productname>访问方法代码、排序代码或者事务管理代码中（假想的）未发现的缺陷导致的损坏。
+    </para>
+    <para>
+     在测试可能引入逻辑不一致的<productname>PostgreSQL</productname>新特性或者被提议的特性时，索引的结构完整性自动验证扮演了重要角色。表结构、相关的可见性和事务状态信息的验证扮演了类似的角色。一种显而易见的测试策略是在运行标准回归测试时持续地调用<filename>amcheck</filename>函数。运行这些测试的详情请参考<xref linkend="regress-run"/>。
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     正巧没有开启校验和的文件系统或者存储子系统故障。
+    </para>
+    <para>
+     注意，如果在访问块时仅有一次共享缓存命中，验证时<filename>amcheck</filename>会在检查表示在某个共享内存缓冲区中的页面。因此，<filename>amcheck</filename>没有必要在验证时检查从文件系统读出的数据。注意当校验和被启用时，如果一个损坏的块被读取到缓冲区中，<filename>amcheck</filename>可能会由于校验和失效而产生错误。
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+     有缺陷的RAM或者内存子系统导致的损坏。
+    </para>
+    <para>
+     <productname>PostgreSQL</productname>无法提供针对可更正内存错误的保护并且它假定用户使用的是具有工业标准纠错码（ECC）或更好保护技术的RAM。不过，ECC内存通常只能免疫单个位错误，并且不应该假定它能提供对导致内存损坏失效的<emphasis>绝对</emphasis>保护。
+    </para>
+    <para>
+     在执行<parameter>heapallindexed</parameter>验证时，通常有大幅增加的机会可以检测单个位错误，因为会测试严格的二元等值并且会在堆中测试被索引属性。
+    </para>
+   </listitem>
+  </itemizedlist>
+  通常，<filename>amcheck</filename>仅能证明损坏的存在，但它无法证明损坏不存在。
+ </para>
+
+ </sect2>
+ <sect2>
+<!--==========================orignal english content==========================
+  <title>Repairing corruption</title>
+____________________________________________________________________________-->
+  <title>修复损坏</title>
+<!--==========================orignal english content==========================
+ <para>
+  No error concerning corruption raised by <filename>amcheck</filename> should
+  ever be a false positive.  <filename>amcheck</filename> raises
+  errors in the event of conditions that, by definition, should never
+  happen, and so careful analysis of <filename>amcheck</filename>
+  errors is often required.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  <filename>amcheck</filename>没有产生与损坏相关的错误绝不应该被当做假阳性。<filename>amcheck</filename>会在（定义上）应该绝不会发生的情况中抛出错误，因此常常需要对<filename>amcheck</filename>错误进行仔细地分析。
+ </para>
+<!--==========================orignal english content==========================
+ <para>
+  There is no general method of repairing problems that
+  <filename>amcheck</filename> detects.  An explanation for the root cause of
+  an invariant violation should be sought.  <xref
+  linkend="pageinspect"/> may play a useful role in diagnosing
+  corruption that <filename>amcheck</filename> detects.  A <command>REINDEX</command>
+  may not be effective in repairing corruption.
+ </para>
+____________________________________________________________________________-->
+ <para>
+  对于<filename>amcheck</filename>检测到的问题没有一般性的修复方法。应该寻找产生不变条件违背的根本原因。在诊断<filename>amcheck</filename>检测到的损坏时，<xref linkend="pageinspect"/>可能会扮演一个非常有用的角色。<command>REINDEX</command>在修复损坏过程中可能无法起到效果。
+ </para>
+
+ </sect2>
+
+</sect1>

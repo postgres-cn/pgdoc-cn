@@ -1,0 +1,3115 @@
+<!-- doc/src/sgml/perform.sgml -->
+
+ <chapter id="performance-tips">
+<!--==========================orignal english content==========================
+  <title>Performance Tips</title>
+____________________________________________________________________________-->
+  <title>性能提示</title>
+
+<!--==========================orignal english content==========================
+  <indexterm zone="performance-tips">
+   <primary>performance</primary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm zone="performance-tips">
+   <primary>性能</primary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <para>
+   Query performance can be affected by many things. Some of these can
+   be controlled by the user, while others are fundamental to the underlying
+   design of the system.  This chapter provides some hints about understanding
+   and tuning <productname>PostgreSQL</productname> performance.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   查询性能可能受多种因素影响。其中一些因素可以由用户控制，而其它的则属于系统下层设计的基本原理。 本章我们提供一些有关理解和调节<productname>PostgreSQL</productname>性能的提示。
+  </para>
+
+ <sect1 id="using-explain">
+<!--==========================orignal english content==========================
+  <title>Using <command>EXPLAIN</command></title>
+____________________________________________________________________________-->
+  <title>使用<command>EXPLAIN</command></title>
+
+<!--==========================orignal english content==========================
+   <indexterm zone="using-explain">
+    <primary>EXPLAIN</primary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm zone="using-explain">
+    <primary>EXPLAIN</primary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <indexterm zone="using-explain">
+    <primary>query plan</primary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm zone="using-explain">
+    <primary>查询计划</primary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <para>
+    <productname>PostgreSQL</productname> devises a <firstterm>query
+    plan</firstterm> for each query it receives.  Choosing the right
+    plan to match the query structure and the properties of the data
+    is absolutely critical for good performance, so the system includes
+    a complex <firstterm>planner</firstterm> that tries to choose good plans.
+    You can use the <xref linkend="sql-explain"/> command
+    to see what query plan the planner creates for any query.
+    Plan-reading is an art that requires some experience to master,
+    but this section attempts to cover the basics.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>PostgreSQL</productname>为每个收到查询产生一个<firstterm>查询计划</firstterm>。 选择正确的计划来匹配查询结构和数据的属性对于好的性能来说绝对是最关键的，因此系统包含了一个复杂的<firstterm>规划器</firstterm>来尝试选择好的计划。 你可以使用<xref linkend="sql-explain"/>命令察看规划器为任何查询生成的查询计划。 阅读查询计划是一门艺术，它要求一些经验来掌握，但是本节只试图覆盖一些基础。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Examples in this section are drawn from the regression test database
+    after doing a <command>VACUUM ANALYZE</command>, using 9.3 development sources.
+    You should be able to get similar results if you try the examples
+    yourself, but your estimated costs and row counts might vary slightly
+    because <command>ANALYZE</command>'s statistics are random samples rather
+    than exact, and because costs are inherently somewhat platform-dependent.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    本节中的例子都是从 9.3 开发源代码的回归测试数据库中抽取出来的，并且在此之前做过一次<command>VACUUM ANALYZE</command>。你应该能够在自己尝试这些例子时得到相似的结果，但是你的估计代价和行计数可能会小幅变化，因为<command>ANALYZE</command>的统计信息是随机采样而不是精确值，并且代价也与平台有某种程度的相关性。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The examples use <command>EXPLAIN</command>'s default <quote>text</quote> output
+    format, which is compact and convenient for humans to read.
+    If you want to feed <command>EXPLAIN</command>'s output to a program for further
+    analysis, you should use one of its machine-readable output formats
+    (XML, JSON, or YAML) instead.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这些例子使用<command>EXPLAIN</command>的默认<quote>text</quote>输出格式，这种格式紧凑并且便于人类阅读。如果你想把<command>EXPLAIN</command>的输出交给一个程序做进一步分析，你应该使用它的某种机器可读的输出格式（XML、JSON 或 YAML）。
+   </para>
+
+  <sect2 id="using-explain-basics">
+<!--==========================orignal english content==========================
+   <title><command>EXPLAIN</command> Basics</title>
+____________________________________________________________________________-->
+   <title><command>EXPLAIN</command>基础</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    The structure of a query plan is a tree of <firstterm>plan nodes</firstterm>.
+    Nodes at the bottom level of the tree are scan nodes: they return raw rows
+    from a table.  There are different types of scan nodes for different
+    table access methods: sequential scans, index scans, and bitmap index
+    scans.  There are also non-table row sources, such as <literal>VALUES</literal>
+    clauses and set-returning functions in <literal>FROM</literal>, which have their
+    own scan node types.
+    If the query requires joining, aggregation, sorting, or other
+    operations on the raw rows, then there will be additional nodes
+    above the scan nodes to perform these operations.  Again,
+    there is usually more than one possible way to do these operations,
+    so different node types can appear here too.  The output
+    of <command>EXPLAIN</command> has one line for each node in the plan
+    tree, showing the basic node type plus the cost estimates that the planner
+    made for the execution of that plan node.  Additional lines might appear,
+    indented from the node's summary line,
+    to show additional properties of the node.
+    The very first line (the summary line for the topmost
+    node) has the estimated total execution cost for the plan; it is this
+    number that the planner seeks to minimize.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    查询计划的结构是一个<firstterm>计划结点</firstterm>的树。最底层的结点是扫描结点：它们从表中返回未经处理的行。 不同的表访问模式有不同的扫描结点类型：顺序扫描、索引扫描、位图索引扫描。 也还有不是表的行来源，例如<literal>VALUES</literal>子句和<literal>FROM</literal>中返回集合的函数，它们有自己的结点类型。如果查询需要连接、聚集、排序、或者在未经处理的行上的其它操作，那么就会在扫描结点之上有其它额外的结点来执行这些操作。 并且，做这些操作通常都有多种方法，因此在这些位置也有可能出现不同的结点类型。 <command>EXPLAIN</command>给计划树中每个结点都输出一行，显示基本的结点类型和计划器为该计划结点的执行所做的开销估计。 第一行（最上层的结点）是对该计划的总执行开销的估计；计划器试图最小化的就是这个数字。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Here is a trivial example, just to show what the output looks like:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1;
+
+                         QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on tenk1  (cost=0.00..458.00 rows=10000 width=244)
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这里是一个简单的例子，只是用来显示输出看起来是什么样的：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1;
+
+                         QUERY PLAN
+-------------------------------------------------------------
+ Seq Scan on tenk1  (cost=0.00..458.00 rows=10000 width=244)
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Since this query has no <literal>WHERE</literal> clause, it must scan all the
+    rows of the table, so the planner has chosen to use a simple sequential
+    scan plan.  The numbers that are quoted in parentheses are (left
+    to right):
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       Estimated start-up cost.  This is the time expended before the output
+       phase can begin, e.g., time to do the sorting in a sort node.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Estimated total cost.  This is stated on the assumption that the plan
+       node is run to completion, i.e., all available rows are retrieved.
+       In practice a node's parent node might stop short of reading all
+       available rows (see the <literal>LIMIT</literal> example below).
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Estimated number of rows output by this plan node.  Again, the node
+       is assumed to be run to completion.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Estimated average width of rows output by this plan node (in bytes).
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    由于这个查询没有<literal>WHERE</literal>子句，它必须扫描表中的所有行，因此计划器只能选择使用一个简单的顺序扫描计划。被包含在圆括号中的数字是（从左至右）：
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       估计的启动开销。在输出阶段可以开始之前消耗的时间，例如在一个排序结点里执行排序的时间。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       估计的总开销。这个估计值基于的假设是计划结点会被运行到完成，即所有可用的行都被检索。不过实际上一个结点的父结点可能很快停止读所有可用的行（见下面的<literal>LIMIT</literal>例子）。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       这个计划结点输出行数的估计值。同样，也假定该结点能运行到完成。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       预计这个计划结点输出的行平均宽度（以字节计算）。
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The costs are measured in arbitrary units determined by the planner's
+    cost parameters (see <xref linkend="runtime-config-query-constants"/>).
+    Traditional practice is to measure the costs in units of disk page
+    fetches; that is, <xref linkend="guc-seq-page-cost"/> is conventionally
+    set to <literal>1.0</literal> and the other cost parameters are set relative
+    to that.  The examples in this section are run with the default cost
+    parameters.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    开销是用规划器的开销参数（参见<xref linkend="runtime-config-query-constants"/>）所决定的捏造单位来衡量的。传统上以取磁盘页面为单位来度量开销； 也就是<xref linkend="guc-seq-page-cost"/>将被按照习惯设为<literal>1.0</literal>，其它开销参数将相对于它来设置。 本节的例子都假定这些参数使用默认值。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    It's important to understand that the cost of an upper-level node includes
+    the cost of all its child nodes.  It's also important to realize that
+    the cost only reflects things that the planner cares about.
+    In particular, the cost does not consider the time spent transmitting
+    result rows to the client, which could be an important
+    factor in the real elapsed time; but the planner ignores it because
+    it cannot change it by altering the plan.  (Every correct plan will
+    output the same row set, we trust.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    有一点很重要：一个上层结点的开销包括它的所有子结点的开销。还有一点也很重要：这个开销只反映规划器关心的东西。特别是这个开销没有考虑结果行传递给客户端所花费的时间，这个时间可能是实际花费时间中的一个重要因素；但是它被规划器忽略了，因为它无法通过修改计划来改变（我们相信，每个正确的计划都将输出同样的行集）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The <literal>rows</literal> value is a little tricky because it is
+    not the number of rows processed or scanned by the
+    plan node, but rather the number emitted by the node.  This is often
+    less than the number scanned, as a result of filtering by any
+    <literal>WHERE</literal>-clause conditions that are being applied at the node.
+    Ideally the top-level rows estimate will approximate the number of rows
+    actually returned, updated, or deleted by the query.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <literal>行数</literal>值有一些小技巧，因为它不是计划结点处理或扫描过的行数，而是该结点发出的行数。这通常比被扫描的行数少一些， 因为有些被扫描的行会被应用于此结点上的任意<literal>WHERE</literal>子句条件过滤掉。 理想中顶层的行估计会接近于查询实际返回、更新、删除的行数。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Returning to our example:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1;
+
+                         QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on tenk1  (cost=0.00..458.00 rows=10000 width=244)
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    回到我们的例子：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1;
+
+                         QUERY PLAN
+-------------------------------------------------------------
+ Seq Scan on tenk1  (cost=0.00..458.00 rows=10000 width=244)
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    These numbers are derived very straightforwardly.  If you do:
+
+<programlisting>
+SELECT relpages, reltuples FROM pg_class WHERE relname = 'tenk1';
+</programlisting>
+
+    you will find that <classname>tenk1</classname> has 358 disk
+    pages and 10000 rows.  The estimated cost is computed as (disk pages read *
+    <xref linkend="guc-seq-page-cost"/>) + (rows scanned *
+    <xref linkend="guc-cpu-tuple-cost"/>).  By default,
+    <varname>seq_page_cost</varname> is 1.0 and <varname>cpu_tuple_cost</varname> is 0.01,
+    so the estimated cost is (358 * 1.0) + (10000 * 0.01) = 458.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这些数字的产生非常直接。如果你执行：
+
+<programlisting>
+SELECT relpages, reltuples FROM pg_class WHERE relname = 'tenk1';
+</programlisting>
+
+    你会发现<classname>tenk1</classname>有358个磁盘页面和10000行。 开销被计算为 （页面读取数*<xref linkend="guc-seq-page-cost"/>）+（扫描的行数*<xref linkend="guc-cpu-tuple-cost"/>）。默认情况下，<varname>seq_page_cost</varname>是1.0，<varname>cpu_tuple_cost</varname>是0.01， 因此估计的开销是 (358 * 1.0) + (10000 * 0.01) = 458。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Now let's modify the query to add a <literal>WHERE</literal> condition:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 7000;
+
+                         QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Seq Scan on tenk1  (cost=0.00..483.00 rows=7001 width=244)
+   Filter: (unique1 &lt; 7000)
+</screen>
+
+    Notice that the <command>EXPLAIN</command> output shows the <literal>WHERE</literal>
+    clause being applied as a <quote>filter</quote> condition attached to the Seq
+    Scan plan node.  This means that
+    the plan node checks the condition for each row it scans, and outputs
+    only the ones that pass the condition.
+    The estimate of output rows has been reduced because of the
+    <literal>WHERE</literal> clause.
+    However, the scan will still have to visit all 10000 rows, so the cost
+    hasn't decreased; in fact it has gone up a bit (by 10000 * <xref
+    linkend="guc-cpu-operator-cost"/>, to be exact) to reflect the extra CPU
+    time spent checking the <literal>WHERE</literal> condition.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    现在让我们修改查询并增加一个<literal>WHERE</literal>条件：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 7000;
+
+                         QUERY PLAN
+------------------------------------------------------------
+ Seq Scan on tenk1  (cost=0.00..483.00 rows=7001 width=244)
+   Filter: (unique1 &lt; 7000)
+</screen>
+
+    请注意<command>EXPLAIN</command>输出显示<literal>WHERE</literal>子句被当做一个<quote>过滤器</quote>条件附加到顺序扫描计划结点。 这意味着该计划结点为它扫描的每一行检查该条件，并且只输出通过该条件的行。因为<literal>WHERE</literal>子句的存在，估计的输出行数降低了。不过，扫描仍将必须访问所有 10000 行，因此开销没有被降低；实际上开销还有所上升（准确来说，上升了 10000 * <xref linkend="guc-cpu-operator-cost"/>）以反映检查<literal>WHERE</literal>条件所花费的额外 CPU 时间。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The actual number of rows this query would select is 7000, but the <literal>rows</literal>
+    estimate is only approximate.  If you try to duplicate this experiment,
+    you will probably get a slightly different estimate; moreover, it can
+    change after each <command>ANALYZE</command> command, because the
+    statistics produced by <command>ANALYZE</command> are taken from a
+    randomized sample of the table.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这条查询实际选择的行数是 7000，但是估计的<literal>rows</literal>只是个近似值。如果你尝试重复这个试验，那么你很可能得到略有不同的估计。 此外，这个估计会在每次<command>ANALYZE</command>命令之后改变， 因为<command>ANALYZE</command>生成的统计数据是从该表中随机采样计算的。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Now, let's make the condition more restrictive:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100;
+
+                                  QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Bitmap Heap Scan on tenk1  (cost=5.07..229.20 rows=101 width=244)
+   Recheck Cond: (unique1 &lt; 100)
+   -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+         Index Cond: (unique1 &lt; 100)
+</screen>
+
+    Here the planner has decided to use a two-step plan: the child plan
+    node visits an index to find the locations of rows matching the index
+    condition, and then the upper plan node actually fetches those rows
+    from the table itself.  Fetching rows separately is much more
+    expensive than reading them sequentially, but because not all the pages
+    of the table have to be visited, this is still cheaper than a sequential
+    scan.  (The reason for using two plan levels is that the upper plan
+    node sorts the row locations identified by the index into physical order
+    before reading them, to minimize the cost of separate fetches.
+    The <quote>bitmap</quote> mentioned in the node names is the mechanism that
+    does the sorting.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    现在，让我们把条件变得更严格：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100;
+
+                                  QUERY PLAN
+------------------------------------------------------------------------------
+ Bitmap Heap Scan on tenk1  (cost=5.07..229.20 rows=101 width=244)
+   Recheck Cond: (unique1 &lt; 100)
+   -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+         Index Cond: (unique1 &lt; 100)
+</screen>
+
+    这里，规划器决定使用一个两步的计划：子计划结点访问访问一个索引来找出匹配索引条件的行的位置，然后上层计划结点实际地从表中取出那些行。独立地抓取行比顺序地读取它们的开销高很多，但是不是所有的表页面都被访问，这么做实际上仍然比一次顺序扫描开销要少（使用两层计划的原因是因为上层规划结点把索引标识出来的行位置在读取之前按照物理位置排序，这样可以最小化单独抓取的开销。结点名称里面提到的<quote>位图</quote>是执行该排序的机制）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Now let's add another condition to the <literal>WHERE</literal> clause:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND stringu1 = 'xxx';
+
+                                  QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Bitmap Heap Scan on tenk1  (cost=5.04..229.43 rows=1 width=244)
+   Recheck Cond: (unique1 &lt; 100)
+   Filter: (stringu1 = 'xxx'::name)
+   -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+         Index Cond: (unique1 &lt; 100)
+</screen>
+
+    The added condition <literal>stringu1 = 'xxx'</literal> reduces the
+    output row count estimate, but not the cost because we still have to visit
+    the same set of rows.  Notice that the <literal>stringu1</literal> clause
+    cannot be applied as an index condition, since this index is only on
+    the <literal>unique1</literal> column.  Instead it is applied as a filter on
+    the rows retrieved by the index.  Thus the cost has actually gone up
+    slightly to reflect this extra checking.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    现在让我们给<literal>WHERE</literal>子句增加另一个条件：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND stringu1 = 'xxx';
+
+                                  QUERY PLAN
+------------------------------------------------------------------------------
+ Bitmap Heap Scan on tenk1  (cost=5.04..229.43 rows=1 width=244)
+   Recheck Cond: (unique1 &lt; 100)
+   Filter: (stringu1 = 'xxx'::name)
+   -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+         Index Cond: (unique1 &lt; 100)
+</screen>
+
+    新增的条件<literal>stringu1 = 'xxx'</literal>减少了估计的输出行计数， 但是没有减少开销，因为我们仍然需要访问相同的行集合。 请注意，<literal>stringu1</literal>子句不能被应用为一个索引条件，因为这个索引只是在<literal>unique1</literal>列上。 它被用来过滤从索引中检索出的行。因此开销实际上略微增加了一些以反映这个额外的检查。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    In some cases the planner will prefer a <quote>simple</quote> index scan plan:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 = 42;
+
+                                 QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Index Scan using tenk1_unique1 on tenk1  (cost=0.29..8.30 rows=1 width=244)
+   Index Cond: (unique1 = 42)
+</screen>
+
+    In this type of plan the table rows are fetched in index order, which
+    makes them even more expensive to read, but there are so few that the
+    extra cost of sorting the row locations is not worth it.  You'll most
+    often see this plan type for queries that fetch just a single row.  It's
+    also often used for queries that have an <literal>ORDER BY</literal> condition
+    that matches the index order, because then no extra sorting step is needed
+    to satisfy the <literal>ORDER BY</literal>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在某些情况下规划器将更倾向于一个<quote>simple</quote>索引扫描计划：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 = 42;
+
+                                 QUERY PLAN
+-----------------------------------------------------------------------------
+ Index Scan using tenk1_unique1 on tenk1  (cost=0.29..8.30 rows=1 width=244)
+   Index Cond: (unique1 = 42)
+</screen>
+
+    在这类计划中，表行被按照索引顺序取得，这使得读取它们开销更高，但是其中有一些是对行位置排序的额外开销。你很多时候将在只取得一个单一行的查询中看到这种计划类型。它也经常被用于拥有匹配索引顺序的<literal>ORDER BY</literal>子句的查询中，因为那样就不需要额外的排序步骤来满足<literal>ORDER BY</literal>。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    If there are separate indexes on several of the columns referenced
+    in <literal>WHERE</literal>, the planner might choose to use an AND or OR
+    combination of the indexes:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000;
+
+                                     QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Bitmap Heap Scan on tenk1  (cost=25.08..60.21 rows=10 width=244)
+   Recheck Cond: ((unique1 &lt; 100) AND (unique2 &gt; 9000))
+   -&gt;  BitmapAnd  (cost=25.08..25.08 rows=10 width=0)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+               Index Cond: (unique1 &lt; 100)
+         -&gt;  Bitmap Index Scan on tenk1_unique2  (cost=0.00..19.78 rows=999 width=0)
+               Index Cond: (unique2 &gt; 9000)
+</screen>
+
+    But this requires visiting both indexes, so it's not necessarily a win
+    compared to using just one index and treating the other condition as
+    a filter.  If you vary the ranges involved you'll see the plan change
+    accordingly.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果在<literal>WHERE</literal>引用的多个行上有独立的索引，规划器可能会选择使用这些索引的一个 AND 或 OR 组合：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000;
+
+                                     QUERY PLAN
+-------------------------------------------------------------------------------------
+ Bitmap Heap Scan on tenk1  (cost=25.08..60.21 rows=10 width=244)
+   Recheck Cond: ((unique1 &lt; 100) AND (unique2 &gt; 9000))
+   -&gt;  BitmapAnd  (cost=25.08..25.08 rows=10 width=0)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+               Index Cond: (unique1 &lt; 100)
+         -&gt;  Bitmap Index Scan on tenk1_unique2  (cost=0.00..19.78 rows=999 width=0)
+               Index Cond: (unique2 &gt; 9000)
+</screen>
+
+    但是这要求访问两个索引，所以与只使用一个索引并把其他条件作为过滤器相比，它不一定能胜出。如果你变动涉及到的范围，你将看到计划也会相应改变。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Here is an example showing the effects of <literal>LIMIT</literal>:
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000 LIMIT 2;
+
+                                     QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Limit  (cost=0.29..14.48 rows=2 width=244)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1  (cost=0.29..71.27 rows=10 width=244)
+         Index Cond: (unique2 &gt; 9000)
+         Filter: (unique1 &lt; 100)
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    下面是一个例子，它展示了<literal>LIMIT</literal>的效果：
+
+<screen>
+EXPLAIN SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000 LIMIT 2;
+
+                                     QUERY PLAN
+-------------------------------------------------------------------------------------
+ Limit  (cost=0.29..14.48 rows=2 width=244)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1  (cost=0.29..71.27 rows=10 width=244)
+         Index Cond: (unique2 &gt; 9000)
+         Filter: (unique1 &lt; 100)
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    This is the same query as above, but we added a <literal>LIMIT</literal> so that
+    not all the rows need be retrieved, and the planner changed its mind about
+    what to do.  Notice that the total cost and row count of the Index Scan
+    node are shown as if it were run to completion.  However, the Limit node
+    is expected to stop after retrieving only a fifth of those rows, so its
+    total cost is only a fifth as much, and that's the actual estimated cost
+    of the query.  This plan is preferred over adding a Limit node to the
+    previous plan because the Limit could not avoid paying the startup cost
+    of the bitmap scan, so the total cost would be something over 25 units
+    with that approach.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这是和上面相同的查询，但是我们增加了一个<literal>LIMIT</literal>这样不是所有的行都需要被检索，并且规划器改变了它的决定。注意索引扫描结点的总开销和行计数显示出好像它会被运行到完成。但是，限制结点在检索到这些行的五分之一后就会停止，因此它的总开销只是索引扫描结点的五分之一，并且这是查询的实际估计开销。之所以用这个计划而不是在之前的计划上增加一个限制结点是因为限制无法避免在位图扫描上花费启动开销，因此总开销会是超过那种方法（25个单位）的某个值。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Let's try joining two tables, using the columns we have been discussing:
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 10 AND t1.unique2 = t2.unique2;
+
+                                      QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Nested Loop  (cost=4.65..118.62 rows=10 width=488)
+   -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=4.36..39.47 rows=10 width=244)
+         Recheck Cond: (unique1 &lt; 10)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..4.36 rows=10 width=0)
+               Index Cond: (unique1 &lt; 10)
+   -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.29..7.91 rows=1 width=244)
+         Index Cond: (unique2 = t1.unique2)
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    让我们尝试连接两个表，使用我们已经讨论过的列：
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 10 AND t1.unique2 = t2.unique2;
+
+                                      QUERY PLAN
+--------------------------------------------------------------------------------------
+ Nested Loop  (cost=4.65..118.62 rows=10 width=488)
+   -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=4.36..39.47 rows=10 width=244)
+         Recheck Cond: (unique1 &lt; 10)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..4.36 rows=10 width=0)
+               Index Cond: (unique1 &lt; 10)
+   -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.29..7.91 rows=1 width=244)
+         Index Cond: (unique2 = t1.unique2)
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    In this plan, we have a nested-loop join node with two table scans as
+    inputs, or children.  The indentation of the node summary lines reflects
+    the plan tree structure.  The join's first, or <quote>outer</quote>, child
+    is a bitmap scan similar to those we saw before.  Its cost and row count
+    are the same as we'd get from <literal>SELECT ... WHERE unique1 &lt; 10</literal>
+    because we are
+    applying the <literal>WHERE</literal> clause <literal>unique1 &lt; 10</literal>
+    at that node.
+    The <literal>t1.unique2 = t2.unique2</literal> clause is not relevant yet,
+    so it doesn't affect the row count of the outer scan.  The nested-loop
+    join node will run its second,
+    or <quote>inner</quote> child once for each row obtained from the outer child.
+    Column values from the current outer row can be plugged into the inner
+    scan; here, the <literal>t1.unique2</literal> value from the outer row is available,
+    so we get a plan and costs similar to what we saw above for a simple
+    <literal>SELECT ... WHERE t2.unique2 = <replaceable>constant</replaceable></literal> case.
+    (The estimated cost is actually a bit lower than what was seen above,
+    as a result of caching that's expected to occur during the repeated
+    index scans on <literal>t2</literal>.)  The
+    costs of the loop node are then set on the basis of the cost of the outer
+    scan, plus one repetition of the inner scan for each outer row (10 * 7.91,
+    here), plus a little CPU time for join processing.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在这个计划中，我们有一个嵌套循环连接结点，它有两个表扫描作为输入或子结点。该结点的摘要行的缩进反映了计划树的结构。连接的第一个（或<quote>outer</quote>）子结点是一个与前面见到的相似的位图扫描。它的开销和行计数与我们从<literal>SELECT ... WHERE unique1 &lt; 10</literal>得到的相同，因为我们将<literal>WHERE</literal>子句<literal>unique1 &lt; 10</literal>用在了那个结点上。<literal>t1.unique2 = t2.unique2</literal>子句现在还不相关，因此它不影响 outer 扫描的行计数。嵌套循环连接结点将为从 outer  子结点得到的每一行运行它的第二个（或<quote>inner</quote>）子结点。当前 outer 行的列值可以被插入 inner 扫描。这里，来自 outer 行的<literal>t1.unique2</literal>值是可用的，所以我们得到的计划和开销与前面见到的简单<literal>SELECT ... WHERE t2.unique2 = <replaceable>constant</replaceable></literal>情况相似（估计的开销实际上比前面看到的略低，是因为在<literal>t2</literal>上的重复索引扫描会利用到高速缓存）。循环结点的开销则被以 outer 扫描的开销为基础设置，外加对每一个 outer 行都要进行一次 inner 扫描 （10 * 7.87），再加上用于连接处理一点 CPU 时间。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    In this example the join's output row count is the same as the product
+    of the two scans' row counts, but that's not true in all cases because
+    there can be additional <literal>WHERE</literal> clauses that mention both tables
+    and so can only be applied at the join point, not to either input scan.
+    Here's an example:
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 10 AND t2.unique2 &lt; 10 AND t1.hundred &lt; t2.hundred;
+
+                                         QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Nested Loop  (cost=4.65..49.46 rows=33 width=488)
+   Join Filter: (t1.hundred &lt; t2.hundred)
+   -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=4.36..39.47 rows=10 width=244)
+         Recheck Cond: (unique1 &lt; 10)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..4.36 rows=10 width=0)
+               Index Cond: (unique1 &lt; 10)
+   -&gt;  Materialize  (cost=0.29..8.51 rows=10 width=244)
+         -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.29..8.46 rows=10 width=244)
+               Index Cond: (unique2 &lt; 10)
+</screen>
+
+    The condition <literal>t1.hundred &lt; t2.hundred</literal> can't be
+    tested in the <literal>tenk2_unique2</literal> index, so it's applied at the
+    join node.  This reduces the estimated output row count of the join node,
+    but does not change either input scan.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在这个例子里，连接的输出行计数等于两个扫描的行计数的乘积，但通常并不是所有的情况中都如此， 因为可能有同时提及两个表的 额外<literal>WHERE</literal>子句，并且因此它只能被应用于连接点，而不能影响任何一个输入扫描。这里是一个例子：
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 10 AND t2.unique2 &lt; 10 AND t1.hundred &lt; t2.hundred;
+
+                                         QUERY PLAN
+---------------------------------------------------------------------------------------------
+ Nested Loop  (cost=4.65..49.46 rows=33 width=488)
+   Join Filter: (t1.hundred &lt; t2.hundred)
+   -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=4.36..39.47 rows=10 width=244)
+         Recheck Cond: (unique1 &lt; 10)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..4.36 rows=10 width=0)
+               Index Cond: (unique1 &lt; 10)
+   -&gt;  Materialize  (cost=0.29..8.51 rows=10 width=244)
+         -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.29..8.46 rows=10 width=244)
+               Index Cond: (unique2 &lt; 10)
+</screen>
+
+    条件<literal>t1.hundred &lt; t2.hundred</literal>不能在<literal>tenk2_unique2</literal>索引中被测试，因此它被应用在连接结点。这缩减了连接结点的估计输出行计数，但是没有改变任何输入扫描。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Notice that here the planner has chosen to <quote>materialize</quote> the inner
+    relation of the join, by putting a Materialize plan node atop it.  This
+    means that the <literal>t2</literal> index scan will be done just once, even
+    though the nested-loop join node needs to read that data ten times, once
+    for each row from the outer relation.  The Materialize node saves the data
+    in memory as it's read, and then returns the data from memory on each
+    subsequent pass.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    注意这里规划器选择了<quote>物化</quote>连接的 inner 关系，方法是在它的上方放了一个物化计划结点。这意味着<literal>t2</literal>索引扫描将只被做一次，即使嵌套循环连接结点需要读取其数据十次（每个来自 outer 关系的行都要读一次）。物化结点在读取数据时将它保存在内存中，然后在每一次后续执行时从内存返回数据。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    When dealing with outer joins, you might see join plan nodes with both
+    <quote>Join Filter</quote> and plain <quote>Filter</quote> conditions attached.
+    Join Filter conditions come from the outer join's <literal>ON</literal> clause,
+    so a row that fails the Join Filter condition could still get emitted as
+    a null-extended row.  But a plain Filter condition is applied after the
+    outer-join rules and so acts to remove rows unconditionally.  In an inner
+    join there is no semantic difference between these types of filters.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在处理外连接时，你可能会看到连接计划结点同时附加有<quote>连接过滤器</quote>和普通<quote>过滤器</quote>条件。连接过滤器条件来自于外连接的<literal>ON</literal>子句，因此一个无法通过连接过滤器条件的行也能够作为一个空值扩展的行被发出。但是一个普通过滤器条件被应用在外连接条件之后并且因此无条件移除行。在一个内连接中这两种过滤器类型没有语义区别。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    If we change the query's selectivity a bit, we might get a very different
+    join plan:
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2;
+
+                                        QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Hash Join  (cost=230.47..713.98 rows=101 width=488)
+   Hash Cond: (t2.unique2 = t1.unique2)
+   -&gt;  Seq Scan on tenk2 t2  (cost=0.00..445.00 rows=10000 width=244)
+   -&gt;  Hash  (cost=229.20..229.20 rows=101 width=244)
+         -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=5.07..229.20 rows=101 width=244)
+               Recheck Cond: (unique1 &lt; 100)
+               -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+                     Index Cond: (unique1 &lt; 100)
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果我们把查询的选择度改变一点，我们可能得到一个非常不同的连接计划：
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2;
+
+                                        QUERY PLAN
+------------------------------------------------------------------------------------------
+ Hash Join  (cost=230.47..713.98 rows=101 width=488)
+   Hash Cond: (t2.unique2 = t1.unique2)
+   -&gt;  Seq Scan on tenk2 t2  (cost=0.00..445.00 rows=10000 width=244)
+   -&gt;  Hash  (cost=229.20..229.20 rows=101 width=244)
+         -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=5.07..229.20 rows=101 width=244)
+               Recheck Cond: (unique1 &lt; 100)
+               -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0)
+                     Index Cond: (unique1 &lt; 100)
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Here, the planner has chosen to use a hash join, in which rows of one
+    table are entered into an in-memory hash table, after which the other
+    table is scanned and the hash table is probed for matches to each row.
+    Again note how the indentation reflects the plan structure: the bitmap
+    scan on <literal>tenk1</literal> is the input to the Hash node, which constructs
+    the hash table.  That's then returned to the Hash Join node, which reads
+    rows from its outer child plan and searches the hash table for each one.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这里规划器选择了使用一个哈希连接，在其中一个表的行被放入一个内存哈希表，在这之后其他表被扫描并且为每一行查找哈希表来寻找匹配。同样要注意缩进是如何反映计划结构的：<literal>tenk1</literal>上的位图扫描是哈希结点的输入，哈希结点会构造哈希表。然后哈希表会返回给哈希连接结点，哈希连接结点将从它的 outer 子计划读取行，并为每一个行搜索哈希表。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Another possible type of join is a merge join, illustrated here:
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, onek t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2;
+
+                                        QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Merge Join  (cost=198.11..268.19 rows=10 width=488)
+   Merge Cond: (t1.unique2 = t2.unique2)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1 t1  (cost=0.29..656.28 rows=101 width=244)
+         Filter: (unique1 &lt; 100)
+   -&gt;  Sort  (cost=197.83..200.33 rows=1000 width=244)
+         Sort Key: t2.unique2
+         -&gt;  Seq Scan on onek t2  (cost=0.00..148.00 rows=1000 width=244)
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    另一种可能的连接类型是一个归并连接，如下所示：
+
+<screen>
+EXPLAIN SELECT *
+FROM tenk1 t1, onek t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2;
+
+                                        QUERY PLAN
+------------------------------------------------------------------------------------------
+ Merge Join  (cost=198.11..268.19 rows=10 width=488)
+   Merge Cond: (t1.unique2 = t2.unique2)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1 t1  (cost=0.29..656.28 rows=101 width=244)
+         Filter: (unique1 &lt; 100)
+   -&gt;  Sort  (cost=197.83..200.33 rows=1000 width=244)
+         Sort Key: t2.unique2
+         -&gt;  Seq Scan on onek t2  (cost=0.00..148.00 rows=1000 width=244)
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Merge join requires its input data to be sorted on the join keys.  In this
+    plan the <literal>tenk1</literal> data is sorted by using an index scan to visit
+    the rows in the correct order, but a sequential scan and sort is preferred
+    for <literal>onek</literal>, because there are many more rows to be visited in
+    that table.
+    (Sequential-scan-and-sort frequently beats an index scan for sorting many rows,
+    because of the nonsequential disk access required by the index scan.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    归并连接要求它的输入数据被按照连接键排序。在这个计划中，<literal>tenk1</literal>数据被使用一个索引扫描排序，以便能够按照正确的顺序来访问行。但是对于<literal>onek</literal>则更倾向于一个顺序扫描和排序，因为在那个表中有更多行需要被访问（对于很多行的排序，顺序扫描加排序常常比一个索引扫描好，因为索引扫描需要非顺序的磁盘访问）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    One way to look at variant plans is to force the planner to disregard
+    whatever strategy it thought was the cheapest, using the enable/disable
+    flags described in <xref linkend="runtime-config-query-enable"/>.
+    (This is a crude tool, but useful.  See
+    also <xref linkend="explicit-joins"/>.)
+    For example, if we're unconvinced that sequential-scan-and-sort is the best way to
+    deal with table <literal>onek</literal> in the previous example, we could try
+
+<screen>
+SET enable_sort = off;
+
+EXPLAIN SELECT *
+FROM tenk1 t1, onek t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2;
+
+                                        QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Merge Join  (cost=0.56..292.65 rows=10 width=488)
+   Merge Cond: (t1.unique2 = t2.unique2)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1 t1  (cost=0.29..656.28 rows=101 width=244)
+         Filter: (unique1 &lt; 100)
+   -&gt;  Index Scan using onek_unique2 on onek t2  (cost=0.28..224.79 rows=1000 width=244)
+</screen>
+
+    which shows that the planner thinks that sorting <literal>onek</literal> by
+    index-scanning is about 12% more expensive than sequential-scan-and-sort.
+    Of course, the next question is whether it's right about that.
+    We can investigate that using <command>EXPLAIN ANALYZE</command>, as discussed
+    below.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    一种查看变体计划的方法是强制规划器丢弃它认为开销最低的任何策略，这可以使用<xref linkend="runtime-config-query-enable"/>中描述的启用/禁用标志实现（这是一个野蛮的工具，但是很有用。另见<xref linkend="explicit-joins"/>）。例如，如果我们并不认同在前面的例子中顺序扫描加排序是处理表<literal>onek</literal>的最佳方法，我们可以尝试：
+
+<screen>
+SET enable_sort = off;
+
+EXPLAIN SELECT *
+FROM tenk1 t1, onek t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2;
+
+                                        QUERY PLAN
+------------------------------------------------------------------------------------------
+ Merge Join  (cost=0.56..292.65 rows=10 width=488)
+   Merge Cond: (t1.unique2 = t2.unique2)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1 t1  (cost=0.29..656.28 rows=101 width=244)
+         Filter: (unique1 &lt; 100)
+   -&gt;  Index Scan using onek_unique2 on onek t2  (cost=0.28..224.79 rows=1000 width=244)
+</screen>
+
+    这显示规划器认为用索引扫描来排序<literal>onek</literal>的开销要比用顺序扫描加排序的方式高大约12%。当然，下一个问题是是否真的是这样。我们可以通过使用<command>EXPLAIN ANALYZE</command>来仔细研究一下，如下文所述。
+   </para>
+
+  </sect2>
+
+  <sect2 id="using-explain-analyze">
+<!--==========================orignal english content==========================
+   <title><command>EXPLAIN ANALYZE</command></title>
+____________________________________________________________________________-->
+   <title><command>EXPLAIN ANALYZE</command></title>
+
+<!--==========================orignal english content==========================
+   <para>
+    It is possible to check the accuracy of the planner's estimates
+    by using <command>EXPLAIN</command>'s <literal>ANALYZE</literal> option.  With this
+    option, <command>EXPLAIN</command> actually executes the query, and then displays
+    the true row counts and true run time accumulated within each plan node,
+    along with the same estimates that a plain <command>EXPLAIN</command>
+    shows.  For example, we might get a result like this:
+
+<screen>
+EXPLAIN ANALYZE SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 10 AND t1.unique2 = t2.unique2;
+
+                                                           QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Nested Loop  (cost=4.65..118.62 rows=10 width=488) (actual time=0.128..0.377 rows=10 loops=1)
+   -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=4.36..39.47 rows=10 width=244) (actual time=0.057..0.121 rows=10 loops=1)
+         Recheck Cond: (unique1 &lt; 10)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..4.36 rows=10 width=0) (actual time=0.024..0.024 rows=10 loops=1)
+               Index Cond: (unique1 &lt; 10)
+   -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.29..7.91 rows=1 width=244) (actual time=0.021..0.022 rows=1 loops=10)
+         Index Cond: (unique2 = t1.unique2)
+ Planning time: 0.181 ms
+ Execution time: 0.501 ms
+</screen>
+
+    Note that the <quote>actual time</quote> values are in milliseconds of
+    real time, whereas the <literal>cost</literal> estimates are expressed in
+    arbitrary units; so they are unlikely to match up.
+    The thing that's usually most important to look for is whether the
+    estimated row counts are reasonably close to reality.  In this example
+    the estimates were all dead-on, but that's quite unusual in practice.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    可以通过使用<command>EXPLAIN</command>的<literal>ANALYZE</literal>选项来检查规划器估计值的准确性。通过使用这个选项，<command>EXPLAIN</command>会实际执行该查询，然后显示真实的行计数和在每个计划结点中累计的真实运行时间，还会有一个普通<command>EXPLAIN</command>显示的估计值。例如，我们可能得到这样一个结果：
+
+<screen>
+EXPLAIN ANALYZE SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 10 AND t1.unique2 = t2.unique2;
+
+                                                           QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=4.65..118.62 rows=10 width=488) (actual time=0.128..0.377 rows=10 loops=1)
+   -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=4.36..39.47 rows=10 width=244) (actual time=0.057..0.121 rows=10 loops=1)
+         Recheck Cond: (unique1 &lt; 10)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..4.36 rows=10 width=0) (actual time=0.024..0.024 rows=10 loops=1)
+               Index Cond: (unique1 &lt; 10)
+   -&gt;  Index Scan using tenk2_unique2 on tenk2 t2  (cost=0.29..7.91 rows=1 width=244) (actual time=0.021..0.022 rows=1 loops=10)
+         Index Cond: (unique2 = t1.unique2)
+ Planning time: 0.181 ms
+ Execution time: 0.501 ms
+</screen>
+
+    注意<quote>actual time</quote>值是以毫秒计的真实时间，而<literal>cost</literal>估计值被以捏造的单位表示，因此它们不大可能匹配上。在这里面要查看的最重要的一点是估计的行计数是否合理地接近实际值。在这个例子中，估计值都是完全正确的，但是在实际中非常少见。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    In some query plans, it is possible for a subplan node to be executed more
+    than once.  For example, the inner index scan will be executed once per
+    outer row in the above nested-loop plan.  In such cases, the
+    <literal>loops</literal> value reports the
+    total number of executions of the node, and the actual time and rows
+    values shown are averages per-execution.  This is done to make the numbers
+    comparable with the way that the cost estimates are shown.  Multiply by
+    the <literal>loops</literal> value to get the total time actually spent in
+    the node.  In the above example, we spent a total of 0.220 milliseconds
+    executing the index scans on <literal>tenk2</literal>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在某些查询计划中，可以多次执行一个子计划结点。例如，inner 索引扫描可能会因为上层嵌套循环计划中的每一个 outer 行而被执行一次。在这种情况下，<literal>loops</literal>值报告了执行该结点的总次数，并且 actual time 和行数值是这些执行的平均值。这是为了让这些数字能够与开销估计被显示的方式有可比性。将这些值乘上<literal>loops</literal>值可以得到在该结点中实际消耗的总时间。在上面的例子中，我们在执行<literal>tenk2</literal>的索引扫描上花费了总共 0.220 毫秒。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    In some cases <command>EXPLAIN ANALYZE</command> shows additional execution
+    statistics beyond the plan node execution times and row counts.
+    For example, Sort and Hash nodes provide extra information:
+
+<screen>
+EXPLAIN ANALYZE SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2 ORDER BY t1.fivethous;
+
+                                                                 QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Sort  (cost=717.34..717.59 rows=101 width=488) (actual time=7.761..7.774 rows=100 loops=1)
+   Sort Key: t1.fivethous
+   Sort Method: quicksort  Memory: 77kB
+   -&gt;  Hash Join  (cost=230.47..713.98 rows=101 width=488) (actual time=0.711..7.427 rows=100 loops=1)
+         Hash Cond: (t2.unique2 = t1.unique2)
+         -&gt;  Seq Scan on tenk2 t2  (cost=0.00..445.00 rows=10000 width=244) (actual time=0.007..2.583 rows=10000 loops=1)
+         -&gt;  Hash  (cost=229.20..229.20 rows=101 width=244) (actual time=0.659..0.659 rows=100 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 28kB
+               -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=5.07..229.20 rows=101 width=244) (actual time=0.080..0.526 rows=100 loops=1)
+                     Recheck Cond: (unique1 &lt; 100)
+                     -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.049..0.049 rows=100 loops=1)
+                           Index Cond: (unique1 &lt; 100)
+ Planning time: 0.194 ms
+ Execution time: 8.008 ms
+</screen>
+
+    The Sort node shows the sort method used (in particular, whether the sort
+    was in-memory or on-disk) and the amount of memory or disk space needed.
+    The Hash node shows the number of hash buckets and batches as well as the
+    peak amount of memory used for the hash table.  (If the number of batches
+    exceeds one, there will also be disk space usage involved, but that is not
+    shown.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在某些情况中，<command>EXPLAIN ANALYZE</command>会显示计划结点执行时间和行计数之外的额外执行统计信息。例如，排序和哈希结点提供额外的信息：
+
+<screen>
+EXPLAIN ANALYZE SELECT *
+FROM tenk1 t1, tenk2 t2
+WHERE t1.unique1 &lt; 100 AND t1.unique2 = t2.unique2 ORDER BY t1.fivethous;
+
+                                                                 QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=717.34..717.59 rows=101 width=488) (actual time=7.761..7.774 rows=100 loops=1)
+   Sort Key: t1.fivethous
+   Sort Method: quicksort  Memory: 77kB
+   -&gt;  Hash Join  (cost=230.47..713.98 rows=101 width=488) (actual time=0.711..7.427 rows=100 loops=1)
+         Hash Cond: (t2.unique2 = t1.unique2)
+         -&gt;  Seq Scan on tenk2 t2  (cost=0.00..445.00 rows=10000 width=244) (actual time=0.007..2.583 rows=10000 loops=1)
+         -&gt;  Hash  (cost=229.20..229.20 rows=101 width=244) (actual time=0.659..0.659 rows=100 loops=1)
+               Buckets: 1024  Batches: 1  Memory Usage: 28kB
+               -&gt;  Bitmap Heap Scan on tenk1 t1  (cost=5.07..229.20 rows=101 width=244) (actual time=0.080..0.526 rows=100 loops=1)
+                     Recheck Cond: (unique1 &lt; 100)
+                     -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.049..0.049 rows=100 loops=1)
+                           Index Cond: (unique1 &lt; 100)
+ Planning time: 0.194 ms
+ Execution time: 8.008 ms
+</screen>
+
+    排序结点显示使用的排序方法（尤其是，排序是在内存中还是磁盘上进行）和需要的内存或磁盘空间量。哈希结点显示了哈希桶的数量和批数，以及被哈希表所使用的内存量的峰值（如果批数超过一，也将会涉及到磁盘空间使用，但是并没有被显示）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Another type of extra information is the number of rows removed by a
+    filter condition:
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE ten &lt; 7;
+
+                                               QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on tenk1  (cost=0.00..483.00 rows=7000 width=244) (actual time=0.016..5.107 rows=7000 loops=1)
+   Filter: (ten &lt; 7)
+   Rows Removed by Filter: 3000
+ Planning time: 0.083 ms
+ Execution time: 5.905 ms
+</screen>
+
+    These counts can be particularly valuable for filter conditions applied at
+    join nodes.  The <quote>Rows Removed</quote> line only appears when at least
+    one scanned row, or potential join pair in the case of a join node,
+    is rejected by the filter condition.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    另一种类型的额外信息是被一个过滤器条件移除的行数：
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE ten &lt; 7;
+
+                                               QUERY PLAN
+---------------------------------------------------------------------------------------------------------
+ Seq Scan on tenk1  (cost=0.00..483.00 rows=7000 width=244) (actual time=0.016..5.107 rows=7000 loops=1)
+   Filter: (ten &lt; 7)
+   Rows Removed by Filter: 3000
+ Planning time: 0.083 ms
+ Execution time: 5.905 ms
+</screen>
+
+    这些值对于被应用在连接结点上的过滤器条件特别有价值。只有在至少有一个被扫描行或者在连接结点中一个可能的连接对被过滤器条件拒绝时，<quote>Rows Removed</quote>行才会出现。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    A case similar to filter conditions occurs with <quote>lossy</quote>
+    index scans.  For example, consider this search for polygons containing a
+    specific point:
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM polygon_tbl WHERE f1 @&gt; polygon '(0.5,2.0)';
+
+                                              QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Seq Scan on polygon_tbl  (cost=0.00..1.05 rows=1 width=32) (actual time=0.044..0.044 rows=0 loops=1)
+   Filter: (f1 @&gt; '((0.5,2))'::polygon)
+   Rows Removed by Filter: 4
+ Planning time: 0.040 ms
+ Execution time: 0.083 ms
+</screen>
+
+    The planner thinks (quite correctly) that this sample table is too small
+    to bother with an index scan, so we have a plain sequential scan in which
+    all the rows got rejected by the filter condition.  But if we force an
+    index scan to be used, we see:
+
+<screen>
+SET enable_seqscan TO off;
+
+EXPLAIN ANALYZE SELECT * FROM polygon_tbl WHERE f1 @&gt; polygon '(0.5,2.0)';
+
+                                                        QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Index Scan using gpolygonind on polygon_tbl  (cost=0.13..8.15 rows=1 width=32) (actual time=0.062..0.062 rows=0 loops=1)
+   Index Cond: (f1 @&gt; '((0.5,2))'::polygon)
+   Rows Removed by Index Recheck: 1
+ Planning time: 0.034 ms
+ Execution time: 0.144 ms
+</screen>
+
+    Here we can see that the index returned one candidate row, which was
+    then rejected by a recheck of the index condition.  This happens because a
+    GiST index is <quote>lossy</quote> for polygon containment tests: it actually
+    returns the rows with polygons that overlap the target, and then we have
+    to do the exact containment test on those rows.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    一个与过滤器条件相似的情况出现在<quote>有损</quote>索引扫描中。例如，考虑这个查询，它搜索包含一个指定点的多边形：
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM polygon_tbl WHERE f1 @&gt; polygon '(0.5,2.0)';
+
+                                              QUERY PLAN
+------------------------------------------------------------------------------------------------------
+ Seq Scan on polygon_tbl  (cost=0.00..1.05 rows=1 width=32) (actual time=0.044..0.044 rows=0 loops=1)
+   Filter: (f1 @&gt; '((0.5,2))'::polygon)
+   Rows Removed by Filter: 4
+ Planning time: 0.040 ms
+ Execution time: 0.083 ms
+</screen>
+
+    规划器认为（非常正确）这个采样表太小不值得劳烦一次索引扫描，因此我们得到了一个普通的顺序扫描，其中的所有行都被过滤器条件拒绝。但是如果我们强制使得一次索引扫描可以被使用，我们看到：
+
+<screen>
+SET enable_seqscan TO off;
+
+EXPLAIN ANALYZE SELECT * FROM polygon_tbl WHERE f1 @&gt; polygon '(0.5,2.0)';
+
+                                                        QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------
+ Index Scan using gpolygonind on polygon_tbl  (cost=0.13..8.15 rows=1 width=32) (actual time=0.062..0.062 rows=0 loops=1)
+   Index Cond: (f1 @&gt; '((0.5,2))'::polygon)
+   Rows Removed by Index Recheck: 1
+ Planning time: 0.034 ms
+ Execution time: 0.144 ms
+</screen>
+
+    这里我们可以看到索引返回一个候选行，然后它会被索引条件的重新检查拒绝。这是因为一个 GiST 索引对于多边形包含测试是 <quote>有损的</quote>：它确实返回覆盖目标的多边形的行，然后我们必须在那些行上做精确的包含性测试。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    <command>EXPLAIN</command> has a <literal>BUFFERS</literal> option that can be used with
+    <literal>ANALYZE</literal> to get even more run time statistics:
+
+<screen>
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000;
+
+                                                           QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Bitmap Heap Scan on tenk1  (cost=25.08..60.21 rows=10 width=244) (actual time=0.323..0.342 rows=10 loops=1)
+   Recheck Cond: ((unique1 &lt; 100) AND (unique2 &gt; 9000))
+   Buffers: shared hit=15
+   -&gt;  BitmapAnd  (cost=25.08..25.08 rows=10 width=0) (actual time=0.309..0.309 rows=0 loops=1)
+         Buffers: shared hit=7
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.043..0.043 rows=100 loops=1)
+               Index Cond: (unique1 &lt; 100)
+               Buffers: shared hit=2
+         -&gt;  Bitmap Index Scan on tenk1_unique2  (cost=0.00..19.78 rows=999 width=0) (actual time=0.227..0.227 rows=999 loops=1)
+               Index Cond: (unique2 &gt; 9000)
+               Buffers: shared hit=5
+ Planning time: 0.088 ms
+ Execution time: 0.423 ms
+</screen>
+
+    The numbers provided by <literal>BUFFERS</literal> help to identify which parts
+    of the query are the most I/O-intensive.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <command>EXPLAIN</command>有一个<literal>BUFFERS</literal>选项可以和<literal>ANALYZE</literal>一起使用来得到更多运行时统计信息：
+
+<screen>
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000;
+
+                                                           QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on tenk1  (cost=25.08..60.21 rows=10 width=244) (actual time=0.323..0.342 rows=10 loops=1)
+   Recheck Cond: ((unique1 &lt; 100) AND (unique2 &gt; 9000))
+   Buffers: shared hit=15
+   -&gt;  BitmapAnd  (cost=25.08..25.08 rows=10 width=0) (actual time=0.309..0.309 rows=0 loops=1)
+         Buffers: shared hit=7
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.043..0.043 rows=100 loops=1)
+               Index Cond: (unique1 &lt; 100)
+               Buffers: shared hit=2
+         -&gt;  Bitmap Index Scan on tenk1_unique2  (cost=0.00..19.78 rows=999 width=0) (actual time=0.227..0.227 rows=999 loops=1)
+               Index Cond: (unique2 &gt; 9000)
+               Buffers: shared hit=5
+ Planning time: 0.088 ms
+ Execution time: 0.423 ms
+</screen>
+
+    <literal>BUFFERS</literal>提供的数字帮助我们标识查询的哪些部分是对 I/O 最敏感的。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Keep in mind that because <command>EXPLAIN ANALYZE</command> actually
+    runs the query, any side-effects will happen as usual, even though
+    whatever results the query might output are discarded in favor of
+    printing the <command>EXPLAIN</command> data.  If you want to analyze a
+    data-modifying query without changing your tables, you can
+    roll the command back afterwards, for example:
+
+<screen>
+BEGIN;
+
+EXPLAIN ANALYZE UPDATE tenk1 SET hundred = hundred + 1 WHERE unique1 &lt; 100;
+
+                                                           QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ Update on tenk1  (cost=5.07..229.46 rows=101 width=250) (actual time=14.628..14.628 rows=0 loops=1)
+   -&gt;  Bitmap Heap Scan on tenk1  (cost=5.07..229.46 rows=101 width=250) (actual time=0.101..0.439 rows=100 loops=1)
+         Recheck Cond: (unique1 &lt; 100)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.043..0.043 rows=100 loops=1)
+               Index Cond: (unique1 &lt; 100)
+ Planning time: 0.079 ms
+ Execution time: 14.727 ms
+
+ROLLBACK;
+</screen>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    记住因为<command>EXPLAIN ANALYZE</command>实际运行查询，任何副作用都将照常发生，即使查询可能输出的任何结果被丢弃来支持打印<command>EXPLAIN</command>数据。如果你想要分析一个数据修改查询而不想改变你的表，你可以在分析完后回滚命令，例如：
+
+<screen>
+BEGIN;
+
+EXPLAIN ANALYZE UPDATE tenk1 SET hundred = hundred + 1 WHERE unique1 &lt; 100;
+
+                                                           QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------------
+ Update on tenk1  (cost=5.07..229.46 rows=101 width=250) (actual time=14.628..14.628 rows=0 loops=1)
+   -&gt;  Bitmap Heap Scan on tenk1  (cost=5.07..229.46 rows=101 width=250) (actual time=0.101..0.439 rows=100 loops=1)
+         Recheck Cond: (unique1 &lt; 100)
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.043..0.043 rows=100 loops=1)
+               Index Cond: (unique1 &lt; 100)
+ Planning time: 0.079 ms
+ Execution time: 14.727 ms
+
+ROLLBACK;
+</screen>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    As seen in this example, when the query is an <command>INSERT</command>,
+    <command>UPDATE</command>, or <command>DELETE</command> command, the actual work of
+    applying the table changes is done by a top-level Insert, Update,
+    or Delete plan node.  The plan nodes underneath this node perform
+    the work of locating the old rows and/or computing the new data.
+    So above, we see the same sort of bitmap table scan we've seen already,
+    and its output is fed to an Update node that stores the updated rows.
+    It's worth noting that although the data-modifying node can take a
+    considerable amount of run time (here, it's consuming the lion's share
+    of the time), the planner does not currently add anything to the cost
+    estimates to account for that work.  That's because the work to be done is
+    the same for every correct query plan, so it doesn't affect planning
+    decisions.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    正如在这个例子中所看到的，当查询是一个<command>INSERT</command>、<command>UPDATE</command>或<command>DELETE</command>命令时，应用表更改的实际工作由顶层插入、更新或删除计划结点完成。这个结点之下的计划结点执行定位旧行以及/或者计算新数据的工作。因此在上面，我们看到我们已经见过的位图表扫描，它的输出被交给一个更新结点，更新结点会存储被更新过的行。还有一点值得注意的是，尽管数据修改结点可能要可观的运行时间（这里，它消耗最大份额的时间），规划器当前并没有对开销估计增加任何东西来说明这些工作。这是因为这些工作对每一个正确的查询计划都得做，所以它不影响计划的选择。
+   </para>
+   
+<!--==========================orignal english content==========================
+   <para>
+    When an <command>UPDATE</command> or <command>DELETE</command> command affects an
+    inheritance hierarchy, the output might look like this:
+
+<screen>
+EXPLAIN UPDATE parent SET f2 = f2 + 1 WHERE f1 = 101;
+                                    QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Update on parent  (cost=0.00..24.53 rows=4 width=14)
+   Update on parent
+   Update on child1
+   Update on child2
+   Update on child3
+   -&gt;  Seq Scan on parent  (cost=0.00..0.00 rows=1 width=14)
+         Filter: (f1 = 101)
+   -&gt;  Index Scan using child1_f1_key on child1  (cost=0.15..8.17 rows=1 width=14)
+         Index Cond: (f1 = 101)
+   -&gt;  Index Scan using child2_f1_key on child2  (cost=0.15..8.17 rows=1 width=14)
+         Index Cond: (f1 = 101)
+   -&gt;  Index Scan using child3_f1_key on child3  (cost=0.15..8.17 rows=1 width=14)
+         Index Cond: (f1 = 101)
+</screen>
+
+    In this example the Update node needs to consider three child tables as
+    well as the originally-mentioned parent table.  So there are four input
+    scanning subplans, one per table.  For clarity, the Update node is
+    annotated to show the specific target tables that will be updated, in the
+    same order as the corresponding subplans.  (These annotations are new as
+    of <productname>PostgreSQL</productname> 9.5; in prior versions the reader had to
+    intuit the target tables by inspecting the subplans.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当一个<command>UPDATE</command>或者<command>DELETE</command>命令影响继承层次时，
+    输出可能像这样：
+
+<screen>
+EXPLAIN UPDATE parent SET f2 = f2 + 1 WHERE f1 = 101;
+                                    QUERY PLAN
+-----------------------------------------------------------------------------------
+ Update on parent  (cost=0.00..24.53 rows=4 width=14)
+   Update on parent
+   Update on child1
+   Update on child2
+   Update on child3
+   -&gt;  Seq Scan on parent  (cost=0.00..0.00 rows=1 width=14)
+         Filter: (f1 = 101)
+   -&gt;  Index Scan using child1_f1_key on child1  (cost=0.15..8.17 rows=1 width=14)
+         Index Cond: (f1 = 101)
+   -&gt;  Index Scan using child2_f1_key on child2  (cost=0.15..8.17 rows=1 width=14)
+         Index Cond: (f1 = 101)
+   -&gt;  Index Scan using child3_f1_key on child3  (cost=0.15..8.17 rows=1 width=14)
+         Index Cond: (f1 = 101)
+</screen>
+
+    在这个例子中，更新节点需要考虑三个子表以及最初提到的父表。因此有四个输入
+    的扫描子计划，每一个对应于一个表。为清楚起见，在更新节点上标注了将被更新
+    的相关目标表，显示的顺序与相应的子计划相同（这些标注是从
+    <productname>PostgreSQL</productname> 9.5 开始新增的，在以前的版本中读者必须通过
+    观察子计划才能知道这些目标表）。
+   </para>
+   
+<!--==========================orignal english content==========================
+   <para>
+    The <literal>Planning time</literal> shown by <command>EXPLAIN
+    ANALYZE</command> is the time it took to generate the query plan from the
+    parsed query and optimize it. It does not include parsing or rewriting.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <command>EXPLAIN ANALYZE</command>显示的
+    <literal>Planning time</literal>是从一个已解析的查询生成查询计划并进行优化
+    所花费的时间，其中不包括解析和重写。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The <literal>Execution time</literal> shown by <command>EXPLAIN
+    ANALYZE</command> includes executor start-up and shut-down time, as well
+    as the time to run any triggers that are fired, but it does not include
+    parsing, rewriting, or planning time.
+    Time spent executing <literal>BEFORE</literal> triggers, if any, is included in
+    the time for the related Insert, Update, or Delete node; but time
+    spent executing <literal>AFTER</literal> triggers is not counted there because
+    <literal>AFTER</literal> triggers are fired after completion of the whole plan.
+    The total time spent in each trigger
+    (either <literal>BEFORE</literal> or <literal>AFTER</literal>) is also shown separately.
+    Note that deferred constraint triggers will not be executed
+    until end of transaction and are thus not considered at all by
+    <command>EXPLAIN ANALYZE</command>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <command>EXPLAIN ANALYZE</command>显示的<literal>Execution time</literal>包括执行器的启动和关闭时间，以及运行被触发的任何触发器的时间，但是它不包括解析、重写或规划的时间。如果有花在执行<literal>BEFORE</literal>执行器的时间，它将被包括在相关的插入、更新或删除结点的时间内；但是用来执行<literal>AFTER</literal> 触发器的时间没有被计算，因为<literal>AFTER</literal>触发器是在整个计划完成后被触发的。在每个触发器（<literal>BEFORE</literal>或<literal>AFTER</literal>）也被独立地显示。注意延迟约束触发器将不会被执行，直到事务结束，并且因此根本不会被<command>EXPLAIN ANALYZE</command>考虑。
+   </para>
+
+  </sect2>
+
+  <sect2 id="using-explain-caveats">
+<!--==========================orignal english content==========================
+   <title>Caveats</title>
+____________________________________________________________________________-->
+   <title>警告</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    There are two significant ways in which run times measured by
+    <command>EXPLAIN ANALYZE</command> can deviate from normal execution of
+    the same query.  First, since no output rows are delivered to the client,
+    network transmission costs and I/O conversion costs are not included.
+    Second, the measurement overhead added by <command>EXPLAIN
+    ANALYZE</command> can be significant, especially on machines with slow
+    <function>gettimeofday()</function> operating-system calls. You can use the
+    <xref linkend="pgtesttiming"/> tool to measure the overhead of timing
+    on your system.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在两种有效的方法中<command>EXPLAIN ANALYZE</command>所度量的运行时间可能偏离同一个查询的正常执行。首先，由于不会有输出行被递交给客户端，网络传输开销和 I/O 转换开销没有被包括在内。其次，由<command>EXPLAIN ANALYZE</command>所增加的度量符合可能会很可观，特别是在那些<function>gettimeofday()</function>操作系统调用很慢的机器上。你可以使用<xref linkend="pgtesttiming"/>工具来度量在你的系统上的计时开销。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    <command>EXPLAIN</command> results should not be extrapolated to situations
+    much different from the one you are actually testing; for example,
+    results on a toy-sized table cannot be assumed to apply to large tables.
+    The planner's cost estimates are not linear and so it might choose
+    a different plan for a larger or smaller table.  An extreme example
+    is that on a table that only occupies one disk page, you'll nearly
+    always get a sequential scan plan whether indexes are available or not.
+    The planner realizes that it's going to take one disk page read to
+    process the table in any case, so there's no value in expending additional
+    page reads to look at an index.  (We saw this happening in the
+    <literal>polygon_tbl</literal> example above.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <command>EXPLAIN</command>结果不应该被外推到与你实际测试的非常不同的情况。例如，一个很小的表上的结果不能被假定成适合大型表。规划器的开销估计不是线性的，并且因此它可能为一个更大或更小的表选择一个不同的计划。一个极端例子是，在一个只占据一个磁盘页面的表上，你将几乎总是得到一个顺序扫描计划，而不管索引是否可用。规划器认识到它在任何情况下都将采用一次磁盘页面读取来处理该表，因此用额外的页面读取去查看一个索引是没有价值的（我们已经在前面的<literal>polygon_tbl</literal>例子中见过）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    There are cases in which the actual and estimated values won't match up
+    well, but nothing is really wrong.  One such case occurs when
+    plan node execution is stopped short by a <literal>LIMIT</literal> or similar
+    effect.  For example, in the <literal>LIMIT</literal> query we used before,
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000 LIMIT 2;
+
+                                                          QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Limit  (cost=0.29..14.71 rows=2 width=244) (actual time=0.177..0.249 rows=2 loops=1)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1  (cost=0.29..72.42 rows=10 width=244) (actual time=0.174..0.244 rows=2 loops=1)
+         Index Cond: (unique2 &gt; 9000)
+         Filter: (unique1 &lt; 100)
+         Rows Removed by Filter: 287
+ Planning time: 0.096 ms
+ Execution time: 0.336 ms
+</screen>
+
+    the estimated cost and row count for the Index Scan node are shown as
+    though it were run to completion.  But in reality the Limit node stopped
+    requesting rows after it got two, so the actual row count is only 2 and
+    the run time is less than the cost estimate would suggest.  This is not
+    an estimation error, only a discrepancy in the way the estimates and true
+    values are displayed.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在一些情况中，实际的值和估计的值不会匹配得很好，但是这并非错误。一种这样的情况发生在计划结点的执行被<literal>LIMIT</literal>或类似的效果很快停止。例如，在我们之前用过的<literal>LIMIT</literal>查询中：
+
+<screen>
+EXPLAIN ANALYZE SELECT * FROM tenk1 WHERE unique1 &lt; 100 AND unique2 &gt; 9000 LIMIT 2;
+
+                                                          QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..14.71 rows=2 width=244) (actual time=0.177..0.249 rows=2 loops=1)
+   -&gt;  Index Scan using tenk1_unique2 on tenk1  (cost=0.29..72.42 rows=10 width=244) (actual time=0.174..0.244 rows=2 loops=1)
+         Index Cond: (unique2 &gt; 9000)
+         Filter: (unique1 &lt; 100)
+         Rows Removed by Filter: 287
+ Planning time: 0.096 ms
+ Execution time: 0.336 ms
+</screen>
+
+    索引扫描结点的估计开销和行计数被显示成好像它会运行到完成。但是实际上限制结点在得到两个行之后就停止请求行，因此实际的行计数只有 2 并且运行时间远低于开销估计所建议的时间。这并非估计错误，这仅仅一种估计值和实际值显示方式上的不同。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Merge joins also have measurement artifacts that can confuse the unwary.
+    A merge join will stop reading one input if it's exhausted the other input
+    and the next key value in the one input is greater than the last key value
+    of the other input; in such a case there can be no more matches and so no
+    need to scan the rest of the first input.  This results in not reading all
+    of one child, with results like those mentioned for <literal>LIMIT</literal>.
+    Also, if the outer (first) child contains rows with duplicate key values,
+    the inner (second) child is backed up and rescanned for the portion of its
+    rows matching that key value.  <command>EXPLAIN ANALYZE</command> counts these
+    repeated emissions of the same inner rows as if they were real additional
+    rows.  When there are many outer duplicates, the reported actual row count
+    for the inner child plan node can be significantly larger than the number
+    of rows that are actually in the inner relation.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    归并连接也有类似的现象。如果一个归并连接用尽了一个输入并且其中的最后一个键值小于另一个输入中的下一个键值，它将停止读取另一个输入。在这种情况下，不会有更多的匹配并且因此不需要扫描第二个输入的剩余部分。这会导致不读取一个子结点的所有内容，其结果就像在<literal>LIMIT</literal>中所提到的。另外，如果 outer （第一个）子结点包含带有重复键值的行，inner（第二个）子结点会被倒退并且被重新扫描来找能匹配那个键值的行。<command>EXPLAIN ANALYZE</command>会统计相同 inner 行的重复发出，就好像它们是真实的额外行。当有很多 outer 重复时，对 inner 子计划结点所报告的实际行计数会显著地大于实际在 inner 关系中的行数。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    BitmapAnd and BitmapOr nodes always report their actual row counts as zero,
+    due to implementation limitations.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    由于实现的限制，BitmapAnd 和 BitmapOr 结点总是报告它们的实际行计数为零。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Generally, the <command>EXPLAIN</command> output will display details for
+    every plan node which was generated by the query planner.  However, there
+    are cases where the executor is able to determine that certain nodes are
+    not required; currently, the only node type to support this is the
+    <literal>Append</literal> node.  This node type has the ability to discard
+    subnodes which it is able to determine won't contain any records required
+    by the query.  It is possible to determine that nodes have been removed in
+    this way by the presence of a "Subplans Removed" property in the
+    <command>EXPLAIN</command> output.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    通常，<command>EXPLAIN</command>输出将显示查询规划器生成的每个计划节点的详细情况。不过，有一些情况中执行器能够确定特定的节点不是必需的。当前，唯一支持这种行动的节点类型是<literal>Append</literal>节点。这种节点类型有能力丢弃掉确定不会产生查询所需记录的子节点。可以通过<command>EXPLAIN</command>输出中的“Subplans Removed”属性的存在确定已经被移除的节点。
+   </para>
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="planner-stats">
+<!--==========================orignal english content==========================
+  <title>Statistics Used by the Planner</title>
+____________________________________________________________________________-->
+  <title>规划器使用的统计信息</title>
+
+<!--==========================orignal english content==========================
+  <indexterm zone="planner-stats">
+   <primary>statistics</primary>
+   <secondary>of the planner</secondary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm zone="planner-stats">
+   <primary>统计信息</primary>
+   <secondary>of the planner</secondary>
+  </indexterm>
+
+  <sect2>
+<!--==========================orignal english content==========================
+   <title>Single-Column Statistics</title>
+____________________________________________________________________________-->
+   <title>单列统计信息</title>
+<!--==========================orignal english content==========================
+  <para>
+   As we saw in the previous section, the query planner needs to estimate
+   the number of rows retrieved by a query in order to make good choices
+   of query plans.  This section provides a quick look at the statistics
+   that the system uses for these estimates.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   如我们在上一节所见，查询规划器需要估计一个查询要检索的行数，这样才能对查询计划做出好的选择。 本节对系统用于这些估计的统计信息进行一个快速的介绍。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   One component of the statistics is the total number of entries in
+   each table and index, as well as the number of disk blocks occupied
+   by each table and index.  This information is kept in the table
+   <link linkend="catalog-pg-class"><structname>pg_class</structname></link>,
+   in the columns <structfield>reltuples</structfield> and
+   <structfield>relpages</structfield>.  We can look at it with
+   queries similar to this one:
+
+<screen>
+SELECT relname, relkind, reltuples, relpages
+FROM pg_class
+WHERE relname LIKE 'tenk1%';
+
+       relname        | relkind | reltuples | relpages
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;
+ tenk1                | r       |     10000 |      358
+ tenk1_hundred        | i       |     10000 |       30
+ tenk1_thous_tenthous | i       |     10000 |       30
+ tenk1_unique1        | i       |     10000 |       30
+ tenk1_unique2        | i       |     10000 |       30
+(5 rows)
+</screen>
+
+   Here we can see that <structname>tenk1</structname> contains 10000
+   rows, as do its indexes, but the indexes are (unsurprisingly) much
+   smaller than the table.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   统计信息的一个部分就是每个表和索引中的项的总数，以及每个表和索引占用的磁盘块数。这些信息保存在<link linkend="catalog-pg-class"><structname>pg_class</structname></link>表的<structfield>reltuples</structfield>和<structfield>relpages</structfield>列中。 我们可以用类似下面的查询查看这些信息：
+
+<screen>
+SELECT relname, relkind, reltuples, relpages
+FROM pg_class
+WHERE relname LIKE 'tenk1%';
+
+       relname        | relkind | reltuples | relpages
+----------------------+---------+-----------+----------
+ tenk1                | r       |     10000 |      358
+ tenk1_hundred        | i       |     10000 |       30
+ tenk1_thous_tenthous | i       |     10000 |       30
+ tenk1_unique1        | i       |     10000 |       30
+ tenk1_unique2        | i       |     10000 |       30
+(5 rows)
+</screen>
+
+   这里我们可以看到<structname>tenk1</structname>包含 10000 行， 它的索引也有这么多行，但是索引远比表小得多（不奇怪）。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   For efficiency reasons, <structfield>reltuples</structfield>
+   and <structfield>relpages</structfield> are not updated on-the-fly,
+   and so they usually contain somewhat out-of-date values.
+   They are updated by <command>VACUUM</command>, <command>ANALYZE</command>, and a
+   few DDL commands such as <command>CREATE INDEX</command>.  A <command>VACUUM</command>
+   or <command>ANALYZE</command> operation that does not scan the entire table
+   (which is commonly the case) will incrementally update the
+   <structfield>reltuples</structfield> count on the basis of the part
+   of the table it did scan, resulting in an approximate value.
+   In any case, the planner
+   will scale the values it finds in <structname>pg_class</structname>
+   to match the current physical table size, thus obtaining a closer
+   approximation.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   出于效率考虑，<structfield>reltuples</structfield>和<structfield>relpages</structfield>不是实时更新的 ，因此它们通常包含有些过时的值。它们被<command>VACUUM</command>、<command>ANALYZE</command>和几个 DDL 命令（例如<command>CREATE INDEX</command>）更新。一个不扫描全表的<command>VACUUM</command>或<command>ANALYZE</command>操作（常见情况）将以它扫描的部分为基础增量更新<structfield>reltuples</structfield>计数，这就导致了一个近似值。在任何情况中，规划器将缩放它在<structname>pg_class</structname>中找到的值来匹配当前的物理表尺寸，这样得到一个较紧的近似。
+  </para>
+
+<!--==========================orignal english content==========================
+  <indexterm>
+   <primary>pg_statistic</primary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm>
+   <primary>pg_statistic</primary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <para>
+   Most queries retrieve only a fraction of the rows in a table, due
+   to <literal>WHERE</literal> clauses that restrict the rows to be
+   examined.  The planner thus needs to make an estimate of the
+   <firstterm>selectivity</firstterm> of <literal>WHERE</literal> clauses, that is,
+   the fraction of rows that match each condition in the
+   <literal>WHERE</literal> clause.  The information used for this task is
+   stored in the
+   <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
+   system catalog.  Entries in <structname>pg_statistic</structname>
+   are updated by the <command>ANALYZE</command> and <command>VACUUM
+   ANALYZE</command> commands, and are always approximate even when freshly
+   updated.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   大多数查询只是检索表中行的一部分，因为它们有限制要被检查的行的<literal>WHERE</literal>子句。 因此规划器需要估算<literal>WHERE</literal>子句的<firstterm>选择度</firstterm>，即符合<literal>WHERE</literal>子句中每个条件的行的比例。 用于这个任务的信息存储在<link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>系统目录中。 在<structname>pg_statistic</structname>中的项由<command>ANALYZE</command>和<command>VACUUM ANALYZE</command>命令更新， 并且总是近似值（即使刚刚更新完）。
+  </para>
+
+<!--==========================orignal english content==========================
+  <indexterm>
+   <primary>pg_stats</primary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm>
+   <primary>pg_stats</primary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <para>
+   Rather than look at <structname>pg_statistic</structname> directly,
+   it's better to look at its view
+   <link linkend="view-pg-stats"><structname>pg_stats</structname></link>
+   when examining the statistics manually.  <structname>pg_stats</structname>
+   is designed to be more easily readable.  Furthermore,
+   <structname>pg_stats</structname> is readable by all, whereas
+   <structname>pg_statistic</structname> is only readable by a superuser.
+   (This prevents unprivileged users from learning something about
+   the contents of other people's tables from the statistics.  The
+   <structname>pg_stats</structname> view is restricted to show only
+   rows about tables that the current user can read.)
+   For example, we might do:
+
+<screen>
+SELECT attname, inherited, n_distinct,
+       array_to_string(most_common_vals, E'\n') as most_common_vals
+FROM pg_stats
+WHERE tablename = 'road';
+
+ attname | inherited | n_distinct |          most_common_vals
+-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ name    | f         |  -0.363388 | I- 580                        Ramp+
+         |           |            | I- 880                        Ramp+
+         |           |            | Sp Railroad                       +
+         |           |            | I- 580                            +
+         |           |            | I- 680                        Ramp
+ name    | t         |  -0.284859 | I- 880                        Ramp+
+         |           |            | I- 580                        Ramp+
+         |           |            | I- 680                        Ramp+
+         |           |            | I- 580                            +
+         |           |            | State Hwy 13                  Ramp
+(2 rows)
+</screen>
+
+   Note that two rows are displayed for the same column, one corresponding
+   to the complete inheritance hierarchy starting at the
+   <literal>road</literal> table (<literal>inherited</literal>=<literal>t</literal>),
+   and another one including only the <literal>road</literal> table itself
+   (<literal>inherited</literal>=<literal>f</literal>).
+  </para>
+____________________________________________________________________________-->
+  <para>
+   除了直接查看<structname>pg_statistic</structname>之外， 手工检查统计信息的时候最好查看它的视图<link linkend="view-pg-stats"><structname>pg_stats</structname></link>。<structname>pg_stats</structname>被设计为更容易阅读。 而且，<structname>pg_stats</structname>是所有人都可以读取的，而<structname>pg_statistic</structname>只能由超级用户读取（这样可以避免非授权用户从统计信息中获取一些其他人的表的内容的信息。<structname>pg_stats</structname>视图被限制为只显示当前用户可读的表）。例如，我们可以：
+
+<screen>
+SELECT attname, inherited, n_distinct,
+       array_to_string(most_common_vals, E'\n') as most_common_vals
+FROM pg_stats
+WHERE tablename = 'road';
+
+ attname | inherited | n_distinct |          most_common_vals
+---------+-----------+------------+------------------------------------
+ name    | f         |  -0.363388 | I- 580                        Ramp+
+         |           |            | I- 880                        Ramp+
+         |           |            | Sp Railroad                       +
+         |           |            | I- 580                            +
+         |           |            | I- 680                        Ramp
+ name    | t         |  -0.284859 | I- 880                        Ramp+
+         |           |            | I- 580                        Ramp+
+         |           |            | I- 680                        Ramp+
+         |           |            | I- 580                            +
+         |           |            | State Hwy 13                  Ramp
+(2 rows)
+</screen>
+
+   注意，这两行显示的是相同的列，一个对应开始于<literal>road</literal>表（<literal>inherited</literal>=<literal>t</literal>）的完全继承层次， 另一个只包括<literal>road</literal>表本身（<literal>inherited</literal>=<literal>f</literal>）。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   The amount of information stored in <structname>pg_statistic</structname>
+   by <command>ANALYZE</command>, in particular the maximum number of entries in the
+   <structfield>most_common_vals</structfield> and <structfield>histogram_bounds</structfield>
+   arrays for each column, can be set on a
+   column-by-column basis using the <command>ALTER TABLE SET STATISTICS</command>
+   command, or globally by setting the
+   <xref linkend="guc-default-statistics-target"/> configuration variable.
+   The default limit is presently 100 entries.  Raising the limit
+   might allow more accurate planner estimates to be made, particularly for
+   columns with irregular data distributions, at the price of consuming
+   more space in <structname>pg_statistic</structname> and slightly more
+   time to compute the estimates.  Conversely, a lower limit might be
+   sufficient for columns with simple data distributions.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <command>ANALYZE</command>在<structname>pg_statistic</structname>中存储的信息量（特别是每个列的<structfield>most_common_vals</structfield>中的最大项数和<structfield>histogram_bounds</structfield>数组）可以用<command>ALTER TABLE SET STATISTICS</command>命令为每一列设置， 或者通过设置配置变量<xref linkend="guc-default-statistics-target"/>进行全局设置。 目前的默认限制是 100 个项。提升该限制可能会让规划器做出更准确的估计（特别是对那些有不规则数据分布的列）， 其代价是在<structname>pg_statistic</structname>中消耗了更多空间，并且需要略微多一些的时间来计算估计数值。 相比之下，比较低的限制可能更适合那些数据分布比较简单的列。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Further details about the planner's use of statistics can be found in
+   <xref linkend="planner-stats-details"/>.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   更多规划器对统计信息的使用可参阅<xref linkend="planner-stats-details"/>。
+  </para>
+  </sect2>
+
+  <sect2 id="planner-stats-extended">
+<!--==========================orignal english content==========================
+   <title>Extended Statistics</title>
+____________________________________________________________________________-->
+   <title>扩展统计信息</title>
+
+<!--==========================orignal english content==========================
+   <indexterm zone="planner-stats-extended">
+    <primary>statistics</primary>
+    <secondary>of the planner</secondary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm zone="planner-stats-extended">
+    <primary>statistics</primary>
+    <secondary>of the planner</secondary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <indexterm>
+    <primary>correlation</primary>
+    <secondary>in the query planner</secondary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm>
+    <primary>correlation</primary>
+    <secondary>in the query planner</secondary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <indexterm>
+    <primary>pg_statistic_ext</primary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm>
+    <primary>pg_statistic_ext</primary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <para>
+    It is common to see slow queries running bad execution plans because
+    multiple columns used in the query clauses are correlated.
+    The planner normally assumes that multiple conditions
+    are independent of each other,
+    an assumption that does not hold when column values are correlated.
+    Regular statistics, because of their per-individual-column nature,
+    cannot capture any knowledge about cross-column correlation.
+    However, <productname>PostgreSQL</productname> has the ability to compute
+    <firstterm>multivariate statistics</firstterm>, which can capture
+    such information.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    常常可以看到由于查询子句中用到的多个列相互关联而运行着糟糕的执行计划的慢查询。规划器通常会假设多个条件是彼此独立的，这种假设在列值相互关联的情况下是不成立的。由于常规的统计信息天然的针对个体列的性质，它们无法捕捉到跨列关联的知识。不过，<productname>PostgreSQL</productname>有能力计算<firstterm>多元统计信息</firstterm>，它能捕捉这类信息。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Because the number of possible column combinations is very large,
+    it's impractical to compute multivariate statistics automatically.
+    Instead, <firstterm>extended statistics objects</firstterm>, more often
+    called just <firstterm>statistics objects</firstterm>, can be created to instruct
+    the server to obtain statistics across interesting sets of columns.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    由于可能的列组合数非常巨大，所以不可能自动计算多元统计信息。可以创建<firstterm>扩展统计信息对象</firstterm>（更常被称为<firstterm>统计信息对象</firstterm>）来指示服务器获得跨感兴趣列集合的统计信息。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Statistics objects are created using the
+    <xref linkend="sql-createstatistics"/> command.
+    Creation of such an object merely creates a catalog entry expressing
+    interest in the statistics.  Actual data collection is performed
+    by <command>ANALYZE</command> (either a manual command, or background
+    auto-analyze).  The collected values can be examined in the
+    <link linkend="catalog-pg-statistic-ext"><structname>pg_statistic_ext</structname></link>
+    catalog.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    统计信息对象可以使用<xref linkend="sql-createstatistics"/>命令创建。这样一个对象的创建仅仅是创建了一个目录项来表示对统计信息有兴趣。实际的数据收集是由<command>ANALYZE</command>（或者是一个手工命令，或者是后台的自动分析）执行的。收集到的值可以在<link linkend="catalog-pg-statistic-ext"><structname>pg_statistic_ext</structname></link>目录中看到。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    <command>ANALYZE</command> computes extended statistics based on the same
+    sample of table rows that it takes for computing regular single-column
+    statistics.  Since the sample size is increased by increasing the
+    statistics target for the table or any of its columns (as described in
+    the previous section), a larger statistics target will normally result in
+    more accurate extended statistics, as well as more time spent calculating
+    them.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <command>ANALYZE</command>基于它用来计算常规单列统计信息的表行样本来计算扩展统计信息。由于样本的尺寸会随着表或者表列的统计信息目标（如前一节所述）增大而增加，更大的统计信息目标通常将会导致更准确的扩展统计信息，同时也会导致更多花在计算扩展统计信息之上的时间。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The following subsections describe the kinds of extended statistics
+    that are currently supported.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    下面的小节介绍当前支持的扩展统计信息类型。
+   </para>
+
+   <sect3>
+<!--==========================orignal english content==========================
+    <title>Functional Dependencies</title>
+____________________________________________________________________________-->
+    <title>函数依赖</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     The simplest kind of extended statistics tracks <firstterm>functional
+     dependencies</firstterm>, a concept used in definitions of database normal forms.
+     We say that column <structfield>b</structfield> is functionally dependent on
+     column <structfield>a</structfield> if knowledge of the value of
+     <structfield>a</structfield> is sufficient to determine the value
+     of <structfield>b</structfield>, that is there are no two rows having the same value
+     of <structfield>a</structfield> but different values of <structfield>b</structfield>.
+     In a fully normalized database, functional dependencies should exist
+     only on primary keys and superkeys. However, in practice many data sets
+     are not fully normalized for various reasons; intentional
+     denormalization for performance reasons is a common example.
+     Even in a fully normalized database, there may be partial correlation
+     between some columns, which can be expressed as partial functional
+     dependency.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     最简单的一类扩展统计信息跟踪<firstterm>函数依赖</firstterm>，这是在数据库范式定义中使用的概念。如果列<structfield>a</structfield>的值的知识足以决定列<structfield>b</structfield>的值，即不会有两个行具有相同的<structfield>a</structfield>值但是有不同的<structfield>b</structfield>值，我们就说列<structfield>b</structfield>函数依赖于列<structfield>a</structfield>。在一个完全规范化的数据库中，函数依赖应该仅存在于主键和超键上。不过，实际上很多数据集合会由于各种原因无法被完全规范化，常见的例子是为了性能而有意地反规范化。即使在一个完全规范化的数据库中，也会有某些列之间的部分关联，这些可以表达成部分函数依赖。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The existence of functional dependencies directly affects the accuracy
+     of estimates in certain queries.  If a query contains conditions on
+     both the independent and the dependent column(s), the
+     conditions on the dependent columns do not further reduce the result
+     size; but without knowledge of the functional dependency, the query
+     planner will assume that the conditions are independent, resulting
+     in underestimating the result size.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     函数依赖的存在直接影响了特定查询中估计的准确性。如果一个查询包含独立列和依赖列上的条件，依赖列上的条件不会进一步降低结果的尺寸。但是如果没有函数依赖的知识，查询规划器将假定条件是独立的，导致对结果尺寸的低估。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To inform the planner about functional dependencies, <command>ANALYZE</command>
+     can collect measurements of cross-column dependency. Assessing the
+     degree of dependency between all sets of columns would be prohibitively
+     expensive, so data collection is limited to those groups of columns
+     appearing together in a statistics object defined with
+     the <literal>dependencies</literal> option.  It is advisable to create
+     <literal>dependencies</literal> statistics only for column groups that are
+     strongly correlated, to avoid unnecessary overhead in both
+     <command>ANALYZE</command> and later query planning.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     要告知规划器有关函数依赖的信息，<command>ANALYZE</command>可以收集跨列依赖的测度。评估所有列组之间的依赖程度可能会昂贵到不可实现，因此数据收集被限制为针对那些在一个统计信息对象中一起出现的列组（用<literal>dependencies</literal>选项定义）。建议只对强相关的列组创建<literal>dependencies</literal>统计信息，以避免<command>ANALYZE</command>以及后期查询规划中不必要的开销。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Here is an example of collecting functional-dependency statistics:
+<programlisting>
+CREATE STATISTICS stts (dependencies) ON zip, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxname, stxkeys, stxdependencies
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts';
+ stxname | stxkeys |             stxdependencies               
+-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ stts    | 1 5     | {"1 => 5": 1.000000, "5 => 1": 0.423130}
+(1 row)
+</programlisting>
+     Here it can be seen that column 1 (zip code) fully determines column
+     5 (city) so the coefficient is 1.0, while city only determines zip code
+     about 42% of the time, meaning that there are many cities (58%) that are
+     represented by more than a single ZIP code.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     这里是一个收集函数依赖统计信息的例子：
+<programlisting>
+CREATE STATISTICS stts (dependencies) ON zip, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxname, stxkeys, stxdependencies
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts';
+ stxname | stxkeys |             stxdependencies               
+---------+---------+------------------------------------------
+ stts    | 1 5     | {"1 => 5": 1.000000, "5 => 1": 0.423130}
+(1 row)
+</programlisting>
+     这里可以看到列1（邮编）完全决定列5（城市），因此系数为1.0，而城市仅决定42%的邮编，意味着有很多城市（58%）有多个邮编。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     When computing the selectivity for a query involving functionally
+     dependent columns, the planner adjusts the per-condition selectivity
+     estimates using the dependency coefficients so as not to produce
+     an underestimate.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在为涉及函数依赖列的查询计算选择度时，规划器会使用依赖系数来调整针对条件的选择度估计，这样就不会产生低估。
+    </para>
+
+    <sect4>
+<!--==========================orignal english content==========================
+     <title>Limitations of Functional Dependencies</title>
+____________________________________________________________________________-->
+     <title>函数依赖的限制</title>
+
+<!--==========================orignal english content==========================
+     <para>
+      Functional dependencies are currently only applied when considering
+      simple equality conditions that compare columns to constant values.
+      They are not used to improve estimates for equality conditions
+      comparing two columns or comparing a column to an expression, nor for
+      range clauses, <literal>LIKE</literal> or any other type of condition.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      当前只有在考虑简单等值条件（将列与常量值比较）时，函数依赖才适用。不会使用它们来改进比较两个列或者比较列和表达式的等值条件的估计，也不会用它们来改进范围子句、<literal>LIKE</literal>或者任何其他类型的条件。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      When estimating with functional dependencies, the planner assumes that
+      conditions on the involved columns are compatible and hence redundant.
+      If they are incompatible, the correct estimate would be zero rows, but
+      that possibility is not considered.  For example, given a query like
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '94105';
+</programlisting>
+      the planner will disregard the <structfield>city</structfield> clause as not
+      changing the selectivity, which is correct.  However, it will make
+      the same assumption about
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '90210';
+</programlisting>
+      even though there will really be zero rows satisfying this query.
+      Functional dependency statistics do not provide enough information
+      to conclude that, however.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      在用函数依赖估计时，规划器假定在涉及的列上的条件是兼容的并且因此是冗余的。如果它们是不兼容的，正确的估计将是零行，但是那种可能性不会被考虑。例如，给定一个这样的查询
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '94105';
+</programlisting>
+      规划器将会忽视<structfield>city</structfield>子句，因为它不改变选择度，这是正确的。不过，即便真地只有零行满足下面的查询，规划器也会做出同样的假设
+<programlisting>
+SELECT * FROM zipcodes WHERE city = 'San Francisco' AND zip = '90210';
+</programlisting>
+      不过，函数依赖统计信息无法提供足够的信息来排除这种情况。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      In many practical situations, this assumption is usually satisfied;
+      for example, there might be a GUI in the application that only allows
+      selecting compatible city and ZIP code values to use in a query.
+      But if that's not the case, functional dependencies may not be a viable
+      option.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      在很多实际情况中，这种假设通常是能满足的。例如，在应用程序中可能有一个GUI仅允许选择兼容的城市和邮编值用在查询中。但是如果不是这样，函数依赖可能就不是一个可行的选项。
+     </para>
+    </sect4>
+   </sect3>
+
+   <sect3>
+<!--==========================orignal english content==========================
+    <title>Multivariate N-Distinct Counts</title>
+____________________________________________________________________________-->
+    <title>多元可区分值计数</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     Single-column statistics store the number of distinct values in each
+     column.  Estimates of the number of distinct values when combining more
+     than one column (for example, for <literal>GROUP BY a, b</literal>) are
+     frequently wrong when the planner only has single-column statistical
+     data, causing it to select bad plans.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     单列统计信息存储每一列中可区分值的数量。在组合多个列（例如<literal>GROUP BY a, b</literal>）时，如果规划器只有单列统计数据，则对可区分值数量的估计常常会错误，导致选择不好的计划。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To improve such estimates, <command>ANALYZE</command> can collect n-distinct
+     statistics for groups of columns.  As before, it's impractical to do
+     this for every possible column grouping, so data is collected only for
+     those groups of columns appearing together in a statistics object
+     defined with the <literal>ndistinct</literal> option.  Data will be collected
+     for each possible combination of two or more columns from the set of
+     listed columns.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     为了改进这种估计，<command>ANALYZE</command>可以为列组收集可区分值统计信息。和以前一样，为每一种可能的列组合做这件事情是不切实际的，因此只会为一起出现在一个统计信息对象（用<literal>ndistinct</literal>选项定义）中的列组收集数据。将会为列组中列出的列的每一种可能的组合都收集数据。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Continuing the previous example, the n-distinct counts in a
+     table of ZIP codes might look like the following:
+<programlisting>
+CREATE STATISTICS stts2 (ndistinct) ON zip, state, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxkeys AS k, stxndistinct AS nd
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts2';
+-[ RECORD 1 ]-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+k  | 1 2 5
+nd | {"1, 2": 33178, "1, 5": 33178, "2, 5": 27435, "1, 2, 5": 33178}
+(1 row)
+</programlisting>
+     This indicates that there are three combinations of columns that
+     have 33178 distinct values: ZIP code and state; ZIP code and city;
+     and ZIP code, city and state (the fact that they are all equal is
+     expected given that ZIP code alone is unique in this table).  On the
+     other hand, the combination of city and state has only 27435 distinct
+     values.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     继续之前的例子，ZIP代码表中的可区分值计数可能像这样：
+<programlisting>
+CREATE STATISTICS stts2 (ndistinct) ON zip, state, city FROM zipcodes;
+
+ANALYZE zipcodes;
+
+SELECT stxkeys AS k, stxndistinct AS nd
+  FROM pg_statistic_ext
+  WHERE stxname = 'stts2';
+-[ RECORD 1 ]--------------------------------------------------------
+k  | 1 2 5
+nd | {"1, 2": 33178, "1, 5": 33178, "2, 5": 27435, "1, 2, 5": 33178}
+(1 row)
+</programlisting>
+     这表示有三种列组合有33178个可区分值：ZIP代码和州、ZIP代码和城市、ZIP代码+城市+周（事实上对于表中给定的一个唯一的ZIP代码，它们本来就应该是相等的）。另一方面，城市和州的组合只有27435个可区分值。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     It's advisable to create <literal>ndistinct</literal> statistics objects only
+     on combinations of columns that are actually used for grouping, and
+     for which misestimation of the number of groups is resulting in bad
+     plans.  Otherwise, the <command>ANALYZE</command> cycles are just wasted.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     建议只对实际用于分组的列组合以及分组数错误估计导致了糟糕计划的列组合创建<literal>ndistinct</literal>统计信息对象。否则，<command>ANALYZE</command>循环只会被浪费。
+    </para>
+   </sect3>
+  </sect2>
+ </sect1>
+
+ <sect1 id="explicit-joins">
+<!--==========================orignal english content==========================
+  <title>Controlling the Planner with Explicit <literal>JOIN</literal> Clauses</title>
+____________________________________________________________________________-->
+  <title>用显式<literal>JOIN</literal>子句控制规划器</title>
+
+<!--==========================orignal english content==========================
+  <indexterm zone="explicit-joins">
+   <primary>join</primary>
+   <secondary>controlling the order</secondary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm zone="explicit-joins">
+   <primary>连接</primary>
+   <secondary>控制顺序</secondary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <para>
+   It is possible
+   to control the query planner to some extent by using the explicit <literal>JOIN</literal>
+   syntax.  To see why this matters, we first need some background.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   我们可以在一定程度上用显式<literal>JOIN</literal>语法控制查询规划器。要明白为什么需要它，我们首先需要一些背景知识。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   In a simple join query, such as:
+<programlisting>
+SELECT * FROM a, b, c WHERE a.id = b.id AND b.ref = c.id;
+</programlisting>
+   the planner is free to join the given tables in any order.  For
+   example, it could generate a query plan that joins A to B, using
+   the <literal>WHERE</literal> condition <literal>a.id = b.id</literal>, and then
+   joins C to this joined table, using the other <literal>WHERE</literal>
+   condition.  Or it could join B to C and then join A to that result.
+   Or it could join A to C and then join them with B &mdash; but that
+   would be inefficient, since the full Cartesian product of A and C
+   would have to be formed, there being no applicable condition in the
+   <literal>WHERE</literal> clause to allow optimization of the join.  (All
+   joins in the <productname>PostgreSQL</productname> executor happen
+   between two input tables, so it's necessary to build up the result
+   in one or another of these fashions.)  The important point is that
+   these different join possibilities give semantically equivalent
+   results but might have hugely different execution costs.  Therefore,
+   the planner will explore all of them to try to find the most
+   efficient query plan.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   在一个简单的连接查询中，例如：
+<programlisting>
+SELECT * FROM a, b, c WHERE a.id = b.id AND b.ref = c.id;
+</programlisting>
+   规划器可以自由地按照任何顺序连接给定的表。例如，它可以生成一个使用<literal>WHERE</literal>条件<literal>a.id = b.id</literal>连接 A 到 B 的查询计划，然后用另外一个<literal>WHERE</literal>条件把 C 连接到这个连接表。或者它可以先连接 B 和 C 然后再连接 A 得到同样的结果。 或者也可以连接 A 到 C 然后把结果与 B 连接 &mdash; 不过这么做效率不好，因为必须生成完整的 A 和 C 的迪卡尔积，而在<literal>WHERE</literal>子句中没有可用条件来优化该连接（<productname>PostgreSQL</productname>执行器中的所有连接都发生在两个输入表之间， 所以它必须以这些形式之一建立结果）。 重要的一点是这些不同的连接可能性给出在语义等效的结果，但在执行开销上却可能有巨大的差别。 因此，规划器会对它们进行探索并尝试找出最高效的查询计划。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   When a query only involves two or three tables, there aren't many join
+   orders to worry about.  But the number of possible join orders grows
+   exponentially as the number of tables expands.  Beyond ten or so input
+   tables it's no longer practical to do an exhaustive search of all the
+   possibilities, and even for six or seven tables planning might take an
+   annoyingly long time.  When there are too many input tables, the
+   <productname>PostgreSQL</productname> planner will switch from exhaustive
+   search to a <firstterm>genetic</firstterm> probabilistic search
+   through a limited number of possibilities.  (The switch-over threshold is
+   set by the <xref linkend="guc-geqo-threshold"/> run-time
+   parameter.)
+   The genetic search takes less time, but it won't
+   necessarily find the best possible plan.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当一个查询只涉及两个或三个表时，那么不需要考虑很多连接顺序。但是可能的连接顺序数随着表数目的增加成指数增长。 当超过十个左右的表以后，实际上根本不可能对所有可能性做一次穷举搜索，甚至对六七个表都需要相当长的时间进行规划。 当有太多的输入表时，<productname>PostgreSQL</productname>规划器将从穷举搜索切换为一种<firstterm>遗传</firstterm>概率搜索，它只需要考虑有限数量的可能性（切换的阈值用<xref linkend="guc-geqo-threshold"/>运行时参数设置）。遗传搜索用时更少，但是并不一定会找到最好的计划。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   When the query involves outer joins, the planner has less freedom
+   than it does for plain (inner) joins. For example, consider:
+<programlisting>
+SELECT * FROM a LEFT JOIN (b JOIN c ON (b.ref = c.id)) ON (a.id = b.id);
+</programlisting>
+   Although this query's restrictions are superficially similar to the
+   previous example, the semantics are different because a row must be
+   emitted for each row of A that has no matching row in the join of B and C.
+   Therefore the planner has no choice of join order here: it must join
+   B to C and then join A to that result.  Accordingly, this query takes
+   less time to plan than the previous query.  In other cases, the planner
+   might be able to determine that more than one join order is safe.
+   For example, given:
+<programlisting>
+SELECT * FROM a LEFT JOIN b ON (a.bid = b.id) LEFT JOIN c ON (a.cid = c.id);
+</programlisting>
+   it is valid to join A to either B or C first.  Currently, only
+   <literal>FULL JOIN</literal> completely constrains the join order.  Most
+   practical cases involving <literal>LEFT JOIN</literal> or <literal>RIGHT JOIN</literal>
+   can be rearranged to some extent.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当查询涉及外连接时，规划器比处理普通（内）连接时拥有更小的自由度。例如，考虑：
+<programlisting>
+SELECT * FROM a LEFT JOIN (b JOIN c ON (b.ref = c.id)) ON (a.id = b.id);
+</programlisting>
+   尽管这个查询的约束表面上和前一个非常相似，但它们的语义却不同， 因为如果 A 里有任何一行不能匹配 B 和 C的连接表中的行，它也必须被输出。因此这里规划器对连接顺序没有什么选择：它必须先连接 B 到 C，然后把 A 连接到该结果上。 相应地，这个查询比前面一个花在规划上的时间更少。在其它情况下，规划器就有可能确定多种连接顺序都是安全的。例如，给定：
+<programlisting>
+SELECT * FROM a LEFT JOIN b ON (a.bid = b.id) LEFT JOIN c ON (a.cid = c.id);
+</programlisting>
+   将 A 首先连接到 B 或 C 都是有效的。当前，只有<literal>FULL JOIN</literal>完全约束连接顺序。大多数涉及<literal>LEFT JOIN</literal>或<literal>RIGHT JOIN</literal>的实际情况都在某种程度上可以被重新排列。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Explicit inner join syntax (<literal>INNER JOIN</literal>, <literal>CROSS
+   JOIN</literal>, or unadorned <literal>JOIN</literal>) is semantically the same as
+   listing the input relations in <literal>FROM</literal>, so it does not
+   constrain the join order.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   显式连接语法（<literal>INNER JOIN</literal>、<literal>CROSS JOIN</literal>或无修饰的<literal>JOIN</literal>）在语义上和<literal>FROM</literal>中列出输入关系是一样的， 因此它不约束连接顺序。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Even though most kinds of <literal>JOIN</literal> don't completely constrain
+   the join order, it is possible to instruct the
+   <productname>PostgreSQL</productname> query planner to treat all
+   <literal>JOIN</literal> clauses as constraining the join order anyway.
+   For example, these three queries are logically equivalent:
+<programlisting>
+SELECT * FROM a, b, c WHERE a.id = b.id AND b.ref = c.id;
+SELECT * FROM a CROSS JOIN b CROSS JOIN c WHERE a.id = b.id AND b.ref = c.id;
+SELECT * FROM a JOIN (b JOIN c ON (b.ref = c.id)) ON (a.id = b.id);
+</programlisting>
+   But if we tell the planner to honor the <literal>JOIN</literal> order,
+   the second and third take less time to plan than the first.  This effect
+   is not worth worrying about for only three tables, but it can be a
+   lifesaver with many tables.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   即使大多数类型的<literal>JOIN</literal>并不完全约束连接顺序，但仍然可以指示<productname>PostgreSQL</productname>查询规划器将所有<literal>JOIN</literal>子句当作有连接顺序约束来对待。例如，这里的三个查询在逻辑上是等效的：
+<programlisting>
+SELECT * FROM a, b, c WHERE a.id = b.id AND b.ref = c.id;
+SELECT * FROM a CROSS JOIN b CROSS JOIN c WHERE a.id = b.id AND b.ref = c.id;
+SELECT * FROM a JOIN (b JOIN c ON (b.ref = c.id)) ON (a.id = b.id);
+</programlisting>
+   但如果我们告诉规划器遵循<literal>JOIN</literal>的顺序，那么第二个和第三个还是要比第一个花在规划上的时间少。 这个效果对于只有三个表的连接而言是微不足道的，但对于数目众多的表，可能就是救命稻草了。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   To force the planner to follow the join order laid out by explicit
+   <literal>JOIN</literal>s,
+   set the <xref linkend="guc-join-collapse-limit"/> run-time parameter to 1.
+   (Other possible values are discussed below.)
+  </para>
+____________________________________________________________________________-->
+  <para>
+   要强制规划器遵循显式<literal>JOIN</literal>的连接顺序， 我们可以把运行时参数<xref linkend="guc-join-collapse-limit"/>设置为 1（其它可能值在下文讨论)。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   You do not need to constrain the join order completely in order to
+   cut search time, because it's OK to use <literal>JOIN</literal> operators
+   within items of a plain <literal>FROM</literal> list.  For example, consider:
+<programlisting>
+SELECT * FROM a CROSS JOIN b, c, d, e WHERE ...;
+</programlisting>
+   With <varname>join_collapse_limit</varname> = 1, this
+   forces the planner to join A to B before joining them to other tables,
+   but doesn't constrain its choices otherwise.  In this example, the
+   number of possible join orders is reduced by a factor of 5.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   你不必为了缩短搜索时间来完全约束连接顺序，因为可以在一个普通<literal>FROM</literal>列表里使用<literal>JOIN</literal>操作符。例如，考虑：
+<programlisting>
+SELECT * FROM a CROSS JOIN b, c, d, e WHERE ...;
+</programlisting>
+   如果设置<varname>join_collapse_limit</varname> = 1，那么这就强迫规划器先把 A 连接到 B， 然后再连接到其它的表上，但并不约束它的选择。在这个例子中，可能的连接顺序的数目减少了 5 倍。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Constraining the planner's search in this way is a useful technique
+   both for reducing planning time and for directing the planner to a
+   good query plan.  If the planner chooses a bad join order by default,
+   you can force it to choose a better order via <literal>JOIN</literal> syntax
+   &mdash; assuming that you know of a better order, that is.  Experimentation
+   is recommended.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   按照这种方法约束规划器的搜索是一个有用的技巧，不管是对减少规划时间还是对引导规划器生成好的查询计划。 如果规划器按照默认选择了一个糟糕的连接顺序，你可以通过<literal>JOIN</literal>语法强迫它选择一个更好的顺序 &mdash; 假设你知道一个更好的顺序。我们推荐进行实验。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   A closely related issue that affects planning time is collapsing of
+   subqueries into their parent query.  For example, consider:
+<programlisting>
+SELECT *
+FROM x, y,
+    (SELECT * FROM a, b, c WHERE something) AS ss
+WHERE somethingelse;
+</programlisting>
+   This situation might arise from use of a view that contains a join;
+   the view's <literal>SELECT</literal> rule will be inserted in place of the view
+   reference, yielding a query much like the above.  Normally, the planner
+   will try to collapse the subquery into the parent, yielding:
+<programlisting>
+SELECT * FROM x, y, a, b, c WHERE something AND somethingelse;
+</programlisting>
+   This usually results in a better plan than planning the subquery
+   separately.  (For example, the outer <literal>WHERE</literal> conditions might be such that
+   joining X to A first eliminates many rows of A, thus avoiding the need to
+   form the full logical output of the subquery.)  But at the same time,
+   we have increased the planning time; here, we have a five-way join
+   problem replacing two separate three-way join problems.  Because of the
+   exponential growth of the number of possibilities, this makes a big
+   difference.  The planner tries to avoid getting stuck in huge join search
+   problems by not collapsing a subquery if more than <varname>from_collapse_limit</varname>
+   <literal>FROM</literal> items would result in the parent
+   query.  You can trade off planning time against quality of plan by
+   adjusting this run-time parameter up or down.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   一个非常相近的影响规划时间的问题是把子查询压缩到它们的父查询中。例如，考虑：
+<programlisting>
+SELECT *
+FROM x, y,
+    (SELECT * FROM a, b, c WHERE something) AS ss
+WHERE somethingelse;
+</programlisting>
+   这种情况可能在使用包含连接的视图时出现；该视图的<literal>SELECT</literal>规则将被插入到引用视图的地方，得到与上文非常相似的查询。 通常，规划器会尝试把子查询压缩到父查询里，得到：
+<programlisting>
+SELECT * FROM x, y, a, b, c WHERE something AND somethingelse;
+</programlisting>
+   这样通常会生成一个比独立的子查询更好些的计划（例如，outer 的<literal>WHERE</literal>条件可能先把 X 连接到 A 上，这样就消除了 A 中的许多行， 因此避免了形成子查询的全部逻辑输出）。但是同时，我们增加了规划的时间； 在这里，我们用五路连接问题替代了两个独立的三路连接问题。这样的差别是巨大的，因为可能的计划数的是按照指数增长的。 如果有超过<varname>from_collapse_limit</varname>个<literal>FROM</literal>项将会导致父查询，规划器将尝试通过停止提升子查询来避免卡在巨大的连接搜索问题中。你可以通过调高或调低这个运行时参数在规划时间和计划的质量之间取得平衡。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   <xref linkend="guc-from-collapse-limit"/> and <xref
+   linkend="guc-join-collapse-limit"/>
+   are similarly named because they do almost the same thing: one controls
+   when the planner will <quote>flatten out</quote> subqueries, and the
+   other controls when it will flatten out explicit joins.  Typically
+   you would either set <varname>join_collapse_limit</varname> equal to
+   <varname>from_collapse_limit</varname> (so that explicit joins and subqueries
+   act similarly) or set <varname>join_collapse_limit</varname> to 1 (if you want
+   to control join order with explicit joins).  But you might set them
+   differently if you are trying to fine-tune the trade-off between planning
+   time and run time.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <xref linkend="guc-from-collapse-limit"/>和<xref linkend="guc-join-collapse-limit"/>的命名相似，因为它们做的几乎是同一件事：一个控制规划器何时将把子查询<quote>平面化</quote>，另外一个控制何时把显式连接平面化。通常，你要么把<varname>join_collapse_limit</varname>设置成和<varname>from_collapse_limit</varname>一样（这样显式连接和子查询的行为类似）， 要么把<varname>join_collapse_limit</varname>设置为 1（如果你想用显式连接控制连接顺序）。 但是你可以把它们设置成不同的值，这样你就可以细粒度地调节规划时间和运行时间之间的平衡。
+  </para>
+ </sect1>
+
+ <sect1 id="populate">
+<!--==========================orignal english content==========================
+  <title>Populating a Database</title>
+____________________________________________________________________________-->
+  <title>填充一个数据库</title>
+
+<!--==========================orignal english content==========================
+  <para>
+   One might need to insert a large amount of data when first populating
+   a database. This section contains some suggestions on how to make
+   this process as efficient as possible.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   第一次填充数据库时可能需要插入大量的数据。本节包含一些如何让这个处理尽可能高效的建议。
+  </para>
+
+  <sect2 id="disable-autocommit">
+<!--==========================orignal english content==========================
+   <title>Disable Autocommit</title>
+____________________________________________________________________________-->
+   <title>禁用自动提交</title>
+
+<!--==========================orignal english content==========================
+   <indexterm>
+    <primary>autocommit</primary>
+    <secondary>bulk-loading data</secondary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm>
+    <primary>自动提交</primary>
+    <secondary>大批量载入数据</secondary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <para>
+    When using multiple <command>INSERT</command>s, turn off autocommit and just do
+    one commit at the end.  (In plain
+    SQL, this means issuing <command>BEGIN</command> at the start and
+    <command>COMMIT</command> at the end.  Some client libraries might
+    do this behind your back, in which case you need to make sure the
+    library does it when you want it done.)  If you allow each
+    insertion to be committed separately,
+    <productname>PostgreSQL</productname> is doing a lot of work for
+    each row that is added.  An additional benefit of doing all
+    insertions in one transaction is that if the insertion of one row
+    were to fail then the insertion of all rows inserted up to that
+    point would be rolled back, so you won't be stuck with partially
+    loaded data.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在使用多个<command>INSERT</command>时，关闭自动提交并且只在最后做一次提交（在普通 SQL 中，这意味着在开始发出<command>BEGIN</command>并且在结束时发出<command>COMMIT</command>。某些客户端库可能背着你就做了这些，在这种情况下你需要确定在你需要做这些时该库确实帮你做了）。如果你允许每一个插入都被独立地提交，<productname>PostgreSQL</productname>要为每一个被增加的行做很多工作。在一个事务中做所有插入的一个额外好处是：如果一个行的插入失败则所有之前插入的行都会被回滚，这样你不会被卡在部分载入的数据中。
+   </para>
+  </sect2>
+
+  <sect2 id="populate-copy-from">
+<!--==========================orignal english content==========================
+   <title>Use <command>COPY</command></title>
+____________________________________________________________________________-->
+   <title>使用<command>COPY</command></title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Use <xref linkend="sql-copy"/> to load
+    all the rows in one command, instead of using a series of
+    <command>INSERT</command> commands.  The <command>COPY</command>
+    command is optimized for loading large numbers of rows; it is less
+    flexible than <command>INSERT</command>, but incurs significantly
+    less overhead for large data loads. Since <command>COPY</command>
+    is a single command, there is no need to disable autocommit if you
+    use this method to populate a table.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    使用<xref linkend="sql-copy"/>在一条命令中装载所有记录，而不是一系列<command>INSERT</command>命令。 <command>COPY</command>命令是为装载大量行而优化过的； 它没<command>INSERT</command>那么灵活，但是在大量数据装载时导致的负荷也更少。 因为<command>COPY</command>是单条命令，因此使用这种方法填充表时无须关闭自动提交。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    If you cannot use <command>COPY</command>, it might help to use <xref
+    linkend="sql-prepare"/> to create a
+    prepared <command>INSERT</command> statement, and then use
+    <command>EXECUTE</command> as many times as required.  This avoids
+    some of the overhead of repeatedly parsing and planning
+    <command>INSERT</command>. Different interfaces provide this facility
+    in different ways; look for <quote>prepared statements</quote> in the interface
+    documentation.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果你不能使用<command>COPY</command>，那么使用<xref linkend="sql-prepare"/>来创建一个预备<command>INSERT</command>语句也有所帮助，然后根据需要使用<command>EXECUTE</command>多次。这样就避免了重复分析和规划<command>INSERT</command>的负荷。不同接口以不同的方式提供该功能， 可参阅接口文档中的<quote>预备语句</quote>。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Note that loading a large number of rows using
+    <command>COPY</command> is almost always faster than using
+    <command>INSERT</command>, even if <command>PREPARE</command> is used and
+    multiple insertions are batched into a single transaction.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    请注意，在载入大量行时，使用<command>COPY</command>几乎总是比使用<command>INSERT</command>快， 即使使用了<command>PREPARE</command>并且把多个插入被成批地放入一个单一事务。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    <command>COPY</command> is fastest when used within the same
+    transaction as an earlier <command>CREATE TABLE</command> or
+    <command>TRUNCATE</command> command. In such cases no WAL
+    needs to be written, because in case of an error, the files
+    containing the newly loaded data will be removed anyway.
+    However, this consideration only applies when
+    <xref linkend="guc-wal-level"/> is <literal>minimal</literal> for
+    non-partitioned tables as all commands must write WAL otherwise.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    同样的事务中，<command>COPY</command>比更早的<command>CREATE TABLE</command>或<command>TRUNCATE</command>命令更快。 在这种情况下，不需要写 WAL，因为在一个错误的情况下，包含新载入数据的文件不管怎样都将被移除。不过，只有当<xref linkend="guc-wal-level"/>设置为<literal>minimal</literal>（此时所有的命令必须写 WAL）时才会应用这种考虑。
+   </para>
+
+  </sect2>
+
+  <sect2 id="populate-rm-indexes">
+<!--==========================orignal english content==========================
+   <title>Remove Indexes</title>
+____________________________________________________________________________-->
+   <title>移除索引</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    If you are loading a freshly created table, the fastest method is to
+    create the table, bulk load the table's data using
+    <command>COPY</command>, then create any indexes needed for the
+    table.  Creating an index on pre-existing data is quicker than
+    updating it incrementally as each row is loaded.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果你正在载入一个新创建的表，最快的方法是创建该表，用<command>COPY</command>批量载入该表的数据，然后创建表需要的任何索引。在已存在数据的表上创建索引要比在每一行被载入时增量地更新它更快。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    If you are adding large amounts of data to an existing table,
+    it might be a win to drop the indexes,
+    load the table, and then recreate the indexes.  Of course, the
+    database performance for other users might suffer
+    during the time the indexes are missing.  One should also think
+    twice before dropping a unique index, since the error checking
+    afforded by the unique constraint will be lost while the index is
+    missing.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果你正在对现有表增加大量的数据，删除索引、载入表然后重新创建索引可能是最好的方案。 当然，在缺少索引的期间，其它数据库用户的数据库性能将会下降。 我们在删除唯一索引之前还需要仔细考虑清楚，因为唯一约束提供的错误检查在缺少索引的时候会丢失。
+   </para>
+  </sect2>
+
+  <sect2 id="populate-rm-fkeys">
+<!--==========================orignal english content==========================
+   <title>Remove Foreign Key Constraints</title>
+____________________________________________________________________________-->
+   <title>移除外键约束</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Just as with indexes, a foreign key constraint can be checked
+    <quote>in bulk</quote> more efficiently than row-by-row.  So it might be
+    useful to drop foreign key constraints, load data, and re-create
+    the constraints.  Again, there is a trade-off between data load
+    speed and loss of error checking while the constraint is missing.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    和索引一样，<quote>成批地</quote>检查外键约束比一行行检查效率更高。 因此，先删除外键约束、载入数据然后重建约束会很有用。 同样，载入数据和约束缺失期间错误检查的丢失之间也存在平衡。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    What's more, when you load data into a table with existing foreign key
+    constraints, each new row requires an entry in the server's list of
+    pending trigger events (since it is the firing of a trigger that checks
+    the row's foreign key constraint).  Loading many millions of rows can
+    cause the trigger event queue to overflow available memory, leading to
+    intolerable swapping or even outright failure of the command.  Therefore
+    it may be <emphasis>necessary</emphasis>, not just desirable, to drop and re-apply
+    foreign keys when loading large amounts of data.  If temporarily removing
+    the constraint isn't acceptable, the only other recourse may be to split
+    up the load operation into smaller transactions.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    更重要的是，当你在已有外键约束的情况下向表中载入数据时， 每个新行需要一个在服务器的待处理触发器事件（因为是一个触发器的触发会检查行的外键约束）列表的条目。载入数百万行会导致触发器事件队列溢出可用内存， 造成不能接受的交换或者甚至是命令的彻底失败。因此在载入大量数据时，可能<emphasis>需要</emphasis>（而不仅仅是期望）删除并重新应用外键。如果临时移除约束不可接受，那唯一的其他办法可能是就是将载入操作分解成更小的事务。
+   </para>
+  </sect2>
+
+  <sect2 id="populate-work-mem">
+<!--==========================orignal english content==========================
+   <title>Increase <varname>maintenance_work_mem</varname></title>
+____________________________________________________________________________-->
+   <title>增加<varname>maintenance_work_mem</varname></title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Temporarily increasing the <xref linkend="guc-maintenance-work-mem"/>
+    configuration variable when loading large amounts of data can
+    lead to improved performance.  This will help to speed up <command>CREATE
+    INDEX</command> commands and <command>ALTER TABLE ADD FOREIGN KEY</command> commands.
+    It won't do much for <command>COPY</command> itself, so this advice is
+    only useful when you are using one or both of the above techniques.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在载入大量数据时，临时增大<xref linkend="guc-maintenance-work-mem"/>配置变量可以改进性能。这个参数也可以帮助加速<command>CREATE INDEX</command>命令和<command>ALTER TABLE ADD FOREIGN KEY</command>命令。 它不会对<command>COPY</command>本身起很大作用，所以这个建议只有在你使用上面的一个或两个技巧时才有用。
+   </para>
+  </sect2>
+
+  <sect2 id="populate-max-wal-size">
+<!--==========================orignal english content==========================
+   <title>Increase <varname>max_wal_size</varname></title>
+____________________________________________________________________________-->
+   <title>增加<varname>max_wal_size</varname></title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Temporarily increasing the <xref linkend="guc-max-wal-size"/>
+    configuration variable can also
+    make large data loads faster.  This is because loading a large
+    amount of data into <productname>PostgreSQL</productname> will
+    cause checkpoints to occur more often than the normal checkpoint
+    frequency (specified by the <varname>checkpoint_timeout</varname>
+    configuration variable). Whenever a checkpoint occurs, all dirty
+    pages must be flushed to disk. By increasing
+    <varname>max_wal_size</varname> temporarily during bulk
+    data loads, the number of checkpoints that are required can be
+    reduced.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    临时增大<xref linkend="guc-max-wal-size"/>配置变量也可以让大量数据载入更快。 这是因为向<productname>PostgreSQL</productname>中载入大量的数据将导致检查点的发生比平常（由<varname>checkpoint_timeout</varname>配置变量指定）更频繁。无论何时发生一个检查点时，所有脏页都必须被刷写到磁盘上。 通过在批量数据载入时临时增加<varname>max_wal_size</varname>，所需的检查点数目可以被缩减。
+   </para>
+  </sect2>
+
+  <sect2 id="populate-pitr">
+<!--==========================orignal english content==========================
+   <title>Disable WAL Archival and Streaming Replication</title>
+____________________________________________________________________________-->
+   <title>禁用 WAL 归档和流复制</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    When loading large amounts of data into an installation that uses
+    WAL archiving or streaming replication, it might be faster to take a
+    new base backup after the load has completed than to process a large
+    amount of incremental WAL data.  To prevent incremental WAL logging
+    while loading, disable archiving and streaming replication, by setting
+    <xref linkend="guc-wal-level"/> to <literal>minimal</literal>,
+    <xref linkend="guc-archive-mode"/> to <literal>off</literal>, and
+    <xref linkend="guc-max-wal-senders"/> to zero.
+    But note that changing these settings requires a server restart.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当使用 WAL 归档或流复制向一个安装中载入大量数据时，在录入结束后执行一次新的基础备份比处理大量的增量 WAL 数据更快。为了防止载入时记录增量 WAL，通过将<xref linkend="guc-wal-level"/>设置为<literal>minimal</literal>、将<xref linkend="guc-archive-mode"/>设置为<literal>off</literal>以及将<xref linkend="guc-max-wal-senders"/>设置为零来禁用归档和流复制。 但需要注意的是，修改这些设置需要重启服务。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Aside from avoiding the time for the archiver or WAL sender to
+    process the WAL data,
+    doing this will actually make certain commands faster, because they
+    are designed not to write WAL at all if <varname>wal_level</varname>
+    is <literal>minimal</literal>.  (They can guarantee crash safety more cheaply
+    by doing an <function>fsync</function> at the end than by writing WAL.)
+    This applies to the following commands:
+    <itemizedlist>
+     <listitem>
+      <para>
+       <command>CREATE TABLE AS SELECT</command>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>CREATE INDEX</command> (and variants such as
+       <command>ALTER TABLE ADD PRIMARY KEY</command>)
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>ALTER TABLE SET TABLESPACE</command>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>CLUSTER</command>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>COPY FROM</command>, when the target table has been
+       created or truncated earlier in the same transaction
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    除了避免归档器或 WAL 发送者处理 WAL 数据的时间之外，这样做将实际上使某些命令更快， 因为它们被设计为在<varname>wal_level</varname>为<literal>minimal</literal>时完全不写 WAL （通过在最后执行一个<function>fsync</function>而不是写 WAL，它们能以更小地代价保证崩溃安全）。这适用于下列命令：
+    <itemizedlist>
+     <listitem>
+      <para>
+       <command>CREATE TABLE AS SELECT</command>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>CREATE INDEX</command>（以及类似
+       <command>ALTER TABLE ADD PRIMARY KEY</command>的变体）
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>ALTER TABLE SET TABLESPACE</command>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>CLUSTER</command>
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <command>COPY FROM</command>，当目标表已经被创建或者在同一个事务的早期被截断
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+  </sect2>
+
+  <sect2 id="populate-analyze">
+<!--==========================orignal english content==========================
+   <title>Run <command>ANALYZE</command> Afterwards</title>
+____________________________________________________________________________-->
+   <title>事后运行<command>ANALYZE</command></title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Whenever you have significantly altered the distribution of data
+    within a table, running <xref linkend="sql-analyze"/> is strongly recommended. This
+    includes bulk loading large amounts of data into the table.  Running
+    <command>ANALYZE</command> (or <command>VACUUM ANALYZE</command>)
+    ensures that the planner has up-to-date statistics about the
+    table.  With no statistics or obsolete statistics, the planner might
+    make poor decisions during query planning, leading to poor
+    performance on any tables with inaccurate or nonexistent
+    statistics.  Note that if the autovacuum daemon is enabled, it might
+    run <command>ANALYZE</command> automatically; see
+    <xref linkend="vacuum-for-statistics"/>
+    and <xref linkend="autovacuum"/> for more information.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    不管什么时候你显著地改变了表中的数据分布后，我们都强烈推荐运行<xref linkend="sql-analyze"/>。着包括向表中批量载入大量数据。运行<command>ANALYZE</command>（或者<command>VACUUM ANALYZE</command>）保证规划器有表的最新统计信息。 如果没有统计数据或者统计数据过时，那么规划器在查询规划时可能做出很差劲决定，导致在任意表上的性能低下。需要注意的是，如果启用了 autovacuum 守护进程，它可能会自动运行<command>ANALYZE</command>；参阅<xref linkend="vacuum-for-statistics"/>和<xref linkend="autovacuum"/>。
+   </para>
+  </sect2>
+
+  <sect2 id="populate-pg-dump">
+<!--==========================orignal english content==========================
+   <title>Some Notes About <application>pg_dump</application></title>
+____________________________________________________________________________-->
+   <title>关于<application>pg_dump</application>的一些注记</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Dump scripts generated by <application>pg_dump</application> automatically apply
+    several, but not all, of the above guidelines.  To reload a
+    <application>pg_dump</application> dump as quickly as possible, you need to
+    do a few extra things manually.  (Note that these points apply while
+    <emphasis>restoring</emphasis> a dump, not while <emphasis>creating</emphasis> it.
+    The same points apply whether loading a text dump with
+    <application>psql</application> or using <application>pg_restore</application> to load
+    from a <application>pg_dump</application> archive file.)
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <application>pg_dump</application>生成的转储脚本自动应用上面的若干个（但不是全部）技巧。 要尽可能快地载入<application>pg_dump</application>转储，你需要手工做一些额外的事情（请注意，这些要点适用于<emphasis>恢复</emphasis>一个转储，而不是<emphasis>创建</emphasis>它的时候。同样的要点也适用于使用<application>psql</application>载入一个文本转储或用<application>pg_restore</application>从一个<application>pg_dump</application>归档文件载入）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    By default, <application>pg_dump</application> uses <command>COPY</command>, and when
+    it is generating a complete schema-and-data dump, it is careful to
+    load data before creating indexes and foreign keys.  So in this case
+    several guidelines are handled automatically.  What is left
+    for you to do is to:
+    <itemizedlist>
+     <listitem>
+      <para>
+       Set appropriate (i.e., larger than normal) values for
+       <varname>maintenance_work_mem</varname> and
+       <varname>max_wal_size</varname>.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       If using WAL archiving or streaming replication, consider disabling
+       them during the restore. To do that, set <varname>archive_mode</varname>
+       to <literal>off</literal>,
+       <varname>wal_level</varname> to <literal>minimal</literal>, and
+       <varname>max_wal_senders</varname> to zero before loading the dump.
+       Afterwards, set them back to the right values and take a fresh
+       base backup.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Experiment with the parallel dump and restore modes of both
+       <application>pg_dump</application> and <application>pg_restore</application> and find the
+       optimal number of concurrent jobs to use. Dumping and restoring in
+       parallel by means of the <option>-j</option> option should give you a
+       significantly higher performance over the serial mode.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Consider whether the whole dump should be restored as a single
+       transaction.  To do that, pass the <option>-1</option> or
+       <option>-&minus;single-transaction</option> command-line option to
+       <application>psql</application> or <application>pg_restore</application>. When using this
+       mode, even the smallest of errors will rollback the entire restore,
+       possibly discarding many hours of processing.  Depending on how
+       interrelated the data is, that might seem preferable to manual cleanup,
+       or not.  <command>COPY</command> commands will run fastest if you use a single
+       transaction and have WAL archiving turned off.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       If multiple CPUs are available in the database server, consider using
+       <application>pg_restore</application>'s <option>-&minus;jobs</option> option.  This
+       allows concurrent data loading and index creation.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       Run <command>ANALYZE</command> afterwards.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    默认情况下，<application>pg_dump</application>使用<command>COPY</command>，并且当它在生成一个完整的模式和数据转储时， 它会很小心地先装载数据，然后创建索引和外键。因此在这种情况下，一些指导方针是被自动处理的。你需要做的是：
+    <itemizedlist>
+     <listitem>
+      <para>
+       为<varname>maintenance_work_mem</varname>和<varname>max_wal_size</varname>设置适当的（即比正常值大的）值。
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       如果使用 WAL 归档或流复制，在转储时考虑禁用它们。在载入转储之前，可通过将<varname>archive_mode</varname>设置为<literal>off</literal>、将<varname>wal_level</varname>设置为<literal>minimal</literal>以及将<varname>max_wal_senders</varname>设置为零（在录入dump前）来实现禁用。 之后，将它们设回正确的值并执行一次新的基础备份。
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       采用<application>pg_dump</application>和<application>pg_restore</application>的并行转储和恢复模式进行实验并且找出要使用的最佳并发任务数量。通过使用<option>-j</option>选项的并行转储和恢复应该能为你带来比串行模式高得多的性能。
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       考虑是否应该在一个单一事务中恢复整个转储。要这样做，将<option>-1</option>或<option>--single-transaction</option>命令行选项传递给<application>psql</application>或<application>pg_restore</application>。 当使用这种模式时，即使是一个很小的错误也会回滚整个恢复，可能会丢弃已经处理了很多个小时的工作。根据数据间的相关性， 可能手动清理更好。如果你使用一个单一事务并且关闭了 WAL 归档，<command>COPY</command>命令将运行得最快。
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       如果在数据库服务器上有多个 CPU 可用，可以考虑使用<application>pg_restore</application>的<option>--jobs</option>选项。这允许并行数据载入和索引创建。
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       之后运行<command>ANALYZE</command>。
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    A data-only dump will still use <command>COPY</command>, but it does not
+    drop or recreate indexes, and it does not normally touch foreign
+    keys.
+
+     <footnote>
+      <para>
+       You can get the effect of disabling foreign keys by using
+       the <option>-&minus;disable-triggers</option> option &mdash; but realize that
+       that eliminates, rather than just postpones, foreign key
+       validation, and so it is possible to insert bad data if you use it.
+      </para>
+     </footnote>
+
+    So when loading a data-only dump, it is up to you to drop and recreate
+    indexes and foreign keys if you wish to use those techniques.
+    It's still useful to increase <varname>max_wal_size</varname>
+    while loading the data, but don't bother increasing
+    <varname>maintenance_work_mem</varname>; rather, you'd do that while
+    manually recreating indexes and foreign keys afterwards.
+    And don't forget to <command>ANALYZE</command> when you're done; see
+    <xref linkend="vacuum-for-statistics"/>
+    and <xref linkend="autovacuum"/> for more information.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    一个只涉及数据的转储仍将使用<command>COPY</command>，但是它不会删除或重建索引，并且它通常不会触碰外键。
+
+     <footnote>
+      <para>
+       你可以通过使用<option>--disable-triggers</option>选项的方法获得禁用外键的效果 &mdash; 不过你要意识到这么做是消除（而不只是推迟）外键验证。因此如果你使用该选项，就可能插入坏数据。
+      </para>
+     </footnote>
+
+    因此当载入一个只有数据的转储时，如果你希望使用那些技术，你需要负责删除并重建索引和外键。在载入数据时增加<varname>max_wal_size</varname>仍然有用，但是不要去增加<varname>maintenance_work_mem</varname>；不如说在以后手工重建索引和外键时你已经做了这些。并且不要忘记在完成后执行<command>ANALYZE</command>，详见<xref linkend="vacuum-for-statistics"/>和<xref linkend="autovacuum"/>。
+   </para>
+  </sect2>
+  </sect1>
+
+  <sect1 id="non-durability">
+<!--==========================orignal english content==========================
+   <title>Non-Durable Settings</title>
+____________________________________________________________________________-->
+   <title>非持久设置</title>
+
+<!--==========================orignal english content==========================
+   <indexterm zone="non-durability">
+    <primary>non-durable</primary>
+   </indexterm>
+____________________________________________________________________________-->
+   <indexterm zone="non-durability">
+    <primary>non-durable</primary>
+   </indexterm>
+
+<!--==========================orignal english content==========================
+   <para>
+    Durability is a database feature that guarantees the recording of
+    committed transactions even if the server crashes or loses
+    power.  However, durability adds significant database overhead,
+    so if your site does not require such a guarantee,
+    <productname>PostgreSQL</productname> can be configured to run
+    much faster.  The following are configuration changes you can make
+    to improve performance in such cases.  Except as noted below, durability
+    is still guaranteed in case of a crash of the database software;
+    only abrupt operating system stoppage creates a risk of data loss
+    or corruption when these settings are used.
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       Place the database cluster's data directory in a memory-backed
+       file system (i.e. <acronym>RAM</acronym> disk).  This eliminates all
+       database disk I/O, but limits data storage to the amount of
+       available memory (and perhaps swap).
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Turn off <xref linkend="guc-fsync"/>;  there is no need to flush
+       data to disk.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Turn off <xref linkend="guc-synchronous-commit"/>;  there might be no
+       need to force <acronym>WAL</acronym> writes to disk on every
+       commit.  This setting does risk transaction loss (though not data
+       corruption) in case of a crash of the <emphasis>database</emphasis>.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Turn off <xref linkend="guc-full-page-writes"/>;  there is no need
+       to guard against partial page writes.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Increase <xref linkend="guc-max-wal-size"/> and <xref
+       linkend="guc-checkpoint-timeout"/>; this reduces the frequency
+       of checkpoints, but increases the storage requirements of
+       <filename>/pg_wal</filename>.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       Create <link linkend="sql-createtable-unlogged">unlogged
+       tables</link> to avoid <acronym>WAL</acronym> writes, though it
+       makes the tables non-crash-safe.
+      </para>
+     </listitem>
+
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    持久性是数据库的一个保证已提交事务的记录的特性（即使是发生服务器崩溃或断电）。 然而，持久性会明显增加数据库的负荷，因此如果你的站点不需要这个保证，<productname>PostgreSQL</productname>可以被配置成运行更快。在这种情况下，你可以调整下列配置来提高性能。除了下面列出的，在数据库软件崩溃的情况下也能保证持久性。当这些设置被使用时，只有突然的操作系统停止会产生数据丢失或损坏的风险。
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       将数据库集簇的数据目录放在一个内存支持的文件系统上（即<acronym>RAM</acronym>磁盘）。这消除了所有的数据库磁盘 I/O，但将数据存储限制到可用的内存量（可能有交换区）。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       关闭<xref linkend="guc-fsync"/>；不需要将数据刷入磁盘。
+      </para>
+     </listitem>
+     
+     <listitem>
+      <para>
+       关闭<xref linkend="guc-synchronous-commit"/>；可能不需要在每次提交时
+       强制把<acronym>WAL</acronym>写入磁盘。这种设置可能会在
+       <emphasis>数据库</emphasis>崩溃时带来事务丢失的风险（但是没有数据破坏）。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       关闭<xref linkend="guc-full-page-writes"/>；不需要警惕部分页面写入。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       增加<xref linkend="guc-max-wal-size"/>和<xref linkend="guc-checkpoint-timeout"/>；
+       这会降低检查点的频率，但会 增加<filename>/pg_wal</filename>的存储要求。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       创建<link linkend="sql-createtable-unlogged">不做日志的表</link>
+       来避免<acronym>WAL</acronym>写入，不过这会让表在崩溃时不安全。
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+  </sect1>
+
+ </chapter>

@@ -1,0 +1,836 @@
+<!-- doc/src/sgml/arch-dev.sgml -->
+
+ <chapter id="overview">
+<!--==========================orignal english content==========================
+  <title>Overview of PostgreSQL Internals</title>
+____________________________________________________________________________-->
+  <title>PostgreSQL内部概述</title>
+
+  <note>
+<!--==========================orignal english content==========================
+   <title>Author</title>
+____________________________________________________________________________-->
+   <title>作者</title>
+<!--==========================orignal english content==========================
+   <para>
+    This chapter originated as part of
+    <xref linkend="SIM98">, Stefan Simkovics'
+    Master's Thesis prepared at Vienna University of Technology under the direction
+    of O.Univ.Prof.Dr. Georg Gottlob and Univ.Ass. Mag. Katrin Seyr.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这一章的内容来自于<xref linkend="SIM98"/>的一部分，它是Stefan Simkovics在维也纳技术大学的硕士学位论文，指导人是 Georg Gottlob教授和Mag. Katrin Seyr。
+   </para>
+  </note>
+
+<!--==========================orignal english content==========================
+  <para>
+   This chapter gives an overview of the internal structure of the
+   backend of <productname>PostgreSQL</productname>.  After having
+   read the following sections you should have an idea of how a query
+   is processed. This chapter does not aim to provide a detailed
+   description of the internal operation of
+   <productname>PostgreSQL</productname>, as such a document would be
+   very extensive. Rather, this chapter is intended to help the reader
+   understand the general sequence of operations that occur within the
+   backend from the point at which a query is received, to the point
+   at which the results are returned to the client.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   本章给出了<productname>PostgreSQL</productname>后台内部结构的一个总览。在阅读了下面的小节后，你将对一个查询是如何被执行的有一定了解。本章并非要对<productname>PostgreSQL</productname>的内部操作给出一个详细的介绍，否则这个文档将会变得非常长。本章希望帮助读者理解当后台收到一个查询后，在结果被返回给客户之前通常会发生怎样的操作。
+  </para>
+
+  <sect1 id="query-path">
+<!--==========================orignal english content==========================
+   <title>The Path of a Query</title>
+____________________________________________________________________________-->
+   <title>一个查询的路径</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Here we give a short overview of the stages a query has to pass in
+    order to obtain a result.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    这里我们将介绍为了获取结果，一个查询将会经历那些阶段。
+   </para>
+
+   <procedure>
+    <step>
+<!--==========================orignal english content==========================
+     <para>
+      A connection from an application program to the <productname>PostgreSQL</productname>
+      server has to be established. The application program transmits a
+      query to the server and waits to receive the results sent back by the
+      server.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      一个由应用程序到<productname>PostgreSQL</productname>服务器的连接必须被建立。应用程序传递一个查询给服务器并等待接收由服务器传回的结果。
+     </para>
+    </step>
+
+    <step>
+<!--==========================orignal english content==========================
+     <para>
+      The <firstterm>parser stage</firstterm> checks the query
+      transmitted by the application
+      program for correct syntax and creates
+      a <firstterm>query tree</firstterm>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <firstterm>分析阶段</firstterm>对由应用程序传递的查询进行语法检查，并创建一个<firstterm>查询树</firstterm>。
+     </para>
+    </step>
+
+    <step>
+<!--==========================orignal english content==========================
+     <para>
+      The <firstterm>rewrite system</firstterm> takes
+      the query tree created by the parser stage and looks for
+      any <firstterm>rules</firstterm> (stored in the
+      <firstterm>system catalogs</firstterm>) to apply to
+      the query tree.  It performs the
+      transformations given in the <firstterm>rule bodies</firstterm>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <firstterm>重写系统</firstterm>得到分析阶段创建的查询树，并查找可以应用到该查询树的任何<firstterm>规则</firstterm>（存储在<firstterm>系统目录</firstterm>中）。对找到的规则，它会执行<firstterm>规则体</firstterm>中给定的转换。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      One application of the rewrite system is in the realization of
+      <firstterm>views</firstterm>.
+      Whenever a query against a view
+      (i.e., a <firstterm>virtual table</firstterm>) is made,
+      the rewrite system rewrites the user's query to
+      a query that accesses the <firstterm>base tables</firstterm> given in
+      the <firstterm>view definition</firstterm> instead.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      重写系统的一个应用是实现<firstterm>视图</firstterm>。不论何时发生一个视图（即一个<firstterm>虚拟表</firstterm>）上的查询，重写系统将用户查询重写为一个访问<firstterm>视图定义</firstterm>中给定的<firstterm>基本表</firstterm>的查询来替代。
+     </para>
+    </step>
+
+    <step>
+<!--==========================orignal english content==========================
+     <para>
+      The <firstterm>planner/optimizer</firstterm> takes
+      the (rewritten) query tree and creates a
+      <firstterm>query plan</firstterm> that will be the input to the
+      <firstterm>executor</firstterm>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <firstterm>规划器/优化器</firstterm>接手（重写过的）查询树并创建一个将被作为<firstterm>执行器</firstterm>输入的<firstterm>查询计划</firstterm>。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      It does so by first creating all possible <firstterm>paths</firstterm>
+      leading to the same result. For example if there is an index on a
+      relation to be scanned, there are two paths for the
+      scan. One possibility is a simple sequential scan and the other
+      possibility is to use the index. Next the cost for the execution of
+      each path is estimated and the cheapest path is chosen.  The cheapest
+      path is expanded into a complete plan that the executor can use.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      它会先创建所有可能导向相同结果的<firstterm>路径</firstterm>。例如，如果在一个被扫描的关系上有一个索引，则有两条可供扫描的路径。其中之一是一个简单的顺序扫描，而另一个则是使用索引。接下来执行每条路径所需的代价被估算出来并且代价最低的路径将被选中。代价最低的路径将被扩展成一个完整的计划可供执行器使用。
+     </para>
+    </step>
+
+    <step>
+<!--==========================orignal english content==========================
+     <para>
+      The executor recursively steps through
+      the <firstterm>plan tree</firstterm> and
+      retrieves rows in the way represented by the plan.
+      The executor makes use of the
+      <firstterm>storage system</firstterm> while scanning
+      relations, performs <firstterm>sorts</firstterm> and <firstterm>joins</firstterm>,
+      evaluates <firstterm>qualifications</firstterm> and finally hands back the rows derived.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      执行器递归地逐步通过<firstterm>计划树</firstterm>并按照计划表述的方式获取行。执行器在扫描关系时会使用<firstterm>存储系统</firstterm>、执行<firstterm>排序</firstterm>和<firstterm>连接</firstterm>、估算<firstterm>条件</firstterm>并最后归还得到的行。
+     </para>
+    </step>
+   </procedure>
+
+<!--==========================orignal english content==========================
+   <para>
+    In the following sections we will cover each of the above listed items
+    in more detail to give a better understanding of <productname>PostgreSQL</productname>'s internal
+    control and data structures.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在下面的小节中我们将覆盖上述列出的每一项的详细内容，以便更好地理解<productname>PostgreSQL</productname>的内部控制和数据结构。
+   </para>
+  </sect1>
+
+  <sect1 id="connect-estab">
+<!--==========================orignal english content==========================
+   <title>How Connections are Established</title>
+____________________________________________________________________________-->
+   <title>连接如何建立</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    <productname>PostgreSQL</productname> is implemented using a
+    simple <quote>process per user</> client/server model.  In this model
+    there is one <firstterm>client process</firstterm> connected to
+    exactly one <firstterm>server process</firstterm>.  As we do not
+    know ahead of time how many connections will be made, we have to
+    use a <firstterm>master process</firstterm> that spawns a new
+    server process every time a connection is requested. This master
+    process is called <literal>postgres</literal> and listens at a
+    specified TCP/IP port for incoming connections. Whenever a request
+    for a connection is detected the <literal>postgres</literal>
+    process spawns a new server process. The server tasks
+    communicate with each other using <firstterm>semaphores</firstterm> and
+    <firstterm>shared memory</firstterm> to ensure data integrity
+    throughout concurrent data access.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>PostgreSQL</productname>以一种简单的<quote>一用户一进程</quote>的客户端/服务器模型实现。在该模型中，一个<firstterm>客户端进程</firstterm>仅连接到一个<firstterm>服务器进程</firstterm>。由于我们无法预先知道会有多少连接被建立，我们必须使用一个<firstterm>主进程</firstterm>在每次连接请求时生产一个新的服务器进程。该主进程被称为<literal>postgres</literal>，它在一个特定的TCP/IP端口监听进入的连接。当一个连接请求被监测到时，<literal>postgres</literal>会产生一个新的服务器进程。服务器作业之间通过<firstterm>信号</firstterm>和<firstterm>共享内存</firstterm>通信，以保证并发数据访问时的数据完整性。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The client process can be any program that understands the
+    <productname>PostgreSQL</productname> protocol described in
+    <xref linkend="protocol">.  Many clients are based on the
+    C-language library <application>libpq</>, but several independent
+    implementations of the protocol exist, such as the Java
+    <application>JDBC</> driver.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    客户端进程可以是任何符合<productname>PostgreSQL</productname>协议（见<xref linkend="protocol"/>）的程序。很多客户端基于C语言库<application>libpq</application>，但也有一些该协议的独立实现存在，例如Java的<application>JDBC</application>驱动。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Once a connection is established the client process can send a query
+    to the <firstterm>backend</firstterm> (server). The query is transmitted using plain text,
+    i.e., there is no parsing done in the <firstterm>frontend</firstterm> (client). The
+    server parses the query, creates an <firstterm>execution plan</firstterm>,
+    executes the plan and returns the retrieved rows to the client
+    by transmitting them over the established connection.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    一旦一个连接被建立，客户端进程就能发送一个查询给<firstterm>后端</firstterm>（服务器）。查询被以纯文本传送，即在<firstterm>前端</firstterm>（客户端）不做任何分析。服务器会分析查询，创建一个<firstterm>执行计划</firstterm>，然后执行之并通过已建立的连接向客户端返回检索到的行。   </para>
+  </sect1>
+
+  <sect1 id="parser-stage">
+<!--==========================orignal english content==========================
+   <title>The Parser Stage</title>
+____________________________________________________________________________-->
+   <title>分析器阶段</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    The <firstterm>parser stage</firstterm> consists of two parts:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       The <firstterm>parser</firstterm> defined in
+       <filename>gram.y</filename> and <filename>scan.l</filename> is
+       built using the Unix tools <application>bison</application>
+       and <application>flex</application>.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       The <firstterm>transformation process</firstterm> does
+       modifications and augmentations to the data structures returned by the parser.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <firstterm>分析器阶段</firstterm>由两部分组成：
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       <firstterm>分析器</firstterm>定义在<filename>gram.y</filename>和<filename>scan.l</filename>中，它使用Unix工具<application>bison</application>和<application>flex</application>构建。
+      </para>
+     </listitem>
+     <listitem>
+      <para>
+       <firstterm>转换处理</firstterm>将对分析器返回的数据结构进行修改和增加。
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+   <sect2>
+<!--==========================orignal english content==========================
+    <title>Parser</title>
+____________________________________________________________________________-->
+    <title>分析器</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     The parser has to check the query string (which arrives as plain
+     text) for valid syntax. If the syntax is correct a
+     <firstterm>parse tree</firstterm> is built up and handed back;
+     otherwise an error is returned. The parser and lexer are
+     implemented using the well-known Unix tools <application>bison</>
+     and <application>flex</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     分析器必须检查查询字符串（以纯文本形式到达）是否为合法语法。如果语法正确将建立一个<firstterm>分析树</firstterm>并返回之，否则将返回一个错误。 语法分析器和词法分析器使用著名的Unix工具<application>bison</application>和<application>flex</application>实现。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The <firstterm>lexer</firstterm> is defined in the file
+     <filename>scan.l</filename> and is responsible
+     for recognizing <firstterm>identifiers</firstterm>,
+     the <firstterm>SQL key words</firstterm> etc. For
+     every key word or identifier that is found, a <firstterm>token</firstterm>
+     is generated and handed to the parser.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <firstterm>词法分析器</firstterm>定义在文件<filename>scan.l</filename>中，并负责识别<firstterm>标识符</firstterm>、<firstterm>SQL关键词</firstterm>等。对于找到的每一个关键词或标识符将生成一个<firstterm>记号</firstterm>并返回给语法分析器。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The parser is defined in the file <filename>gram.y</filename> and
+     consists of a set of <firstterm>grammar rules</firstterm> and
+     <firstterm>actions</firstterm> that are executed whenever a rule
+     is fired. The code of the actions (which is actually C code) is
+     used to build up the parse tree.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     语法分析器定义在<filename>gram.y</filename>文件中，它由一组<firstterm>语法规则</firstterm> 和<firstterm>动作</firstterm>，动作将在规则被触发时被执行。动作的代码（实际上是C代码）将被用于构建分析树。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The file <filename>scan.l</filename> is transformed to the C
+     source file <filename>scan.c</filename> using the program
+     <application>flex</application> and <filename>gram.y</filename> is
+     transformed to <filename>gram.c</filename> using
+     <application>bison</application>.  After these transformations
+     have taken place a normal C compiler can be used to create the
+     parser. Never make any changes to the generated C files as they
+     will be overwritten the next time <application>flex</application>
+     or <application>bison</application> is called.
+
+     <note>
+      <para>
+       The mentioned transformations and compilations are normally done
+       automatically using the <firstterm>makefiles</firstterm>
+       shipped with the <productname>PostgreSQL</productname>
+       source distribution.
+      </para>
+     </note>
+    </para>
+____________________________________________________________________________-->
+    <para>
+     程序<application>flex</application>把文件<filename>scan.l</filename>转换成C源文件<filename>scan.c</filename>， 程序<application>bison</application>把文件<filename>gram.y</filename>转换为<filename>gram.c</filename>。在这些转换结束后，一个正规的C编译器就可以用于创建分析器。绝不要对生成的C文件做任何修改，因为每次<application>flex</application>或<application>bison</application>被调用都会重写它们。
+
+     <note>
+      <para>
+       前面提到的转换和编译通常是由随<productname>PostgreSQL</productname>源代码发布的<firstterm>makefiles</firstterm>自动完成。
+      </para>
+     </note>
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     A detailed description of <application>bison</application> or
+     the grammar rules given in <filename>gram.y</filename> would be
+     beyond the scope of this paper. There are many books and
+     documents dealing with <application>flex</application> and
+     <application>bison</application>. You should be familiar with
+     <application>bison</application> before you start to study the
+     grammar given in <filename>gram.y</filename> otherwise you won't
+     understand what happens there.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     对于<application>bison</application>的详细介绍或者<filename>gram.y</filename>中的语法规则超出了本文的范围。有很多书籍和文档介绍<application>flex</application>和<application>bison</application>。在学习<filename>gram.y</filename>中的语法之前你应该先熟悉<application>bison</application>，否则你将无法理解发生了什么。
+    </para>
+
+   </sect2>
+
+   <sect2>
+<!--==========================orignal english content==========================
+     <title>Transformation Process</title>
+____________________________________________________________________________-->
+     <title>转换处理</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     The parser stage creates a parse tree using only fixed rules about
+     the syntactic structure of SQL.  It does not make any lookups in the
+     system catalogs, so there is no possibility to understand the detailed
+     semantics of the requested operations.  After the parser completes,
+     the <firstterm>transformation process</firstterm> takes the tree handed
+     back by the parser as input and does the semantic interpretation needed
+     to understand which tables, functions, and operators are referenced by
+     the query.  The data structure that is built to represent this
+     information is called the <firstterm>query tree</>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     分析阶段根据SQL的语法结构的固定规则创建一个分析树。它不会在系统目录做任何查找，这样它不可能了解所请求的操作的详细语义。在分析器完成之后，<firstterm>转换处理</firstterm>接手分析器返还的树，并进行语义解释来理解该查询引用了哪些表、函数和操作符。用于表示该信息的数据结构被称为<firstterm>查询树</firstterm>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The reason for separating raw parsing from semantic analysis is that
+     system catalog lookups can only be done within a transaction, and we
+     do not wish to start a transaction immediately upon receiving a query
+     string.  The raw parsing stage is sufficient to identify the transaction
+     control commands (<command>BEGIN</>, <command>ROLLBACK</>, etc), and
+     these can then be correctly executed without any further analysis.
+     Once we know that we are dealing with an actual query (such as
+     <command>SELECT</> or <command>UPDATE</>), it is okay to
+     start a transaction if we're not already in one.  Only then can the
+     transformation process be invoked.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     将原始分析从语义分析中分离出来的原因是系统目录的查找只能在一个事务中完成，而我们不希望在收到一个查询字符串时立即开始一个事务。原始分析阶段足以识别事务控制命令（<command>BEGIN</command>、<command>ROLLBACK</command>等），并且这些可以在没有任何进一步分析之前正确地被执行。一旦我们知道我们正在处理一个确切的查询（例如<command>SELECT</command>或<command>UPDATE</command>），就可以开始一个事务（如果我们还不在其中）。只有到这时转换处理才能被调用。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The query tree created by the transformation process is structurally
+     similar to the raw parse tree in most places, but it has many differences
+     in detail.  For example, a <structname>FuncCall</> node in the
+     parse tree represents something that looks syntactically like a function
+     call.  This might be transformed to either a <structname>FuncExpr</>
+     or <structname>Aggref</> node depending on whether the referenced
+     name turns out to be an ordinary function or an aggregate function.
+     Also, information about the actual data types of columns and expression
+     results is added to the query tree.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     由转换处理创建的查询树在结构上和原始分析树有很多地方相似，但是在细节上有很多不同之处。例如，分析树中的一个<structname>FuncCall</structname>节点表示某些在语法上看起来像一个函数调用的东西。它可能被转换成一个<structname>FuncExpr</structname>或<structname>Aggref</structname>节点，取决于被引用的名字是一个普通函数或是一个聚集函数。此外，关于列和表达式结果的实际数据类型的信息被加入到了查询树中。
+    </para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="rule-system">
+<!--==========================orignal english content==========================
+   <title>The <productname>PostgreSQL</productname> Rule System</title>
+____________________________________________________________________________-->
+   <title><productname>PostgreSQL</productname>规则系统</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    <productname>PostgreSQL</productname> supports a powerful
+    <firstterm>rule system</firstterm> for the specification
+    of <firstterm>views</firstterm> and ambiguous <firstterm>view updates</firstterm>.
+    Originally the <productname>PostgreSQL</productname>
+    rule system consisted of two implementations:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       The first one worked using <firstterm>row level</firstterm> processing and was
+       implemented deep in the <firstterm>executor</firstterm>. The rule system was
+       called whenever an individual row had been accessed. This
+       implementation was removed in 1995 when the last official release
+       of the <productname>Berkeley Postgres</productname> project was
+       transformed into <productname>Postgres95</productname>.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       The second implementation of the rule system is a technique
+       called <firstterm>query rewriting</firstterm>.
+       The <firstterm>rewrite system</firstterm> is a module
+       that exists between the <firstterm>parser stage</firstterm> and the
+       <firstterm>planner/optimizer</firstterm>. This technique is still implemented.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <productname>PostgreSQL</productname>支持一个强大的 supports a powerful
+    <firstterm>规则系统</firstterm>用于支持<firstterm>视图</firstterm>说明和模糊不清的<firstterm>视图更新</firstterm>。本来<productname>PostgreSQL</productname>规则系统由两种实现组成：
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       第一种利用<firstterm>行级</firstterm>处理工作，并且被实现于<firstterm>执行器</firstterm>深层。当单独一行被访问时规则系统被调用。这种实现在1995年被移除，那时最后一个<productname>Berkeley Postgres</productname>项目的官方发布被转换为<productname>Postgres95</productname>。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       第二种规则系统的实现是一种称为<firstterm>查询重写</firstterm>的技术。<firstterm>重写系统</firstterm>是一个存在于<firstterm>分析器阶段</firstterm>和<firstterm>规划器/优化器</firstterm>之间的模块。这种技术也被实现了。
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The query rewriter is discussed in some detail in
+    <xref linkend="rules">, so there is no need to cover it here.
+    We will only point out that both the input and the output of the
+    rewriter are query trees, that is, there is no change in the
+    representation or level of semantic detail in the trees.  Rewriting
+    can be thought of as a form of macro expansion.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    更多关于查询重写器的讨论可见<xref linkend="rules"/>，因此没有必要在这里涉及这些内容。我们将仅指出重写器的输入和输出都是查询树，即在树的表现形式或语义细节层次上都没有改变。重写可以被看成是某种形式的宏扩展。
+   </para>
+
+  </sect1>
+
+  <sect1 id="planner-optimizer">
+<!--==========================orignal english content==========================
+   <title>Planner/Optimizer</title>
+____________________________________________________________________________-->
+   <title>规划器/优化器</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    The task of the <firstterm>planner/optimizer</firstterm> is to
+    create an optimal execution plan. A given SQL query (and hence, a
+    query tree) can be actually executed in a wide variety of
+    different ways, each of which will produce the same set of
+    results.  If it is computationally feasible, the query optimizer
+    will examine each of these possible execution plans, ultimately
+    selecting the execution plan that is expected to run the fastest.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <firstterm>规划器/优化器</firstterm>的任务是创建一个最佳的执行计划。一个给定的SQL查询（今后将是一个查询树）实际上可以以很多种不同的方式被执行，其中的每一种都会产生相同的结果集。如果在计算上可行，查询优化器将检查这些可能的执行计划中的每一个，最后选择其中被期望“跑得最快的”那一个。
+   </para>
+
+   <note>
+<!--==========================orignal english content==========================
+    <para>
+     In some situations, examining each possible way in which a query
+     can be executed would take an excessive amount of time and memory
+     space. In particular, this occurs when executing queries
+     involving large numbers of join operations. In order to determine
+     a reasonable (not necessarily optimal) query plan in a reasonable amount
+     of time, <productname>PostgreSQL</productname> uses a <firstterm>Genetic
+     Query Optimizer</firstterm> (see <xref linkend="geqo">) when the number of joins
+     exceeds a threshold (see <xref linkend="guc-geqo-threshold">).
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在某些情况下，检查一个查询的每一种可能的执行方式会耗费非常多的时间和内存空间。特别是当查询涉及到大量连接操作时。为了能在合理的时间内决定一个合理的（不一定是最佳的）查询计划，当连接数量超过一个阈值（见<xref linkend="guc-geqo-threshold"/>）时<productname>PostgreSQL</productname>使用了一种<firstterm>遗传查询优化器</firstterm> （见<xref linkend="geqo"/>）。
+    </para>
+   </note>
+
+<!--==========================orignal english content==========================
+   <para>
+    The planner's search procedure actually works with data structures
+    called <firstterm>paths</>, which are simply cut-down representations of
+    plans containing only as much information as the planner needs to make
+    its decisions. After the cheapest path is determined, a full-fledged
+    <firstterm>plan tree</> is built to pass to the executor.  This represents
+    the desired execution plan in sufficient detail for the executor to run it.
+    In the rest of this section we'll ignore the distinction between paths
+    and plans.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    规划器搜索过程实际上依靠称为<firstterm>路径</firstterm>的数据结构工作，它是一种缩短版的计划，其中只包含规划器做决定所需要的信息。当最低代价的路径被确定后，一个全功能的<firstterm>计划树</firstterm>将被建立并传递给执行器。这表示所期望的执行计划已经拥有足够的细节以供执行器执行它。在本节剩下的部分，我们将忽略路径和计划之间的区别。
+   </para>
+
+   <sect2>
+<!--==========================orignal english content==========================
+    <title>Generating Possible Plans</title>
+____________________________________________________________________________-->
+    <title>生成可能的计划</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     The planner/optimizer starts by generating plans for scanning each
+     individual relation (table) used in the query.  The possible plans
+     are determined by the available indexes on each relation.
+     There is always the possibility of performing a
+     sequential scan on a relation, so a sequential scan plan is always
+     created. Assume an index is defined on a
+     relation (for example a B-tree index) and a query contains the
+     restriction
+     <literal>relation.attribute OPR constant</literal>. If
+     <literal>relation.attribute</literal> happens to match the key of the B-tree
+     index and <literal>OPR</literal> is one of the operators listed in
+     the index's <firstterm>operator class</>, another plan is created using
+     the B-tree index to scan the relation. If there are further indexes
+     present and the restrictions in the query happen to match a key of an
+     index, further plans will be considered.  Index scan plans are also
+     generated for indexes that have a sort ordering that can match the
+     query's <literal>ORDER BY</> clause (if any), or a sort ordering that
+     might be useful for merge joining (see below).
+    </para>
+____________________________________________________________________________-->
+    <para>
+     规划器/优化器从扫描查询中用到的每一个单独的关系（表）开始生成计划。可能的计划根据每一个关系上可用的索引决定。在一个关系上总是有执行一个顺序扫描的可能，因此一个顺序扫描计划总是会被创建。假设在一个关系上定义有一个索引（例如一个B-tree索引）并且查询包含限制<literal>relation.attribute OPR constant</literal>。如果<literal>relation.attribute</literal>正好匹配该B-tree索引的键并且<literal>OPR</literal>是该索引的<firstterm>操作符类</firstterm>之一，另一个使用B-tree索引扫描该索引的计划将被创建。如果还有索引存在且查询中的限制正好匹配一个索引的键，其他计划也会被考虑。如果有索引的顺序能匹配<literal>ORDER BY</literal>子句（如果有）或者对于归并连接有用（见下文），也会为该索引创建索引扫描计划。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the query requires joining two or more relations,
+     plans for joining relations are considered
+     after all feasible plans have been found for scanning single relations.
+     The three available join strategies are:
+
+     <itemizedlist>
+      <listitem>
+       <para>
+        <firstterm>nested loop join</firstterm>: The right relation is scanned
+        once for every row found in the left relation. This strategy
+        is easy to implement but can be very time consuming.  (However,
+        if the right relation can be scanned with an index scan, this can
+        be a good strategy.  It is possible to use values from the current
+        row of the left relation as keys for the index scan of the right.)
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <firstterm>merge join</firstterm>: Each relation is sorted on the join
+        attributes before the join starts. Then the two relations are
+        scanned in parallel, and matching rows are combined to form
+        join rows. This kind of join is more
+        attractive because each relation has to be scanned only once.
+        The required sorting might be achieved either by an explicit sort
+        step, or by scanning the relation in the proper order using an
+        index on the join key.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <firstterm>hash join</firstterm>: the right relation is first scanned
+        and loaded into a hash table, using its join attributes as hash keys.
+        Next the left relation is scanned and the
+        appropriate values of every row found are used as hash keys to
+        locate the matching rows in the table.
+       </para>
+      </listitem>
+     </itemizedlist>
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果查询需要连接两个或更多关系，在所有扫描单个关系的可能计划都被找到后，连接计划将会被考虑。三种可用的连接策略是：
+
+     <itemizedlist>
+      <listitem>
+       <para>
+        <firstterm>嵌套循环连接</firstterm>: 对左关系找到的每一行都要扫描右关系一次。这种策略最容易实现但是可能非常耗时（但是，如果右关系可以通过索引扫描，这将是一个不错的策略。因为可以用左关系当前行的值来作为右关系上索引扫描的键）。
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <firstterm>归并连接</firstterm>：在连接开始之前，每一个关系都按照连接属性排好序。然后两个关系会被并行扫描，匹配的行被整合成连接行。由于这种连接中每个关系只被扫描一次，因此它很具有吸引力。它所要求的排序可以通过一个显式的排序步骤得到，或使用一个连接键上的索引按适当顺序扫描关系得到。
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <firstterm>哈希连接</firstterm>：右关系先被扫描并且被载入到一个哈希表，使用连接属性作为哈希键。接下来左关系被扫描，扫描中找到的每一行的连接属性值被用作哈希键在哈希表中查找匹配的行。
+       </para>
+      </listitem>
+     </itemizedlist>
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     When the query involves more than two relations, the final result
+     must be built up by a tree of join steps, each with two inputs.
+     The planner examines different possible join sequences to find the
+     cheapest one.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     当查询涉及两个以上的关系时，最终结果必须由一个连接步骤树构成，每个连接步骤有两个输入。规划器会检查不同可能的连接序列来找到代价最小的那一个。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the query uses fewer than <xref linkend="guc-geqo-threshold">
+     relations, a near-exhaustive search is conducted to find the best
+     join sequence.  The planner preferentially considers joins between any
+     two relations for which there exist a corresponding join clause in the
+     <literal>WHERE</literal> qualification (i.e., for
+     which a restriction like <literal>where rel1.attr1=rel2.attr2</literal>
+     exists). Join pairs with no join clause are considered only when there
+     is no other choice, that is, a particular relation has no available
+     join clauses to any other relation. All possible plans are generated for
+     every join pair considered by the planner, and the one that is
+     (estimated to be) the cheapest is chosen.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果查询是用的关系数少于<xref linkend="guc-geqo-threshold"/>，将使用一次接近穷举的搜索来查找最好的连接顺序。如果任何两个关系在<literal>WHERE</literal>条件中存在一个相应的连接子句（即存在类似于<literal>where rel1.attr1=rel2.attr2</literal>的限制），规划器会有限考虑它们之间的连接。没有任何连接子句的连接对只有在别无选择时才会被考虑，即一个关系没有任何可用的对于其他关系的连接子句。对规划器所考虑的每一个连接对会生成所有可能的计划，其中代价（被估计为）最低的一个将被选择。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     When <varname>geqo_threshold</varname> is exceeded, the join
+     sequences considered are determined by heuristics, as described
+     in <xref linkend="geqo">.  Otherwise the process is the same.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     当连接关系数超过<varname>geqo_threshold</varname>时，连接序列将考虑通过启发式方法来确定，详见<xref linkend="geqo"/>。否则处理将和前面相同。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The finished plan tree consists of sequential or index scans of
+     the base relations, plus nested-loop, merge, or hash join nodes as
+     needed, plus any auxiliary steps needed, such as sort nodes or
+     aggregate-function calculation nodes.  Most of these plan node
+     types have the additional ability to do <firstterm>selection</>
+     (discarding rows that do not meet a specified Boolean condition)
+     and <firstterm>projection</> (computation of a derived column set
+     based on given column values, that is, evaluation of scalar
+     expressions where needed).  One of the responsibilities of the
+     planner is to attach selection conditions from the
+     <literal>WHERE</literal> clause and computation of required
+     output expressions to the most appropriate nodes of the plan
+     tree.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     成品计划树包含基本关系的顺序或索引扫描，外加所需的嵌套循环、归并或哈希连接节点，以及任何所需的辅助步骤，例如排序节点或聚集函数计算节点。这些节点中的大部分具有执行<firstterm>选择</firstterm>（丢弃不符合指定布尔条件的行）和<firstterm>投影</firstterm>（根据指定列值计算派生列，即标量表达式的计算）的能力。规划器的职责之一就是在计划树最合适的节点上附加来自于子句的选择条件和需要的输出表达式。
+    </para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="executor">
+<!--==========================orignal english content==========================
+   <title>Executor</title>
+____________________________________________________________________________-->
+   <title>执行器</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    The <firstterm>executor</firstterm> takes the plan created by the
+    planner/optimizer and recursively processes it to extract the required set
+    of rows.  This is essentially a demand-pull pipeline mechanism.
+    Each time a plan node is called, it must deliver one more row, or
+    report that it is done delivering rows.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <firstterm>执行器</firstterm>接手规划器/优化器创建的计划，并递归地处理之以抽取所需的行集。这本质上是一种需求拉动的管道机制。每次一个计划节点被调用时，它必须交付一个或多个行，或者报告已经完成了行的交付。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    To provide a concrete example, assume that the top
+    node is a <literal>MergeJoin</literal> node.
+    Before any merge can be done two rows have to be fetched (one from
+    each subplan). So the executor recursively calls itself to
+    process the subplans (it starts with the subplan attached to
+    <literal>lefttree</literal>). The new top node (the top node of the left
+    subplan) is, let's say, a
+    <literal>Sort</literal> node and again recursion is needed to obtain
+    an input row.  The child node of the <literal>Sort</literal> might
+    be a <literal>SeqScan</> node, representing actual reading of a table.
+    Execution of this node causes the executor to fetch a row from the
+    table and return it up to the calling node.  The <literal>Sort</literal>
+    node will repeatedly call its child to obtain all the rows to be sorted.
+    When the input is exhausted (as indicated by the child node returning
+    a NULL instead of a row), the <literal>Sort</literal> code performs
+    the sort, and finally is able to return its first output row, namely
+    the first one in sorted order.  It keeps the remaining rows stored so
+    that it can deliver them in sorted order in response to later demands.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    为了提供一个具体例子，假设顶层节点是一个<literal>MergeJoin</literal>节点。在归并完成之前，两个行必须先被获取（每一个来自于一个子计划）。因此执行器递归地调用它自己去处理子计划（从附加在<literal>lefttree</literal>的子计划开始）。新的顶层节点（左子计划的顶层节点），我们说是一个<literal>Sort</literal>节点，并且又要递归来获取一个输入行。<literal>Sort</literal>的子节点可以是一个<literal>SeqScan</literal>节点，表示真正地读取一个表。该节点的执行将会使执行器从表中获取一行并将它返回给调用节点。<literal>Sort</literal>节点将反复调用它的子节点来获得所有需要排序的行。当输入耗尽后（子节点将返回一个NULL来标识），<literal>Sort</literal>节点执行排序，并且最后能够返回它的第一个输出行，及排序后的第一个。它会把剩下的行保存下来，这样它可以根据后续的要求按照排好的顺序返回这些行。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The <literal>MergeJoin</literal> node similarly demands the first row
+    from its right subplan.  Then it compares the two rows to see if they
+    can be joined; if so, it returns a join row to its caller.  On the next
+    call, or immediately if it cannot join the current pair of inputs,
+    it advances to the next row of one table
+    or the other (depending on how the comparison came out), and again
+    checks for a match.  Eventually, one subplan or the other is exhausted,
+    and the <literal>MergeJoin</literal> node returns NULL to indicate that
+    no more join rows can be formed.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <literal>MergeJoin</literal>节点也会相似地从其右子计划要求第一个行。然后它会比较两个子节点提供的行看它们是否能被连接，如果可以它会返回一个连接行给调用者。在下一次调用时，或者它无法连接当前的输入对时，它会前进到一个表或另一个表的下一行（取决于比较的结果），并再次检查匹配。最后，某个子计划耗尽，<literal>MergeJoin</literal>节点返回NULL表示它没有更多连接行可以提供。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Complex queries can involve many levels of plan nodes, but the general
+    approach is the same: each node computes and returns its next output
+    row each time it is called.  Each node is also responsible for applying
+    any selection or projection expressions that were assigned to it by
+    the planner.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    复杂的查询可能涉及多层计划节点，但是一般的方法是相同的：每个节点在被调用时计算并返回它的下一个输出行。每个节点同时也负责应用由规划器分配给它的选择或投影表达式。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The executor mechanism is used to evaluate all four basic SQL query types:
+    <command>SELECT</>, <command>INSERT</>, <command>UPDATE</>, and
+    <command>DELETE</>.  For <command>SELECT</>, the top-level executor
+    code only needs to send each row returned by the query plan tree off
+    to the client.  For <command>INSERT</>, each returned row is inserted
+    into the target table specified for the <command>INSERT</>.  This is
+    done in a special top-level plan node called <literal>ModifyTable</>.
+    (A simple
+    <command>INSERT ... VALUES</> command creates a trivial plan tree
+    consisting of a single <literal>Result</> node, which computes just one
+    result row, and <literal>ModifyTable</> above it to perform the insertion.
+    But <command>INSERT ... SELECT</> can demand the full power
+    of the executor mechanism.)  For <command>UPDATE</>, the planner arranges
+    that each computed row includes all the updated column values, plus
+    the <firstterm>TID</> (tuple ID, or row ID) of the original target row;
+    this data is fed into a <literal>ModifyTable</> node, which uses the
+    information to create a new updated row and mark the old row deleted.
+    For <command>DELETE</>, the only column that is actually returned by the
+    plan is the TID, and the <literal>ModifyTable</> node simply uses the TID
+    to visit each target row and mark it deleted.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    执行器机制被用于四种基本SQL查询类型：<command>SELECT</command>、<command>INSERT</command>、 <command>UPDATE</command>以及<command>DELETE</command>。对于<command>SELECT</command>，顶层执行器代码只需要发送查询计划树返回的每个行给客户端。对于<command>INSERT</command>，每一个被返回的行被插入到<command>INSERT</command>中指定的目标表中。这通过一个被称为<literal>ModifyTable</literal>的特殊顶层计划节点完成（一个简单的<command>INSERT ... VALUES</command>命令会创建一个由一个<literal>Result</literal>节点组成的简单计划树，该节点只计算一个结果行，在它之上的<literal>ModifyTable</literal>节点会执行插入。但是<command>INSERT ... SELECT</command>可以用到执行器机制的全部功能）。对于<command>UPDATE</command>，规划器会安排每一个计算行包含所有被更新的列值加上原始目标行的<firstterm>TID</firstterm>（元组ID或行ID），这些数据也会被输入到一个<literal>ModifyTable</literal>节点，该节点将利用这些信息创建一个新的被更新行并标记旧行为被删除。对于<command>DELETE</command>，唯一被计划返回的列是TID，<literal>ModifyTable</literal>节点简单地使用TID访问每一个目标行并将其标记为被删除。
+   </para>
+
+  </sect1>
+
+ </chapter>
