@@ -17,14 +17,15 @@ https://github.com/postgres-cn/pgdoc-cn
 https://github.com/postgres-cn/pgdoc-cn/wiki
 
 ## 分支管理
-master分支对于正在翻译的版本，当前是11.2，各个分支对应于PostgreSQL文档的版本如下。
+master分支对于正在翻译的版本，当前是12.2，各个分支对应于PostgreSQL文档的版本如下。
 
 - 9.3：9.3.1
 - 9.4：9.4.4
 - 9.5：9.5.3
 - 9.6：9.6.0
 - 10：10.1
-- master：11.2
+- 11：11.2
+- master：12.2
 
 ## 文档的编译
 
@@ -87,8 +88,8 @@ postgresql-10.1/doc/src/sgml/html/index.html
 - http://www.postgres.cn/docs/9.4  
 - http://www.postgres.cn/docs/9.5  
 - http://www.postgres.cn/docs/9.6  
-- http://www.postgres.cn/docs/10
-- http://www.postgres.cn/docs/11
+- http://www.postgres.cn/docs/10 
+- http://www.postgres.cn/docs/11 
 
 通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
 
