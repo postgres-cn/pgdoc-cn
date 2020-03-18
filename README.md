@@ -17,14 +17,15 @@ https://github.com/postgres-cn/pgdoc-cn
 https://github.com/postgres-cn/pgdoc-cn/wiki
 
 ## 分支管理
-master分支对于正在翻译的版本，当前是11.2，各个分支对应于PostgreSQL文档的版本如下。
+master分支对于正在翻译的版本，当前是12.2，各个分支对应于PostgreSQL文档的版本如下。
 
 - 9.3：9.3.1
 - 9.4：9.4.4
 - 9.5：9.5.3
 - 9.6：9.6.0
 - 10：10.1
-- master：11.2
+- 11：11.2
+- master：12.2
 
 ## 文档的编译
 
@@ -87,8 +88,9 @@ postgresql-10.1/doc/src/sgml/html/index.html
 - http://www.postgres.cn/docs/9.4  
 - http://www.postgres.cn/docs/9.5  
 - http://www.postgres.cn/docs/9.6  
-- http://www.postgres.cn/docs/10
-- http://www.postgres.cn/docs/11
+- http://www.postgres.cn/docs/10 
+- http://www.postgres.cn/docs/11 
+- http://www.postgres.cn/docs/12 
 
 通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
 
@@ -101,11 +103,8 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 
 ## 参与和协助翻译计划
 ### 1. 意见反馈
-发现翻译文档中的问题后，进行反馈或对翻译工作提出建议
+发现翻译文档中的问题后，通过在本Github仓库中[发行Issue](https://github.com/postgres-cn/pgdoc-cn/issues/new)反映问题（请注明问题内容及所在的章节段落位置）或提出建议
 
-方式1. 在本Github仓库中[发行Issue](https://github.com/postgres-cn/pgdoc-cn/issues/new)，反映问题（请注明问题内容及所在的章节段落位置）或提出建议
-
-方式2. 加入文档翻译QQ群（309292849），进行反馈
 
 ### 2. 错误纠正
 发现翻译文档中的个别问题后，直接修正对应的sgml文件，并通过Pull Request向本Github仓库提交。
@@ -116,7 +115,7 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 ## 其它
 1. Github仓库中的sgml文件编码是UTF8。
 2. Github仓库中的修正会由后台程序每隔十分钟自动反映到在线中文手册中。
-3. 如果Github仓库中的修正迟迟未能反映到在线中文手册，可能发生了编译错误，可通过查看[http://postgres.cn/docs/11/build.log](http://postgres.cn/docs/11/build.log)了解情况。
+3. 如果Github仓库中的修正迟迟未能反映到在线中文手册，可能发生了编译错误，可通过查看[http://postgres.cn/docs/12/build.log](http://postgres.cn/docs/12/build.log)了解情况。
 
 
 
