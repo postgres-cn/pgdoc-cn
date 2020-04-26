@@ -7,6 +7,23 @@ ____________________________________________________________________________-->
  <title>索引访问方法接口定义</title>
 
 <!--==========================orignal english content==========================
+ <indexterm>
+  <primary>Index Access Method</primary>
+ </indexterm>
+ <indexterm>
+  <primary>indexam</primary>
+  <secondary>Index Access Method</secondary>
+ </indexterm>
+____________________________________________________________________________-->
+ <indexterm>
+  <primary>索引访问方法</primary>
+ </indexterm>
+ <indexterm>
+  <primary>indexam</primary>
+  <secondary>索引访问方法</secondary>
+ </indexterm>
+
+<!--==========================orignal english content==========================
   <para>
    This chapter defines the interface between the core
    <productname>PostgreSQL</productname> system and <firstterm>index access
@@ -72,14 +89,14 @@ ____________________________________________________________________________-->
    Each index access method is described by a row in the
    <link linkend="catalog-pg-am"><structname>pg_am</structname></link>
    system catalog.  The <structname>pg_am</structname> entry
-   specifies a name and a <firstterm>handler function</firstterm> for the access
-   method.  These entries can be created and deleted using the
+   specifies a name and a <firstterm>handler function</firstterm> for the index
+   access method.  These entries can be created and deleted using the
    <xref linkend="sql-create-access-method"/> and
    <xref linkend="sql-drop-access-method"/> SQL commands.
   </para>
 ____________________________________________________________________________-->
   <para>
-   每一个索引访问方法都由<link linkend="catalog-pg-am"><structname>pg_am</structname></link>系统目录中的一行所描述。<structname>pg_am</structname>项为该访问方法指定了名称和一个<firstterm>处理器函数</firstterm>。这些项可以用<xref linkend="sql-create-access-method"/>和<xref linkend="sql-drop-access-method"/> SQL 命令创建和删除。
+   每一个索引访问方法都由<link linkend="catalog-pg-am"><structname>pg_am</structname></link>系统目录中的一行所描述。<structname>pg_am</structname>项为该索引访问方法指定了名称和一个<firstterm>处理器函数</firstterm>。这些项可以用<xref linkend="sql-create-access-method"/>和<xref linkend="sql-drop-access-method"/> SQL 命令创建和删除。
   </para>
 
 <!--==========================orignal english content==========================
@@ -159,6 +176,7 @@ typedef struct IndexAmRoutine
     amcostestimate_function amcostestimate;
     amoptions_function amoptions;
     amproperty_function amproperty;     /* can be NULL */
+    ambuildphasename_function ambuildphasename;   /* can be NULL */
     amvalidate_function amvalidate;
     ambeginscan_function ambeginscan;
     amrescan_function amrescan;
@@ -229,6 +247,7 @@ typedef struct IndexAmRoutine
     amcostestimate_function amcostestimate;
     amoptions_function amoptions;
     amproperty_function amproperty;     /* can be NULL */
+    ambuildphasename_function ambuildphasename;   /* can be NULL */
     amvalidate_function amvalidate;
     ambeginscan_function ambeginscan;
     amrescan_function amrescan;
@@ -367,7 +386,7 @@ ambuild (Relation heapRelation,
    but is empty.  It must be filled in with whatever fixed data the
    access method requires, plus entries for all tuples already existing
    in the table.  Ordinarily the <function>ambuild</function> function will call
-   <function>IndexBuildHeapScan()</function> to scan the table for existing tuples
+   <function>table_index_build_scan()</function> to scan the table for existing tuples
    and compute the keys that need to be inserted into the index.
    The function must return a palloc'd struct containing statistics about
    the new index.
@@ -380,7 +399,7 @@ ambuild (Relation heapRelation,
          Relation indexRelation,
          IndexInfo *indexInfo);
 </programlisting>
-   创建一个新索引。索引关系已经被物理创建，但是是空的。必须用索引访问方法要求的固定数据填充它，外加所有已经在表里的行的项。通常，<function>ambuild</function>函数会调用<function>IndexBuildHeapScan()</function>来扫描表以获取现有元组并计算需要被插入到索引的键。该函数必须返回一个已分配内存的结构，其中包含关于新索引的统计信息。
+   创建一个新索引。索引关系已经被物理创建，但是是空的。必须用索引访问方法要求的固定数据填充它，外加所有已经在表里的行的项。通常，<function>ambuild</function>函数会调用<function>table_index_build_scan()</function>来扫描表以获取现有元组并计算需要被插入到索引的键。该函数必须返回一个已分配内存的结构，其中包含关于新索引的统计信息。
   </para>
 
 <!--==========================orignal english content==========================
@@ -728,6 +747,29 @@ amproperty (Oid index_oid, int attno,
 ____________________________________________________________________________-->
   <para>
    支持排序操作符的访问方法应该实现<literal>AMPROP_DISTANCE_ORDERABLE</literal>性质测试，因为核心代码不知道如何做该测试并且会返回 NULL。如果有比打开索引并调用<structfield>amcanreturn</structfield>（这是核心代码的默认行为）更廉价的方法来做<literal>AMPROP_RETURNABLE</literal>测试，最好也实现它。默认行为应该对所有其他标准性质是符合要求的。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+<programlisting>
+char *
+ambuildphasename (int64 phasenum);
+</programlisting>
+   Return the textual name of the given build phase number.
+   The phase numbers are those reported during an index build via the
+   <function>pgstat_progress_update_param</function> interface.
+   The phase names are then exposed in the
+   <structname>pg_stat_progress_create_index</structname> view.
+  </para>
+____________________________________________________________________________-->
+  <para>
+<programlisting>
+char *
+ambuildphasename (int64 phasenum);
+</programlisting>
+   返回给定构建相数号码的文本名称。
+   相数号码是在通过<function>pgstat_progress_update_param</function> 接口构建索引期间报告的.
+   然后相数号码在<structname>pg_stat_progress_create_index</structname>视图中公开。 
   </para>
 
 <!--==========================orignal english content==========================
@@ -1140,12 +1182,12 @@ ____________________________________________________________________________-->
    the TIDs of all the tuples it has been told about that match the
    <firstterm>scan keys</firstterm>.  The access method is <emphasis>not</emphasis> involved in
    actually fetching those tuples from the index's parent table, nor in
-   determining whether they pass the scan's time qualification test or other
+   determining whether they pass the scan's visibility test or other
    conditions.
   </para>
 ____________________________________________________________________________-->
   <para>
-   在一个索引扫描中，索引访问方法负责提供它拿到的匹配<firstterm>扫描键</firstterm>的所有元组的TID。访问方法<emphasis>不</emphasis>会涉及从索引的父表中实际取得那些元组，也不会涉及判断它们是否通过了扫描的时间条件测试或者是其它条件。
+   在一个索引扫描中，索引访问方法负责提供它拿到的匹配<firstterm>扫描键</firstterm>的所有元组的TID。访问方法<emphasis>不</emphasis>会涉及从索引的父表中实际取得那些元组，也不会涉及判断它们是否通过了扫描的可见性测试或者是其它条件。
   </para>
 
 <!--==========================orignal english content==========================
