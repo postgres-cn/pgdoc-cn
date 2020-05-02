@@ -484,6 +484,19 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
+   Like GiST, SP-GiST supports <quote>nearest-neighbor</quote> searches.
+   For SP-GiST operator classes that support distance ordering, the
+   corresponding operator is specified in the <quote>Ordering Operators</quote>
+   column in <xref linkend="spgist-builtin-opclasses-table"/>.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   就像 GiST, SP-GiST 支持 <quote>nearest-neighbor</quote> 搜索.
+   对于支持距离排序的 SP-GiST 运算符类别，相应的运算符被规定在<xref linkend="spgist-builtin-opclasses-table"/>里面的<quote>Ordering Operators</quote>列中。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
    <indexterm>
     <primary>index</primary>
     <secondary>GIN</secondary>
@@ -832,8 +845,9 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    By default, B-tree indexes store their entries in ascending order
-   with nulls last.  This means that a forward scan of an index on
-   column <literal>x</literal> produces output satisfying <literal>ORDER BY x</literal>
+   with nulls last (table TID is treated as a tiebreaker column among
+   otherwise equal entries).  This means that a forward scan of an
+   index on column <literal>x</literal> produces output satisfying <literal>ORDER BY x</literal>
    (or more verbosely, <literal>ORDER BY x ASC NULLS LAST</literal>).  The
    index can also be scanned backward, producing output satisfying
    <literal>ORDER BY x DESC</literal>
@@ -842,7 +856,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   默认情况下，B-tree索引将它的项以升序方式存储，并将空值放在最后。这意味着对列<literal>x</literal>上索引的一次前向扫描将产生满足<literal>ORDER BY x</literal>（或者更长的形式：<literal>ORDER BY x ASC NULLS LAST</literal>）的结果。索引也可以被后向扫描，产生满足<literal>ORDER BY x DESC</literal>（<literal>ORDER BY x DESC NULLS FIRST</literal>， <literal>NULLS FIRST</literal>是<literal>ORDER BY DESC</literal>的默认情况）。
+   默认情况下，B-tree索引将它的项以升序方式存储，并将空值放在最后(表TID被处理为其它相等条目之间的分线器列)。这意味着对列<literal>x</literal>上索引的一次前向扫描将产生满足<literal>ORDER BY x</literal>（或者更长的形式：<literal>ORDER BY x ASC NULLS LAST</literal>）的结果。索引也可以被后向扫描，产生满足<literal>ORDER BY x DESC</literal>（<literal>ORDER BY x DESC NULLS FIRST</literal>， <literal>NULLS FIRST</literal>是<literal>ORDER BY DESC</literal>的默认情况）。
   </para>
 
 <!--==========================orignal english content==========================
@@ -1151,6 +1165,23 @@ CREATE INDEX test1_lower_col1_idx ON test1 (lower(col1));
 
 <!--==========================orignal english content==========================
   <para>
+   Expression indexes also allow control over the scope of unique indexes.
+   For example, this unique index prevents duplicate integer values from
+   being stored in a <type>double precision</type>-typed column:
+<programlisting>
+CREATE UNIQUE INDEX test1_uniq_int ON tests ((floor(double_col)))
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   表达式索引还允许控制唯一索引的范围。例如，此唯一索引可防止在<type>double precision</type>类型列中存储重复的整数值:
+<programlisting>
+CREATE UNIQUE INDEX test1_uniq_int ON tests ((floor(double_col)))
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
    If we were to declare this index <literal>UNIQUE</literal>, it would prevent
    creation of rows whose <literal>col1</literal> values differ only in case,
    as well as rows whose <literal>col1</literal> values are actually identical.
@@ -1335,11 +1366,13 @@ SELECT *
 FROM access_log
 WHERE url = '/index.html' AND client_ip = inet '212.78.10.32';
 </programlisting>
-    A query that cannot use this index is:
+    Here the query's IP address is covered by the partial index.  The
+    following query cannot use the partial index, as it uses an IP address
+    that is excluded from the index:
 <programlisting>
 SELECT *
 FROM access_log
-WHERE client_ip = inet '192.168.100.23';
+WHERE url = '/index.html' AND client_ip = inet '192.168.100.23';
 </programlisting>
    </para>
 ____________________________________________________________________________-->
@@ -1350,11 +1383,11 @@ SELECT *
 FROM access_log
 WHERE url = '/index.html' AND client_ip = inet '212.78.10.32';
 </programlisting>
-    一个不能使用该索引的查询：
+    此处查询的IP地址由部分索引覆盖。以下查询无法使用部分索引，因为它使用从索引中排除的 IP 地址：
 <programlisting>
 SELECT *
 FROM access_log
-WHERE client_ip = inet '192.168.100.23';
+WHERE url = '/index.html' AND client_ip = inet '192.168.100.23';
 </programlisting>
    </para>
 
@@ -1362,13 +1395,13 @@ WHERE client_ip = inet '192.168.100.23';
    <para>
     Observe that this kind of partial index requires that the common
     values be predetermined, so such partial indexes are best used for
-    data distributions that do not change.  The indexes can be recreated
+    data distributions that do not change.  Such indexes can be recreated
     occasionally to adjust for new data distributions, but this adds
     maintenance effort.
    </para>
 ____________________________________________________________________________-->
    <para>
-    可以看到部分索引查询要求公值能被预知，因此部分索引最适合于数据分布不会改变的情况。当然索引也可以偶尔被重建来适应新的数据分布，但是这会增加维护负担。
+    可以看到部分索引查询要求公值能被预知，因此部分索引最适合于数据分布不会改变的情况。这样的索引也可以偶尔被重建来适应新的数据分布，但是这会增加维护负担。
    </para>
   </example>
 
@@ -1554,6 +1587,24 @@ CREATE UNIQUE INDEX tests_success_constraint ON tests (subject, target)
     WHERE success;
 </programlisting>
     当有少数成功测试和很多不成功测试时这是一种特别有效的方法。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    This index allows only one null in the indexed column by using a
+    partial index clause to process only null column values, and using
+    an expression index clause to index <literal>true</literal> instead
+    of <literal>null</literal>:
+<programlisting>
+CREATE UNIQUE INDEX tests_target_one_null ON tests ((target IS NULL)) WHERE target IS NULL;
+</programlisting>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    通过使用部分索引子句只处理空列值，该索引只允许索引列中有一个空值，并且用一个表达式索引子句来索引 <literal>true</literal> 来替代 <literal>null</literal>:
+<programlisting>
+CREATE UNIQUE INDEX tests_target_one_null ON tests ((target IS NULL)) WHERE target IS NULL;
+</programlisting>
    </para>
   </example>
 
@@ -1867,12 +1918,12 @@ CREATE UNIQUE INDEX tab_x_y ON tab(x) INCLUDE (y);
    likely to not need to access the heap.  If the heap tuple must be visited
    anyway, it costs nothing more to get the column's value from there.
    Other restrictions are that expressions are not currently supported as
-   included columns, and that only B-tree indexes currently support included
-   columns.
+   included columns, and that only B-tree and GiST indexes currently support
+   included columns.
   </para>
 ____________________________________________________________________________-->
   <para>
-  保守地将非键负载列添加到索引是明智的，尤其是宽列。 如果索引元组超过索引类型允许的最大大小，数据插入将失败。在任何情况下，非键列都将复制索引表中的数据并放大了索引的大小，从而有可能减慢搜索速度。请记住，除非一个表足够慢以至于仅索引扫描可能不必访问堆，否则没有什么理由在一个索引中包含负载列。无论如何，如果必须访问堆元组，从堆里获取列的值并不会带来更高的开销。其他限制是表达式不被作为包含的来支持。只有B树索引当前支持包含的列。
+  保守地将非键负载列添加到索引是明智的，尤其是宽列。 如果索引元组超过索引类型允许的最大大小，数据插入将失败。在任何情况下，非键列都将复制索引表中的数据并放大了索引的大小，从而有可能减慢搜索速度。请记住，除非一个表足够慢以至于仅索引扫描可能不必访问堆，否则没有什么理由在一个索引中包含负载列。无论如何，如果必须访问堆元组，从堆里获取列的值并不会带来更高的开销。其他限制是表达式不被作为包含的来支持。只有B树和GiST索引当前支持包含的列。
   </para>
 <!--==========================orignal english content==========================
   <para>
@@ -1888,10 +1939,7 @@ CREATE INDEX tab_x_y ON tab(x, y);
    the extra columns are trailing columns; making them be leading columns is
    unwise for the reasons explained in <xref linkend="indexes-multicolumn"/>.
    However, this method doesn't support the case where you want the index to
-   enforce uniqueness on the key column(s).  Also, explicitly marking
-   non-searchable columns as <literal>INCLUDE</literal> columns makes the
-   index slightly smaller, because such columns need not be stored in upper
-   B-tree levels.
+   enforce uniqueness on the key column(s). 
   </para>
 ____________________________________________________________________________-->
   <para>
@@ -1899,9 +1947,30 @@ ____________________________________________________________________________-->
    <programlisting>
       CREATE INDEX tab_x_y ON tab(x, y);
    </programlisting>
-   即使他们无意将<literal>y</literal>用作<literal>WHER</literal>子句的一部分，只要额外的列是尾列就可以很好的工作。 让它们成为前导字段是不明智的，原因在
-<xref linkend ="indexes-multicolumn"/>中有说明。但是，此方法不支持您希望索引在键列上实施唯一性。 另外，明确标记不可搜索列为<literal>INCLUDE </literal>列可让索引稍小一些，因为这样的列不需要存储在B树的上层。
+   即使他们无意将<literal>y</literal>用作<literal>WHER</literal>子句的一部分，只要额外的列是尾列就可以很好的工作。 让它们成为前导字段是不明智的，原因在<xref linkend ="indexes-multicolumn"/>中有说明。但是，此方法不支持您希望索引在键列上实施唯一性。 
   </para>
+<!--==========================orignal english content==========================
+  <para>
+   <firstterm>Suffix truncation</firstterm> always removes non-key
+   columns from upper B-Tree levels.  As payload columns, they are
+   never used to guide index scans.  The truncation process also
+   removes one or more trailing key column(s) when the remaining
+   prefix of key column(s) happens to be sufficient to describe tuples
+   on the lowest B-Tree level.  In practice, covering indexes without
+   an <literal>INCLUDE</literal> clause often avoid storing columns
+   that are effectively payload in the upper levels.  However,
+   explicitly defining payload columns as non-key columns
+   <emphasis>reliably</emphasis> keeps the tuples in upper levels
+   small.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <firstterm>Suffix truncation</firstterm>总是从B-Tree的上层移除非键列。作为有效负载列，它们从不用于指导索引扫描。
+   当键列的其余前缀恰好足以描述最低B-Tree级别上的元组时，截断过程还会删除一个或多个尾随的键列。
+   实际中，不使用<literal>INCLUDE</literal>子句覆盖索引通常会避免存储在上层有效负载的列。
+   然而，显式地将有效负载列定义为非键列<emphasis>reliably</emphasis>使上层元组保持较小。
+  </para>
+
 <!--==========================orignal english content==========================
   <para>
    In principle, index-only scans can be used with expression indexes.
