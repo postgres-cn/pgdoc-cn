@@ -44,6 +44,7 @@ ____________________________________________________________________________-->
 COPY <replaceable class="parameter">table_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ]
     FROM { '<replaceable class="parameter">filename</replaceable>' | PROGRAM '<replaceable class="parameter">command</replaceable>' | STDIN }
     [ [ WITH ] ( <replaceable class="parameter">option</replaceable> [, ...] ) ]
+    [ WHERE <replaceable class="parameter">condition</replaceable> ]
 
 COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] | ( <replaceable class="parameter">query</replaceable> ) }
     TO { '<replaceable class="parameter">filename</replaceable>' | PROGRAM '<replaceable class="parameter">command</replaceable>' | STDOUT }
@@ -52,7 +53,6 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
 <phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
 
     FORMAT <replaceable class="parameter">format_name</replaceable>
-    OIDS [ <replaceable class="parameter">boolean</replaceable> ]
     FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
     DELIMITER '<replaceable class="parameter">delimiter_character</replaceable>'
     NULL '<replaceable class="parameter">null_string</replaceable>'
@@ -69,6 +69,7 @@ ____________________________________________________________________________-->
 COPY <replaceable class="parameter">table_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ]
     FROM { '<replaceable class="parameter">filename</replaceable>' | PROGRAM '<replaceable class="parameter">command</replaceable>' | STDIN }
     [ [ WITH ] ( <replaceable class="parameter">option</replaceable> [, ...] ) ]
+    [ WHERE <replaceable class="parameter">condition</replaceable> ]
 
 COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] | ( <replaceable class="parameter">query</replaceable> ) }
     TO { '<replaceable class="parameter">filename</replaceable>' | PROGRAM '<replaceable class="parameter">command</replaceable>' | STDOUT }
@@ -77,7 +78,6 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
 <phrase>其中 <replaceable class="parameter">option</replaceable> 可以是下列之一：</phrase>
 
     FORMAT <replaceable class="parameter">format_name</replaceable>
-    OIDS [ <replaceable class="parameter">boolean</replaceable> ]
     FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
     DELIMITER '<replaceable class="parameter">delimiter_character</replaceable>'
     NULL '<replaceable class="parameter">null_string</replaceable>'
@@ -120,17 +120,15 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   If a list of columns is specified, <command>COPY</command> will
-   only copy the data in the specified columns to or from the file.
-   If there are any columns in the table that are not in the column list,
-   <command>COPY FROM</command> will insert the default values for
-   those columns.
+   If a column list is specified, <command>COPY TO</command> copies only
+   the data in the specified columns to the file.  For <command>COPY
+   FROM</command>, each field in the file is inserted, in order, into the
+   specified column.  Table columns not specified in the <command>COPY
+   FROM</command> column list will receive their default values.
   </para>
 ____________________________________________________________________________-->
   <para>
-   如果指定了一个列列表，<command>COPY</command>将只把指定列的
-   数据复制到文件或者从文件复制数据到指定列。如果表中有列不在列列表中，
-   <command>COPY FROM</command>将会为那些列插入默认值。
+   如果指定了一个列列表，<command>COPY TO</command>将只把指定列的数据复制到文件。对于<command>COPY FROM</command>，文件中的每个字段将按顺序插入到指定列中。<command>COPY FROM</command>命令的列列表中没有指定的表列则会采纳其默认值。
   </para>
 
 <!--==========================orignal english content==========================
@@ -197,11 +195,12 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
      <para>
       An optional list of columns to be copied.  If no column list is
-      specified, all columns of the table will be copied.
+      specified, all columns of the table except generated columns will be
+      copied.
      </para>
 ____________________________________________________________________________-->
      <para>
-      可选的要被复制的列列表。如果没有指定列列表，则该表的所有列都会被复制。
+      可选的要被复制的列列表。如果没有指定列列表，则该表的所有列除了生成的列都会被复制。
      </para>
     </listitem>
    </varlistentry>
@@ -383,28 +382,6 @@ ____________________________________________________________________________-->
       <literal>text</literal>、
       <literal>csv</literal>（逗号分隔值）或者<literal>binary</literal>。
       默认是<literal>text</literal>。
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
-<!--==========================orignal english content==========================
-    <term><literal>OIDS</literal></term>
-____________________________________________________________________________-->
-    <term><literal>OIDS</literal></term>
-    <listitem>
-<!--==========================orignal english content==========================
-     <para>
-      Specifies copying the OID for each row.  (An error is raised if
-      <literal>OIDS</literal> is specified for a table that does not
-      have OIDs, or in the case of copying a <replaceable
-      class="parameter">query</replaceable>.)
-     </para>
-____________________________________________________________________________-->
-     <para>
-      指定为每一行复制 OID（如果为一个没有 OID 的表指定了
-      <literal>OIDS</literal>或者正在复制的是一个<replaceable
-      class="parameter">查询</replaceable>，则会出现错误）。
      </para>
     </listitem>
    </varlistentry>
@@ -681,6 +658,47 @@ ____________________________________________________________________________-->
       class="parameter">encoding_name</replaceable>编码。如果省略
       这个选项，将使用当前的客户端编码。详见下文的注解。
      </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>WHERE</literal></term>
+____________________________________________________________________________-->
+    <term><literal>WHERE</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+   <para>
+    The optional <literal>WHERE</literal> clause has the general form
+<synopsis>
+WHERE <replaceable class="parameter">condition</replaceable>
+</synopsis>
+    where <replaceable class="parameter">condition</replaceable> is
+    any expression that evaluates to a result of type
+    <type>boolean</type>.  Any row that does not satisfy this
+    condition will not be inserted to the table.  A row satisfies the
+    condition if it returns true when the actual row values are
+    substituted for any variable references.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <literal>WHERE</literal>子句是可选的，其一般形式是：
+<synopsis>
+WHERE <replaceable class="parameter">condition</replaceable>
+</synopsis>
+    其中<replaceable class="parameter">condition</replaceable>是计算结果为<type>boolean</type>类型的任意表达式。任何不满足此条件的行都不会插入到表中。在用实际的行值替换任何变量引用时，如果该行返回true，则该行满足条件。
+   </para>
+<!--==========================orignal english content==========================
+   <para>
+    Currently, subqueries are not allowed in <literal>WHERE</literal>
+    expressions, and the evaluation does not see any changes made by the
+    <command>COPY</command> itself (this matters when the expression
+    contains calls to <literal>VOLATILE</literal> functions).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    目前，在<literal>WHERE</literal>表达式中不允许使用子查询，并且值的计算不会看到<command>COPY</command>本身所做的任何更改（当表达式包含对<literal>VOLATILE</literal>函数的调用时，这一点很重要）。
+   </para>
     </listitem>
    </varlistentry>
 
@@ -1027,8 +1045,6 @@ ____________________________________________________________________________-->
     place of columns that are null.
     <command>COPY FROM</command> will raise an error if any line of the
     input file contains more or fewer columns than are expected.
-    If <literal>OIDS</literal> is specified, the OID is read or written as the first column,
-    preceding the user data columns.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1037,9 +1053,7 @@ ____________________________________________________________________________-->
     本身是由输出函数产生的或者是可被输入函数接受的属于每个属性
     数据类型的字符串。在为空值的列的位置使用指定的空值串。如果
     输入文件的任何行包含比预期更多或者更少的列，
-    <command>COPY FROM</command>将会抛出一个错误。如
-    果指定了<literal>OIDS</literal>，在处理用户数据列志气啊，
-    会从第一列读取 OID 或者把 OID 写入第一列。
+    <command>COPY FROM</command>将会抛出一个错误。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1461,7 +1475,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    <literal>binary</literal>人间格式由一个文件头、零个或者更多个包含
+    <literal>binary</literal>文件格式由一个文件头、零个或者更多个包含
     行数据的元组以及一个文件尾构成。头部和数据都以网络字节序表示。
    </para>
 
@@ -1521,7 +1535,9 @@ only one flag bit is defined, and the rest must be zero:
           <term>Bit 16</term>
           <listitem>
            <para>
-            if 1, OIDs are included in the data; if 0, not
+            If 1, OIDs are included in the data; if 0, not. Oid system columns
+            are not supported in <productname>PostgreSQL</productname>
+            anymore, but the format still contains the indicator.
            </para>
           </listitem>
          </varlistentry>
@@ -1578,7 +1594,7 @@ ____________________________________________________________________________-->
           <term>位 16</term>
           <listitem>
            <para>
-            如果为 1，表示数据中包含 OID；如果为 0，则不包含
+            如果为 1，表示数据中包含 OID；如果为 0，则不包含。<productname>PostgreSQL</productname>不再支持Oid系统列，但是格式仍然包含该指示符。
            </para>
           </listitem>
          </varlistentry>
@@ -1695,17 +1711,14 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
     <para>
 If OIDs are included in the file, the OID field immediately follows the
-field-count word.  It is a normal field except that it's not included
-in the field-count.  In particular it has a length word &mdash; this will allow
-handling of 4-byte vs. 8-byte OIDs without too much pain, and will allow
-OIDs to be shown as null if that ever proves desirable.
+field-count word.  It is a normal field except that it's not included in the
+field-count.  Note that oid system columns are not supported in current
+versions of <productname>PostgreSQL</productname>.
     </para>
 ____________________________________________________________________________-->
     <para>
 如果文件中包含 OID，OID 域会紧跟在域计数字之后。它是一个普通域，
-不过它没有被包含在域计数中。特别地，它有一个长度字 &mdash; 这将
-允许容易地处理 4 字节和 8 字节 OID 的选择，并且将允许在需要时把
-OID 显示为空值。
+不过它没有被包含在域计数中。注意<productname>PostgreSQL</productname>当前版本不支持oid系统列。
     </para>
    </refsect3>
 
@@ -1898,24 +1911,22 @@ COPY <replaceable class="parameter">table_name</replaceable> [ ( <replaceable cl
     FROM { '<replaceable class="parameter">filename</replaceable>' | STDIN }
     [ [ WITH ]
           [ BINARY ]
-          [ OIDS ]
-          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter</replaceable>' ]
-          [ NULL [ AS ] '<replaceable class="parameter">null string</replaceable>' ]
+          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter_character</replaceable>' ]
+          [ NULL [ AS ] '<replaceable class="parameter">null_string</replaceable>' ]
           [ CSV [ HEADER ]
-                [ QUOTE [ AS ] '<replaceable class="parameter">quote</replaceable>' ]
-                [ ESCAPE [ AS ] '<replaceable class="parameter">escape</replaceable>' ]
+                [ QUOTE [ AS ] '<replaceable class="parameter">quote_character</replaceable>' ]
+                [ ESCAPE [ AS ] '<replaceable class="parameter">escape_character</replaceable>' ]
                 [ FORCE NOT NULL <replaceable class="parameter">column_name</replaceable> [, ...] ] ] ]
 
 COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] | ( <replaceable class="parameter">query</replaceable> ) }
     TO { '<replaceable class="parameter">filename</replaceable>' | STDOUT }
     [ [ WITH ]
           [ BINARY ]
-          [ OIDS ]
-          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter</replaceable>' ]
-          [ NULL [ AS ] '<replaceable class="parameter">null string</replaceable>' ]
+          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter_character</replaceable>' ]
+          [ NULL [ AS ] '<replaceable class="parameter">null_string</replaceable>' ]
           [ CSV [ HEADER ]
-                [ QUOTE [ AS ] '<replaceable class="parameter">quote</replaceable>' ]
-                [ ESCAPE [ AS ] '<replaceable class="parameter">escape</replaceable>' ]
+                [ QUOTE [ AS ] '<replaceable class="parameter">quote_character</replaceable>' ]
+                [ ESCAPE [ AS ] '<replaceable class="parameter">escape_character</replaceable>' ]
                 [ FORCE QUOTE { <replaceable class="parameter">column_name</replaceable> [, ...] | * } ] ] ]
 </synopsis>
 
@@ -1933,24 +1944,22 @@ COPY <replaceable class="parameter">table_name</replaceable> [ ( <replaceable cl
     FROM { '<replaceable class="parameter">filename</replaceable>' | STDIN }
     [ [ WITH ]
           [ BINARY ]
-          [ OIDS ]
-          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter</replaceable>' ]
-          [ NULL [ AS ] '<replaceable class="parameter">null string</replaceable>' ]
+          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter_character</replaceable>' ]
+          [ NULL [ AS ] '<replaceable class="parameter">null_string</replaceable>' ]
           [ CSV [ HEADER ]
-                [ QUOTE [ AS ] '<replaceable class="parameter">quote</replaceable>' ]
-                [ ESCAPE [ AS ] '<replaceable class="parameter">escape</replaceable>' ]
+                [ QUOTE [ AS ] '<replaceable class="parameter">quote_character</replaceable>' ]
+                [ ESCAPE [ AS ] '<replaceable class="parameter">escape_character</replaceable>' ]
                 [ FORCE NOT NULL <replaceable class="parameter">column_name</replaceable> [, ...] ] ] ]
 
 COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] | ( <replaceable class="parameter">query</replaceable> ) }
     TO { '<replaceable class="parameter">filename</replaceable>' | STDOUT }
     [ [ WITH ]
           [ BINARY ]
-          [ OIDS ]
-          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter</replaceable>' ]
-          [ NULL [ AS ] '<replaceable class="parameter">null string</replaceable>' ]
+          [ DELIMITER [ AS ] '<replaceable class="parameter">delimiter_character</replaceable>' ]
+          [ NULL [ AS ] '<replaceable class="parameter">null_string</replaceable>' ]
           [ CSV [ HEADER ]
-                [ QUOTE [ AS ] '<replaceable class="parameter">quote</replaceable>' ]
-                [ ESCAPE [ AS ] '<replaceable class="parameter">escape</replaceable>' ]
+                [ QUOTE [ AS ] '<replaceable class="parameter">quote_character</replaceable>' ]
+                [ ESCAPE [ AS ] '<replaceable class="parameter">escape_character</replaceable>' ]
                 [ FORCE QUOTE { <replaceable class="parameter">column_name</replaceable> [, ...] | * } ] ] ]
 </synopsis>
 
@@ -1964,15 +1973,15 @@ COPY { <replaceable class="parameter">table_name</replaceable> [ ( <replaceable 
    version 7.3 and is still supported:
 
 <synopsis>
-COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable> [ WITH OIDS ]
+COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable>
     FROM { '<replaceable class="parameter">filename</replaceable>' | STDIN }
-    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter</replaceable>' ]
-    [ WITH NULL AS '<replaceable class="parameter">null string</replaceable>' ]
+    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter_character</replaceable>' ]
+    [ WITH NULL AS '<replaceable class="parameter">null_string</replaceable>' ]
 
-COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable> [ WITH OIDS ]
+COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable>
     TO { '<replaceable class="parameter">filename</replaceable>' | STDOUT }
-    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter</replaceable>' ]
-    [ WITH NULL AS '<replaceable class="parameter">null string</replaceable>' ]
+    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter_character</replaceable>' ]
+    [ WITH NULL AS '<replaceable class="parameter">null_string</replaceable>' ]
 </synopsis></para>
 ____________________________________________________________________________-->
   <para>
@@ -1980,15 +1989,15 @@ ____________________________________________________________________________-->
    并且仍然被支持：
 
 <synopsis>
-COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable> [ WITH OIDS ]
+COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable>
     FROM { '<replaceable class="parameter">filename</replaceable>' | STDIN }
-    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter</replaceable>' ]
-    [ WITH NULL AS '<replaceable class="parameter">null string</replaceable>' ]
+    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter_character</replaceable>' ]
+    [ WITH NULL AS '<replaceable class="parameter">null_string</replaceable>' ]
 
-COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable> [ WITH OIDS ]
+COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable>
     TO { '<replaceable class="parameter">filename</replaceable>' | STDOUT }
-    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter</replaceable>' ]
-    [ WITH NULL AS '<replaceable class="parameter">null string</replaceable>' ]
+    [ [USING] DELIMITERS '<replaceable class="parameter">delimiter_character</replaceable>' ]
+    [ WITH NULL AS '<replaceable class="parameter">null_string</replaceable>' ]
 </synopsis></para>
  </refsect1>
 </refentry>
