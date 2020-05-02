@@ -8,7 +8,7 @@ import logging
 #commentDir = r"sgml_en"
 #destDir = r"sgml_out"
 file_encoding=r'UTF-8'
-skip_sgmls = ('postgres.sgml','legal.sgml','bookindex.sgml','errcodes-table.sgml','features-supported.sgml','features-unsupported.sgml','version.sgml')
+skip_sgmls = ('postgres.sgml','legal.sgml','bookindex.sgml','errcodes-table.sgml','features-supported.sgml','features-unsupported.sgml','version.sgml','legal.sgml')
 
 COMMENT_NOTE_START=r'<!--==========================orignal english content=========================='
 COMMENT_NOTE_END=r'____________________________________________________________________________-->'
