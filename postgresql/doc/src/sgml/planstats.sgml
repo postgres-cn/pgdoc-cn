@@ -786,7 +786,7 @@ ____________________________________________________________________________-->
    <secondary>multivariate</secondary>
   </indexterm>
 
-  <sect2>
+  <sect2 id="functional-dependencies">
 <!--==========================orignal english content==========================
    <title>Functional Dependencies</title>
 ____________________________________________________________________________-->
@@ -949,7 +949,7 @@ EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
    </para>
   </sect2>
 
-  <sect2>
+  <sect2 id="multivariate-ndistinct-counts">
 <!--==========================orignal english content==========================
    <title>Multivariate N-Distinct Counts</title>
 ____________________________________________________________________________-->
@@ -1034,6 +1034,216 @@ EXPLAIN (ANALYZE, TIMING OFF) SELECT COUNT(*) FROM t GROUP BY a, b;
    </para>
 
   </sect2>
+
+  <sect2 id="mcv-lists">
+<!--==========================orignal english content==========================
+   <title>MCV Lists</title>
+____________________________________________________________________________-->
+   <title>MCV 列表</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    As explained in <xref linkend="functional-dependencies"/>, functional
+    dependencies are very cheap and efficient type of statistics, but their
+    main limitation is their global nature (only tracking dependencies at
+    the column level, not between individual column values).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如 <xref linkend="functional-dependencies"/>中所述，函数依赖是非常廉价和高效的统计类型，但它们的主要限制是其全局特性（仅跟踪列级别的依赖项，而不是在单个列值之间）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    This section introduces multivariate variant of <acronym>MCV</acronym>
+    (most-common values) lists, a straightforward extension of the per-column
+    statistics described in <xref linkend="row-estimation-examples"/>.  These
+    statistics address the limitation by storing individual values, but it is
+    naturally more expensive, both in terms of building the statistics in
+    <command>ANALYZE</command>, storage and planning time.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    本节介绍<acronym>MCV</acronym>（最常见值）列表的多变量变体, <xref linkend="row-estimation-examples"/> 中描述的每列统计数据的简单扩展。  
+	这些统计数据通过存储单独的值来解决这个限制，但是就构建<command>ANALYZE</command>中的统计数据、存储和规划时间而言，它的成本自然更高。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Let's look at the query from <xref linkend="functional-dependencies"/>
+    again, but this time with a <acronym>MCV</acronym> list created on the
+    same set of columns (be sure to drop the functional dependencies, to
+    make sure the planner uses the newly created statistics).
+
+<programlisting>
+DROP STATISTICS stts;
+CREATE STATISTICS stts2 (mcv) ON a, b FROM t;
+ANALYZE t;
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
+                                   QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on t  (cost=0.00..195.00 rows=100 width=8) (actual rows=100 loops=1)
+   Filter: ((a = 1) AND (b = 1))
+   Rows Removed by Filter: 9900
+</programlisting>
+
+    The estimate is as accurate as with the functional dependencies, mostly
+    thanks to the table being fairly small and having a simple distribution
+    with a low number of distinct values. Before looking at the second query,
+    which was not handled by functional dependencies particularly well,
+    let's inspect the <acronym>MCV</acronym> list a bit.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    让我们再看看来自<xref linkend="functional-dependencies"/>的查询，但这次在相同列集上创建了<acronym>MCV</acronym>列表（请确保删除函数依赖，以确保规划器使用新创建的统计数据）。
+
+<programlisting>
+DROP STATISTICS stts;
+CREATE STATISTICS stts2 (mcv) ON a, b FROM t;
+ANALYZE t;
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 1;
+                                   QUERY PLAN
+-------------------------------------------------------------------------------
+ Seq Scan on t  (cost=0.00..195.00 rows=100 width=8) (actual rows=100 loops=1)
+   Filter: ((a = 1) AND (b = 1))
+   Rows Removed by Filter: 9900
+</programlisting>
+
+    The estimate is as accurate as with the functional dependencies, mostly
+    thanks to the table being fairly small and having a simple distribution
+    with a low number of distinct values. Before looking at the second query,
+    which was not handled by functional dependencies particularly well,
+    let's inspect the <acronym>MCV</acronym> list a bit.
+    估计值与函数依赖一样准确，这主要是由于表相当小而且具有少量不同值的简单分布。
+    在查看第二个查询之前，这个函数依赖处理得不是很好，让我们先检查一下<acronym>MCV</acronym>列表。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Inspecting the <acronym>MCV</acronym> list is possible using
+    <function>pg_mcv_list_items</function> set-returning function.
+
+<programlisting>
+SELECT m.* FROM pg_statistic_ext join pg_statistic_ext_data on (oid = stxoid),
+                pg_mcv_list_items(stxdmcv) m WHERE stxname = 'stts2';
+ index |  values  | nulls | frequency | base_frequency 
+-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+     0 | {0, 0}   | {f,f} |      0.01 |         0.0001
+     1 | {1, 1}   | {f,f} |      0.01 |         0.0001
+   ...
+    49 | {49, 49} | {f,f} |      0.01 |         0.0001
+    50 | {50, 50} | {f,f} |      0.01 |         0.0001
+   ...
+    97 | {97, 97} | {f,f} |      0.01 |         0.0001
+    98 | {98, 98} | {f,f} |      0.01 |         0.0001
+    99 | {99, 99} | {f,f} |      0.01 |         0.0001
+(100 rows)
+</programlisting>
+
+    This confirms there are 100 distinct combinations in the two columns, and
+    all of them are about equally likely (1% frequency for each one).  The
+    base frequency is the frequency computed from per-column statistics, as if
+    there were no multi-column statistics. Had there been any null values in
+    either of the columns, this would be identified in the
+    <structfield>nulls</structfield> column.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    可以使用<function>pg_mcv_list_items</function>集返回函数检查<acronym>MCV</acronym>列表。
+
+<programlisting>
+SELECT m.* FROM pg_statistic_ext join pg_statistic_ext_data on (oid = stxoid),
+                pg_mcv_list_items(stxdmcv) m WHERE stxname = 'stts2';
+ index |  values  | nulls | frequency | base_frequency 
+-------+----------+-------+-----------+----------------
+     0 | {0, 0}   | {f,f} |      0.01 |         0.0001
+     1 | {1, 1}   | {f,f} |      0.01 |         0.0001
+   ...
+    49 | {49, 49} | {f,f} |      0.01 |         0.0001
+    50 | {50, 50} | {f,f} |      0.01 |         0.0001
+   ...
+    97 | {97, 97} | {f,f} |      0.01 |         0.0001
+    98 | {98, 98} | {f,f} |      0.01 |         0.0001
+    99 | {99, 99} | {f,f} |      0.01 |         0.0001
+(100 rows)
+</programlisting>
+
+    这确认了在这两列中有100种不同的组合，并且它们的概率都差不多(每个的频率为1%)。
+    基本频率是从每列统计数据中计算的频率，好像没有多列统计数据。如果任一列中有任何空值，将在 <structfield>nulls</structfield>列中标识。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    When estimating the selectivity, the planner applies all the conditions
+    on items in the <acronym>MCV</acronym> list, and then sums the frequencies
+    of the matching ones. See <function>mcv_clauselist_selectivity</function>
+    in <filename>src/backend/statistics/mcv.c</filename> for details.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在估计选择性时，规划器对<acronym>MCV</acronym>列表中的项目应用所有条件，然后对匹配项的频率求和。
+    详情请参阅<filename>src/backend/statistics/mcv.c</filename>中的<function>mcv_clauselist_selectivity</function>。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Compared to functional dependencies, <acronym>MCV</acronym> lists have two
+    major advantages. Firstly, the list stores actual values, making it possible
+    to decide which combinations are compatible.
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 10;
+                                 QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on t  (cost=0.00..195.00 rows=1 width=8) (actual rows=0 loops=1)
+   Filter: ((a = 1) AND (b = 10))
+   Rows Removed by Filter: 10000
+</programlisting>
+
+    Secondly, <acronym>MCV</acronym> lists handle a wider range of clause types,
+    not just equality clauses like functional dependencies. For example,
+    consider the following range query for the same table:
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a &lt;= 49 AND b &gt; 49;
+                                QUERY PLAN
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ Seq Scan on t  (cost=0.00..195.00 rows=1 width=8) (actual rows=0 loops=1)
+   Filter: ((a &lt;= 49) AND (b &gt; 49))
+   Rows Removed by Filter: 10000
+</programlisting>
+
+   </para>
+____________________________________________________________________________-->
+   <para>
+    与函数依赖相比，<acronym>MCV</acronym>列表有两大主要优点。
+    首先，列表存储实际值，从而可以决定哪些组合是兼容的。
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a = 1 AND b = 10;
+                                 QUERY PLAN
+---------------------------------------------------------------------------
+ Seq Scan on t  (cost=0.00..195.00 rows=1 width=8) (actual rows=0 loops=1)
+   Filter: ((a = 1) AND (b = 10))
+   Rows Removed by Filter: 10000
+</programlisting>
+
+    第二，<acronym>MCV</acronym> 列表处理更广泛的子句类型，而不仅仅是类似函数依赖的相等子句。
+    例如，请考虑对同一表的以下范围查询：
+
+<programlisting>
+EXPLAIN (ANALYZE, TIMING OFF) SELECT * FROM t WHERE a &lt;= 49 AND b &gt; 49;
+                                QUERY PLAN
+---------------------------------------------------------------------------
+ Seq Scan on t  (cost=0.00..195.00 rows=1 width=8) (actual rows=0 loops=1)
+   Filter: ((a &lt;= 49) AND (b &gt; 49))
+   Rows Removed by Filter: 10000
+</programlisting>
+
+   </para>
+
+  </sect2>
+
  </sect1>
 
  <sect1 id="planner-stats-security">
