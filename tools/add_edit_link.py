@@ -16,7 +16,8 @@ InsertHTML="""<div class="preheader">
 <a style="margin : 0px 5px 0px 5px;" href="/docs/9.5/{0}" target="_top">9.5</a>
 <a style="margin : 0px 5px 0px 5px;" href="/docs/9.6/{0}" target="_top">9.6</a>
 <a style="margin : 0px 5px 0px 5px;" href="/docs/10/{0}" target="_top">10</a>
-<span style="margin : 0px 5px 0px 5px;">11</span>
+<a style="margin : 0px 5px 0px 5px;" href="/docs/11/{0}" target="_top">11</a>
+<span style="margin : 0px 5px 0px 5px;">12</span>
 </div>
 
 <div style="text-align:right">

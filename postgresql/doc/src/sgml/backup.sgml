@@ -1294,9 +1294,10 @@ ____________________________________________________________________________-->
     可以用非排他或者排他的方法来制作低级基础备份。我们推荐非排他方法，而排他
     的方法已经被废弃并且最终将被去除。
    </para>
+
    <sect3 id="backup-lowlevel-base-backup-nonexclusive">
 <!--==========================orignal english content==========================
-    <title>Making a non-exclusive low level backup</title>
+    <title>Making a Non-Exclusive Low-Level Backup</title>
 ____________________________________________________________________________-->
     <title>制作一个非排他低级备份</title>
 <!--==========================orignal english content==========================
@@ -1506,23 +1507,41 @@ SELECT * FROM pg_stop_backup(false);
    </sect3>
    <sect3 id="backup-lowlevel-base-backup-exclusive">
 <!--==========================orignal english content==========================
-    <title>Making an exclusive low level backup</title>
+    <title>Making an Exclusive Low-Level Backup</title>
 ____________________________________________________________________________-->
     <title>制作一个排他低级备份</title>
+
+    <note>
+<!--==========================orignal english content==========================
+     <para>
+      The exclusive backup method is deprecated and should be avoided.
+      Prior to <productname>PostgreSQL</productname> 9.6, this was the only
+      low-level method available, but it is now recommended that all users
+      upgrade their scripts to use non-exclusive backups.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      排他式备份方法已过时，应避免使用。
+      在<productname>PostgreSQL</productname> 9.6 之前，这是唯一可用的低级方法，但是现在
+      推荐所有用户升级他们的脚本来使用非排他备份。
+     </para>
+    </note>
+
 <!--==========================orignal english content==========================
     <para>
      The process for an exclusive backup is mostly the same as for a
-     non-exclusive one, but it differs in a few key steps. This type of backup
-     can only be taken on a primary and does not allow concurrent backups.
-     Prior to <productname>PostgreSQL</productname> 9.6, this
-     was the only low-level method available, but it is now recommended that
-     all users upgrade their scripts to use non-exclusive backups if possible.
+     non-exclusive one, but it differs in a few key steps. This type of
+     backup can only be taken on a primary and does not allow concurrent
+     backups.  Moreover, because it creates a backup label file, as
+     described below, it can block automatic restart of the master server
+     after a crash.  On the other hand, the erroneous removal of this
+     file from a backup or standby is a common mistake, which can result
+     in serious data corruption.  If it is necessary to use this method,
+     the following steps may be used.
     </para>
 ____________________________________________________________________________-->
     <para>
-     一个排他备份的处理绝大部分都和非排他备份相同，但是在一些关键步骤上
-     不同。这种备份只能在主控机上制作，并且不允许并发备份。在<productname>PostgreSQL</productname> 9.6 之前，这是唯一可用的低级方法，但是现在
-     推荐所有用户在可能的情况下升级他们的脚本来使用非排他备份。
+     一个排他备份的处理绝大部分都和非排他备份相同，但是在一些关键步骤上不同。这种备份只能在主控机上制作，并且不允许并发备份。而且，由于它像如下所述的那样创建一个备份标签文件，所以会阻止崩溃后主服务器的自动重启。另一方面，从备份或后备中删除该文件是常见的错误，会导致严重的数据损坏。如果需要用此方法，可使用下述步骤。
     </para>
 <!--==========================orignal english content==========================
     <para>
@@ -1580,9 +1599,17 @@ SELECT pg_start_backup('label', true);
      consider during this backup.
     </para>
     <para>
-      Note that if the server crashes during the backup it may not be
-      possible to restart until the <literal>backup_label</literal> file has been
-      manually deleted from the <envar>PGDATA</envar> directory.
+     As noted above, if the server crashes during the backup it may not be
+     possible to restart until the <filename>backup_label</filename> file has
+     been manually deleted from the <envar>PGDATA</envar> directory.  Note
+     that it is very important to never remove the
+     <filename>backup_label</filename> file when restoring a backup, because
+     this will result in corruption.  Confusion about when it is appropriate
+     to remove this file is a common cause of data corruption when using this
+     method; be very certain that you remove the file only on an existing
+     master and never when building a standby or restoring a backup, even if
+     you are building a standby that will subsequently be promoted to a new
+     master.
     </para>
    </listitem>
    <listitem>
@@ -1614,11 +1641,16 @@ SELECT pg_stop_backup();
      If the archive process has fallen behind
      because of failures of the archive command, it will keep retrying
      until the archive succeeds and the backup is complete.
-     If you wish to place a time limit on the execution of
-     <function>pg_stop_backup</function>, set an appropriate
-     <varname>statement_timeout</varname> value, but make note that if
-     <function>pg_stop_backup</function> terminates because of this your backup
-     may not be valid.
+    </para>
+
+    <para>
+     When using exclusive backup mode, it is absolutely imperative to ensure
+     that <function>pg_stop_backup</function> completes successfully at the
+     end of the backup.  Even if the backup itself fails, for example due to
+     lack of disk space, failure to call <function>pg_stop_backup</function>
+     will leave the server in backup mode indefinitely, causing future backups
+     to fail and increasing the risk of a restart failure during the time that
+     <filename>backup_label</filename> exists.
     </para>
    </listitem>
   </orderedlist>
@@ -1665,7 +1697,7 @@ SELECT pg_start_backup('label', true);
      <xref linkend="backup-lowlevel-base-backup-data"/>小节。
     </para>
     <para>
-      注意，如果服务器在备份期间崩溃，它可能无法重启，直至从<envar>PGDATA</envar>目录中手工地移除<literal>backup_label</literal>文件。
+      如上所述，如果服务器在备份期间崩溃，它可能无法重启，直至从<envar>PGDATA</envar>目录中手工地移除<filename>backup_label</filename>文件。注意到在恢复备份时永远不要删除<filename>backup_label</filename>文件非常重要，因为这会导致损坏。使用此方法时，关于何时适合删除该文件的困惑是导致数据损坏的常见原因；一定要确认仅在现有的主服务器上删除该文件，并且从未在构建后备或恢复备份时删除，即使你正在构建后备服务器，而后该后备服务器会提升为新的主服务器。
     </para>
    </listitem>
    <listitem>
@@ -1687,10 +1719,10 @@ SELECT pg_stop_backup();
      <varname>archive_command</varname>，这些文件的归档过程会自动发生。在
      大部分情况下这会很快发生，但还是建议你监控你的归档系统来确保不会有
      延迟。如果归档处理由于归档命令的错误而延迟，它会保持重试直到归档成
-     功和备份完成。如果你希望在<function>pg_stop_backup</function>的执行上
-     设置一个时间限制，可对<varname>statement_timeout</varname>设
-     置一个合适的值，但要注意如果<function>pg_stop_backup</function>因此而
-     中止会致使备份可能失效。
+     功和备份完成。
+    </para>
+    <para>
+     当使用排他式备份时，绝对要确保备份最后阶段<function>pg_stop_backup</function>成功执行。即使备份本身失败，例如由于缺少磁盘空间，调用<function>pg_stop_backup</function>失败，这样就不确定服务器是否留在备份模式下，导致未来的备份失败，增加了<filename>backup_label</filename>存在期间重启失败的风险。
     </para>
    </listitem>
   </orderedlist>
@@ -1698,7 +1730,7 @@ SELECT pg_stop_backup();
   </sect3>
    <sect3 id="backup-lowlevel-base-backup-data">
 <!--==========================orignal english content==========================
-   <title>Backing up the data directory</title>
+   <title>Backing Up the Data Directory</title>
 ____________________________________________________________________________-->
    <title>备份数据目录</title>
 <!--==========================orignal english content==========================
@@ -1928,8 +1960,11 @@ ____________________________________________________________________________-->
    </listitem>
    <listitem>
     <para>
-     Create a recovery command file <filename>recovery.conf</filename> in the cluster
-     data directory (see <xref linkend="recovery-config"/>). You might
+     Set recovery configuration settings in
+     <filename>postgresql.conf</filename> (see <xref
+     linkend="runtime-config-wal-archive-recovery"/>) and create a file
+     <filename>recovery.signal</filename> in the cluster
+     data directory. You might
      also want to temporarily modify <filename>pg_hba.conf</filename> to prevent
      ordinary users from connecting until you are sure the recovery was successful.
     </para>
@@ -1940,8 +1975,8 @@ ____________________________________________________________________________-->
      proceed to read through the archived WAL files it needs.  Should the
      recovery be terminated because of an external error, the server can
      simply be restarted and it will continue recovery.  Upon completion
-     of the recovery process, the server will rename
-     <filename>recovery.conf</filename> to <filename>recovery.done</filename> (to prevent
+     of the recovery process, the server will remove
+     <filename>recovery.signal</filename> (to prevent
      accidentally re-entering recovery mode later) and then
      commence normal database operations.
     </para>
@@ -1991,12 +2026,12 @@ ____________________________________________________________________________-->
    </listitem>
    <listitem>
     <para>
-     在集簇数据目录中创建一个恢复命令文件<filename>recovery.conf</filename>（见<xref linkend="recovery-config"/>）。你可能还想临时修改<filename>pg_hba.conf</filename>来阻止普通用户在成功恢复之前连接。
+     设定<filename>postgresql.conf</filename>(见<xref linkend="runtime-config-wal-archive-recovery"/>)中的恢复配置设置，并且在集簇数据目录中创建一个<filename>recovery.signal</filename>文件。你可能还想临时修改<filename>pg_hba.conf</filename>来阻止普通用户在成功恢复之前连接。
     </para>
    </listitem>
    <listitem>
     <para>
-     启动服务器。服务器将会进入到恢复模式并且进而根据需要读取归档WAL文件。恢复可能因为一个外部错误而被终止，可以简单地重新启动服务器，这样它将继续恢复。恢复过程结束后，服务器将把<filename>recovery.conf</filename>重命名为<filename>recovery.done</filename>（为了阻止以后意外地重新进入恢复模式），并且开始正常数据库操作。
+     启动服务器。服务器将会进入到恢复模式并且进而根据需要读取归档WAL文件。恢复可能因为一个外部错误而被终止，可以简单地重新启动服务器，这样它将继续恢复。恢复过程结束后，服务器将删除<filename>recovery.signal</filename>（为了阻止以后意外地重新进入恢复模式），并且开始正常数据库操作。
     </para>
    </listitem>
    <listitem>
@@ -2009,12 +2044,9 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    The key part of all this is to set up a recovery configuration file that
+    The key part of all this is to set up a recovery configuration that
     describes how you want to recover and how far the recovery should
-    run.  You can use <filename>recovery.conf.sample</filename> (normally
-    located in the installation's <filename>share/</filename> directory) as a
-    prototype.  The one thing that you absolutely must specify in
-    <filename>recovery.conf</filename> is the <varname>restore_command</varname>,
+    run.   The one thing that you absolutely must specify is the <varname>restore_command</varname>,
     which tells <productname>PostgreSQL</productname> how to retrieve archived
     WAL file segments.  Like the <varname>archive_command</varname>, this is
     a shell command string.  It can contain <literal>%f</literal>, which is
@@ -2035,7 +2067,7 @@ restore_command = 'cp /mnt/server/archivedir/%f %p'
    </para>
 ____________________________________________________________________________-->
    <para>
-    所有这些的关键部分是设置一个恢复配置文件，它描述你希望如何恢复以及恢复要运行到什么程度。你可以使用<filename>recovery.conf.sample</filename>（通常在安装的<filename>share/</filename>目录中）作为一个原型。你绝对必须在<filename>recovery.conf</filename>中指定的是<varname>restore_command</varname>，它告诉<productname>PostgreSQL</productname>如何获取归档WAL文件段。与<varname>archive_command</varname>相似，这也是一个shell命令字符串。它可以包含<literal>%f</literal>（将被期望的日志文件名替换）和<literal>%p</literal>（将被日志文件被拷贝的目标路径名替换）。（路径名是相对于当前工作目录的，即集簇的数据目录）。如果你需要在命令中嵌入一个真正的<literal>%</literal>字符，可以写成<literal>%%</literal>。最简单的命令类似于：
+    所有这些的关键部分是设定一个恢复配置，它描述你希望如何恢复以及恢复要运行到什么程度。你绝对必须指定的是<varname>restore_command</varname>，它告诉<productname>PostgreSQL</productname>如何获取归档WAL文件段。与<varname>archive_command</varname>相似，这也是一个shell命令字符串。它可以包含<literal>%f</literal>（将被期望的日志文件名替换）和<literal>%p</literal>（将被日志文件被拷贝的目标路径名替换）。（路径名是相对于当前工作目录的，即集簇的数据目录）。如果你需要在命令中嵌入一个真正的<literal>%</literal>字符，可以写成<literal>%%</literal>。最简单的命令类似于：
 <programlisting>
 restore_command = 'cp /mnt/server/archivedir/%f %p'
 </programlisting>
@@ -2113,7 +2145,7 @@ ____________________________________________________________________________-->
    <para>
     If you want to recover to some previous point in time (say, right before
     the junior DBA dropped your main transaction table), just specify the
-    required <link linkend="recovery-target-settings">stopping point</link> in <filename>recovery.conf</filename>.  You can specify
+    required <link linkend="runtime-config-wal-recovery-target">stopping point</link>.  You can specify
     the stop point, known as the <quote>recovery target</quote>, either by
     date/time, named restore point or by completion of a specific transaction
     ID.  As of this writing only the date/time and named restore point options
@@ -2123,7 +2155,7 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
    <para>
     如果你希望恢复到之前的某个时间点（例如，恢复到幼稚的DBA丢弃了你主要的交易表之前），只需要
-    在<filename>recovery.conf</filename>中指定要求的<link linkend="recovery-target-settings">停止点</link>。你可以使用日期/时间、命名恢复点或一个
+    指定要求的<link linkend="runtime-config-wal-recovery-target">停止点</link>。你可以使用日期/时间、命名恢复点或一个
     指定事务ID的结束时间来定义停止点（也被称为<quote>恢复目标</quote>）。在这种写法中，只有日期/时
     间和命名恢复点选项非常有用，因为没有工具可以帮助你准确地确定要用哪个事务ID。
    </para>
@@ -2252,12 +2284,12 @@ ____________________________________________________________________________-->
     that was current when the base backup was taken.  If you wish to recover
     into some child timeline (that is, you want to return to some state that
     was itself generated after a recovery attempt), you need to specify the
-    target timeline ID in <filename>recovery.conf</filename>.  You cannot recover into
+    target timeline ID in <xref linkend="guc-recovery-target-timeline"/>.  You cannot recover into
     timelines that branched off earlier than the base backup.
    </para>
 ____________________________________________________________________________-->
    <para>
-    恢复的默认行为是沿着相同的时间线进行恢复，该时间线是基础备份创建时的当前时间线。如果你希望恢复到某个子女时间线（即，你希望回到在一次恢复尝试后产生的某个状态），你需要在<filename>recovery.conf</filename>中指定目标时间线ID。你不能恢复到早于该基础备份之前分支出去的时间线。
+    恢复的默认行为是沿着相同的时间线进行恢复，该时间线是基础备份创建时的当前时间线。如果你希望恢复到某个子女时间线（即，你希望回到在一次恢复尝试后产生的某个状态），你需要在<xref linkend="guc-recovery-target-timeline"/>中指定目标时间线ID。你不能恢复到早于该基础备份之前分支出去的时间线。
    </para>
   </sect2>
 
