@@ -91,7 +91,6 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     NO FORCE ROW LEVEL SECURITY
     CLUSTER ON <replaceable class="parameter">index_name</replaceable>
     SET WITHOUT CLUSTER
-    SET WITH OIDS
     SET WITHOUT OIDS
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable>
     SET { LOGGED | UNLOGGED }
@@ -106,9 +105,9 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
 
 <phrase>and <replaceable class="parameter">partition_bound_spec</replaceable> is:</phrase>
 
-IN ( { <replaceable class="parameter">numeric_literal</replaceable> | <replaceable class="parameter">string_literal</replaceable> | TRUE | FALSE | NULL } [, ...] ) |
-FROM ( { <replaceable class="parameter">numeric_literal</replaceable> | <replaceable class="parameter">string_literal</replaceable> | TRUE | FALSE | MINVALUE | MAXVALUE } [, ...] )
-  TO ( { <replaceable class="parameter">numeric_literal</replaceable> | <replaceable class="parameter">string_literal</replaceable> | TRUE | FALSE | MINVALUE | MAXVALUE } [, ...] ) |
+IN ( <replaceable class="parameter">partition_bound_expr</replaceable> [, ...] ) |
+FROM ( { <replaceable class="parameter">partition_bound_expr</replaceable> | MINVALUE | MAXVALUE } [, ...] )
+  TO ( { <replaceable class="parameter">partition_bound_expr</replaceable> | MINVALUE | MAXVALUE } [, ...] ) |
 WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REMAINDER <replaceable class="parameter">numeric_literal</replaceable> )
 
 <phrase>and <replaceable class="parameter">column_constraint</replaceable> is:</phrase>
@@ -116,8 +115,9 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
 [ CONSTRAINT <replaceable class="parameter">constraint_name</replaceable> ]
 { NOT NULL |
   NULL |
-  CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ] |
+    [ ON DELETE <replaceable class="parameter">referential_action</replaceable> ] [ ON UPDATE <replaceable class="parameter">referential_action</replaceable> ] }
   DEFAULT <replaceable>default_expr</replaceable> |
+  GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED |
   GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ] |
   UNIQUE <replaceable class="parameter">index_parameters</replaceable> |
   PRIMARY KEY <replaceable class="parameter">index_parameters</replaceable> |
@@ -133,7 +133,7 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
   PRIMARY KEY ( <replaceable class="parameter">column_name</replaceable> [, ... ] ) <replaceable class="parameter">index_parameters</replaceable> |
   EXCLUDE [ USING <replaceable class="parameter">index_method</replaceable> ] ( <replaceable class="parameter">exclude_element</replaceable> WITH <replaceable class="parameter">operator</replaceable> [, ... ] ) <replaceable class="parameter">index_parameters</replaceable> [ WHERE ( <replaceable class="parameter">predicate</replaceable> ) ] |
   FOREIGN KEY ( <replaceable class="parameter">column_name</replaceable> [, ... ] ) REFERENCES <replaceable class="parameter">reftable</replaceable> [ ( <replaceable class="parameter">refcolumn</replaceable> [, ... ] ) ]
-    [ MATCH FULL | MATCH PARTIAL | MATCH SIMPLE ] [ ON DELETE <replaceable class="parameter">action</replaceable> ] [ ON UPDATE <replaceable class="parameter">action</replaceable> ] }
+    [ MATCH FULL | MATCH PARTIAL | MATCH SIMPLE ] [ ON DELETE <replaceable class="parameter">referential_action</replaceable> ] [ ON UPDATE <replaceable class="parameter">referential_action</replaceable> ] }
 [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
 
 <phrase>and <replaceable class="parameter">table_constraint_using_index</replaceable> is:</phrase>
@@ -205,7 +205,6 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     NO FORCE ROW LEVEL SECURITY
     CLUSTER ON <replaceable class="parameter">index_name</replaceable>
     SET WITHOUT CLUSTER
-    SET WITH OIDS
     SET WITHOUT OIDS
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable>
     SET { LOGGED | UNLOGGED }
@@ -220,9 +219,9 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
 
 <phrase>and <replaceable class="parameter">partition_bound_spec</replaceable> is:</phrase>
 
-IN ( { <replaceable class="parameter">numeric_literal</replaceable> | <replaceable class="parameter">string_literal</replaceable> | TRUE | FALSE | NULL } [, ...] ) |
-FROM ( { <replaceable class="parameter">numeric_literal</replaceable> | <replaceable class="parameter">string_literal</replaceable> | TRUE | FALSE | MINVALUE | MAXVALUE } [, ...] )
-  TO ( { <replaceable class="parameter">numeric_literal</replaceable> | <replaceable class="parameter">string_literal</replaceable> | TRUE | FALSE | MINVALUE | MAXVALUE } [, ...] ) |
+IN ( <replaceable class="parameter">partition_bound_expr</replaceable> [, ...] ) |
+FROM ( { <replaceable class="parameter">partition_bound_expr</replaceable> | MINVALUE | MAXVALUE } [, ...] )
+  TO ( { <replaceable class="parameter">partition_bound_expr</replaceable> | MINVALUE | MAXVALUE } [, ...] ) |
 WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REMAINDER <replaceable class="parameter">numeric_literal</replaceable> )
 
 <phrase>and <replaceable class="parameter">column_constraint</replaceable> is:</phrase>
@@ -232,11 +231,12 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
   NULL |
   CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ] |
   DEFAULT <replaceable>default_expr</replaceable> |
+  GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED |
   GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ] |
   UNIQUE <replaceable class="parameter">index_parameters</replaceable> |
   PRIMARY KEY <replaceable class="parameter">index_parameters</replaceable> |
   REFERENCES <replaceable class="parameter">reftable</replaceable> [ ( <replaceable class="parameter">refcolumn</replaceable> ) ] [ MATCH FULL | MATCH PARTIAL | MATCH SIMPLE ]
-    [ ON DELETE <replaceable class="parameter">action</replaceable> ] [ ON UPDATE <replaceable class="parameter">action</replaceable> ] }
+    [ ON DELETE <replaceable class="parameter">referential_action</replaceable> ] [ ON UPDATE <replaceable class="parameter">referential_action</replaceable> ] }
 [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
 
 <phrase>而<replaceable class="parameter">table_constraint</replaceable>是：</phrase>
@@ -352,8 +352,17 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       These forms change whether a column is marked to allow null
-      values or to reject null values.  You can only use <literal>SET
-      NOT NULL</literal> when the column contains no null values.
+      values or to reject null values.
+     </para>
+
+     <para>
+      <literal>SET NOT NULL</literal> may only be applied to a column
+      provided none of the records in the table contain a
+      <literal>NULL</literal> value for the column.  Ordinarily this is
+      checked during the <literal>ALTER TABLE</literal> by scanning the
+      entire table; however, if a valid <literal>CHECK</literal> constraint is
+      found which proves no <literal>NULL</literal> can exist, then the
+      table scan is skipped.
      </para>
 
      <para>
@@ -496,27 +505,36 @@ ____________________________________________________________________________-->
       <xref linkend="sql-createtable"/>, plus the option <literal>NOT
       VALID</literal>, which is currently only allowed for foreign key
       and CHECK constraints.
-      If the constraint is marked <literal>NOT VALID</literal>, the
-      potentially-lengthy initial check to verify that all rows in the table
-      satisfy the constraint is skipped.  The constraint will still be
-      enforced against subsequent inserts or updates (that is, they'll fail
-      unless there is a matching row in the referenced table, in the case
-      of foreign keys; and they'll fail unless the new row matches the
-      specified check constraints).  But the
-      database will not assume that the constraint holds for all rows in
-      the table, until it is validated by using the <literal>VALIDATE
-      CONSTRAINT</literal> option.  Foreign key constraints on partitioned
-      tables may not be declared <literal>NOT VALID</literal> at present.
      </para>
 
      <para>
-      The addition of a foreign key constraint requires a
-      <literal>SHARE ROW EXCLUSIVE</literal> lock on the referenced table.
+      Normally, this form will cause a scan of the table to verify that all
+      existing rows in the table satisfy the new constraint.  But if
+      the <literal>NOT VALID</literal> option is used, this
+      potentially-lengthy scan is skipped.  The constraint will still be
+      enforced against subsequent inserts or updates (that is, they'll fail
+      unless there is a matching row in the referenced table, in the case
+      of foreign keys, or they'll fail unless the new row matches the
+      specified check condition).  But the
+      database will not assume that the constraint holds for all rows in
+      the table, until it is validated by using the <literal>VALIDATE
+      CONSTRAINT</literal> option.
+      See <xref linkend="sql-altertable-notes"
+      endterm="sql-altertable-notes-title"/> below for more information
+      about using the <literal>NOT VALID</literal> option.
+     </para>
+
+     <para>
+      Addition of a foreign key constraint requires a
+      <literal>SHARE ROW EXCLUSIVE</literal> lock on the referenced table,
+      in addition to the lock on the table receiving the constraint.
      </para>
 
      <para>
       Additional restrictions apply when unique or primary key constraints
-      are added to partitioned tables; see <xref linkend="sql-createtable" />.
+      are added to partitioned tables; see <xref linkend="sql-createtable"/>.
+      Also, foreign key constraints on partitioned
+      tables may not be declared <literal>NOT VALID</literal> at present.
      </para>
 
     </listitem>
@@ -591,23 +609,13 @@ ____________________________________________________________________________-->
     <term><literal>VALIDATE CONSTRAINT</literal></term>
     <listitem>
      <para>
-      This form validates a foreign key or check constraint that was previously created
-      as <literal>NOT VALID</literal>, by scanning the table to ensure there
-      are no rows for which the constraint is not satisfied.
-      Nothing happens if the constraint is already marked valid.
-     </para>
-     <para>
-      Validation can be a long process on larger tables. The value of separating
-      validation from initial creation is that you can defer validation to less
-      busy times, or can be used to give additional time to correct pre-existing
-      errors while preventing new errors. Note also that validation on its own
-      does not prevent normal write commands against the table while it runs.
-     </para>
-     <para>
-      Validation acquires only a <literal>SHARE UPDATE EXCLUSIVE</literal> lock
-      on the table being altered. If the constraint is a foreign key then
-      a <literal>ROW SHARE</literal> lock is also required on
-      the table referenced by the constraint.
+      This form validates a foreign key or check constraint that was
+      previously created as <literal>NOT VALID</literal>, by scanning the
+      table to ensure there are no rows for which the constraint is not
+      satisfied.  Nothing happens if the constraint is already marked valid.
+      (See <xref linkend="sql-altertable-notes"
+      endterm="sql-altertable-notes-title"/> below for an explanation of the
+      usefulness of this command.)
      </para>
     </listitem>
    </varlistentry>
@@ -751,31 +759,12 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
-    <term><literal>SET WITH OIDS</literal></term>
-    <listitem>
-     <para>
-      This form adds an <literal>oid</literal> system column to the
-      table (see <xref linkend="ddl-system-columns"/>).
-      It does nothing if the table already has OIDs.
-     </para>
-
-     <para>
-      Note that this is not equivalent to <literal>ADD COLUMN oid oid</literal>;
-      that would add a normal column that happened to be named
-      <literal>oid</literal>, not a system column.
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
     <term><literal>SET WITHOUT OIDS</literal></term>
     <listitem>
      <para>
-      This form removes the <literal>oid</literal> system column from the
-      table.  This is exactly equivalent to
-      <literal>DROP COLUMN oid RESTRICT</literal>,
-      except that it will not complain if there is already no
-      <literal>oid</literal> column.
+      Backward-compatible syntax for removing the <literal>oid</literal>
+      system column.  As <literal>oid</literal> system columns cannot be
+      added anymore, this never has an effect.
      </para>
     </listitem>
    </varlistentry>
@@ -788,6 +777,13 @@ ____________________________________________________________________________-->
       moves the data file(s) associated with the table to the new tablespace.
       Indexes on the table, if any, are not moved; but they can be moved
       separately with additional <literal>SET TABLESPACE</literal> commands.
+      When applied to a partitioned table, nothing is moved, but any
+      partitions created afterwards with
+      <command>CREATE TABLE PARTITION OF</command> will use that tablespace,
+      unless the <literal>TABLESPACE</literal> clause is used to override it.
+     </para>
+
+     <para>
       All tables in the current database in a tablespace can be moved by using
       the <literal>ALL IN TABLESPACE</literal> form, which will lock all tables
       to be moved first and then move each one.  This form also supports
@@ -795,7 +791,7 @@ ____________________________________________________________________________-->
       roles specified.  If the <literal>NOWAIT</literal> option is specified
       then the command will fail if it is unable to acquire all of the locks
       required immediately.  Note that system catalogs are not moved by this
-      command, use <command>ALTER DATABASE</command> or explicit
+      command; use <command>ALTER DATABASE</command> or explicit
       <command>ALTER TABLE</command> invocations instead if desired.  The
       <literal>information_schema</literal> relations are not considered part
       of the system catalogs and will be moved.
@@ -837,21 +833,8 @@ ____________________________________________________________________________-->
      <para>
       <literal>SHARE UPDATE EXCLUSIVE</literal> lock will be taken for
       fillfactor, toast and autovacuum storage parameters, as well as the
-      following planner related parameters:
-      <varname>effective_io_concurrency</varname>, <varname>parallel_workers</varname>, <varname>seq_page_cost</varname>,
-      <varname>random_page_cost</varname>, <varname>n_distinct</varname> and <varname>n_distinct_inherited</varname>.
+      planner parameter <varname>parallel_workers</varname>.
      </para>
-
-     <note>
-      <para>
-       While <command>CREATE TABLE</command> allows <literal>OIDS</literal> to be specified
-       in the <literal>WITH (<replaceable
-       class="parameter">storage_parameter</replaceable>)</literal> syntax,
-       <command>ALTER TABLE</command> does not treat <literal>OIDS</literal> as a
-       storage parameter.  Instead use the <literal>SET WITH OIDS</literal>
-       and <literal>SET WITHOUT OIDS</literal> forms to change OID status.
-      </para>
-     </note>
     </listitem>
    </varlistentry>
 
@@ -912,8 +895,7 @@ ____________________________________________________________________________-->
      <para>
       This form links the table to a composite type as though <command>CREATE
       TABLE OF</command> had formed it.  The table's list of column names and types
-      must precisely match that of the composite type; the presence of
-      an <literal>oid</literal> system column is permitted to differ.  The table must
+      must precisely match that of the composite type.  The table must
       not inherit from any other table.  These restrictions ensure
       that <command>CREATE TABLE OF</command> would permit an equivalent table
       definition.
@@ -984,7 +966,7 @@ ____________________________________________________________________________-->
     </listitem>
    </varlistentry>
 
-   <varlistentry>
+   <varlistentry id="sql-altertable-attach-partition">
     <term><literal>ATTACH PARTITION <replaceable class="parameter">partition_name</replaceable> { FOR VALUES <replaceable class="parameter">partition_bound_spec</replaceable> | DEFAULT }</literal></term>
     <listitem>
      <para>
@@ -994,8 +976,12 @@ ____________________________________________________________________________-->
       or as a default partition by using <literal>DEFAULT</literal>.
       For each index in the target table, a corresponding
       one will be created in the attached table; or, if an equivalent
-      index already exists, will be attached to the target table's index,
+      index already exists, it will be attached to the target table's index,
       as if <command>ALTER INDEX ATTACH PARTITION</command> had been executed.
+      Note that if the existing table is a foreign table, it is currently not
+      allowed to attach the table as a partition of the target table if there
+      are <literal>UNIQUE</literal> indexes on the target table.  (See also
+      <xref linkend="sql-createforeigntable"/>.)
      </para>
 
      <para>
@@ -1013,23 +999,24 @@ ____________________________________________________________________________-->
       already exist.
       If any of the <literal>CHECK</literal> constraints of the table being
       attached is marked <literal>NO INHERIT</literal>, the command will fail;
-      such a constraint must be recreated without the <literal>NO INHERIT</literal>
-      clause.
+      such constraints must be recreated without the
+      <literal>NO INHERIT</literal> clause.
      </para>
 
      <para>
       If the new partition is a regular table, a full table scan is performed
-      to check that no existing row in the table violates the partition
-      constraint.  It is possible to avoid this scan by adding a valid
-      <literal>CHECK</literal> constraint to the table that would allow only
-      the rows satisfying the desired partition constraint before running this
-      command.  It will be determined using such a constraint that the table
-      need not be scanned to validate the partition constraint.  This does not
-      work, however, if any of the partition keys is an expression and the
-      partition does not accept <literal>NULL</literal> values.  If attaching
-      a list partition that will not accept <literal>NULL</literal> values,
-      also add <literal>NOT NULL</literal> constraint to the partition key
-      column, unless it's an expression.
+      to check that existing rows in the table do not violate the partition
+      constraint. It is possible to avoid this scan by adding a valid
+      <literal>CHECK</literal> constraint to the table that allows only
+      rows satisfying the desired partition constraint before running this
+      command. The <literal>CHECK</literal> constraint will be used to
+      determine that the table need not be scanned to validate the partition
+      constraint. This does not work, however, if any of the partition keys
+      is an expression and the partition does not accept
+      <literal>NULL</literal> values. If attaching a list partition that will
+      not accept <literal>NULL</literal> values, also add
+      <literal>NOT NULL</literal> constraint to the partition key column,
+      unless it's an expression.
      </para>
 
      <para>
@@ -1048,6 +1035,13 @@ ____________________________________________________________________________-->
       appropriate <literal>CHECK</literal> constraint is present. Also like
       the scan of the new partition, it is always skipped when the default
       partition is a foreign table.
+     </para>
+
+     <para>
+      Attaching a partition acquires a
+      <literal>SHARE UPDATE EXCLUSIVE</literal> lock on the parent table,
+      in addition to <literal>ACCESS EXCLUSIVE</literal> locks on the table
+      to be attached and on the default partition (if any).
      </para>
     </listitem>
    </varlistentry>
@@ -1129,8 +1123,12 @@ ____________________________________________________________________________-->
     <term><literal>SET</literal>/<literal>DROP NOT NULL</literal></term>
     <listitem>
      <para>
-      这些形式更改一列是否被标记为允许空值或者拒绝空值。只有当该列
-      不包含空值时，你才能使用<literal>SET NOT NULL</literal>。
+      这些形式更改一列是否被标记为允许空值或者拒绝空值。
+     </para>
+
+     <para>
+      <literal>SET NOT NULL</literal> 只能应用于列，前提是表中没有任何记录包含该列的<literal>NULL</literal>值。
+      通常，这一点在<literal>ALTER TABLE</literal>全表扫描时来检查；但是，如果找到有效的<literal>CHECK</literal>约束证明不存在<literal>NULL</literal>，则跳过表扫描。
      </para>
 
      <para>
@@ -1240,21 +1238,24 @@ ____________________________________________________________________________-->
      <para>
       这种形式使用和<xref linkend="sql-createtable"/>相同的语法外加
       <literal>NOT VALID</literal>选项为一个表增加一个新的约束，该选项
-      当前只被允许用于外键和 CHECK 约束。如果约束被标记为
-      <literal>NOT VALID</literal>，将会跳过验证表中所有行满足该约束的
-      初检，这种检查可能会很漫长。该约束仍将被强制到后续的插入和删除上
-      （也就是说，在外键的情况下如果在被引用表中没有一个匹配的行，操作
-      会失败；如果新行不匹配指定的检查约束，操作也会失败）。但是数据库
-      不会假定约束对该表中的所有行都成立，直到通过使用<literal>VALIDATE
-      CONSTRAINT</literal>选项对它进行验证。当前，分区表上的外键约束不可以被声明为<literal>NOT VALID</literal>。
+      当前只被允许用于外键和 CHECK 约束。
+     </para>	  
+	  
+     <para>	  
+      通常，此窗体将导致对表进行扫描，以验证表中的所有现有行是否满足新约束。
+      但是如果使用了 <literal>NOT VALID</literal>选项 ，则跳过此可能很漫长的扫描。
+      该约束仍将被强制到后续的插入和删除上（也就是说，在外键的情况下如果在被引用表中没有一个匹配的行，操作会失败；或者如果新行不匹配指定的检查条件，操作也会失败）。
+      但是数据库不会假定约束对该表中的所有行都成立，直到通过使用<literal>VALIDATE CONSTRAINT</literal>选项对它进行验证。
+      参见下述 <xref linkend="sql-altertable-notes" endterm="sql-altertable-notes-title"/> 以了解关于使用<literal>NOT VALID</literal>选项的更多信息。
      </para>
 
      <para>
-      外键约束的增加要求在被引用表上的一个<literal>SHARE ROW EXCLUSIVE</literal>锁。
+      除了接收约束的表上的锁外，外键约束的增加要求在被引用表上的一个<literal>SHARE ROW EXCLUSIVE</literal>锁。
      </para>
 
      <para>
       当唯一或者主键约束被添加到分区表时，会有额外的限制，请参考<xref linkend="sql-createtable" />。
+      此外，当前分区表上的外键约束不能被声明为<literal>NOT VALID</literal>。
      </para>
     </listitem>
    </varlistentry>
@@ -1322,19 +1323,8 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       这种形式验证之前创建为<literal>NOT VALID</literal>的外键或检查约束，
-      它会扫描表来确保对于该约束没有行不满足约束。如果约束已经被标记为合法，
-      则什么也不会发生。
-     </para>
-     <para>
-      在大型表上的验证可能是一个长时间的处理。把约束的验证和创建分离开来让
-      我们可以把验证过程推迟到系统闲时进行，或者可以得到额外的时间来更正已
-      经存在的错误从而避免新的错误。还要注意验证本身并不会在运行时阻止对表
-      的写命令。
-     </para>
-     <para>
-      验证只要求被修改表上的一个<literal>SHARE UPDATE EXCLUSIVE</literal>
-      锁。如果该约束是一个外键，则还会在被该约束引用的表上要求一个
-      <literal>ROW SHARE</literal>锁。
+      它会扫描表来确保对于该约束没有行不满足约束。如果约束已经被标记为合法，则什么也不会发生。
+      (参见下述 <xref linkend="sql-altertable-notes" endterm="sql-altertable-notes-title"/> 以了解此命令用途的说明。)
      </para>
     </listitem>
    </varlistentry>
@@ -1451,28 +1441,10 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
-    <term><literal>SET WITH OIDS</literal></term>
-    <listitem>
-     <para>
-      这种形式为表增加一个<literal>oid</literal>系统列（见
-      <xref linkend="ddl-system-columns"/>）。如果该表已经有 OID，则它
-      什么也不会做。
-     </para>
-
-     <para>
-      注意这不等效于<literal>ADD COLUMN oid oid</literal>，后者只是会增加一个
-      恰好名为<literal>oid</literal>的普通列而不是系统列。
-     </para>
-    </listitem>
-   </varlistentry>
-
-   <varlistentry>
     <term><literal>SET WITHOUT OIDS</literal></term>
     <listitem>
      <para>
-      这种形式从该表移除<literal>oid</literal>系统列。这完全等效于
-      <literal>DROP COLUMN oid RESTRICT</literal>，不过如果没有
-      <literal>oid</literal>列它不会抱怨。
+      向后兼容的语法，用于删除<literal>oid</literal>系统列。由于<literal>oid</literal>系统列无法再添加，所以不会有实际效果。
      </para>
     </listitem>
    </varlistentry>
@@ -1483,12 +1455,16 @@ ____________________________________________________________________________-->
      <para>
       这种形式把该表的表空间更改为指定的表空间并且把该表相关联的数据文件
       移动到新的表空间中。表上的索引（如果有）不会被移动，但是它们可以用
-      额外的<literal>SET TABLESPACE</literal>命令单独移动。当前数据库在
-      一个表空间中的所有表可以用<literal>ALL IN TABLESPACE</literal>形式
+      额外的<literal>SET TABLESPACE</literal>命令单独移动。
+      当应用于分区表时，不会移动，但之后用<command>CREATE TABLE PARTITION OF</command>创建的任何分区将使用该表空间，除非<literal>TABLESPACE</literal>子句用于重写它。
+     </para>
+
+     <para>
+      当前数据库在一个表空间中的所有表可以用<literal>ALL IN TABLESPACE</literal>形式
       移动，这将会首先锁住所有将被移动的表然后逐个移动。这种形式也支持
       <literal>OWNED BY</literal>，它将只移动指定角色所拥有的表。如果指
       定了<literal>NOWAIT</literal>选项，则命令将在无法立刻获得所有所需
-      要的锁时失败。注意这个命令不移动系统目录，如果想要移动系统目录，应
+      要的锁时失败。注意这个命令不移动系统目录；如果想要移动系统目录，应
       该用<command>ALTER DATABASE</command>或者显式的
       <command>ALTER TABLE</command>调用。对于这种形式来说，
       <literal>information_schema</literal>关系不被认为是系统目录的一部分，
@@ -1522,18 +1498,7 @@ ____________________________________________________________________________-->
      </para>
      
      <para>
-      对fillfactor、toast以及autovacuum存储参数，还有下面的规划器相关参数，将会拿取<literal>SHARE UPDATE EXCLUSIVE</literal>锁：
-      <varname>effective_io_concurrency</varname>、<varname>parallel_workers</varname>、<varname>seq_page_cost</varname>、<varname>random_page_cost</varname>、<varname>n_distinct</varname>以及<varname>n_distinct_inherited</varname>。
-     </para>
-
-     <note>
-      <para>
-       虽然<command>CREATE TABLE</command>允许在<literal>WITH (<replaceable
-       class="parameter">storage_parameter</replaceable>)</literal>语法中指定
-       <literal>OIDS</literal>，但是
-       <command>ALTER TABLE</command>没有把<literal>OIDS</literal>当作一个存储
-       参数，而是使用<literal>SET WITH OIDS</literal>
-       和<literal>SET WITHOUT OIDS</literal>形式来更改 OID 状态。
+      对fillfactor、toast以及autovacuum存储参数，将会拿取<literal>SHARE UPDATE EXCLUSIVE</literal>锁，就像计划器参数 <varname>parallel_workers</varname>。
       </para>
      </note>
     </listitem>
@@ -1585,11 +1550,8 @@ ____________________________________________________________________________-->
     <term><literal>OF <replaceable class="parameter">type_name</replaceable></literal></term>
     <listitem>
      <para>
-      这种形式把该表链接到一种组合类型，就好像<command>CREATE
-      TABLE OF</command>所做的那样。该表的列名和类型列表必须精确地匹配
-      该组合类型。<literal>oid</literal>系统列的存在情况可以不同。该表必须
-      不从任何其他表继承。这些限制确保
-      <command>CREATE TABLE OF</command>能允许一个等价的表定义。
+      这种形式把该表链接到一种组合类型，就好像<command>CREATE TABLE OF</command>所做的那样。该表的列名和类型列表必须精确地匹配该组合类型。
+      该表必须不从任何其他表继承。这些限制确保<command>CREATE TABLE OF</command>能允许一个等价的表定义。
      </para>
     </listitem>
    </varlistentry>
@@ -1648,11 +1610,13 @@ ____________________________________________________________________________-->
     </listitem>
    </varlistentry>
 
-   <varlistentry>
+   <varlistentry id="sql-altertable-attach-partition">
     <term><literal>ATTACH PARTITION <replaceable class="parameter">partition_name</replaceable> { FOR VALUES <replaceable class="parameter">partition_bound_spec</replaceable> | DEFAULT }</literal></term>
     <listitem>
      <para>
-      这种形式把一个已有表（自身也可能被分区）作为一个分区挂接到目标表。该表可以为特定的值使用<literal>FOR VALUES</literal>挂接为分区，或者用<literal>DEFAULT</literal>挂接为一个默认分区。对于目标表中的每一个索引，在被挂接的表上都将创建一个响应的索引，如果已经存在等效的索引，该索引将被挂接到目标表的索引，就像执行了<command>ALTER INDEX ATTACH PARTITION</command>一样。
+      这种形式把一个已有表（自身也可能被分区）作为一个分区挂接到目标表。该表可以为特定的值使用<literal>FOR VALUES</literal>挂接为分区，或者用<literal>DEFAULT</literal>挂接为一个默认分区。
+      对于目标表中的每一个索引，在被挂接的表上都将创建一个响应的索引，如果已经存在等效的索引，该索引将被挂接到目标表的索引，就像执行了<command>ALTER INDEX ATTACH PARTITION</command>一样。
+      请注意，如果现有表是外表，如果目标表上有<literal>UNIQUE</literal>索引，则当前不允许将表作为目标表的分区附加。(参见 <xref linkend="sql-createforeigntable"/>.)
      </para>
 
      <para>
@@ -1660,8 +1624,10 @@ ____________________________________________________________________________-->
      </para>
 
      <para>
-      如果新分区是一个常规表，会执行一次全表扫描来检查表中没有现有行违背分区约束。可以通过对表增加一个有效的<literal>CHECK</literal>约束来避免这种扫描，该约束可以在运行这个命令之前仅允许满足所需分区约束的行。
-      使用这样一个约束，就可以让表无需被扫描就能验证分区约束。但是，如果任一分区键是一个表达式并且该分区不接受<literal>NULL</literal>值，这种方式就无效了。如果挂接一个不接受<literal>NULL</literal>值的列表分区，还应该为分区键列增加<literal>NOT NULL</literal>约束，除非它是一个表达式。
+      如果新分区是一个常规表，会执行一次全表扫描来检查表中现有行没有违背分区约束。
+      可以通过对表增加一个有效的<literal>CHECK</literal>约束来避免这种扫描，该约束可以在运行这个命令之前仅允许满足所需分区约束的行。
+      <literal>CHECK</literal>约束可以解决让表无需被扫描就能验证分区约束。但是，如果任一分区键是一个表达式并且该分区不接受<literal>NULL</literal>值，这种方式就无效了。
+      如果挂接一个不接受<literal>NULL</literal>值的列表分区，还应该为分区键列增加<literal>NOT NULL</literal>约束，除非它是一个表达式。
      </para>
 
      <para>
@@ -1670,6 +1636,10 @@ ____________________________________________________________________________-->
 
      <para>
       当一个表有默认分区时，定义新分区会更改默认分区的分区约束。默认分区不能包含任何需要被移动到新分区中的行，并且将被扫描以验证不存在那样的行。如果一个合适的<literal>CHECK</literal>约束存在，这种扫描（和新分区的扫描一样）可以被避免。还是和新分区的扫描一样，当默认分区是外部表时这种扫描总是会被跳过。
+     </para>
+
+     <para>
+      在父表上附加一个分区获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁，除了要附加的表和默认分区上的<literal>ACCESS EXCLUSIVE</literal> 锁（如果有）。
      </para>
     </listitem>
    </varlistentry>
@@ -2146,11 +2116,11 @@ ____________________________________________________________________________-->
     </variablelist>
  </refsect1>
 
- <refsect1>
+ <refsect1 id="sql-altertable-notes">
 <!--==========================orignal english content==========================
-  <title>Notes</title>
+  <title id="sql-altertable-notes-title">Notes</title>
 ____________________________________________________________________________-->
-  <title>注解</title>
+  <title id="sql-altertable-notes-title">Notes</title>
 
 <!--==========================orignal english content==========================
    <para>
@@ -2184,8 +2154,7 @@ ____________________________________________________________________________-->
     the column contents and the old type is either binary coercible to the new
     type or an unconstrained domain over the new type, a table rewrite is not
     needed; but any indexes on the affected columns must still be rebuilt.
-    Adding or removing a system <literal>oid</literal> column also requires
-    rewriting the entire table.  Table and/or index rebuilds may take a
+    Table and/or index rebuilds may take a
     significant amount of time for a large table; and will temporarily require
     as much as double the disk space.
    </para>
@@ -2195,8 +2164,7 @@ ____________________________________________________________________________-->
     要求重写整个表及其索引。在更改一个现有列的类型时有一种例外：如果
     <literal>USING</literal>子句不更改列的内容并且旧类型在二进制上与新类型可
     强制转换或者是新类型上的一个未约束域，则不需要重写表。但是受影响列上
-    的任何索引仍必须被重建。增加或者移除一个系统<literal>oid</literal>列也要求
-    重写整个表。对于一个大型表，表和/或索引重建可能会消耗相当多的时间，
+    的任何索引仍必须被重建。对于一个大型表，表和/或索引重建可能会消耗相当多的时间，
     并且会临时要求差不多两倍的磁盘空间。
    </para>
 
@@ -2236,15 +2204,52 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
+    Scanning a large table to verify a new foreign key or check constraint
+    can take a long time, and other updates to the table are locked out
+    until the <command>ALTER TABLE ADD CONSTRAINT</command> command is
+    committed.  The main purpose of the <literal>NOT VALID</literal>
+    constraint option is to reduce the impact of adding a constraint on
+    concurrent updates.  With <literal>NOT VALID</literal>,
+    the <command>ADD CONSTRAINT</command> command does not scan the table
+    and can be committed immediately.  After that, a <literal>VALIDATE
+    CONSTRAINT</literal> command can be issued to verify that existing rows
+    satisfy the constraint.  The validation step does not need to lock out
+    concurrent updates, since it knows that other transactions will be
+    enforcing the constraint for rows that they insert or update; only
+    pre-existing rows need to be checked.  Hence, validation acquires only
+    a <literal>SHARE UPDATE EXCLUSIVE</literal> lock on the table being
+    altered.  (If the constraint is a foreign key then a <literal>ROW
+    SHARE</literal> lock is also required on the table referenced by the
+    constraint.)  In addition to improving concurrency, it can be useful to
+    use <literal>NOT VALID</literal> and <literal>VALIDATE
+    CONSTRAINT</literal> in cases where the table is known to contain
+    pre-existing violations.  Once the constraint is in place, no new
+    violations can be inserted, and the existing problems can be corrected
+    at leisure until <literal>VALIDATE CONSTRAINT</literal> finally
+    succeeds.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    扫描大型表以验证新的外键或检查约束可能需要很长时间，并且对表的其他更新将锁定，直到<command>ALTER TABLE ADD CONSTRAINT</command>命令被提交。
+    <literal>NOT VALID</literal>约束选项的主要目的是减少对并发更新添加约束的影响。 
+    使用 <literal>NOT VALID</literal>，<command>ADD CONSTRAINT</command>命令不扫描表，可以立即提交。
+    在之后，<literal>VALIDATE CONSTRAINT</literal>命令会被发出以验证现有行是否满足约束。
+    验证步骤不需要锁定并发更新，因为它知道其他事务将强制执行它们插入或更新的行的约束;只有预先存在的行需要检查。
+    因此，验证在被更改的表上仅获得一个<literal>SHARE UPDATE EXCLUSIVE</literal>锁。
+    （如果约束是外键，则 <literal>ROW SHARE</literal>锁也需要约束的表引用。）
+    除了改进并发性外，在已知该表包含预先存在的违规行为的情况下使用 <literal>NOT VALID</literal> 和 <literal>VALIDATE CONSTRAINT</literal>也能有作用。
+    一旦约束就位，就不能再插入新的违规，，并且现有问题可以在空闲时纠正，直到<literal>VALIDATE CONSTRAINT</literal>最终完成。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
     The <literal>DROP COLUMN</literal> form does not physically remove
     the column, but simply makes it invisible to SQL operations.  Subsequent
     insert and update operations in the table will store a null value for the
     column. Thus, dropping a column is quick but it will not immediately
     reduce the on-disk size of your table, as the space occupied
     by the dropped column is not reclaimed.  The space will be
-    reclaimed over time as existing rows are updated.  (These statements do
-    not apply when dropping the system <literal>oid</literal> column; that is done
-    with an immediate rewrite.)
+    reclaimed over time as existing rows are updated.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -2252,8 +2257,7 @@ ____________________________________________________________________________-->
     单地让它对 SQL 操作不可见。后续该表中的插入和更新操作将为该列存储
     一个空值。因此，删除一个列很快，但是它不会立刻减少表所占的磁盘空间，
     因为被删除列所占用的空间还没有被回收。随着现有列被更新，空间将被逐渐
-    回收（这些说法不适用于删除系统<literal>oid</literal>列的情况，那时会立刻
-    使用重写来完成）。
+    回收。
    </para>
 
 <!--==========================orignal english content==========================
