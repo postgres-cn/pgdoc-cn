@@ -148,9 +148,10 @@ ____________________________________________________________________________-->
      <para>
       A statistics kind to be computed in this statistics object.
       Currently supported kinds are
-      <literal>ndistinct</literal>, which enables n-distinct statistics, and
+      <literal>ndistinct</literal>, which enables n-distinct statistics,
       <literal>dependencies</literal>, which enables functional
-      dependency statistics.
+      dependency statistics, and <literal>mcv</literal> which enables
+      most-common values lists.
       If this clause is omitted, all supported statistics kinds are
       included in the statistics object.
       For more information, see <xref linkend="planner-stats-extended"/>
@@ -159,10 +160,10 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
      <para>
       在此统计对象中计算的统计种类。目前支持的种类是启用n-distinct统计的
-	  <literal>ndistinct</literal>，以及启用功能依赖性统计的<literal>dependencies</literal>。
-	  如果省略该子句，则统计对象中将包含所有支持的统计类型。
-	  有关更多信息，请参阅<xref linkend="planner-stats-extended"/>和
-	  <xref linkend="multivariate-statistics-examples"/>。
+      <literal>ndistinct</literal>，启用功能依赖性统计的<literal>dependencies</literal>，以及启用最常见的值列表的<literal>mcv</literal>。
+      如果省略该子句，则统计对象中将包含所有支持的统计类型。
+      有关更多信息，请参阅<xref linkend="planner-stats-extended"/>和
+      <xref linkend="multivariate-statistics-examples"/>。
      </para>
     </listitem>
    </varlistentry>
@@ -176,11 +177,12 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
      <para>
       The name of a table column to be covered by the computed statistics.
-      At least two column names must be given.
+      At least two column names must be given;  the order of the column names
+      is insignificant.
      </para>
 ____________________________________________________________________________-->
      <para>
-      被计算的统计信息包含的表格列的名称。至少必须给出两个列名。
+      被计算的统计信息包含的表格列的名称。至少必须给出两个列名，列名的顺序可以忽略。
      </para>
     </listitem>
    </varlistentry>
@@ -298,6 +300,63 @@ EXPLAIN ANALYZE SELECT * FROM t1 WHERE (a = 1) AND (b = 0);
    如果没有函数依赖性统计，规划器会认为两个<literal>WHERE</literal>条件是独立的，
    并且会将它们的选择性乘以一起，以致得到太小的行数估计。
    通过这样的统计，规划器认识到<literal>WHERE</literal>条件是多余的，并且不会低估行数。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Create table <structname>t2</structname> with two perfectly correlated columns
+   (containing identical data), and a MCV list on those columns:
+
+<programlisting>
+CREATE TABLE t2 (
+    a   int,
+    b   int
+);
+
+INSERT INTO t2 SELECT mod(i,100), mod(i,100)
+                 FROM generate_series(1,1000000) s(i);
+
+CREATE STATISTICS s2 (mcv) ON a, b FROM t2;
+
+ANALYZE t2;
+
+-&minus; valid combination (found in MCV)
+EXPLAIN ANALYZE SELECT * FROM t2 WHERE (a = 1) AND (b = 1);
+
+-&minus; invalid combination (not found in MCV)
+EXPLAIN ANALYZE SELECT * FROM t2 WHERE (a = 1) AND (b = 2);
+</programlisting>
+
+   The MCV list gives the planner more detailed information about the
+   specific values that commonly appear in the table, as well as an upper
+   bound on the selectivities of combinations of values that do not appear
+   in the table, allowing it to generate better estimates in both cases.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   创建表<structname>t2</structname>与两个完全相关的列(包含相同的数据)，并且在这些列上创建一个MCV列表:
+
+<programlisting>
+CREATE TABLE t2 (
+    a   int,
+    b   int
+);
+
+INSERT INTO t2 SELECT mod(i,100), mod(i,100)
+                 FROM generate_series(1,1000000) s(i);
+
+CREATE STATISTICS s2 (mcv) ON a, b FROM t2;
+
+ANALYZE t2;
+
+-- valid combination (found in MCV)
+EXPLAIN ANALYZE SELECT * FROM t2 WHERE (a = 1) AND (b = 1);
+
+-- invalid combination (not found in MCV)
+EXPLAIN ANALYZE SELECT * FROM t2 WHERE (a = 1) AND (b = 2);
+</programlisting>
+
+   MCV列表为计划器提供了关于表中普遍出现的特定值的更详细的信息，以及表中未显示的值组合的选择性上限，允许它在这两种情况下产生更好的估计值。
   </para>
 
  </refsect1>
