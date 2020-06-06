@@ -61,7 +61,8 @@ CREATE FOREIGN TABLE [ IF NOT EXISTS ] <replaceable class="parameter">table_name
 { NOT NULL |
   NULL |
   CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ] |
-  DEFAULT <replaceable>default_expr</replaceable> }
+  DEFAULT <replaceable>default_expr</replaceable> |
+  GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED }
 
 <phrase>and <replaceable class="parameter">table_constraint</replaceable> is:</phrase>
 
@@ -94,7 +95,8 @@ CREATE FOREIGN TABLE [ IF NOT EXISTS ] <replaceable class="parameter">table_name
 { NOT NULL |
   NULL |
   CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ] |
-  DEFAULT <replaceable>default_expr</replaceable> }
+  DEFAULT <replaceable>default_expr</replaceable> |
+  GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED }
 
 <phrase>而 <replaceable class="parameter">table_constraint</replaceable> 是：</phrase>
 
@@ -261,7 +263,7 @@ ____________________________________________________________________________-->
      </para>
     </listitem>
    </varlistentry>
-   
+
    <varlistentry>
 <!--==========================orignal english content==========================
     <term><literal>COLLATE <replaceable>collation</replaceable></literal></term>
@@ -302,6 +304,34 @@ ____________________________________________________________________________-->
       可选的<literal>INHERITS</literal>子句指定了一个表的列表，新的外部表
       会自动从中继承所有列。父表可以是普通表或者外部表。详见
       <xref linkend="sql-createtable"/>的类似形式。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>PARTITION OF <replaceable>parent_table</replaceable> FOR VALUES <replaceable class="parameter">partition_bound_spec</replaceable></literal></term>
+____________________________________________________________________________-->
+    <term><literal>PARTITION OF <replaceable>parent_table</replaceable> FOR VALUES <replaceable class="parameter">partition_bound_spec</replaceable></literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      This form can be used to create the foreign table as partition of
+      the given parent table with specified partition bound values.
+      See the similar form of
+      <xref linkend="sql-createtable"/> for more details.
+      Note that it is currently not allowed to create the foreign table as a
+      partition of the parent table if there are <literal>UNIQUE</literal>
+      indexes on the parent table.  (See also
+      <link linkend="sql-altertable"><command>ALTER TABLE ATTACH PARTITION</command></link>.)
+     </para>
+____________________________________________________________________________-->
+     <para>
+      此语句可以用来将外部表创建为父表的一个指定区间的分区表。
+      详见<xref linkend="sql-createtable"/>的类似形式。
+      注意如果父表存在<literal>UNIQUE</literal>类型的索引时，当前是不允许将外部表
+      创建为该父表的分区表。（另见<link linkend="sql-altertable">
+      <command>ALTER TABLE ATTACH PARTITION</command></link>。）
      </para>
     </listitem>
    </varlistentry>
@@ -376,7 +406,7 @@ ____________________________________________________________________________-->
      </para>
     </listitem>
    </varlistentry>
-   
+
    <varlistentry>
 <!--==========================orignal english content==========================
     <term><literal>CHECK ( <replaceable class="parameter">expression</replaceable> ) [ NO INHERIT ] </literal></term>
@@ -468,6 +498,52 @@ ____________________________________________________________________________-->
 
    <varlistentry>
 <!--==========================orignal english content==========================
+    <term><literal>GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED</literal><indexterm><primary>generated column</primary></indexterm></term>
+____________________________________________________________________________-->
+    <term><literal>GENERATED ALWAYS AS ( <replaceable>generation_expr</replaceable> ) STORED</literal><indexterm><primary>generated column</primary></indexterm></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      This clause creates the column as a <firstterm>generated
+      column</firstterm>.  The column cannot be written to, and when read the
+      result of the specified expression will be returned.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      该子句创建一个<firstterm>衍生列</firstterm>。
+      此列不能写入，只能在读取时返回所指定的表达式的值。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      The keyword <literal>STORED</literal> is required to signify that the
+      column will be computed on write.  (The computed value will be presented
+      to the foreign-data wrapper for storage and must be returned on
+      reading.)
+     </para>
+____________________________________________________________________________-->
+     <para>
+      关键字<literal>STORED</literal>是必须的，用来表明该列将在写入时计算。
+      （计算出的值将会传递给外部数据封装器负责保存，并在读取时返回。）
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      The generation expression can refer to other columns in the table, but
+      not other generated columns.  Any functions and operators used must be
+      immutable.  References to other tables are not allowed.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      衍生表达式可以引用表中的其他列，但不能引用其他的衍生列。
+      所使用的函数和操作符必须是不可变。
+      不能引用其他表。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
     <term><replaceable class="parameter">server_name</replaceable></term>
 ____________________________________________________________________________-->
     <term><replaceable class="parameter">server_name</replaceable></term>
@@ -515,7 +591,7 @@ ____________________________________________________________________________-->
   </variablelist>
 
  </refsect1>
- 
+
  <refsect1>
 <!--==========================orignal english content==========================
   <title>Notes</title>
@@ -576,6 +652,37 @@ ____________________________________________________________________________-->
     但它确实假定它们对于查询优化的目的是正确的。如果在外部表中有不
     满足约束的行可见，在该表上的查询可能会产生不正确的回答。确保
     约束定义符合实际是用户的责任。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Similar considerations apply to generated columns.  Stored generated
+    columns are computed on insert or update on the local
+    <productname>PostgreSQL</productname> server and handed to the
+    foreign-data wrapper for writing out to the foreign data store, but it is
+    not enforced that a query of the foreign table returns values for stored
+    generated columns that are consistent with the generation expression.
+    Again, this might result in incorrect query results.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    类似的要点也适用于衍生列。衍生列在本地<productname>PostgreSQL</productname>
+    服务器发生插入或更新时进行计算，并将计算结果传递给外部数据封装器，由外部数据
+    封装器负责把结果写到外部数据存储中，但是并不强制要求查询外部表时返回的衍生列
+    的值一定是与衍生表达式一致。
+    总而言之，此行为可能导致查询到不正确的结果。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    While rows can be moved from local partitions to a foreign-table partition
+    (provided the foreign data wrapper supports tuple routing), they cannot be
+    moved from a foreign-table partition to another partition.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    虽然列可以从本地分区移到外部表分区（使用的外部数据封装器支持元组路由），但是
+    不能将列从外部表分区移动到本地分区。
    </para>
  </refsect1>
 
