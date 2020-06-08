@@ -118,14 +118,15 @@ ____________________________________________________________________________-->
    target cluster ran for a long time after the divergence, the old WAL
    files might no longer be present. In that case, they can be manually
    copied from the WAL archive to the <filename>pg_wal</filename> directory, or
-   fetched on startup by configuring <filename>recovery.conf</filename>.  The use of
+   fetched on startup by configuring <xref linkend="guc-primary-conninfo"/> or
+   <xref linkend="guc-restore-command"/>.  The use of
    <application>pg_rewind</application> is not limited to failover, e.g.  a standby
    server can be promoted, run some write transactions, and then rewinded
    to become a standby again.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <application>pg_rewind</application>检查源集簇和目标集簇的时间线历史来判断它们在哪一点分叉，并且期望在目标集簇的<filename>pg_wal</filename>目录中找到 WAL 来返回到分叉点。分叉点可能会在目标时间线、源时间线或者它们的共同祖先上找到。在典型的失效场景中，目标集簇在分叉后很快就被关闭，这不是问题，但是如果目标集簇在分叉后已经运行了很长时间，旧的 WAL 文件可能已经不存在了。在这样的情况下，它们可以被手工从 WAL 归档复制到<filename>pg_wal</filename>目录，或者通过配置<filename>recovery.conf</filename>在启动时取得。<application>pg_rewind</application>的使用并不限于失效的场景，例如一个后备服务器可能被提升、运行一些写事务，然后被倒回再次成为一个后备。
+   <application>pg_rewind</application>检查源集簇和目标集簇的时间线历史来判断它们在哪一点分叉，并且期望在目标集簇的<filename>pg_wal</filename>目录中找到 WAL 来返回到分叉点。分叉点可能会在目标时间线、源时间线或者它们的共同祖先上找到。在典型的失效场景中，目标集簇在分叉后很快就被关闭，这不是问题，但是如果目标集簇在分叉后已经运行了很长时间，旧的 WAL 文件可能已经不存在了。在这样的情况下，它们可以被手工从 WAL 归档复制到<filename>pg_wal</filename>目录，或者通过配置<xref linkend="guc-primary-conninfo"/> 或<xref linkend="guc-restore-command"/>在启动时取得。<application>pg_rewind</application>的使用并不限于失效的场景，例如一个后备服务器可能被提升、运行一些写事务，然后被倒回再次成为一个后备。
   </para>
 
 <!--==========================orignal english content==========================
@@ -137,12 +138,14 @@ ____________________________________________________________________________-->
    <application>pg_rewind</application> was run, and therefore could not be copied by the
    <application>pg_rewind</application> session, it must be made available when the
    target server is started. This can be done by creating a
-   <filename>recovery.conf</filename> file in the target data directory with a
-   suitable <varname>restore_command</varname>.
+   <filename>recovery.signal</filename> file in the target data directory
+   and configuring suitable <xref linkend="guc-restore-command"/>
+   in <filename>postgresql.conf</filename>.
   </para>
 ____________________________________________________________________________-->
   <para>
-   当目标服务器在运行了<application>pg_rewind</application>之后第一次启动时，它将进入到恢复模式并且重放源服务器在分叉点之后产生的所有 WAL。当<application>pg_rewind</application>被运行时有某些 WAL 在源服务器上不可用，并且因此无法被<application>pg_rewind</application>会话所复制，则在目标服务器被启动时必须让这些 WAL 可用。这可以通过在目标数据目录中创建一个<filename>recovery.conf</filename>文件并且在其中使用一个适当的<varname>restore_command</varname>来实现。
+   当目标服务器在运行了<application>pg_rewind</application>之后第一次启动时，它将进入到恢复模式并且重放源服务器在分叉点之后产生的所有 WAL。当<application>pg_rewind</application>被运行时有某些 WAL 在源服务器上不可用，并且因此无法被<application>pg_rewind</application>会话所复制，则在目标服务器被启动时必须让这些 WAL 可用。
+   这可以通过在目标数据目录中创建一个<filename>recovery.signal</filename>文件并且在<filename>postgresql.conf</filename>中配置适合的<xref linkend="guc-restore-command"/>来实现。
   </para>
 
 <!--==========================orignal english content==========================
@@ -230,10 +233,12 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         Specifies a libpq connection string to connect to the source
-        <productname>PostgreSQL</productname> server to synchronize the target with.
-        The connection must be a normal (non-replication) connection
-        with superuser access. This option requires the source
-        server to be running and not in recovery mode.
+        <productname>PostgreSQL</productname> server to synchronize the target
+        with. The connection must be a normal (non-replication) connection
+        with a role having sufficient permissions to execute the functions
+        used by <application>pg_rewind</application> on the source server
+        (see Notes section for details) or a superuser role.  This option
+        requires the source server to be running and not in recovery mode.
        </para>
       </listitem>
      </varlistentry>
@@ -244,6 +249,22 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         Do everything except actually modifying the target directory.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N</option></term>
+      <term><option>--no-sync</option></term>
+      <listitem>
+       <para>
+        By default, <command>pg_rewind</command> will wait for all files
+        to be written safely to disk.  This option causes
+        <command>pg_rewind</command> to return without waiting, which is
+        faster, but means that a subsequent operating system crash can leave
+        the synchronized data directory corrupt.  Generally, this option is
+        useful for testing but should not be used when creating a production
+        installation.
        </para>
       </listitem>
      </varlistentry>
@@ -311,7 +332,8 @@ ____________________________________________________________________________-->
       <term><option>--source-server=<replaceable class="parameter">connstr</replaceable></option></term>
       <listitem>
        <para>
-        指定一个 libpq 连接串用于连接要与目标服务器同步的源<productname>PostgreSQL</productname>服务器。该连接必须是一个具有超级用户访问权限的普通（非复制）连接。这个选项要求源服务器正在运行且不处于恢复模式。
+        指定一个 libpq 连接串用于连接要与目标服务器同步的源<productname>PostgreSQL</productname>服务器。
+        连接必须是常规（非复制）连接，角色具有足够权限执行源服务器上<application>pg_rewind</application>使用的函数（详请参阅备注部分）或超级用户角色。这个选项要求源服务器正在运行且不处于恢复模式。
        </para>
       </listitem>
      </varlistentry>
@@ -322,6 +344,17 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         做除了实际修改目标目录之外的其他所有事情。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N</option></term>
+      <term><option>--no-sync</option></term>
+      <listitem>
+       <para>
+        默认情况下，<command>pg_rewind</command>将等待所有文件安全地写入磁盘。
+        此选项会导致<command>pg_rewind</command>不等待即可返回，这更快，但意味着后续操作系统崩溃会使同步数据目录损坏。通常情况，此选项可用于测试，但在创建生产安装时不应使用。
        </para>
       </listitem>
      </varlistentry>
@@ -377,6 +410,18 @@ ____________________________________________________________________________-->
   <para>
    在使用<option>--source-server</option>选项时，<application>pg_rewind</application>也使用<application>libpq</application>支持的环境变量（见<xref linkend="libpq-envars"/>）。
   </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   The environment variable <envar>PG_COLOR</envar> specifies whether to use
+   color in diagnostics messages.  Possible values are
+   <literal>always</literal>, <literal>auto</literal>,
+   <literal>never</literal>.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   环境变量<envar>PG_COLOR</envar>规定在诊断消息中是否使用颜色。可能的值为<literal>always</literal>、<literal>auto</literal>、<literal>never</literal>。
+  </para>
  </refsect1>
 
  <refsect1>
@@ -385,9 +430,52 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
   <title>注解</title>
 
+<!--==========================orignal english content==========================
+  <para>
+   When executing <application>pg_rewind</application> using an online
+   cluster as source, a role having sufficient permissions to execute the
+   functions used by <application>pg_rewind</application> on the source
+   cluster can be used instead of a superuser.  Here is how to create such
+   a role, named <literal>rewind_user</literal> here:
+<programlisting>
+CREATE USER rewind_user LOGIN;
+GRANT EXECUTE ON function pg_catalog.pg_ls_dir(text, boolean, boolean) TO rewind_user;
+GRANT EXECUTE ON function pg_catalog.pg_stat_file(text, boolean) TO rewind_user;
+GRANT EXECUTE ON function pg_catalog.pg_read_binary_file(text) TO rewind_user;
+GRANT EXECUTE ON function pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO rewind_user;
+</programlisting>
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当使用在线群集作为源执行<application>pg_rewind</application>时，具有充足权限来执行<application>pg_rewind</application>在源群集上使用的函数的角色可以用来代替超级用户。 
+   这里介绍如何创建这样的角色，在这里命名<literal>rewind_user</literal>：
+<programlisting>
+CREATE USER rewind_user LOGIN;
+GRANT EXECUTE ON function pg_catalog.pg_ls_dir(text, boolean, boolean) TO rewind_user;
+GRANT EXECUTE ON function pg_catalog.pg_stat_file(text, boolean) TO rewind_user;
+GRANT EXECUTE ON function pg_catalog.pg_read_binary_file(text) TO rewind_user;
+GRANT EXECUTE ON function pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO rewind_user;
+</programlisting>
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   When executing <application>pg_rewind</application> using an online
+   cluster as source which has been recently promoted, it is necessary
+   to execute a <command>CHECKPOINT</command> after promotion so as its
+   control file reflects up-to-date timeline information, which is used by
+   <application>pg_rewind</application> to check if the target cluster
+   can be rewound using the designated source cluster.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当使用近期升级的在线群集作为源执行<application>pg_rewind</application>时，必须在升级后执行<command>CHECKPOINT</command>以便其控制文件反映最新的时间线信息，
+   <application>pg_rewind</application>使用这些信息检查目标群集是否可以使用指定的源群集倒回。
+  </para>
+  
   <refsect2>
 <!--==========================orignal english content==========================
-   <title>How it works</title>
+   <title>How It Works</title>
 ____________________________________________________________________________-->
    <title>如何工作</title>
 
