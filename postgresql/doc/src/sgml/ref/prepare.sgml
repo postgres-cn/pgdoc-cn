@@ -211,54 +211,77 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   Prepared statements can use generic plans rather than re-planning with
-   each set of supplied <command>EXECUTE</command> values.  This occurs
-   immediately for prepared statements with no parameters; otherwise
-   it occurs only after five or more executions produce plans whose
-   estimated cost average (including planning overhead) is more expensive
-   than the generic plan cost estimate.  Once a generic plan is chosen,
-   it is used for the remaining lifetime of the prepared statement.
-   Using <command>EXECUTE</command> values which are rare in columns with
-   many duplicates can generate custom plans that are so much cheaper
-   than the generic plan, even after adding planning overhead, that the
-   generic plan might never be used.
+   A prepared statement can be executed with either a <firstterm>generic
+   plan</firstterm> or a <firstterm>custom plan</firstterm>.  A generic
+   plan is the same across all executions, while a custom plan is generated
+   for a specific execution using the parameter values given in that call.
+   Use of a generic plan avoids planning overhead, but in some situations
+   a custom plan will be much more efficient to execute because the planner
+   can make use of knowledge of the parameter values.  (Of course, if the
+   prepared statement has no parameters, then this is moot and a generic
+   plan is always used.)
   </para>
 ____________________________________________________________________________-->
   <para>
-   对每一组提供的<command>EXECUTE</command>值，预备语句可以使用通用计划而不是重新做计划。对于没有参数的预备语句马上就会这样做，否则只有五次或者更多次执行产生的计划的估计代价平均值（包括规划开销）比通用计划的代价估计更昂贵时才会这样做。一旦选中一个通用计划，在该预备语句剩余的生存时间内都将使用它。使用在重复值很多的列中很少出现的<command>EXECUTE</command>值可以产生比通用计划更加廉价的定制计划（即使加上规划开销），这样通用计划将不会被使用。
+   可以使用<firstterm>generic plan</firstterm>或<firstterm>custom plan</firstterm>执行已准备好的语句。
+   通用计划在所有执行中都是相同的，而自定义计划是为特定执行所生成的，使用调用中给出的参数值。
+   使用通用计划可以避免计划开销，但在某些情况下，自定义计划的执行效率要高得多，因为规划器可以利用参数值的知识。 （当然，如果准备好的语句没有参数，则这是没有意义的，并且始终应使用通用计划。）
   </para>
 
 <!--==========================orignal english content==========================
   <para>
-   A generic plan assumes that each value supplied to
-   <command>EXECUTE</command> is one of the column's distinct values
-   and that column values are uniformly distributed.  For example,
-   if statistics record three distinct column values, a generic plan
-   assumes a column equality comparison will match 33% of processed rows.
-   Column statistics also allow generic plans to accurately compute the
-   selectivity of unique columns.  Comparisons on non-uniformly-distributed
-   columns and specification of non-existent values affects the average
-   plan cost, and hence if and when a generic plan is chosen.
+   By default (that is, when <xref linkend="guc-plan-cache_mode"/> is set
+   to <literal>auto</literal>), the server will automatically choose
+   whether to use a generic or custom plan for a prepared statement that
+   has parameters.  The current rule for this is that the first five
+   executions are done with custom plans and the average estimated cost of
+   those plans is calculated.  Then a generic plan is created and its
+   estimated cost is compared to the average custom-plan cost.  Subsequent
+   executions use the generic plan if its cost is not so much higher than
+   the average custom-plan cost as to make repeated replanning seem
+   preferable.
   </para>
 ____________________________________________________________________________-->
   <para>
-   通用计划假定每一个提供给<command>EXECUTE</command>的值都是该列的可区分值并且列值是均匀分布的。例如，如果统计信息记录了三个可区分的列值，通用计划会假定一个列等值比较将匹配被处理行中的 33%。列统计值也允许通用计划准确地计算唯一列的选择度。如果一个通用计划被选中时，在非均匀分布列上的比较以及制定不存在的值都会影响平均计划代价。
+   默认情况下（也就是当 <xref linkend="guc-plan-cache_mode"/> 设定为 <literal>auto</literal>时），对已经准备好的具有参数的语句，服务器将自动选择使用通用或自定义计划。
+   当前的规则是，前五次执行都是使用自定义计划完成的，并且计算这些计划的平均估计成本。然后创建通用计划，并将其估计成本与自定义计划的平均成本相比较。   
+   如果通用计划的成本没有比平均自定义计划成本高太多，那么后续执行将使用通用计划，以使重复的再看起来更可取。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   This heuristic can be overridden, forcing the server to use either
+   generic or custom plans, by setting <varname>plan_cache_mode</varname>
+   to <literal>force_generic_plan</literal>
+   or <literal>force_custom_plan</literal> respectively.
+   This setting is primarily useful if the generic plan's cost estimate
+   is badly off for some reason, allowing it to be chosen even though
+   its actual cost is much more than that of a custom plan.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   这种探索式方法可以重写，强迫服务器使用通用或自定义计划，通过将<varname>plan_cache_mode</varname>分别设置为<literal>force_generic_plan</literal>或 <literal>force_custom_plan</literal> 。
+   如果通用计划的成本估计由于某种原因很不理想，则此设置主要很有用，尽管其实际成本远高于自定义计划的实际成本，可以选择此设置。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
    To examine the query plan <productname>PostgreSQL</productname> is using
-   for a prepared statement, use <xref linkend="sql-explain"/>, e.g.
-   <command>EXPLAIN EXECUTE</command>.
+   for a prepared statement, use <xref linkend="sql-explain"/>, for example
+<programlisting>
+EXPLAIN EXECUTE <replaceable>name</replaceable>(<replaceable>parameter_values</replaceable>);
+</programlisting>
    If a generic plan is in use, it will contain parameter symbols
-   <literal>$<replaceable>n</replaceable></literal>, while a custom plan will have the
-   supplied parameter values substituted into it.
-   The row estimates in the generic plan reflect the selectivity
-   computed for the parameters.
+   <literal>$<replaceable>n</replaceable></literal>, while a custom plan
+   will have the supplied parameter values substituted into it.
   </para>
 ____________________________________________________________________________-->
   <para>
-   要检查<productname>PostgreSQL</productname>为一个预备语句使用的查询计划，可以使用<xref linkend="sql-explain"/>，例如<command>EXPLAIN EXECUTE</command>。如果使用的是一个通用计划，它将包含参数符号<literal>$<replaceable>n</replaceable></literal>，而一个定制计划则会把提供的参数值替换进去。通用计划中的行估计值反映了这些参数计算出来的选择度。
+   要检查<productname>PostgreSQL</productname>为一个预备语句使用的查询计划，可以使用<xref linkend="sql-explain"/>，例如：
+<programlisting>
+EXPLAIN EXECUTE <replaceable>name</replaceable>(<replaceable>parameter_values</replaceable>);
+</programlisting> 
+   如果使用的是一个通用计划，它将包含参数符号<literal>$<replaceable>n</replaceable></literal>，而一个定制计划则会把提供的参数值替换进去。
   </para>
 
 <!--==========================orignal english content==========================
@@ -348,7 +371,7 @@ PREPARE usrrptplan (int) AS
 EXECUTE usrrptplan(1, current_date);
 </programlisting>
 
-   Note that the data type of the second parameter is not specified,
+   In this example, the data type of the second parameter is not specified,
    so it is inferred from the context in which <literal>$2</literal> is used.
   </para>
 ____________________________________________________________________________-->
@@ -361,7 +384,7 @@ PREPARE usrrptplan (int) AS
 EXECUTE usrrptplan(1, current_date);
 </programlisting>
 
-   注意第二个参数的数据类型没有被指定，因此会从使用<literal>$2</literal>的环境中推知。
+   在这个示例中，第二个参数的数据类型没有被指定，因此会从使用<literal>$2</literal>的环境中推知。
   </para>
  </refsect1>
  <refsect1>
