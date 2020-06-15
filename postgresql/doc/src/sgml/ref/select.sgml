@@ -104,7 +104,7 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
 
 <phrase>and <replaceable class="parameter">with_query</replaceable> is:</phrase>
 
-    <replaceable class="parameter">with_query_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] AS ( <replaceable class="parameter">select</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
+    <replaceable class="parameter">with_query_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] AS [ [ NOT ] MATERIALIZED ] ( <replaceable class="parameter">select</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
 
 TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
 </synopsis>
@@ -123,13 +123,12 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
     [ LIMIT { <replaceable class="parameter">count</replaceable> | ALL } ]
     [ OFFSET <replaceable class="parameter">start</replaceable> [ ROW | ROWS ] ]
     [ FETCH { FIRST | NEXT } [ <replaceable class="parameter">count</replaceable> ] { ROW | ROWS } ONLY ]
-    [ FOR { UPDATE | NO KEY UPDATE | SHARE | KEY SHARE } [ OF <replaceable class="parameter">table_name</replaceable> [, ...] ] [ NOWAIT ] [...] ]
+    [ FOR { UPDATE | NO KEY UPDATE | SHARE | KEY SHARE } [ OF <replaceable class="parameter">table_name</replaceable> [, ...] ] [ NOWAIT | SKIP LOCKED ] [...] ]
 
 <phrase>其中 <replaceable class="parameter">from_item</replaceable> 可以是以下之一：</phrase>
 
     [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
                 [ TABLESAMPLE <replaceable class="parameter">sampling_method</replaceable> ( <replaceable class="parameter">argument</replaceable> [, ...] ) [ REPEATABLE ( <replaceable class="parameter">seed</replaceable> ) ] ]
-
     [ LATERAL ] ( <replaceable class="parameter">select</replaceable> ) [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ]
     <replaceable class="parameter">with_query_name</replaceable> [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
     [ LATERAL ] <replaceable class="parameter">function_name</replaceable> ( [ <replaceable class="parameter">argument</replaceable> [, ...] ] )
@@ -148,10 +147,10 @@ SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">expression</replac
     ROLLUP ( { <replaceable class="parameter">expression</replaceable> | ( <replaceable class="parameter">expression</replaceable> [, ...] ) } [, ...] )
     CUBE ( { <replaceable class="parameter">expression</replaceable> | ( <replaceable class="parameter">expression</replaceable> [, ...] ) } [, ...] )
     GROUPING SETS ( <replaceable class="parameter">grouping_element</replaceable> [, ...] )
-    
+
 <phrase>并且 <replaceable class="parameter">with_query</replaceable> 是：</phrase>
 
-    <replaceable class="parameter">with_query_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] AS ( <replaceable class="parameter">select</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
+    <replaceable class="parameter">with_query_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] AS [ [ NOT ] MATERIALIZED ] ( <replaceable class="parameter">select</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
 
 TABLE [ ONLY ] <replaceable class="parameter">table_name</replaceable> [ * ]
 </synopsis>
@@ -176,7 +175,8 @@ ____________________________________________________________________________-->
       These effectively serve as temporary tables that can be referenced
       in the <literal>FROM</literal> list.  A <literal>WITH</literal> query
       that is referenced more than once in <literal>FROM</literal> is
-      computed only once.
+      computed only once,
+      unless specified otherwise with <literal>NOT MATERIALIZED</literal>.
       (See <xref linkend="sql-with" endterm="sql-with-title"/> below.)
      </para>
     </listitem>
@@ -298,8 +298,8 @@ ____________________________________________________________________________-->
       <literal>WITH</literal>列表中的所有查询都会被计算。这些查询实际
       充当了在<literal>FROM</literal>列表中可以引用的临时表。在
       <literal>FROM</literal>中被引用多次的<literal>WITH</literal>查
-      询只会被计算一次（见下文的
-      <xref linkend="sql-with" endterm="sql-with-title"/>）。
+      询只会被计算一次，除非另有说明，否则<literal>NOT MATERIALIZED</literal>。
+      （见下文的<xref linkend="sql-with" endterm="sql-with-title"/>）。
      </para>
     </listitem>
 
@@ -535,19 +535,16 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    A key property of <literal>WITH</literal> queries is that they
-    are evaluated only once per execution of the primary query,
-    even if the primary query refers to them more than once.
-    In particular, data-modifying statements are guaranteed to be
-    executed once and only once, regardless of whether the primary query
-    reads all or any of their output.
+    When there are multiple queries in the <literal>WITH</literal>
+    clause, <literal>RECURSIVE</literal> should be written only once,
+    immediately after <literal>WITH</literal>.  It applies to all queries
+    in the <literal>WITH</literal> clause, though it has no effect on
+    queries that do not use recursion or forward references.
    </para>
 ____________________________________________________________________________-->
    <para>
-    <literal>WITH</literal>查询的一个关键特性是，对主查询的每次
-    查询它们都只计算一次，即使该主查询引用它们多次也是如此。特别
-    是，不管主查询读取数据修改语句的多少输出，数据修改语句都被保
-    证仅执行一次。
+    当<literal>WITH</literal>子句中有多个查询时，teral>RECURSIVE</literal>应只编写一次，紧跟在<literal>WITH</literal>之后。
+    它适用于<literal>WITH</literal>子句中的所有查询，尽管它对不使用递归或前向引用的查询没有影响。
    </para>
 
 <!--==========================orignal english content==========================
@@ -566,6 +563,69 @@ ____________________________________________________________________________-->
     <literal>WITH</literal>中的一个数据修改语句的效果，不过可以读
     取其<literal>RETURNING</literal>输出。如果两个这样的数据修改语句
     尝试修改相同的行，结果将无法确定。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    A key property of <literal>WITH</literal> queries is that they
+    are normally evaluated only once per execution of the primary query,
+    even if the primary query refers to them more than once.
+    In particular, data-modifying statements are guaranteed to be
+    executed once and only once, regardless of whether the primary query
+    reads all or any of their output.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    <literal>WITH</literal>查询的一个关键属性是，即使主查询多次引用它们，它们通常每次执行主查询只计算一次。
+	特别是，数据修改语句确保执行一次而且只执行一次，而与主查询是否读取它们的全部或任何输出无关。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    However, a <literal>WITH</literal> query can be marked
+    <literal>NOT MATERIALIZED</literal> to remove this guarantee.  In that
+    case, the <literal>WITH</literal> query can be folded into the primary
+    query much as though it were a simple sub-<literal>SELECT</literal> in
+    the primary query's <literal>FROM</literal> clause.  This results in
+    duplicate computations if the primary query refers to
+    that <literal>WITH</literal> query more than once; but if each such use
+    requires only a few rows of the <literal>WITH</literal> query's total
+    output, <literal>NOT MATERIALIZED</literal> can provide a net savings by
+    allowing the queries to be optimized jointly.
+    <literal>NOT MATERIALIZED</literal> is ignored if it is attached to
+    a <literal>WITH</literal> query that is recursive or is not
+    side-effect-free (i.e., is not a plain <literal>SELECT</literal>
+    containing no volatile functions).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    但是，<literal>WITH</literal>查询可以标记为<literal>NOT MATERIALIZED</literal>以移除此保证。
+	在这种情况下，<literal>WITH</literal>查询可以折叠到主查询中，就好像它是主查询的<literal>FROM</literal>子句中的简单的sub-<literal>SELECT</literal>。 
+	如果主查询多次引用<literal>WITH</literal>查询，则会导致重复计算;但是，如果每次此类使用只需要<literal>WITH</literal>查询的总输出中的几行，<literal>NOT MATERIALIZED</literal>可以通过允许查询联合优化来节省开销。
+	<literal>NOT MATERIALIZED</literal>被忽略，如果它被附加到一个递归的<literal>WITH</literal>查询，或者不是边际效应无关的（也就是说，不是包含非易失性函数的普通的<literal>SELECT</literal>）。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    By default, a side-effect-free <literal>WITH</literal> query is folded
+    into the primary query if it is used exactly once in the primary
+    query's <literal>FROM</literal> clause.  This allows joint optimization
+    of the two query levels in situations where that should be semantically
+    invisible.  However, such folding can be prevented by marking the
+    <literal>WITH</literal> query as <literal>MATERIALIZED</literal>.
+    That might be useful, for example, if the <literal>WITH</literal> query
+    is being used as an optimization fence to prevent the planner from
+    choosing a bad plan.
+    <productname>PostgreSQL</productname> versions before v12 never did
+    such folding, so queries written for older versions might rely on
+    <literal>WITH</literal> to act as an optimization fence.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    默认情况下，如果查询在主查询的<literal>FROM</literal>子句中仅一次使用，则边际效应无关的<literal>WITH</literal>查询将折叠到主查询中。
+    这允许在语义不可见的情况下两个查询级别的联合优化。 但是，通过将<literal>WITH</literal>查询标记为<literal>MATERIALIZED</literal>，可以防止此类折叠。
+    这可能很有用，例如，如果<literal>WITH</literal>查询被用作优化围栏，以防止规划者选择错误计划。
+    <productname>PostgreSQL</productname>v12版本之前没有做过这样的折叠，所以为旧版本编写的查询可能依赖于<literal>WITH</literal>作为优化围栏。
    </para>
 
 <!--==========================orignal english content==========================
@@ -991,7 +1051,7 @@ ____________________________________________________________________________-->
        </para>
       </listitem>
      </varlistentry>
-     
+
      <varlistentry>
       <term><literal>TABLESAMPLE <replaceable class="parameter">sampling_method</replaceable> ( <replaceable class="parameter">argument</replaceable> [, ...] ) [ REPEATABLE ( <replaceable class="parameter">seed</replaceable> ) ]</literal></term>
       <listitem>
@@ -1109,6 +1169,7 @@ ____________________________________________________________________________-->
       <term><replaceable class="parameter">join_type</replaceable></term>
       <listitem>
        <para>
+        One of
         <itemizedlist>
          <listitem>
           <para><literal>[ INNER ] JOIN</literal></para>
@@ -1126,7 +1187,6 @@ ____________________________________________________________________________-->
           <para><literal>CROSS JOIN</literal></para>
          </listitem>
         </itemizedlist>
-        之一。
 
         对于<literal>INNER</literal>和<literal>OUTER</literal>连接类型，必须指定
         一个连接条件，即
@@ -1336,7 +1396,7 @@ ____________________________________________________________________________-->
     值构成的任意表达式。在出现歧义时，<literal>GROUP BY</literal>名称
     将被解释为输入列名而不是输出列名。
    </para>
-   
+
 <!--==========================orignal english content==========================
    <para>
     If any of <literal>GROUPING SETS</literal>, <literal>ROLLUP</literal> or
@@ -1953,7 +2013,7 @@ ____________________________________________________________________________-->
     是只来自那个表的所有列的简写形式。在这些情况中无法用
     <literal>AS</literal>指定新的名称，输出行的名称将和表列的名称相同。
    </para>
-   
+
 <!--==========================orignal english content==========================
    <para>
     According to the SQL standard, the expressions in the output list should
@@ -2782,7 +2842,6 @@ NO KEY UPDATE
 SHARE
 KEY SHARE
 </synopsis>
-   之一。
    </para>
 
 <!--==========================orignal english content==========================
@@ -3743,7 +3802,7 @@ ____________________________________________________________________________-->
     （这些点同等地适用于所有支持<literal>ONLY</literal>选项的 SQL 命令）。
    </para>
   </refsect2>
-  
+
   <refsect2>
 <!--==========================orignal english content==========================
    <title><literal>TABLESAMPLE</literal> Clause Restrictions</title>
@@ -3978,6 +4037,18 @@ ____________________________________________________________________________-->
    <para>
     <literal>ROWS FROM( ... )</literal>是 SQL 标准的扩展。
    </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The <literal>MATERIALIZED</literal> and <literal>NOT
+    MATERIALIZED</literal> options of <literal>WITH</literal> are extensions
+    of the SQL standard.
+   </para>
+____________________________________________________________________________-->
+   <para> 
+    <literal>WITH</literal>的<literal>MATERIALIZED</literal> 和 <literal>NOT MATERIALIZED</literal> 选项是SQL标准的扩展。
+   </para>
   </refsect2>
+
  </refsect1>
 </refentry>
