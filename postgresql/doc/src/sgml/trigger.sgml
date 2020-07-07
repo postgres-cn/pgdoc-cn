@@ -202,7 +202,7 @@ ____________________________________________________________________________-->
    <para>
     一个以继承或者分区层次中父表为目标的语句不会导致受影响的子表的语句级触发器被引发，只有父表的语句级触发器会被引发。不过，受影响的子表的行级触发器将被引发。
    </para>
-   
+
 <!--==========================orignal english content==========================
    <para>
     If an <command>INSERT</command> contains an <literal>ON CONFLICT
@@ -355,7 +355,7 @@ ____________________________________________________________________________-->
     used to signal that the trigger performed the necessary data
     modifications in the view.  This will cause the count of the number
     of rows affected by the command to be incremented. For
-    <command>INSERT</command> and <command>UPDATE</command> operations, the trigger
+    <command>INSERT</command> and <command>UPDATE</command> operations only, the trigger
     may modify the <varname>NEW</varname> row before returning it.  This will
     change the data returned by
     <command>INSERT RETURNING</command> or <command>UPDATE RETURNING</command>,
@@ -364,7 +364,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    一个行级<literal>INSTEAD OF</literal>触发器可以返回<symbol>NULL</symbol>来指示它没有修改任何来自于视图底层基表的数据，也可以返回被传入的视图行（<command>INSERT</command>和<command>UPDATE</command>操作的<varname>NEW</varname>行，或者<command>DELETE</command>操作的<varname>OLD</varname>行）。一个非空返回值被用于标志触发器在视图中执行了必须的数据修改。这将会导致被命令修改的行计数被增加。对于<command>INSERT</command>和<command>UPDATE</command>操作，触发器可能会在返回<varname>NEW</varname>行之前对其进行修改。这将会改变<command>INSERT RETURNING</command>或<command>UPDATE RETURNING</command>返回的数据，并在视图无法正确地显示提供给它的相同数据时有用。
+    一个行级<literal>INSTEAD OF</literal>触发器可以返回<symbol>NULL</symbol>来指示它没有修改任何来自于视图底层基表的数据，也可以返回被传入的视图行（<command>INSERT</command>和<command>UPDATE</command>操作的<varname>NEW</varname>行，或者<command>DELETE</command>操作的<varname>OLD</varname>行）。一个非空返回值被用于标志触发器在视图中执行了必须的数据修改。这将会导致被命令修改的行计数被增加。仅对于<command>INSERT</command>和<command>UPDATE</command>操作，触发器可能会在返回<varname>NEW</varname>行之前对其进行修改。这将会改变<command>INSERT RETURNING</command>或<command>UPDATE RETURNING</command>返回的数据，并在视图无法正确地显示提供给它的相同数据时有用。
    </para>
 
 <!--==========================orignal english content==========================
@@ -375,6 +375,34 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
    <para>
     对于在一个操作之后触发的行级触发器，返回值会被忽略，因此它们可以返回<symbol>NULL</symbol>。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Some considerations apply for generated
+    columns.<indexterm><primary>generated column</primary><secondary>in
+    triggers</secondary></indexterm>  Stored generated columns are computed after
+    <literal>BEFORE</literal> triggers and before <literal>AFTER</literal>
+    triggers.  Therefore, the generated value can be inspected in
+    <literal>AFTER</literal> triggers.  In <literal>BEFORE</literal> triggers,
+    the <literal>OLD</literal> row contains the old generated value, as one
+    would expect, but the <literal>NEW</literal> row does not yet contain the
+    new generated value and should not be accessed.  In the C language
+    interface, the content of the column is undefined at this point; a
+    higher-level programming language should prevent access to a stored
+    generated column in the <literal>NEW</literal> row in a
+    <literal>BEFORE</literal> trigger.  Changes to the value of a generated
+    column in a <literal>BEFORE</literal> trigger are ignored and will be
+    overwritten.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    一些情况适用于生成的列。
+    <indexterm><primary>generated column</primary><secondary>in triggers</secondary></indexterm> 存储生成的列在<literal>BEFORE</literal> 触发器之后和 <literal>AFTER</literal> 触发器之前计算.
+    因此，生成的值可以在<literal>AFTER</literal>触发器中检查。
+    在<literal>BEFORE</literal>触发器中，<literal>OLD</literal>行包含旧的生成的值，正如人们所期待的，但 <literal>NEW</literal> 行尚未包含新的生成值并且不应访问。
+    在C语言界面中，此时列的内容还没有被定义；在<literal>BEFORE</literal>触发器中，高级别编程语言应阻止访问<literal>NEW</literal>行中存储生成的列，。
+    在<literal>BEFORE</literal>触发器中更改到生成列的值将被忽略并覆盖。
    </para>
 
 <!--==========================orignal english content==========================
@@ -758,8 +786,8 @@ typedef struct TriggerData
     HeapTuple        tg_trigtuple;
     HeapTuple        tg_newtuple;
     Trigger         *tg_trigger;
-    Buffer           tg_trigtuplebuf;
-    Buffer           tg_newtuplebuf;
+    TupleTableSlot  *tg_trigslot;
+    TupleTableSlot  *tg_newslot;
     Tuplestorestate *tg_oldtable;
     Tuplestorestate *tg_newtable;
 } TriggerData;
@@ -961,21 +989,21 @@ typedef struct Trigger
      </varlistentry>
 
      <varlistentry>
-      <term><structfield>tg_trigtuplebuf</structfield></term>
+      <term><structfield>tg_trigslot</structfield></term>
       <listitem>
        <para>
-        The buffer containing <structfield>tg_trigtuple</structfield>, or <symbol>InvalidBuffer</symbol> if there
-        is no such tuple or it is not stored in a disk buffer.
+        The slot containing <structfield>tg_trigtuple</structfield>,
+        or a <symbol>NULL</symbol> pointer if there is no such tuple.
        </para>
       </listitem>
      </varlistentry>
 
      <varlistentry>
-      <term><structfield>tg_newtuplebuf</structfield></term>
+      <term><structfield>tg_newslot</structfield></term>
       <listitem>
        <para>
-        The buffer containing <structfield>tg_newtuple</structfield>, or <symbol>InvalidBuffer</symbol> if there
-        is no such tuple or it is not stored in a disk buffer.
+        The slot containing <structfield>tg_newtuple</structfield>,
+        or a <symbol>NULL</symbol> pointer if there is no such tuple.
        </para>
       </listitem>
      </varlistentry>
@@ -1019,8 +1047,8 @@ typedef struct TriggerData
     HeapTuple        tg_trigtuple;
     HeapTuple        tg_newtuple;
     Trigger         *tg_trigger;
-    Buffer           tg_trigtuplebuf;
-    Buffer           tg_newtuplebuf;
+    TupleTableSlot  *tg_trigslot;
+    TupleTableSlot  *tg_newslot;
     Tuplestorestate *tg_oldtable;
     Tuplestorestate *tg_newtable;
 } TriggerData;
@@ -1197,7 +1225,7 @@ typedef struct Trigger
       <term><structfield>tg_trigtuplebuf</structfield></term>
       <listitem>
        <para>
-        包含<structfield>tg_trigtuple</structfield>的缓冲区。如果没有那个元组或者它没有被存储在一个磁盘缓冲区中，则为<symbol>InvalidBuffer</symbol>。
+        包含<structfield>tg_trigtuple</structfield>的插槽。或者一个<symbol>NULL</symbol>指针，如果没有这样的元组的话。
        </para>
       </listitem>
      </varlistentry>
@@ -1206,7 +1234,7 @@ typedef struct Trigger
       <term><structfield>tg_newtuplebuf</structfield></term>
       <listitem>
        <para>
-        包含<structfield>tg_newtuple</structfield>的缓冲区。如果没有那个元组或者它没有被存储在一个磁盘缓冲区中，则为<symbol>InvalidBuffer</symbol>。
+        包含<structfield>tg_trigtuple</structfield>的插槽。或者一个<symbol>NULL</symbol>指针，如果没有这样的元组的话。
        </para>
       </listitem>
      </varlistentry>

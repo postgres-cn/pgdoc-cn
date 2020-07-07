@@ -515,7 +515,7 @@ ____________________________________________________________________________-->
    <para>
     前两种我们已经见过。形式<type>text</type> <literal>@@</literal> <type>tsquery</type>等价于<literal>to_tsvector(x) @@ y</literal>。形式<type>text</type> <literal>@@</literal> <type>text</type>等价于<literal>to_tsvector(x) @@ plainto_tsquery(y)</literal>。
    </para>
-   
+
 <!--==========================orignal english content==========================
    <para>
     Within a <type>tsquery</type>, the <literal>&amp;</literal> (AND) operator
@@ -1016,15 +1016,17 @@ CREATE INDEX pgweb_idx ON pgweb USING GIN(to_tsvector('english', title || ' ' ||
 <!--==========================orignal english content==========================
    <para>
     Another approach is to create a separate <type>tsvector</type> column
-    to hold the output of <function>to_tsvector</function>.  This example is a
+    to hold the output of <function>to_tsvector</function>.  To keep this
+    column automatically up to date with its source data, use a stored
+    generated column.  This example is a
     concatenation of <literal>title</literal> and <literal>body</literal>,
     using <function>coalesce</function> to ensure that one field will still be
     indexed when the other is <literal>NULL</literal>:
 
 <programlisting>
-ALTER TABLE pgweb ADD COLUMN textsearchable_index_col tsvector;
-UPDATE pgweb SET textsearchable_index_col =
-     to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''));
+ALTER TABLE pgweb
+    ADD COLUMN textsearchable_index_col tsvector
+               GENERATED ALWAYS AS (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body, ''))) STORED;
 </programlisting>
 
     Then we create a <acronym>GIN</acronym> index to speed up the search:
@@ -1045,12 +1047,12 @@ LIMIT 10;
    </para>
 ____________________________________________________________________________-->
    <para>
-    另一种方法是创建一个单独的<type>tsvector</type>列来保存<function>to_tsvector</function>的输出。这个例子是<literal>title</literal>和<literal>body</literal>的连接，使用<function>coalesce</function>来保证当其他域为<literal>NULL</literal>时一个域仍然能留在索引中：
+    另一种方法是创建一个单独的<type>tsvector</type>列来保存<function>to_tsvector</function>的输出。若要使此列与其源数据保持自动更新，用存储生成的列。这个例子是<literal>title</literal>和<literal>body</literal>的连接，使用<function>coalesce</function>来保证当其他域为<literal>NULL</literal>时一个域仍然能留在索引中：
 
 <programlisting>
-ALTER TABLE pgweb ADD COLUMN textsearchable_index_col tsvector;
-UPDATE pgweb SET textsearchable_index_col =
-     to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''));
+ALTER TABLE pgweb
+    ADD COLUMN textsearchable_index_col tsvector
+               GENERATED ALWAYS AS (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body, ''))) STORED;
 </programlisting>
 
     然后我们创建一个<acronym>GIN</acronym>索引来加速搜索：
@@ -1068,19 +1070,6 @@ WHERE textsearchable_index_col @@ to_tsquery('create &amp; table')
 ORDER BY last_mod_date DESC
 LIMIT 10;
 </programlisting>
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    When using a separate column to store the <type>tsvector</type>
-    representation,
-    it is necessary to create a trigger to keep the <type>tsvector</type>
-    column current anytime <literal>title</literal> or <literal>body</literal> changes.
-    <xref linkend="textsearch-update-triggers"/> explains how to do that.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    在使用一个单独的列来存储<type>tsvector</type>表示时，有必要创建一个触发器在<literal>title</literal>或<literal>body</literal>改变时保证<type>tsvector</type>列为当前值。<xref linkend="textsearch-update-triggers"/>解释了怎样去做。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1523,7 +1512,7 @@ SELECT plainto_tsquery('english', 'The Fat &amp; Rats:C');
 
     这里，所有输入的标点都被作为空间符号并且丢弃。
    </para>
-   
+
 <!--==========================orignal english content==========================
    <indexterm>
     <primary>phraseto_tsquery</primary>
@@ -2601,7 +2590,7 @@ ____________________________________________________________________________-->
     </varlistentry>
 
    </variablelist>
-   
+
 <!--==========================orignal english content==========================
    <para>
     A full list of <type>tsvector</type>-related functions is available
@@ -2706,7 +2695,7 @@ ____________________________________________________________________________-->
      </listitem>
 
     </varlistentry>
-    
+
     <varlistentry>
 
 <!--==========================orignal english content==========================
@@ -3158,6 +3147,19 @@ ____________________________________________________________________________-->
     <primary>触发器</primary>
     <secondary>用于更新一个派生的 tsvector 列</secondary>
    </indexterm>
+
+   <note>
+<!--==========================orignal english content==========================
+    <para>
+     The method described in this section has been obsoleted by the use of
+     stored generated columns, as described in <xref
+     linkend="textsearch-tables-index"/>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     本节中描述的方法已被使用存储生成的列所淘汰，如 <xref linkend="textsearch-tables-index"/>中所述。
+    </para>
+   </note>
 
 <!--==========================orignal english content==========================
    <para>
@@ -5110,7 +5112,7 @@ ____________________________________________________________________________-->
    <para>
     Ispell 词典通常识别一个有限集合的词，这样它们后面应该跟着另一个更广义的词典；例如，一个 Snowball 词典，它可以识别所有东西。
    </para>
-   
+
 <!--==========================orignal english content==========================
    <para>
     The <filename>.affix</filename> file of <application>Ispell</application> has the following
@@ -5247,7 +5249,7 @@ SELECT ts_lexize('norwegian_ispell', 'sjokoladefabrikk');
    {sjokoladefabrikk,sjokolade,fabrikk}
 </programlisting>
    </para>
-   
+
 <!--==========================orignal english content==========================
    <para>
     <application>MySpell</application> format is a subset of <application>Hunspell</application>.
@@ -6431,7 +6433,7 @@ ____________________________________________________________________________-->
       </para>
      </listitem>
     </varlistentry>
-    
+
     <varlistentry>
 
      <term>
@@ -6490,6 +6492,17 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
   <para>
    一个 GiST 索引是<firstterm>有损的</firstterm>，这表示索引可能产生假匹配，并且有必要检查真实的表行来消除这种假匹配（<productname>PostgreSQL</productname>在需要时会自动做这一步）。GiST 索引之所以是有损的，是因为每一个文档在索引中被表示为一个定长的签名。该签名通过哈希每一个词到一个 n 位串中的一个单一位来产生，通过将所有这些位 OR 在一起产生一个 n 位的文档签名。当两个词哈希到同一个位位置时就会产生假匹配。如果查询中所有词都有匹配（真或假），则必须检索表行查看匹配是否正确。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   A GiST index can be covering, i.e. use the <literal>INCLUDE</literal>
+   clause.  Included columns can have data types without any GiST operator
+   class.  Included attributes will be stored uncompressed.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   GiST 索引可以被覆盖，例如使用<literal>INCLUDE</literal>子句。 包含的列可以具有没有任何 GiST 操作符类的数据类型。 包含的属性将非压缩存储。
   </para>
 
 <!--==========================orignal english content==========================
@@ -6706,9 +6719,10 @@ ____________________________________________________________________________-->
       List text search dictionaries (add <literal>+</literal> for more detail).
 <screen>
 =&gt; \dFd
-                            List of text search dictionaries
-   Schema   |      Name       |                        Description                        
+                             List of text search dictionaries
+   Schema   |      Name       |                        Description
 -&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ pg_catalog | arabic_stem     | snowball stemmer for arabic language
  pg_catalog | danish_stem     | snowball stemmer for danish language
  pg_catalog | dutch_stem      | snowball stemmer for dutch language
  pg_catalog | english_stem    | snowball stemmer for english language
@@ -6716,7 +6730,11 @@ ____________________________________________________________________________-->
  pg_catalog | french_stem     | snowball stemmer for french language
  pg_catalog | german_stem     | snowball stemmer for german language
  pg_catalog | hungarian_stem  | snowball stemmer for hungarian language
+ pg_catalog | indonesian_stem | snowball stemmer for indonesian language
+ pg_catalog | irish_stem      | snowball stemmer for irish language
  pg_catalog | italian_stem    | snowball stemmer for italian language
+ pg_catalog | lithuanian_stem | snowball stemmer for lithuanian language
+ pg_catalog | nepali_stem     | snowball stemmer for nepali language
  pg_catalog | norwegian_stem  | snowball stemmer for norwegian language
  pg_catalog | portuguese_stem | snowball stemmer for portuguese language
  pg_catalog | romanian_stem   | snowball stemmer for romanian language
@@ -6724,6 +6742,7 @@ ____________________________________________________________________________-->
  pg_catalog | simple          | simple dictionary: just lower case and check for stopword
  pg_catalog | spanish_stem    | snowball stemmer for spanish language
  pg_catalog | swedish_stem    | snowball stemmer for swedish language
+ pg_catalog | tamil_stem      | snowball stemmer for tamil language
  pg_catalog | turkish_stem    | snowball stemmer for turkish language
 </screen>
      </para>
@@ -6732,9 +6751,10 @@ ____________________________________________________________________________-->
       列出文本搜索词典（加上<literal>+</literal>得到更多细节）。
 <screen>
 =&gt; \dFd
-                            List of text search dictionaries
-   Schema   |      Name       |                        Description                        
+                             List of text search dictionaries
+   Schema   |      Name       |                        Description
 ------------+-----------------+-----------------------------------------------------------
+ pg_catalog | arabic_stem     | snowball stemmer for arabic language
  pg_catalog | danish_stem     | snowball stemmer for danish language
  pg_catalog | dutch_stem      | snowball stemmer for dutch language
  pg_catalog | english_stem    | snowball stemmer for english language
@@ -6742,7 +6762,11 @@ ____________________________________________________________________________-->
  pg_catalog | french_stem     | snowball stemmer for french language
  pg_catalog | german_stem     | snowball stemmer for german language
  pg_catalog | hungarian_stem  | snowball stemmer for hungarian language
+ pg_catalog | indonesian_stem | snowball stemmer for indonesian language
+ pg_catalog | irish_stem      | snowball stemmer for irish language
  pg_catalog | italian_stem    | snowball stemmer for italian language
+ pg_catalog | lithuanian_stem | snowball stemmer for lithuanian language
+ pg_catalog | nepali_stem     | snowball stemmer for nepali language
  pg_catalog | norwegian_stem  | snowball stemmer for norwegian language
  pg_catalog | portuguese_stem | snowball stemmer for portuguese language
  pg_catalog | romanian_stem   | snowball stemmer for romanian language
@@ -6750,6 +6774,7 @@ ____________________________________________________________________________-->
  pg_catalog | simple          | simple dictionary: just lower case and check for stopword
  pg_catalog | spanish_stem    | snowball stemmer for spanish language
  pg_catalog | swedish_stem    | snowball stemmer for swedish language
+ pg_catalog | tamil_stem      | snowball stemmer for tamil language
  pg_catalog | turkish_stem    | snowball stemmer for turkish language
 </screen>
      </para>
