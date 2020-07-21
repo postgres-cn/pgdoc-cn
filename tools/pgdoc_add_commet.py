@@ -308,7 +308,7 @@ def process_file(sourceFile,commentFile,destFile):
     destDir=os.path.dirname(destFile)
     if(len(destDir) > 0 and not os.path.exists(destDir)):
         os.makedirs(os.path.dirname(destFile))
-    fdest=open(destFile, mode='w', encoding=file_encoding)
+    fdest=open(destFile, mode='w', encoding=file_encoding, newline='')
     # 遍历tag处理添加注释
     commentTagContext = CommentTagContext(src_content,comment_content,fdest)
     srctags = srcTagHandler.tags()
