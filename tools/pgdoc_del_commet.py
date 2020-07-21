@@ -24,7 +24,7 @@ def process_file(sourceFile,destFile):
     destDir=os.path.dirname(destFile)
     if(len(destDir) > 0 and not os.path.exists(destDir)):
         os.makedirs(os.path.dirname(destFile))
-    fdest=open(destFile, mode='w', encoding=file_encoding)
+    fdest=open(destFile, mode='w', encoding=file_encoding, newline='')
     # 删除注释
     dest_content = re.sub(comment_pattern, '', src_content)
     fdest.write(dest_content)
