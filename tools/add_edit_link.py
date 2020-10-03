@@ -9,9 +9,6 @@ import argparse
 sys.path.append(".") 
 import html2sgml_map
 
-patternInsertPos=re.compile(r'.*<body>',re.S)
-
-patternInsertPos2=re.compile(r'.*</body>',re.S)
 InsertHTML2="""<div style="text-align:center">
 <a  style="margin : 0px 0px 0px 0px;" href="https://www.aliyun.com/product/rds/postgresql" target="_blank" ><img src="/docs/pic/tailbar.jpg" /></a>
 </div>
@@ -64,11 +61,19 @@ def generate_navigate_bar_HTML(current_version, master_version, all_versions):
 
 def process(file, current_version, master_version, all_versions):
     filename=os.path.basename(file)
-    #fin=open(file,"r",encoding='GBK')
-    fin=open(file,"r",encoding='UTF-8')
+
+    if current_version in ['9.3','9.4','9.5','9.6']:
+        patternInsertPos=re.compile(r'.*<BODY\s+[^>]*>',re.S)
+        patternInsertPos2=re.compile(r'.*</BODY\s+[^>]*>',re.S)
+        fin=open(file,"r",encoding='GBK')
+        content=fin.read()
+        content=content.replace('CONTENT="text/html; charset=gbk"','CONTENT="text/html; charset=utf-8"')
+    else:
+        patternInsertPos=re.compile(r'.*<body>',re.S)
+        patternInsertPos2=re.compile(r'.*</body>',re.S)
+        fin=open(file,"r",encoding='UTF-8')
+        content=fin.read()
     fout=open(os.path.join(htmlOutputDir,filename),"w",encoding='UTF-8')
-    content=fin.read()
-    #content=content.replace('CONTENT="text/html; charset=gbk"','CONTENT="text/html; charset=utf-8"')
 
     sgmlfile=html2sgmlDict.get(filename.lower())
     if sgmlfile == None:
