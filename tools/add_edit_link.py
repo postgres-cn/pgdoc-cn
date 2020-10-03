@@ -57,7 +57,7 @@ def generate_navigate_bar_HTML(current_version, master_version, all_versions):
 </div>
 
 </div>
-""".format(github_branch,v)
+""".format(github_branch,current_version)
 
     return html
 
