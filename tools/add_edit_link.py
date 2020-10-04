@@ -32,7 +32,7 @@ def generate_navigate_bar_HTML(current_version, master_version, all_versions):
             html+='<a style="margin : 0px 5px 0px 5px;" href="/docs/{0}/{{0}}" target="_top">{0}</a>\n'.format(v,v)
 
     # 添加赞助商广告链接，github在线纠错链接和全文检索框
-    if v == master_version:
+    if current_version == master_version:
         github_branch='master'
     else:
         github_branch=v
