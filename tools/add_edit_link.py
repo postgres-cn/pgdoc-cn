@@ -35,7 +35,7 @@ def generate_navigate_bar_HTML(current_version, master_version, all_versions):
     if current_version == master_version:
         github_branch='master'
     else:
-        github_branch=v
+        github_branch=current_version
     html+="""
 </div>
 
@@ -97,7 +97,7 @@ def process(file, current_version, master_version, all_versions):
 
 def main():
     argparser = argparse.ArgumentParser(description='add navigate bar to postgres document')
-    argparser.add_argument('-v', '--current_version', help='current pgdoc version', required=True)
+    argparser.add_argument('-c', '--current_version', help='current pgdoc version', required=True)
     argparser.add_argument('-m', '--master_version', help='pgdoc version for master', required=True)
     argparser.add_argument('-a', '--all_versions', help='all pgdoc versions', required=True)
     args = argparser.parse_args()
