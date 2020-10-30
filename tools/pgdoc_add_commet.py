@@ -8,7 +8,7 @@ import logging
 #commentDir = r"sgml_en"
 #destDir = r"sgml_out"
 file_encoding=r'UTF-8'
-skip_sgmls = ('postgres.sgml','legal.sgml','bookindex.sgml','errcodes-table.sgml','features-supported.sgml','features-unsupported.sgml','version.sgml')
+skip_sgmls = ('postgres.sgml','legal.sgml','bookindex.sgml','errcodes-table.sgml','features-supported.sgml','features-unsupported.sgml','version.sgml','pgdoccn-notes.sgml')
 
 COMMENT_NOTE_START=r'<!--==========================orignal english content=========================='
 COMMENT_NOTE_END=r'____________________________________________________________________________-->'
@@ -308,7 +308,7 @@ def process_file(sourceFile,commentFile,destFile):
     destDir=os.path.dirname(destFile)
     if(len(destDir) > 0 and not os.path.exists(destDir)):
         os.makedirs(os.path.dirname(destFile))
-    fdest=open(destFile, mode='w', encoding=file_encoding)
+    fdest=open(destFile, mode='w', encoding=file_encoding, newline='')
     # 遍历tag处理添加注释
     commentTagContext = CommentTagContext(src_content,comment_content,fdest)
     srctags = srcTagHandler.tags()
