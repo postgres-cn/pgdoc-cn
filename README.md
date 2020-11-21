@@ -1,6 +1,5 @@
 # PostgreSQL中文手册翻译计划   
-PostgreSQL官方手册是PostgreSQL非常重要的学习和参考资料。为促进PostgreSQL在国内的普及，2013年12月PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3中文手册的基础上开启了9.3.1版本的手册翻译工作并于2015年7月翻译完成。之后又于2016年4月完成了9.4.4的翻译，绝大部分翻译工作由瀚高软件的韩悦悦和其他同事完成。9.5的翻译工作基于武汉大学的彭煜玮副教授独自翻译的《PostgreSQL 9.4.4文档》和社区之前翻译的《PostgreSQL9.4.4中文手册》。9.6基于彭煜玮副教授翻译的《PostgreSQL 9.6.0 文档》，Release Notes中9.6和9.5未变化的部分来自上一版的社区中文手册《PostgreSQL 9.5.3 中文手册》。10以后的手册都
-基于上一版中文手册翻译。
+PostgreSQL官方手册是PostgreSQL非常重要的学习和参考资料。为促进PostgreSQL在国内的普及，2013年12月PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3中文手册的基础上开启了9.3.1版本的手册翻译工作并于2015年7月翻译完成。之后又于2016年4月完成了9.4.4的翻译，绝大部分翻译工作由瀚高软件的韩悦悦和其他同事完成。9.5的翻译工作基于武汉大学的彭煜玮副教授独自翻译的《PostgreSQL 9.4.4文档》和社区之前翻译的《PostgreSQL9.4.4中文手册》。9.6基于彭煜玮副教授翻译的《PostgreSQL 9.6.0 文档》，Release Notes中9.6和9.5未变化的部分来自上一版的社区中文手册《PostgreSQL 9.5.3 中文手册》。10以后的手册都基于上一版中文手册翻译。
 
 ## 文档翻译群
 ### 1. QQ群
@@ -22,7 +21,7 @@ https://github.com/postgres-cn/pgdoc-cn
 https://github.com/postgres-cn/pgdoc-cn/wiki
 
 ## 分支管理
-master分支对于正在翻译的版本，当前是12.2，各个分支对应于PostgreSQL文档的版本如下。
+master分支对于正在翻译的版本，当前是13.1，各个分支对应于PostgreSQL文档的版本如下。
 
 - 9.3：9.3.1
 - 9.4：9.4.4
@@ -30,7 +29,8 @@ master分支对于正在翻译的版本，当前是12.2，各个分支对应于P
 - 9.6：9.6.0
 - 10：10.1
 - 11：11.2
-- master：12.2
+- 12：12.2
+- master：13.1
 
 ## 文档的编译
 
@@ -77,25 +77,22 @@ make html
 
 postgresql-10.1/doc/src/sgml/html/index.html
 
-## 编译生成PDF文件
+## 编译生成PDF等格式的离线文档
 
-执行以下步骤将生成PDF文件postgres-A4.pdf
+参考[PostgreSQL离线手册发布步骤](https://github.com/postgres-cn/pgdoc-cn/wiki/PostgreSQL离线手册发布步骤) 生成PDF等格式的离线文档
 
-	make -C postgresql-10.1/doc/src/sgml postgres-A4.po
-    cp postgresql-10.1/doc/src/sgml/postgres-A4.po pgdoc-cn/tools/fo2pdf/
-    cd pgdoc-cn/tools/fo2pdf/
-    sh fo2pdf.sh
+
 
 
 ## 在线中文手册
 - http://www.postgres.cn/docs/9.3  
-- http://www.postgres.cn/docs/9.3.4  
 - http://www.postgres.cn/docs/9.4  
 - http://www.postgres.cn/docs/9.5  
 - http://www.postgres.cn/docs/9.6  
 - http://www.postgres.cn/docs/10 
 - http://www.postgres.cn/docs/11 
-- http://www.postgres.cn/docs/12 
+- http://www.postgres.cn/docs/12
+- http://www.postgres.cn/docs/13 
 
 通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
 
@@ -120,7 +117,7 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 ## 其它
 1. Github仓库中的sgml文件编码是UTF8。
 2. Github仓库中的修正会由后台程序每隔十分钟自动反映到在线中文手册中。
-3. 如果Github仓库中的修正迟迟未能反映到在线中文手册，可能发生了编译错误，可通过查看[http://postgres.cn/docs/12/build.log](http://postgres.cn/docs/12/build.log)了解情况。
+3. 如果Github仓库中的修正迟迟未能反映到在线中文手册，可能发生了编译错误，可通过查看[http://postgres.cn/docs/13/build.log](http://postgres.cn/docs/13/build.log)了解情况。
 
 
 
