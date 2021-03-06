@@ -194,10 +194,23 @@ GetForeignRelSize(PlannerInfo *root,
      should be replaced if at all possible.  The function may also choose to
      update <literal>baserel-&gt;width</literal> if it can compute a better estimate
      of the average result row width.
+     (The initial value is based on column data types and on column
+     average-width values measured by the last <command>ANALYZE</command>.)
+     Also, this function may update <literal>baserel-&gt;tuples</literal> if
+     it can compute a better estimate of the foreign table's total row count.
+     (The initial value is
+     from <structname>pg_class</structname>.<structfield>reltuples</structfield>
+     which represents the total row count seen by the
+     last <command>ANALYZE</command>.)
     </para>
 ____________________________________________________________________________-->
     <para>
-     这个函数应该更新<literal>baserel-&gt;rows</literal>为表扫描根据限制条件完成了过滤后将返回的预期行数。<literal>baserel-&gt;rows</literal>的初始值只是一个常数的默认估计值，应该尽可能把它替换掉。如果该函数能够计算出一个平均结果行宽度的更好的估计值，该函数也可能选择更新<literal>baserel-&gt;width</literal>。
+     这个函数应该更新<literal>baserel-&gt;rows</literal>为表扫描根据限制条件完成了过滤后将返回的预期行数。
+     <literal>baserel-&gt;rows</literal>的初始值只是一个常数的默认估计值，应该尽可能把它替换掉。
+     如果该函数能够计算出一个平均结果行宽度的更好的估计值，该函数也可能选择更新<literal>baserel-&gt;width</literal>。
+     (初始值基于列数据类型和最后一个<command>ANALYZE</command>测量的列平均宽度值。)
+     此外，如果该函数能够更好地计算出外部表的总行数，则该函数可以更新<literal>baserel-&gt;tuples</literal>。
+     （初始值来自<structname>pg_class</structname>。<structfield>reltuples</structfield>表示最后一次<command>ANALYZE</command>看到的总行数。）
     </para>
 
 <!--==========================orignal english content==========================
@@ -292,13 +305,13 @@ ____________________________________________________________________________-->
     <para>
 <programlisting>
 ForeignScan *
-GetForeignPlan (PlannerInfo *root,
-                RelOptInfo *baserel,
-                Oid foreigntableid,
-                ForeignPath *best_path,
-                List *tlist,
-                List *scan_clauses,
-                Plan *outer_plan);
+GetForeignPlan(PlannerInfo *root,
+               RelOptInfo *baserel,
+               Oid foreigntableid,
+               ForeignPath *best_path,
+               List *tlist,
+               List *scan_clauses,
+               Plan *outer_plan);
 </programlisting>
 
      从选择的外部访问路径创建一个<structname>ForeignScan</structname>计划节点。这个函数在查询规划的末尾被调用。参数和<function>GetForeignRelSize</function>的一样，外加选中的<structname>ForeignPath</structname>（在前面由<function>GetForeignPaths</function>、<function>GetForeignJoinPaths</function>或者<function>GetForeignUpperPaths</function>产生）、被计划节点发出的目标列表以及计划节点强制的限制子句以及被<function>RecheckForeignScan</function>执行的复查所使用的<structname>ForeignScan</structname>的外子计划（如果该路径是用于一个连接而非基本关系，则<literal>foreigntableid</literal>是<literal>InvalidOid</literal>）。
@@ -468,7 +481,7 @@ EndForeignScan(ForeignScanState *node);
     </para>
 
    </sect2>
-   
+
    <sect2 id="fdw-callbacks-join-scan">
 <!--==========================orignal english content==========================
     <title>FDW Routines for Scanning Foreign Joins</title>
@@ -567,9 +580,8 @@ ____________________________________________________________________________-->
     <para>
      更多信息请见<xref linkend="fdw-planning"/>。
     </para>
-
    </sect2>
-   
+
    <sect2 id="fdw-callbacks-upper-planning">
 <!--==========================orignal english content==========================
     <title>FDW Routines for Planning Post-Scan/Join Processing</title>
@@ -719,7 +731,7 @@ AddForeignUpdateTargets(Query *parsetree,
      generate junk columns of these names.
      If the extra expressions are more complex than simple Vars, they
      must be run through <function>eval_const_expressions</function>
-     before adding them to the targetlist.
+     before adding them to the target list.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -1339,7 +1351,7 @@ ____________________________________________________________________________-->
     <para>
      如果<function>IsForeignRelUpdatable</function>指针被设置为<literal>NULL</literal>，而FDW提供了<function>ExecForeignInsert</function>、<function>ExecForeignUpdate</function>或<function>ExecForeignDelete</function>，则外部表分别被假定为可插入、可更新或可删除。只有在FDW支持某些表是可更新的而某些不是可更新的时候，才需要这个函数（即便如此，也允许在执行例程中抛出一个错误而不是在这个函数中检查。但是，这个函数被用来决定显示在<literal>information_schema</literal>视图中的可更新性）。
     </para>
-    
+
 <!--==========================orignal english content==========================
     <para>
      Some inserts, updates, and deletes to foreign tables can be optimized
@@ -1591,7 +1603,7 @@ ____________________________________________________________________________-->
     </para>
 
    </sect2>
-   
+
    <sect2 id="fdw-callbacks-row-locking">
 <!--==========================orignal english content==========================
     <title>FDW Routines for Row Locking</title>
@@ -1915,7 +1927,7 @@ ____________________________________________________________________________-->
     <para>
      如果<function>ExplainForeignModify</function>指针被设置为<literal>NULL</literal>，在<command>EXPLAIN</command>期间不会打印任何额外的信息。
     </para>
-    
+
 <!--==========================orignal english content==========================
     <para>
 <programlisting>
@@ -2027,8 +2039,10 @@ ____________________________________________________________________________-->
      如果提供，采样收集函数必须具有签名
 <programlisting>
 int
-AcquireSampleRowsFunc(Relation relation, int elevel,
-                      HeapTuple *rows, int targrows,
+AcquireSampleRowsFunc(Relation relation,
+                      int elevel,
+                      HeapTuple *rows,
+                      int targrows,
                       double *totalrows,
                       double *totaldeadrows);
 </programlisting>
@@ -2130,7 +2144,7 @@ ____________________________________________________________________________-->
     </para>
 
    </sect2>
-   
+
    <sect2 id="fdw-callbacks-parallel">
 <!--==========================orignal english content==========================
     <title>FDW Routines for Parallel Execution</title>
@@ -2337,7 +2351,7 @@ ReparameterizeForeignPathByChild(PlannerInfo *root, List *fdw_private,
     在把一个由给定子关系<literal>child_rel</literal>的最顶层父关系参数化的路径转换成由该子关系参数化的路径时会调用这个函数。该函数被用于重新参数化任意路径或者转化一个<structname>ForeignPath</structname>的给定<literal>fdw_private</literal>成员中保存的任意表达式节点。该回调可能会根据需要使用<literal>reparameterize_path_by_child</literal>、<literal>adjust_appendrel_attrs</literal>或者<literal>adjust_appendrel_attrs_multilevel</literal>。
    </para>
    </sect2>
-   
+
    </sect1>
 
    <sect1 id="fdw-helpers">
@@ -2734,7 +2748,7 @@ ____________________________________________________________________________-->
      作为一个例子，FDW可以标识某些<replaceable>foreign_variable</replaceable> <literal>=</literal>
      <replaceable>sub_expression</replaceable>形式的限制子句，它决定哪些可以使用由<replaceable>sub_expression</replaceable>给出的本地计算值在远程服务器上被执行。这样一个子句的实际标识应该在<function>GetForeignPaths</function>期间发生，因为它可能会影响路径的代价估计。路径的<structfield>fdw_private</structfield>域可能包括一个已标识的子句的<structname>RestrictInfo</structname>节点。然后<function>GetForeignPlan</function>将从<literal>scan_clauses</literal> 中移除该子句，但是将<replaceable>sub_expression</replaceable>加到<structfield>fdw_exprs</structfield>来保证它被揉成可执行的形式。它可能还将把控制信息放入到计划节点的<structfield>fdw_private</structfield>域来告诉执行函数在运行时要做什么。传递给远程服务器的查询将涉及类似<literal>WHERE <replaceable>foreign_variable</replaceable> = $1</literal>的东西，使用在运行时从<structfield>fdw_exprs</structfield>表达式树获得的参数值。
     </para>
-    
+
 <!--==========================orignal english content==========================
     <para>
      Any clauses removed from the plan node's qual list must instead be added
@@ -2798,7 +2812,7 @@ ____________________________________________________________________________-->
     <para>
      FDW应该总是只依靠表的限制子句构建至少一个路径。在连接查询中，它可能还会选择依靠连接子句构建路径，例如<replaceable>foreign_variable</replaceable> <literal>=</literal> <replaceable>local_variable</replaceable>。这样的子句将不会在<literal>baserel-&gt;baserestrictinfo</literal>中找到，但是必须出现在关系的连接列表中。使用这样一个子句的路径被称为一个<quote>参数化路径</quote>。它必须用一个合适的<literal>param_info</literal>值来标识其他被使用在选中的连接子句中的关系；使用<function>get_baserel_parampathinfo</function>来计算该值。在<function>GetForeignPlan</function>中，连接子句的<replaceable>local_variable</replaceable>部分将被加到<structfield>fdw_exprs</structfield>中，并且接着在运行时和一个普通限制子句一样工作。
     </para>
-    
+
 <!--==========================orignal english content==========================
     <para>
      If an FDW supports remote joins, <function>GetForeignJoinPaths</function> should
@@ -2815,7 +2829,7 @@ ____________________________________________________________________________-->
     <para>
      如果一个 FDW 支持远程连接，<function>GetForeignJoinPaths</function>应该和<function>GetForeignPaths</function>对基本表所作的那样为潜在的远程连接产生<structname>ForeignPath</structname>。有关想要进行的连接的信息可以以上述相同的方式传递给<function>GetForeignPlan</function>。不过，<structfield>baserestrictinfo</structfield>与连接关系无关，一个特定连接的相关连接子句将被作为一个独立的参数（<literal>extra-&gt;restrictlist</literal>）被传递给<function>GetForeignJoinPaths</function>。
     </para>
-    
+
 <!--==========================orignal english content==========================
     <para>
      An FDW might additionally support direct execution of some plan actions
