@@ -65,6 +65,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> SET DEFAULT <replaceable class="parameter">expression</replaceable>
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP DEFAULT
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> { SET | DROP } NOT NULL
+    ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP EXPRESSION [ IF EXISTS ]
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ]
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> { SET GENERATED { ALWAYS | BY DEFAULT } | SET <replaceable>sequence_option</replaceable> | RESTART [ [ WITH ] <replaceable class="parameter">restart</replaceable> ] } [...]
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP IDENTITY [ IF EXISTS ]
@@ -94,7 +95,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     SET WITHOUT OIDS
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable>
     SET { LOGGED | UNLOGGED }
-    SET ( <replaceable class="parameter">storage_parameter</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )
+    SET ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] )
     RESET ( <replaceable class="parameter">storage_parameter</replaceable> [, ... ] )
     INHERIT <replaceable class="parameter">parent_table</replaceable>
     NO INHERIT <replaceable class="parameter">parent_table</replaceable>
@@ -179,6 +180,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> SET DEFAULT <replaceable class="parameter">expression</replaceable>
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP DEFAULT
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> { SET | DROP } NOT NULL
+    ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP EXPRESSION [ IF EXISTS ]
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <replaceable>sequence_options</replaceable> ) ]
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> { SET GENERATED { ALWAYS | BY DEFAULT } | SET <replaceable>sequence_option</replaceable> | RESTART [ [ WITH ] <replaceable class="parameter">restart</replaceable> ] } [...]
     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP IDENTITY [ IF EXISTS ]
@@ -208,7 +210,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
     SET WITHOUT OIDS
     SET TABLESPACE <replaceable class="parameter">new_tablespace</replaceable>
     SET { LOGGED | UNLOGGED }
-    SET ( <replaceable class="parameter">storage_parameter</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )
+    SET ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] )
     RESET ( <replaceable class="parameter">storage_parameter</replaceable> [, ... ] )
     INHERIT <replaceable class="parameter">parent_table</replaceable>
     NO INHERIT <replaceable class="parameter">parent_table</replaceable>
@@ -278,9 +280,9 @@ ____________________________________________________________________________-->
   <para>
    <command>ALTER TABLE</command> changes the definition of an existing table.
    There are several subforms described below. Note that the lock level required
-   may differ for each subform. An <literal>ACCESS EXCLUSIVE</literal> lock is held
-   unless explicitly noted. When multiple subcommands are listed, the lock
-   held will be the strictest one required from any subcommand.
+   may differ for each subform. An <literal>ACCESS EXCLUSIVE</literal> lock is
+   acquired unless explicitly noted. When multiple subcommands are given, the
+   lock acquired will be the strictest one required by any subcommand.
 
   <variablelist>
    <varlistentry>
@@ -339,10 +341,11 @@ ____________________________________________________________________________-->
     <term><literal>SET</literal>/<literal>DROP DEFAULT</literal></term>
     <listitem>
      <para>
-      These forms set or remove the default value for a column.
-      Default values only apply in subsequent <command>INSERT</command>
-      or <command>UPDATE</command> commands; they do not cause rows already in the
-      table to change.
+      These forms set or remove the default value for a column (where
+      removal is equivalent to setting the default value to NULL).  The new
+      default value will only apply in subsequent <command>INSERT</command>
+      or <command>UPDATE</command> commands; it does not cause rows already
+      in the table to change.
      </para>
     </listitem>
    </varlistentry>
@@ -379,6 +382,23 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
+    <term><literal>DROP EXPRESSION [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>
+      This form turns a stored generated column into a normal base column.
+      Existing data in the columns is retained, but future changes will no
+      longer apply the generation expression.
+     </para>
+
+     <para>
+      If <literal>DROP EXPRESSION IF EXISTS</literal> is specified and the
+      column is not a stored generated column, no error is thrown.  In this
+      case a notice is issued instead.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><literal>ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY</literal></term>
     <term><literal>SET GENERATED { ALWAYS | BY DEFAULT }</literal></term>
     <term><literal>DROP IDENTITY [ IF EXISTS ]</literal></term>
@@ -387,6 +407,10 @@ ____________________________________________________________________________-->
       These forms change whether a column is an identity column or change the
       generation attribute of an existing identity column.
       See <xref linkend="sql-createtable"/> for details.
+      Like <literal>SET DEFAULT</literal>, these forms only affect the
+      behavior of subsequent <command>INSERT</command>
+      and <command>UPDATE</command> commands; they do not cause rows
+      already in the table to change.
      </para>
 
      <para>
@@ -501,8 +525,8 @@ ____________________________________________________________________________-->
     <term><literal>ADD <replaceable class="parameter">table_constraint</replaceable> [ NOT VALID ]</literal></term>
     <listitem>
      <para>
-      This form adds a new constraint to a table using the same syntax as
-      <xref linkend="sql-createtable"/>, plus the option <literal>NOT
+      This form adds a new constraint to a table using the same constraint 
+      syntax as <xref linkend="sql-createtable"/>, plus the option <literal>NOT
       VALID</literal>, which is currently only allowed for foreign key
       and CHECK constraints.
      </para>
@@ -519,15 +543,19 @@ ____________________________________________________________________________-->
       database will not assume that the constraint holds for all rows in
       the table, until it is validated by using the <literal>VALIDATE
       CONSTRAINT</literal> option.
-      See <xref linkend="sql-altertable-notes"
-      endterm="sql-altertable-notes-title"/> below for more information
+      See <xref linkend="sql-altertable-notes"/> below for more information
       about using the <literal>NOT VALID</literal> option.
      </para>
 
      <para>
-      Addition of a foreign key constraint requires a
-      <literal>SHARE ROW EXCLUSIVE</literal> lock on the referenced table,
-      in addition to the lock on the table receiving the constraint.
+      Although most forms of <literal>ADD
+      <replaceable class="parameter">table_constraint</replaceable></literal>
+      require an <literal>ACCESS EXCLUSIVE</literal> lock, <literal>ADD
+      FOREIGN KEY</literal> requires only a <literal>SHARE ROW
+      EXCLUSIVE</literal> lock.  Note that <literal>ADD FOREIGN KEY</literal>
+      also acquires a <literal>SHARE ROW EXCLUSIVE</literal> lock on the
+      referenced table, in addition to the lock on the table on which the
+      constraint is declared.
      </para>
 
      <para>
@@ -613,8 +641,7 @@ ____________________________________________________________________________-->
       previously created as <literal>NOT VALID</literal>, by scanning the
       table to ensure there are no rows for which the constraint is not
       satisfied.  Nothing happens if the constraint is already marked valid.
-      (See <xref linkend="sql-altertable-notes"
-      endterm="sql-altertable-notes-title"/> below for an explanation of the
+      (See <xref linkend="sql-altertable-notes"/> below for an explanation of the
       usefulness of this command.)
      </para>
     </listitem>
@@ -706,8 +733,8 @@ ____________________________________________________________________________-->
       These forms control the application of row security policies belonging
       to the table.  If enabled and no policies exist for the table, then a
       default-deny policy is applied.  Note that policies can exist for a table
-      even if row level security is disabled - in this case, the policies will
-      NOT be applied and the policies will be ignored.
+      even if row level security is disabled.  In this case, the policies will
+      <emphasis>not</emphasis> be applied and the policies will be ignored.
       See also
       <xref linkend="sql-createpolicy"/>.
      </para>
@@ -780,7 +807,7 @@ ____________________________________________________________________________-->
       When applied to a partitioned table, nothing is moved, but any
       partitions created afterwards with
       <command>CREATE TABLE PARTITION OF</command> will use that tablespace,
-      unless the <literal>TABLESPACE</literal> clause is used to override it.
+      unless overridden by a <literal>TABLESPACE</literal> clause.
      </para>
 
      <para>
@@ -813,12 +840,12 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
-    <term><literal>SET ( <replaceable class="parameter">storage_parameter</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )</literal></term>
+    <term><literal>SET ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] )</literal></term>
     <listitem>
      <para>
       This form changes one or more storage parameters for the table.  See
-      <xref linkend="sql-createtable-storage-parameters"
-      endterm="sql-createtable-storage-parameters-title"/>
+      <xref linkend="sql-createtable-storage-parameters"/> in the
+      <xref linkend="sql-createtable"/> documentation
       for details on the available parameters.  Note that the table contents
       will not be modified immediately by this command; depending on the
       parameter you might need to rewrite the table to get the desired effects.
@@ -981,7 +1008,9 @@ ____________________________________________________________________________-->
       Note that if the existing table is a foreign table, it is currently not
       allowed to attach the table as a partition of the target table if there
       are <literal>UNIQUE</literal> indexes on the target table.  (See also
-      <xref linkend="sql-createforeigntable"/>.)
+      <xref linkend="sql-createforeigntable"/>.)  For each user-defined
+      row-level trigger that exists in the target table, a corresponding one
+      is created in the attached table.
      </para>
 
      <para>
@@ -998,7 +1027,7 @@ ____________________________________________________________________________-->
       from the parent table will be created in the partition, if they don't
       already exist.
       If any of the <literal>CHECK</literal> constraints of the table being
-      attached is marked <literal>NO INHERIT</literal>, the command will fail;
+      attached are marked <literal>NO INHERIT</literal>, the command will fail;
       such constraints must be recreated without the
       <literal>NO INHERIT</literal> clause.
      </para>
@@ -1050,10 +1079,11 @@ ____________________________________________________________________________-->
     <term><literal>DETACH PARTITION</literal> <replaceable class="parameter">partition_name</replaceable></term>
     <listitem>
      <para>
-      This form detaches specified partition of the target table.  The detached
+      This form detaches the specified partition of the target table.  The detached
       partition continues to exist as a standalone table, but no longer has any
       ties to the table from which it was detached.  Any indexes that were
-      attached to the target table's indexes are detached.
+      attached to the target table's indexes are detached.  Any triggers that
+      were created as clones of those in the target table are removed.
      </para>
     </listitem>
    </varlistentry>
@@ -1064,8 +1094,8 @@ ____________________________________________________________________________-->
   <para>
    <command>ALTER TABLE</command>更改一个现有表的定义。下文描述了
    几种形式。注意每一种形式所要求的锁级别可能不同。如果没有明确说明，将会
-   持有一个<literal>ACCESS EXCLUSIVE</literal>所。当列出多个子命令时，所
-   持有的锁将是子命令所要求的最严格的那一个。
+   获得一个<literal>ACCESS EXCLUSIVE</literal>锁。当给出多个子命令时，获得
+   的锁将是子命令所要求的最严格的那一个。
 
   <variablelist>
    <varlistentry>
@@ -1112,9 +1142,9 @@ ____________________________________________________________________________-->
     <term><literal>SET</literal>/<literal>DROP DEFAULT</literal></term>
     <listitem>
      <para>
-      这些形式为一列设置或者移除默认值。默认值只在后续的
-      <command>INSERT</command>或<command>UPDATE</command>命令中生效，
-      它们不会导致已经在表中的行改变。
+      这些表单设置或删除列的默认值（其中删除等同于将默认值设置为NULL）。
+      新的默认值仅适用于后续的<command>INSERT</command>或
+      <command>UPDATE</command>命令； 它不会导致表中已有的行发生更改。
      </para>
     </listitem>
    </varlistentry>
@@ -1138,12 +1168,28 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
+    <term><literal>DROP EXPRESSION [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>
+      此表单将存储的生成的列转换为普通的基本列。列中的现有数据将会保留，
+      但未来的更改将不会应用于生成的表达式。
+     </para>
+
+     <para>
+      如果指定了<literal>DROP EXPRESSION IF EXISTS</literal>，并且该列不是存储的已生成列，不会抛出任何错误。
+      在这种情况下，将发出通知。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
     <term><literal>ADD GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY</literal></term>
     <term><literal>SET GENERATED { ALWAYS | BY DEFAULT }</literal></term>
     <term><literal>DROP IDENTITY [ IF EXISTS ]</literal></term>
     <listitem>
      <para>
       这些形式更改一列是否是一个标识列，或者是更改一个已有的标识列的产生属性。详情请参考<xref linkend="sql-createtable"/>。
+      像<literal>SET DEFAULT</literal>一样，这些形式仅影响随后的<command>INSERT</command>和<command>UPDATE</command>命令的行为。 它们不会导致表中已有的行发生更改。
      </para>
 
      <para>
@@ -1236,21 +1282,22 @@ ____________________________________________________________________________-->
     <term><literal>ADD <replaceable class="parameter">table_constraint</replaceable> [ NOT VALID ]</literal></term>
     <listitem>
      <para>
-      这种形式使用和<xref linkend="sql-createtable"/>相同的语法外加
+      这种形式使用和<xref linkend="sql-createtable"/>相同的约束语法外加
       <literal>NOT VALID</literal>选项为一个表增加一个新的约束，该选项
       当前只被允许用于外键和 CHECK 约束。
-     </para>	  
-	  
-     <para>	  
+     </para>      
+      
+     <para>   
       通常，此窗体将导致对表进行扫描，以验证表中的所有现有行是否满足新约束。
       但是如果使用了 <literal>NOT VALID</literal>选项 ，则跳过此可能很漫长的扫描。
       该约束仍将被强制到后续的插入和删除上（也就是说，在外键的情况下如果在被引用表中没有一个匹配的行，操作会失败；或者如果新行不匹配指定的检查条件，操作也会失败）。
       但是数据库不会假定约束对该表中的所有行都成立，直到通过使用<literal>VALIDATE CONSTRAINT</literal>选项对它进行验证。
-      参见下述 <xref linkend="sql-altertable-notes" endterm="sql-altertable-notes-title"/> 以了解关于使用<literal>NOT VALID</literal>选项的更多信息。
+      参见下述 <xref linkend="sql-altertable-notes"/> 以了解关于使用<literal>NOT VALID</literal>选项的更多信息。
      </para>
 
      <para>
-      除了接收约束的表上的锁外，外键约束的增加要求在被引用表上的一个<literal>SHARE ROW EXCLUSIVE</literal>锁。
+      尽管大多数形式的<literal>ADD<replaceable class="parameter">table_constraint</replaceable></literal>
+      都需要<literal>ACCESS EXCLUSIVE</literal>锁，但<literal>ADD FOREIGN KEY</literal>仅需要<literal>SHARE ROW EXCLUSIVE </literal>锁。 请注意，除了声明约束的表上的锁之外，<literal>ADD FOREIGN KEY</literal>还获得了对引用表的<literal>SHARE ROW EXCLUSIVE</literal>锁。
      </para>
 
      <para>
@@ -1324,7 +1371,7 @@ ____________________________________________________________________________-->
      <para>
       这种形式验证之前创建为<literal>NOT VALID</literal>的外键或检查约束，
       它会扫描表来确保对于该约束没有行不满足约束。如果约束已经被标记为合法，则什么也不会发生。
-      (参见下述 <xref linkend="sql-altertable-notes" endterm="sql-altertable-notes-title"/> 以了解此命令用途的说明。)
+      (参见下述 <xref linkend="sql-altertable-notes"/> 以了解此命令用途的说明。)
      </para>
     </listitem>
    </varlistentry>
@@ -1395,7 +1442,7 @@ ____________________________________________________________________________-->
      <para>
       这些形式控制属于该表的行安全性策略的应用。如果被启用并且该表上
       不存在策略，则将应用一个默认否定的策略。注意即使行级安全性被禁
-      用，在表上还是可以存在策略。在这种情况下，这些策略将 不 会被应用
+      用，在表上还是可以存在策略。在这种情况下，这些策略将<emphasis>不</emphasis>会被应用
       并且会被忽略。另见<xref linkend="sql-createpolicy"/>。
      </para>
     </listitem>
@@ -1456,7 +1503,8 @@ ____________________________________________________________________________-->
       这种形式把该表的表空间更改为指定的表空间并且把该表相关联的数据文件
       移动到新的表空间中。表上的索引（如果有）不会被移动，但是它们可以用
       额外的<literal>SET TABLESPACE</literal>命令单独移动。
-      当应用于分区表时，不会移动，但之后用<command>CREATE TABLE PARTITION OF</command>创建的任何分区将使用该表空间，除非<literal>TABLESPACE</literal>子句用于重写它。
+      当应用于分区表时，不会移动任何内容，但之后用<command>CREATE TABLE PARTITION OF</command>创建的
+      任何分区将使用该表空间，除非被<literal>TABLESPACE</literal>子句覆盖。
      </para>
 
      <para>
@@ -1485,12 +1533,12 @@ ____________________________________________________________________________-->
    </varlistentry>
 
    <varlistentry>
-    <term><literal>SET ( <replaceable class="parameter">storage_parameter</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )</literal></term>
+    <term><literal>SET ( <replaceable class="parameter">storage_parameter</replaceable> [= <replaceable class="parameter">value</replaceable>] [, ... ] )</literal></term>
     <listitem>
      <para>
       这种形式为该表更改一个或者更多存储参数。可用的参数请见
-      <xref linkend="sql-createtable-storage-parameters"
-      endterm="sql-createtable-storage-parameters-title"/>。注意这个
+      <xref linkend="sql-createtable-storage-parameters"/>的
+      <xref linkend="sql-createtable"/>。注意这个
       命令将不会立刻修改表内容，这取决于重写表以得到想要的结果可能需要的
       参数。可以用<link linkend="sql-vacuum">VACUUM
       FULL</link>、<xref linkend="sql-cluster"/>或者
@@ -1615,7 +1663,9 @@ ____________________________________________________________________________-->
      <para>
       这种形式把一个已有表（自身也可能被分区）作为一个分区挂接到目标表。该表可以为特定的值使用<literal>FOR VALUES</literal>挂接为分区，或者用<literal>DEFAULT</literal>挂接为一个默认分区。
       对于目标表中的每一个索引，在被挂接的表上都将创建一个响应的索引，如果已经存在等效的索引，该索引将被挂接到目标表的索引，就像执行了<command>ALTER INDEX ATTACH PARTITION</command>一样。
-      请注意，如果现有表是外表，如果目标表上有<literal>UNIQUE</literal>索引，则当前不允许将表作为目标表的分区附加。(参见 <xref linkend="sql-createforeigntable"/>.)
+      请注意，如果现有表是外表，如果目标表上有<literal>UNIQUE</literal>索引，
+      则当前不允许将表作为目标表的分区附加。(参见 <xref linkend="sql-createforeigntable"/>.)
+      对于目标表中存在的每个用户定义的行级触发器，将在附加表中创建一个对应的触发器。
      </para>
 
      <para>
@@ -1648,6 +1698,7 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       这种形式会分离目标表的指定分区。被分离的分区继续作为独立的表存在，但是与它之前挂接的表不再有任何联系。任何被挂接到目标表索引的索引也会被分离。
+      任何作为目标表中那些表的副本创建的表也会被删除。
      </para>
     </listitem>
    </varlistentry>
@@ -2115,11 +2166,11 @@ ____________________________________________________________________________-->
     </variablelist>
  </refsect1>
 
- <refsect1 id="sql-altertable-notes">
+ <refsect1 id="sql-altertable-notes" xreflabel="Notes">
 <!--==========================orignal english content==========================
-  <title id="sql-altertable-notes-title">Notes</title>
+  <title>Notes</title>
 ____________________________________________________________________________-->
-  <title id="sql-altertable-notes-title">Notes</title>
+  <title>Notes</title>
 
 <!--==========================orignal english content==========================
    <para>
@@ -2412,6 +2463,32 @@ ____________________________________________________________________________-->
 <programlisting>
 ALTER TABLE distributors ADD COLUMN address varchar(30);
 </programlisting>
+   That will cause all existing rows in the table to be filled with null
+   values for the new column.
+  </para>
+
+  <para>
+   To add a column with a non-null default:
+<programlisting>
+ALTER TABLE measurements
+  ADD COLUMN mtime timestamp with time zone DEFAULT now();
+</programlisting>
+   Existing rows will be filled with the current time as the value of the
+   new column, and then new rows will receive the time of their insertion.
+  </para>
+
+  <para>
+   To add a column and fill it with a value different from the default to
+   be used later:
+<programlisting>
+ALTER TABLE transactions
+  ADD COLUMN status varchar(30) DEFAULT 'old',
+  ALTER COLUMN status SET default 'current';
+</programlisting>
+   Existing rows will be filled with <literal>old</literal>, but then
+   the default for subsequent commands will be <literal>current</literal>.
+   The effects are the same as if the two sub-commands had been issued
+   in separate <command>ALTER TABLE</command> commands.
   </para>
 ____________________________________________________________________________-->
   <para>
@@ -2419,6 +2496,27 @@ ____________________________________________________________________________-->
 <programlisting>
 ALTER TABLE distributors ADD COLUMN address varchar(30);
 </programlisting>
+   这将导致表中所有现有行都用新列的空值填充。
+  </para>
+
+  <para>
+   要添加默认值为非空的列：
+<programlisting>
+ALTER TABLE measurements
+  ADD COLUMN mtime timestamp with time zone DEFAULT now();
+</programlisting>
+   现有行将以当前时间填充为新列的值，然后新行直将使用其插入时间。
+  </para>
+
+  <para>
+   要添加一列并用不同于默认值的值填充它：
+<programlisting>
+ALTER TABLE transactions
+  ADD COLUMN status varchar(30) DEFAULT 'old',
+  ALTER COLUMN status SET default 'current';
+</programlisting>
+   现有行将用<literal>old</literal>填充，但是随后的命令的默认值将是<literal>current</literal>。 
+   其效果与在单独的<command>ALTER TABLE</command>命令中发出两个子命令的效果相同。
   </para>
 
 <!--==========================orignal english content==========================
