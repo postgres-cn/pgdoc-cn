@@ -654,17 +654,34 @@ ____________________________________________________________________________-->
    <listitem>
 <!--==========================orignal english content==========================
     <para>
-     Replication is only possible from base tables to base tables.  That is,
-     the tables on the publication and on the subscription side must be normal
-     tables, not views, materialized views, partition root tables, or foreign
-     tables.  In the case of partitions, you can therefore replicate a
-     partition hierarchy one-to-one, but you cannot currently replicate to a
-     differently partitioned setup.  Attempts to replicate tables other than
-     base tables will result in an error.
+     Replication is only supported by tables, including partitioned tables.
+     Attempts to replicate other types of relations, such as views, materialized
+     views, or foreign tables, will result in an error.
     </para>
 ____________________________________________________________________________-->
     <para>
-     复制只能从基表到基表。也就是说，发布端和订阅端上的表都必须是普通表，而不是视图、物化视图、分区根表或者外部表。如果是分区，可以一一对应地复制分区层次，但当前不能复制成一种不同的分区设置。尝试复制不是基表的表将会导致错误。
+     只有表支持复制，包括分区表。试图复制其他类型的关系，例如视图、物化视图或外部表，将会导致错误。
+    </para>
+   </listitem>
+
+   <listitem>
+<!--==========================orignal english content==========================
+    <para>
+     When replicating between partitioned tables, the actual replication
+     originates, by default, from the leaf partitions on the publisher, so
+     partitions on the publisher must also exist on the subscriber as valid
+     target tables. (They could either be leaf partitions themselves, or they
+     could be further subpartitioned, or they could even be independent
+     tables.)  Publications can also specify that changes are to be replicated
+     using the identity and schema of the partitioned root table instead of
+     that of the individual leaf partitions in which the changes actually
+     originate (see <xref linkend="sql-createpublication"/>).
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在分区表之间进行复制时，实际的复制来源，缺省情况下，源自发布者上的叶子分区，因此发布者上的分区也必须作为有效的目标表存在于订阅者上。
+     (它们可以是叶分区本身，也可以是进一步子分区段，甚至可以是独立的表。)
+     发布还可以指定使用已分区根表的标识和模式来复制更改，而不是使用实际产生更改的各个叶分区的标识和模式(参见<xref linkend="sql-createpublication"/>)。
     </para>
    </listitem>
   </itemizedlist>
@@ -781,13 +798,15 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    The monitoring information about subscription is visible in
-   <link linkend="pg-stat-subscription"><literal>pg_stat_subscription</literal></link>.
+   <link linkend="monitoring-pg-stat-subscription">
+   <structname>pg_stat_subscription</structname></link>.
    This view contains one row for every subscription worker.  A subscription
    can have zero or more active subscription workers depending on its state.
   </para>
 ____________________________________________________________________________-->
   <para>
-   有关订阅的监控信息在<link linkend="pg-stat-subscription"><literal>pg_stat_subscription</literal></link>中可以看到。每一个订阅工作者在这个视图都有一行。一个订阅能有零个或者多个活跃订阅工作者取决于它的状态。
+   有关订阅的监控信息在<link linkend="monitoring-pg-stat-subscription"><structname>pg_stat_subscription</structname></link>中可以看到。
+   每一个订阅工作者在这个视图都有一行。一个订阅能有零个或者多个活跃订阅工作者取决于它的状态。
   </para>
 
 <!--==========================orignal english content==========================
@@ -812,14 +831,40 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   The role used for the replication connection must have
-   the <literal>REPLICATION</literal> attribute (or be a superuser).  Access for the role must be
-   configured in <filename>pg_hba.conf</filename> and it must have the
-   <literal>LOGIN</literal> attribute.
+   A user able to modify the schema of subscriber-side tables can execute
+   arbitrary code as a superuser.  Limit ownership
+   and <literal>TRIGGER</literal> privilege on such tables to roles that
+   superusers trust.  Moreover, if untrusted users can create tables, use only
+   publications that list tables explicitly.  That is to say, create a
+   subscription <literal>FOR ALL TABLES</literal> only when superusers trust
+   every user permitted to create a non-temp table on the publisher or the
+   subscriber.
   </para>
 ____________________________________________________________________________-->
   <para>
-   用于复制连接的角色必须有<literal>REPLICATION</literal>属性（或者是一个超级用户）。该角色的访问必须被配置在<filename>pg_hba.conf</filename>中，并且它必须有<literal>LOGIN</literal>属性。
+   能够修改订阅者侧模式的用户可以作为超级用户执行任意代码。将这些表上的所有权和<literal>TRIGGER</literal>特权限制为超级用户信任的角色。
+   此外，如果不受信任的用户可以创建表，则只使用显式列出表的发布。
+   也就是说，只有当超级用户信任允许在发布者或订阅者上创建非临时表的所有用户时，才创建<literal>FOR ALL TABLES</literal>的订阅。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   The role used for the replication connection must have
+   the <literal>REPLICATION</literal> attribute (or be a superuser).  If the
+   role lacks <literal>SUPERUSER</literal> and <literal>BYPASSRLS</literal>,
+   publisher row security policies can execute.  If the role does not trust
+   all table owners, include <literal>options=-crow_security=off</literal> in
+   the connection string; if a table owner then adds a row security policy,
+   that setting will cause replication to halt rather than execute the policy.
+   Access for the role must be configured in <filename>pg_hba.conf</filename>
+   and it must have the <literal>LOGIN</literal> attribute.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   用于复制连接的角色必须具有<literal>REPLICATION</literal>属性(或者是超级用户)。
+   如果角色缺少<literal>SUPERUSER</literal> 和 <literal>BYPASSRLS</literal>，发布者的行安全策略可以执行。
+   如果角色不信任全部表所有者，则在连接字符串中包含<literal>options=-crow_security=off</literal>;如果表所有者随后添加行安全策略，则该设置将导致复制中断，而不是执行该策略。
+   角色的访问权限必须在<filename>pg_hba.conf</filename>中配置，并且必须具有<literal>LOGIN</literal>属性。
   </para>
 
 <!--==========================orignal english content==========================
