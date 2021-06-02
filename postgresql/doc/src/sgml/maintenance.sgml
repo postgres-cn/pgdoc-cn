@@ -706,6 +706,7 @@ ____________________________________________________________________________-->
      和<literal>FrozenTransactionId</literal>相似，这个特殊的 XID 被认为比所有正常 XID 的年龄都要老。
     </para>
    </note>
+
 <!--==========================orignal english content==========================
    <para>
     <xref linkend="guc-vacuum-freeze-min-age"/>
@@ -920,14 +921,13 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    If for some reason autovacuum fails to clear old XIDs from a table,
-    the system will begin to emit warning messages like this when the
-    database's oldest XIDs reach ten million transactions from the wraparound
-    point:
+    If for some reason autovacuum fails to clear old XIDs from a table, the
+    system will begin to emit warning messages like this when the database's
+    oldest XIDs reach eleven million transactions from the wraparound point:
 
 <programlisting>
-WARNING:  database "mydb" must be vacuumed within 177009986 transactions
-HINT:  To avoid a database shutdown, execute a database-wide VACUUM in "mydb".
+WARNING:  database "mydb" must be vacuumed within 10985967 transactions
+HINT:  To avoid a database shutdown, execute a database-wide VACUUM in that database.
 </programlisting>
 
     (A manual <command>VACUUM</command> should fix the problem, as suggested by the
@@ -955,11 +955,11 @@ HINT:  Stop the postmaster and vacuum that database in single-user mode.
    </para>
 ____________________________________________________________________________-->
    <para>
-    如果出于某种原因自动清理无法从一个表中清除旧的 XID，当数据库的最旧 XID 和回卷点之间达到 1 千万个事务时，系统将开始发出这样的警告消息：
+    如果出于某种原因自动清理无法从一个表中清除旧的 XID，当数据库的最旧 XID 和回卷点之间达到 1 千一百万个事务时，系统将开始发出这样的警告消息：
 
 <programlisting>
-WARNING:  database "mydb" must be vacuumed within 177009986 transactions
-HINT:  To avoid a database shutdown, execute a database-wide VACUUM in "mydb".
+WARNING:  database "mydb" must be vacuumed within 10985967 transactions
+HINT:  To avoid a database shutdown, execute a database-wide VACUUM in that database.
 </programlisting>
 
     （如该示意所建议的，一次手动的<command>VACUUM</command>应该会修复该问题；但是注意该次<command>VACUUM</command>必须由一个超级用户来执行，否则它将无法处理系统目录并且因而不能推进数据库的<structfield>datfrozenxid</structfield>）。如果这些警告被忽略，一旦距离回卷点只剩下 1 百万个事务时，该系统将会关闭并且拒绝开始任何新的事务：
@@ -1057,7 +1057,7 @@ ____________________________________________________________________________-->
      <structname>pg_class</structname>.<structfield>relminmxid</structfield>
      上使用<function>mxid_age()</function>来找到它的年龄。
     </para>
-  
+
 <!--==========================orignal english content==========================
     <para>
      Aggressive <command>VACUUM</command> scans, regardless of
@@ -1203,15 +1203,6 @@ vacuum threshold = vacuum base threshold + vacuum scale factor * number of tuple
     <xref linkend="guc-autovacuum-vacuum-scale-factor"/>,
     and the number of tuples is
     <structname>pg_class</structname>.<structfield>reltuples</structfield>.
-    The number of obsolete tuples is obtained from the statistics
-    collector; it is a semi-accurate count updated by each
-    <command>UPDATE</command> and <command>DELETE</command> operation.  (It
-    is only semi-accurate because some information might be lost under heavy
-    load.)  If the <structfield>relfrozenxid</structfield> value of the table is more
-    than <varname>vacuum_freeze_table_age</varname> transactions old, an aggressive
-    vacuum is performed to freeze old tuples and advance
-    <structfield>relfrozenxid</structfield>; otherwise, only pages that have been modified
-    since the last vacuum are scanned.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1222,7 +1213,51 @@ ____________________________________________________________________________-->
     其中清理基本阈值为<xref linkend="guc-autovacuum-vacuum-threshold"/>，
     清理缩放系数为<xref linkend="guc-autovacuum-vacuum-scale-factor"/>，
     元组数为<structname>pg_class</structname>.<structfield>reltuples</structfield>。
-    失效元组的数量从统计信息收集器获得，它是一个由每个<command>UPDATE</command>和<command>DELETE</command>命令更新的半准确的计数（它只是半准确，是因为在高负载的情况下某些信息可能会丢失）。如果表的<structfield>relfrozenxid</structfield>值比<varname>vacuum_freeze_table_age</varname>事务年龄更大，整个表将被扫描以冻结旧元组并增长<structfield>relfrozenxid</structfield>，否则只有从上次清理以来被修改的页面会被扫描。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The table is also vacuumed if the number of tuples inserted since the last
+    vacuum has exceeded the defined insert threshold, which is defined as:
+<programlisting>
+vacuum insert threshold = vacuum base insert threshold + vacuum insert scale factor * number of tuples
+</programlisting>
+    where the vacuum insert base threshold is
+    <xref linkend="guc-autovacuum-vacuum-insert-threshold"/>,
+    and vacuum insert scale factor is
+    <xref linkend="guc-autovacuum-vacuum-insert-scale-factor"/>.
+    Such vacuums may allow portions of the table to be marked as
+    <firstterm>all visible</firstterm> and also allow tuples to be frozen, which
+    can reduce the work required in subsequent vacuums.
+    For tables which receive <command>INSERT</command> operations but no or
+    almost no <command>UPDATE</command>/<command>DELETE</command> operations,
+    it may be beneficial to lower the table's
+    <xref linkend="reloption-autovacuum-freeze-min-age"/> as this may allow
+    tuples to be frozen by earlier vacuums.  The number of obsolete tuples and
+    the number of inserted tuples are obtained from the statistics collector;
+    it is a semi-accurate count updated by each <command>UPDATE</command>,
+    <command>DELETE</command> and <command>INSERT</command> operation.  (It is
+    only semi-accurate because some information might be lost under heavy
+    load.)  If the <structfield>relfrozenxid</structfield> value of the table
+    is more than <varname>vacuum_freeze_table_age</varname> transactions old,
+    an aggressive vacuum is performed to freeze old tuples and advance
+    <structfield>relfrozenxid</structfield>; otherwise, only pages that have been modified
+    since the last vacuum are scanned.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果自上次清理以来插入的元组数量超过了定义的插入阈值，表也会被清理，该阈值定义为:
+<programlisting>
+清理插入阈值 = 清理基础插入阈值 + 清理插入缩放系数 * 元组数
+</programlisting>
+    清理插入基础阈值为<xref linkend="guc-autovacuum-vacuum-insert-threshold"/>，清理插入缩放系数为<xref linkend="guc-autovacuum-vacuum-insert-scale-factor"/>。
+    这样的清理可以允许部分的表被标识为<firstterm>all visible</firstterm>，并且也可以允许元组被冻结，可以减小后续清理的工作需要。
+    对于可以接收<command>INSERT</command>操作但是不能或几乎不能<command>UPDATE</command>/<command>DELETE</command>操作的表，
+    可能会从降低表的<xref linkend="reloption-autovacuum-freeze-min-age"/>中受益，因为这可能允许元组在早期清理中被冻结。
+    废弃元组的数量和插入元组的数量可从统计收集器中获得；它是一个半精确的计数，由每个<command>UPDATE</command>、<command>DELETE</command> 和 <command>INSERT</command> 操作进行更新。
+    (它只是半精确的，因为一些信息可能会在重负载情况下丢失。)
+    如果表的<structfield>relfrozenxid</structfield>值大于<varname>vacuum_freeze_table_age</varname> 事务老的，
+    执行一个主动的清理来冻结旧的元组，并推进<structfield>relfrozenxid</structfield>;否则，只有上次清理以后修改过的页面被扫描。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1259,8 +1294,7 @@ ____________________________________________________________________________-->
     The default thresholds and scale factors are taken from
     <filename>postgresql.conf</filename>, but it is possible to override them
     (and many other autovacuum control parameters) on a per-table basis; see
-    <xref linkend="sql-createtable-storage-parameters"
-    endterm="sql-createtable-storage-parameters-title"/> for more information.
+    <xref linkend="sql-createtable-storage-parameters"/> for more information.
     If a setting has been changed via a table's storage parameters, that value
     is used when processing that table; otherwise the global settings are
     used. See <xref linkend="runtime-config-autovacuum"/> for more details on
@@ -1268,12 +1302,10 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    默认的阈值和缩放系数都取自于<filename>postgresql.conf</filename>，
-    但是可以为每一个表重写它们(和许多其他自动清理控制参数)，
-    详情参见<xref linkend="sql-createtable-storage-parameters"  
-    endterm="sql-createtable-storage-parameters-title"/>。
-    如果一个设置已经通过一个表的存储参数修改，那么在处理该表时使用该值，
-    否则使用全局设置。全局设置请参阅<xref linkend="runtime-config-autovacuum"/>。
+    默认的阈值和缩放系数都取自于<filename>postgresql.conf</filename>，但是可以为每一个表重写它们(和许多其他自动清理控制参数)，
+    详情参见<xref linkend="sql-createtable-storage-parameters"/>。
+    如果一个设置已经通过一个表的存储参数修改，那么在处理该表时使用该值，否则使用全局设置。
+    全局设置请参阅<xref linkend="runtime-config-autovacuum"/>。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1506,7 +1538,7 @@ ____________________________________________________________________________-->
 pg_ctl start | rotatelogs /var/log/pgsql_log 86400
 </programlisting>
   </para>
- 
+
 <!--==========================orignal english content==========================
   <para>
    You can combine these approaches by setting up <application>logrotate</application>
@@ -1536,13 +1568,16 @@ ____________________________________________________________________________-->
     In this case, log messages are sent to the old log file until a
     successful log rotation. If <application>logrotate</application> is
     configured to compress the log file and delete it, the server may lose
-    the messages logged in this timeframe. To avoid this issue, you can
+    the messages logged in this time frame. To avoid this issue, you can
     configure the logging collector to dynamically assign log file names
     and use a <literal>prerotate</literal> script to ignore open log files.
     </para>
 ____________________________________________________________________________-->
    <para>
-   使用静态日志文件名时，如果达到最大打开文件数限制或发生文件表溢出，则服务器可能无法重新打开日志文件。在这种情况下，日志消息将发送到旧的日志文件，直到成功进行日志轮转为止。如果将<application>logrotate</application>配置为压缩日志文件并将其删除，则服务器可能会丢失此时间范围内记录的消息。为避免此问题，可以将日志收集器配置为动态分配日志文件名，并使用<literal>prerotate</literal>脚本忽略打开的日志文件。
+    使用静态日志文件名时，如果达到最大打开文件数限制或发生文件表溢出，则服务器可能无法重新打开日志文件。
+    在这种情况下，日志消息将发送到旧的日志文件，直到成功进行日志轮转为止。
+    如果将<application>logrotate</application>配置为压缩日志文件并将其删除，则服务器可能会丢失此时间范围内记录的消息。
+    为避免此问题，可以将日志收集器配置为动态分配日志文件名，并使用<literal>prerotate</literal>脚本忽略打开的日志文件。
     </para>
   </note>
 
