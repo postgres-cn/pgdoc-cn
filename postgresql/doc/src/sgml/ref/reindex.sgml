@@ -40,11 +40,19 @@ ____________________________________________________________________________-->
  <refsynopsisdiv>
 <!--==========================orignal english content==========================
 <synopsis>
-REINDEX [ ( VERBOSE ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } [ CONCURRENTLY ] <replaceable class="parameter">name</replaceable>
+REINDEX [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } [ CONCURRENTLY ] <replaceable class="parameter">name</replaceable>
+
+<phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
+
+    VERBOSE
 </synopsis>
 ____________________________________________________________________________-->
 <synopsis>
-REINDEX [ ( VERBOSE ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } [ CONCURRENTLY ] <replaceable class="parameter">name</replaceable>
+REINDEX [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } [ CONCURRENTLY ] <replaceable class="parameter">name</replaceable>
+
+<phrase>其中 <replaceable class="parameter">选项</replaceable> 可以是以下之一：</phrase>
+
+    VERBOSE
 </synopsis>
  </refsynopsisdiv>
 
@@ -288,14 +296,13 @@ ____________________________________________________________________________-->
       updates, or deletes on the table; whereas a standard index rebuild
       locks out writes (but not reads) on the table until it's done.
       There are several caveats to be aware of when using this option
-      &mdash; see <xref linkend="sql-reindex-concurrently"
-      endterm="sql-reindex-concurrently-title"/>.
+      &mdash; see <xref linkend="sql-reindex-concurrently"/> below.
      </para>
 ____________________________________________________________________________-->
      <para>
       使用此选项时，<productname>PostgreSQL</productname> 将重建索引，而不在表上采取任何阻止并发插入、更新或删除的锁;
       标准的索引重建将会锁定表上的写操作(而不是读操作)，直到它完成。
-      使用此选项&mdash;时，有几个事项需要注意；请参阅<xref linkend="sql-reindex-concurrently" endterm="sql-reindex-concurrently-title"/>。
+      使用此选项&mdash;时，有几个事项需要注意；请参阅下面的<xref linkend="sql-reindex-concurrently"/>。
      </para>
 <!--==========================orignal english content==========================
      <para>
@@ -450,7 +457,7 @@ ____________________________________________________________________________-->
   <para>
    Reindexing a single index or table requires being the owner of that
    index or table.  Reindexing a schema or database requires being the
-   owner of that schema or database.  Note that is therefore sometimes
+   owner of that schema or database.  Note specifically that it's thus
    possible for non-superusers to rebuild indexes of tables owned by
    other users.  However, as a special exception, when
    <command>REINDEX DATABASE</command>, <command>REINDEX SCHEMA</command>
@@ -461,7 +468,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   重索引单独一个索引或者表要求用户是该索引或表的拥有者。对方案或数据库重建索引要求是该方案或者数据库的拥有者。注意因此非超级用户有时无法重建其他用户拥有的表上的索引。不过，作为一种特例，当一个非超级用户发出<command>REINDEX DATABASE</command>、<command>REINDEX SCHEMA</command>或者<command>REINDEX SYSTEM</command>时，共享目录上的索引将被跳过，除非该用户拥有该目录（通常不会是这样）。当然，超级用户总是可以重建所有的索引。
+   重索引单独一个索引或者表要求用户是该索引或表的拥有者。对方案或数据库重建索引要求是该方案或者数据库的拥有者。请特别注意，因此非超级用户有时无法重建其他用户拥有的表上的索引。不过，作为一种特例，当一个非超级用户发出<command>REINDEX DATABASE</command>、<command>REINDEX SCHEMA</command>或者<command>REINDEX SYSTEM</command>时，共享目录上的索引将被跳过，除非该用户拥有该目录（通常不会是这样）。当然，超级用户总是可以重建所有的索引。
   </para>
 
 <!--==========================orignal english content==========================
@@ -474,11 +481,11 @@ ____________________________________________________________________________-->
    不支持重建分区表的索引或者分区索引。不过可以单独为每个分区重建索引。
   </para>
 
-  <refsect2 id="sql-reindex-concurrently">
+  <refsect2 id="sql-reindex-concurrently" xreflabel="Rebuilding Indexes Concurrently">
 <!--==========================orignal english content==========================
-   <title id="sql-reindex-concurrently-title">Rebuilding Indexes Concurrently</title>
+   <title>Rebuilding Indexes Concurrently</title>
 ____________________________________________________________________________-->
-   <title id="sql-reindex-concurrently-title">Rebuilding Indexes Concurrently</title>
+   <title>Rebuilding Indexes Concurrently</title>
 
 <!--==========================orignal english content==========================
    <indexterm zone="sql-reindex-concurrently">
@@ -543,7 +550,7 @@ ____________________________________________________________________________-->
     <orderedlist>
      <listitem>
       <para>
-       A new temporary index definition is added to the catalog
+       A new transient index definition is added to the catalog
        <literal>pg_index</literal>.  This definition will be used to replace
        the old index.  A <literal>SHARE UPDATE EXCLUSIVE</literal> lock at
        session level is taken on the indexes being reindexed as well as their
@@ -667,13 +674,15 @@ Indexes:
     "idx_ccnew" btree (col) INVALID
 </programlisting>
 
-    The recommended recovery method in such cases is to drop the invalid index
-    and try again to perform <command>REINDEX CONCURRENTLY</command>.  The
-    concurrent index created during the processing has a name ending in the
-    suffix <literal>ccnew</literal>, or <literal>ccold</literal> if it is an
-    old index definition which we failed to drop. Invalid indexes can be
-    dropped using <literal>DROP INDEX</literal>, including invalid toast
-    indexes.
+    If the index marked <literal>INVALID</literal> is suffixed
+    <literal>ccnew</literal>, then it corresponds to the transient
+    index created during the concurrent operation, and the recommended
+    recovery method is to drop it using <literal>DROP INDEX</literal>,
+    then attempt <command>REINDEX CONCURRENTLY</command> again.
+    If the invalid index is instead suffixed <literal>ccold</literal>,
+    it corresponds to the original index which could not be dropped;
+    the recommended recovery method is to just drop said index, since the
+    rebuild proper has been successful.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -691,9 +700,7 @@ Indexes:
     "idx_ccnew" btree (col) INVALID
 </programlisting>
 
-    在这种情况下，推荐的恢复方法是删除无效索引，然后尝试重新执行<command>REINDEX CONCURRENTLY</command>。 
-    在处理期间创建的并发索引的名称以<literal>ccnew</literal>为后缀，如果它是一个我们未能删除的旧索引定义，后缀是<literal>ccold</literal>。
-    可以使用<literal>DROP INDEX</literal>删除无效索引，包括无效的toast 索引。
+    如果标记为<literal>INVALID</literal>的索引后缀为<literal>ccnew</literal>，那么它对应的是并发操作时创建的临时索引，推荐的恢复方法是使用<literal>DROP INDEX</literal>删除，然后再次尝试 <command>REINDEX CONCURRENTLY</command>。 如果无效索引改为后缀<literal>ccold</literal>，则对应于无法删除的原始索引； 推荐的恢复方法是删除所述索引，因为正确的重建已经成功。
    </para>
 
 <!--==========================orignal english content==========================

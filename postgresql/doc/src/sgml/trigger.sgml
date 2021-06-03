@@ -180,14 +180,15 @@ ____________________________________________________________________________-->
     <literal>BEFORE</literal> triggers fire immediately before a particular row is
     operated on, while row-level <literal>AFTER</literal> triggers fire at the end of
     the statement (but before any statement-level <literal>AFTER</literal> triggers).
-    These types of triggers may only be defined on non-partitioned tables and
-    foreign tables, not views.  <literal>INSTEAD OF</literal> triggers may only be
+    These types of triggers may only be defined on tables and
+    foreign tables, not views.
+    <literal>INSTEAD OF</literal> triggers may only be
     defined on views, and only at row level; they fire immediately as each
     row in the view is identified as needing to be operated on.
    </para>
 ____________________________________________________________________________-->
    <para>
-    触发器也可以根据它们是否在操作<firstterm>之前</firstterm>、<firstterm>之后</firstterm>触发，或者被触发来<firstterm>取代</firstterm>操作来分类。它们分别指<literal>BEFORE</literal>触发器、<literal>AFTER</literal> 触发器以及<literal>INSTEAD OF</literal>触发器。语句级<literal>BEFORE</literal>触发器在语句开始做任何事情之前被触发，而语句级<literal>AFTER</literal>触发器则在语句做完所有事情之后被触发。这些触发器类型可以被定义在表、视图或外部表上。行级<literal>BEFORE</literal>触发器在每一个行被操作之前被触发，而行级<literal>AFTER</literal>触发器在语句结束之后被触发（但在任何语句级<literal>AFTER</literal>触发器之前）。这些触发器类型只能被定义在非分区表和外部表上，但不能定义在视图上。<literal>INSTEAD OF</literal>触发器只能被定义在视图上，并且只能定义在行级，当视图中的每一行被标识为需要被操作时，它们会立即触发。
+    触发器也可以根据它们是否在操作<firstterm>之前</firstterm>、<firstterm>之后</firstterm>触发，或者被触发来<firstterm>取代</firstterm>操作来分类。它们分别指<literal>BEFORE</literal>触发器、<literal>AFTER</literal> 触发器以及<literal>INSTEAD OF</literal>触发器。语句级<literal>BEFORE</literal>触发器在语句开始做任何事情之前被触发，而语句级<literal>AFTER</literal>触发器则在语句做完所有事情之后被触发。这些触发器类型可以被定义在表、视图或外部表上。行级<literal>BEFORE</literal>触发器在每一个行被操作之前被触发，而行级<literal>AFTER</literal>触发器在语句结束之后被触发（但在任何语句级<literal>AFTER</literal>触发器之前）。这些触发器类型只能被定义在表和外部表上，但不能定义在视图上。<literal>INSTEAD OF</literal>触发器只能被定义在视图上，并且只能定义在行级，当视图中的每一行被标识为需要被操作时，它们会立即触发。
    </para>
 
 <!--==========================orignal english content==========================
@@ -790,6 +791,7 @@ typedef struct TriggerData
     TupleTableSlot  *tg_newslot;
     Tuplestorestate *tg_oldtable;
     Tuplestorestate *tg_newtable;
+    const Bitmapset *tg_updatedcols;
 } TriggerData;
 </programlisting>
 
@@ -1031,7 +1033,30 @@ typedef struct Trigger
        </para>
       </listitem>
      </varlistentry>
+     <varlistentry>
+      <term><structfield>tg_updatedcols</structfield></term>
+      <listitem>
+       <para>
+        For <literal>UPDATE</literal> triggers, a bitmap set indicating the
+        columns that were updated by the triggering command.  Generic trigger
+        functions can use this to optimize actions by not having to deal with
+        columns that were not changed.
+       </para>
 
+       <para>
+        As an example, to determine whether a column with attribute number
+        <varname>attnum</varname> (1-based) is a member of this bitmap set,
+        call <literal>bms_is_member(attnum -
+        FirstLowInvalidHeapAttributeNumber,
+        trigdata->tg_updatedcols))</literal>.
+       </para>
+
+       <para>
+        For triggers other than <literal>UPDATE</literal> triggers, this will
+        be <symbol>NULL</symbol>.
+       </para>
+      </listitem>
+     </varlistentry>
     </variablelist>
    </para>
 ____________________________________________________________________________-->
@@ -1051,6 +1076,7 @@ typedef struct TriggerData
     TupleTableSlot  *tg_newslot;
     Tuplestorestate *tg_oldtable;
     Tuplestorestate *tg_newtable;
+    const Bitmapset *tg_updatedcols;
 } TriggerData;
 </programlisting>
 
@@ -1253,6 +1279,25 @@ typedef struct Trigger
       <listitem>
        <para>
         一个指向<structname>Tuplestorestate</structname>类型的结构的指针，该结构包含格式由<structfield>tg_relation</structfield>指定的零行或者多行。如果没有<literal>NEW TABLE</literal>传递关系，则为<symbol>NULL</symbol>指针。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><structfield>tg_updatedcols</structfield></term>
+      <listitem>
+       <para>
+        对于 <literal>UPDATE</literal> 触发器，位图集指示由触发命令更新的列。 通用触发器函数可以使用它来优化操作，而不必处理未更改的列。
+       </para>
+
+       <para>
+        例如，要确定属性编号为 <varname>attnum</varname>（基于 1）的列是否是此位图集的成员，请调用 <literal>bms_is_member(attnum -
+        FirstLowInvalidHeapAttributeNumber,
+        trigdata->tg_updatedcols))</literal>。
+       </para>
+
+       <para>
+        对于<literal>UPDATE</literal>触发器以外的触发器，这将是<symbol>NULL</symbol>。
        </para>
       </listitem>
      </varlistentry>
