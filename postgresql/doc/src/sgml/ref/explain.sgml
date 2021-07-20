@@ -72,6 +72,7 @@ EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">statement</replac
     COSTS [ <replaceable class="parameter">boolean</replaceable> ]
     SETTINGS [ <replaceable class="parameter">boolean</replaceable> ]
     BUFFERS [ <replaceable class="parameter">boolean</replaceable> ]
+    WAL [ <replaceable class="parameter">boolean</replaceable> ]
     TIMING [ <replaceable class="parameter">boolean</replaceable> ]
     SUMMARY [ <replaceable class="parameter">boolean</replaceable> ]
     FORMAT { TEXT | XML | JSON | YAML }
@@ -88,6 +89,7 @@ EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">statement</replac
     COSTS [ <replaceable class="parameter">boolean</replaceable> ]
     SETTINGS [ <replaceable class="parameter">boolean</replaceable> ]
     BUFFERS [ <replaceable class="parameter">boolean</replaceable> ]
+    WAL [ <replaceable class="parameter">boolean</replaceable> ]
     TIMING [ <replaceable class="parameter">boolean</replaceable> ]
     SUMMARY [ <replaceable class="parameter">boolean</replaceable> ]
     FORMAT { TEXT | XML | JSON | YAML }
@@ -289,8 +291,9 @@ ____________________________________________________________________________-->
      <para>
       Include information on buffer usage. Specifically, include the number of
       shared blocks hit, read, dirtied, and written, the number of local blocks
-      hit, read, dirtied, and written, and the number of temp blocks read and
-      written.
+      hit, read, dirtied, and written, the number of temp blocks read and
+      written, and the time spent reading and writing data file blocks
+      (in milliseconds) if <xref linkend="guc-track-io-timing"/> is enabled.
       A <emphasis>hit</emphasis> means that a read was avoided because the block was
       found already in cache when needed.
       Shared blocks contain data from regular tables and indexes;
@@ -304,14 +307,55 @@ ____________________________________________________________________________-->
       query processing.
       The number of blocks shown for an
       upper-level node includes those used by all its child nodes.  In text
-      format, only non-zero values are printed.  This parameter may only be
-      used when <literal>ANALYZE</literal> is also enabled.  It defaults to
+      format, only non-zero values are printed.  It defaults to
       <literal>FALSE</literal>.
      </para>
 ____________________________________________________________________________-->
      <para>
-      包括缓冲区使用的信息。特别是：共享块命中、读取、标记为脏和写入的次数、本地块命中、读取、标记为脏和写入的次数、以及临时块读取和写入的次数。一次<emphasis>命中</emphasis>表示避免了一次读取，因为需要的块已经在缓存中找到了。共享块包含着来自于常规表和索引的数据，本地块包含着来自于临时表和索引的数据，而临时块包含着在排序、哈希、物化计划结点和类似情况中使用的短期工作数据。<emphasis>脏</emphasis>块的数量表示被这个查询改变的之前未被修改块的数量，而<emphasis>写入</emphasis>块的数量表示这个后台在查询处理期间从缓存中替换出去的脏块的数量。为一个较高层结点显示的块数包括它的所有子结点所用到的块数。在文本格式中，只会打印非零值。只有当<literal>ANALYZE</literal>也被启用时，这个参数才能使用。它的默认被设置为<literal>FALSE</literal>。
+      包括缓冲区使用的信息。特别是：共享块命中、读取、标记为脏和写入的次数、本地块命中、
+      读取、标记为脏和写入的次数、临时块读取和写入的次数
+      以及<xref linkend="guc-track-io-timing"/>启用时读取和写入数据文件块所用的
+      时间（毫秒）。
+      一次<emphasis>命中</emphasis>表示避免了一次读取，因为需要的块已经在缓存中找
+      到了。
+      共享块包含着来自于常规表和索引的数据；
+      本地块包含着来自于临时表和索引的数据；
+      而临时块包含着在排序、哈希、物化计划结点和类似情况中使用的短期工作数据。
+      <emphasis>脏</emphasis>块的数量表示被这个查询改变的之前未被修改块的数量，
+      而<emphasis>写入</emphasis>块的数量表示这个后台在查询处理期间从缓存中替换出去
+      的脏块的数量。
+      为一个较高层结点显示的块数包括它的所有子结点所用到的块数。在文本格
+      式中，只会打印非零值。它默认为<literal>FALSE</literal>。
      </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>WAL</literal></term>
+____________________________________________________________________________-->
+    <term><literal>WAL</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Include information on WAL record generation. Specifically, include the
+      number of records, number of full page images (fpi) and amount of WAL
+      bytes generated.  In text format, only non-zero values are printed.  This
+      parameter may only be used when <literal>ANALYZE</literal> is also
+      enabled.  It defaults to <literal>FALSE</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      Include information on WAL record generation. Specifically, include the
+      number of records, number of full page images (fpi) and amount of WAL
+      bytes generated.  In text format, only non-zero values are printed.  This
+      parameter may only be used when <literal>ANALYZE</literal> is also
+      enabled.  It defaults to <literal>FALSE</literal>.
+      包括有关WAL记录生成的信息。具体来说，包括记录数、整页图像数（fpi）和生成的WAL字节数。
+      在文本格式中，仅打印非零值。此参数只能在同时启用<literal>ANALYZE</literal>时使用。
+      它默认为<literal>FALSE</literal>。
+     </para>
+
     </listitem>
    </varlistentry>
 
@@ -691,7 +735,7 @@ EXPLAIN (COSTS FALSE) SELECT * FROM foo WHERE i = 4;
 EXPLAIN SELECT sum(i) FROM foo WHERE i &lt; 10;
 
                              QUERY PLAN
--&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&zwsp;-&minus;
  Aggregate  (cost=23.93..23.93 rows=1 width=4)
    -&gt;  Index Scan using fi on foo  (cost=0.00..23.92 rows=6 width=4)
          Index Cond: (i &lt; 10)
@@ -706,7 +750,7 @@ ____________________________________________________________________________-->
 EXPLAIN SELECT sum(i) FROM foo WHERE i &lt; 10;
 
                              QUERY PLAN
----------------------------------------------------------------------
+-------------------------------------------------------------------&zwsp;--
  Aggregate  (cost=23.93..23.93 rows=1 width=4)
    -&gt;  Index Scan using fi on foo  (cost=0.00..23.92 rows=6 width=4)
          Index Cond: (i &lt; 10)
@@ -727,7 +771,7 @@ PREPARE query(int, int) AS SELECT sum(bar) FROM test
 EXPLAIN ANALYZE EXECUTE query(100, 200);
 
                                                        QUERY PLAN                                                       
--&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&zwsp;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
  HashAggregate  (cost=9.54..9.54 rows=1 width=8) (actual time=0.156..0.161 rows=11 loops=1)
    Group Key: foo
    -&gt;  Index Scan using test_pkey on test  (cost=0.29..9.29 rows=50 width=8) (actual time=0.039..0.091 rows=99 loops=1)
@@ -749,7 +793,7 @@ PREPARE query(int, int) AS SELECT sum(bar) FROM test
 EXPLAIN ANALYZE EXECUTE query(100, 200);
 
                                                        QUERY PLAN                                                       
-------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------&zwsp;-----------------------------------------------------
  HashAggregate  (cost=9.54..9.54 rows=1 width=8) (actual time=0.156..0.161 rows=11 loops=1)
    Group Key: foo
    -&gt;  Index Scan using test_pkey on test  (cost=0.29..9.29 rows=50 width=8) (actual time=0.039..0.091 rows=99 loops=1)

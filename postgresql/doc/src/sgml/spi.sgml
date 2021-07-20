@@ -573,38 +573,50 @@ ____________________________________________________________________________-->
    The structure <structname>SPITupleTable</structname> is defined
    thus:
 <programlisting>
-typedef struct
+typedef struct SPITupleTable
 {
+    /* Public members */
+    TupleDesc   tupdesc;        /* tuple descriptor */
+    HeapTuple  *vals;           /* array of tuples */
+    uint64      numvals;        /* number of valid tuples */
+
+    /* Private members, not intended for external callers */
+    uint64      alloced;        /* allocated length of vals array */
     MemoryContext tuptabcxt;    /* memory context of result table */
-    uint64      alloced;        /* number of alloced vals */
-    uint64      free;           /* number of free vals */
-    TupleDesc   tupdesc;        /* row descriptor */
-    HeapTuple  *vals;           /* rows */
+    slist_node  next;           /* link for internal bookkeeping */
+    SubTransactionId subid;     /* subxact in which tuptable was created */
 } SPITupleTable;
 </programlisting>
-   <structfield>vals</structfield> is an array of pointers to rows.  (The number
-   of valid entries is given by <varname>SPI_processed</varname>.)
+   The fields <structfield>tupdesc</structfield>,
+   <structfield>vals</structfield>, and
+   <structfield>numvals</structfield>
+   can be used by SPI callers; the remaining fields are internal.
+   <structfield>vals</structfield> is an array of pointers to rows.
+   The number of rows is given by <structfield>numvals</structfield>
+   (for somewhat historical reasons, this count is also returned
+   in <varname>SPI_processed</varname>).
    <structfield>tupdesc</structfield> is a row descriptor which you can pass to
-   SPI functions dealing with rows.  <structfield>tuptabcxt</structfield>,
-   <structfield>alloced</structfield>, and <structfield>free</structfield> are internal
-   fields not intended for use by SPI callers.
+   SPI functions dealing with rows.
   </para>
 ____________________________________________________________________________-->
   <para>
    结构<structname>SPITupleTable</structname>被定义为：
 <programlisting>
-typedef struct
+typedef struct SPITupleTable
 {
-    MemoryContext tuptabcxt;    /* 结果表的内存上下文 */
-    uint64      alloced;        /* 已分配值的数量 */
-    uint64      free;           /* 空限值的数量 */
-    TupleDesc   tupdesc;        /* 行描述符 */
-    HeapTuple  *vals;           /* 行 */
+    /* Public members */
+    TupleDesc   tupdesc;        /* tuple descriptor */
+    HeapTuple  *vals;           /* array of tuples */
+    uint64      numvals;        /* number of valid tuples */
+
+    /* Private members, not intended for external callers */
+    uint64      alloced;        /* allocated length of vals array */
+    MemoryContext tuptabcxt;    /* memory context of result table */
+    slist_node  next;           /* link for internal bookkeeping */
+    SubTransactionId subid;     /* subxact in which tuptable was created */
 } SPITupleTable;
 </programlisting>
-   <structfield>vals</structfield>是一个行指针的数组（可用项的数量由<varname>SPI_processed</varname>给出）。
-   <structfield>tupdesc</structfield>是一个行描述符，你可以把它传递给 SPI 函数来处理行。<structfield>tuptabcxt</structfield>、
-   <structfield>alloced</structfield>和<structfield>free</structfield>是不准备给 SPI 调用者使用的内部域。
+   SPI 调用者可以使用字段<structfield>tupdesc</structfield>、<structfield>vals</structfield>和<structfield>numvals</structfield>； 其余字段是内部的。 <structfield>vals</structfield> 是一个指向行的指针数组。 行数由 <structfield>numvals</structfield> 给出（由于某些历史原因，这个计数也在 <varname>SPI_processed</varname> 中返回）。 <structfield>tupdesc</structfield> 是一个行描述符，您可以将其传递给处理行的 SPI 函数。
   </para>
 
 <!--==========================orignal english content==========================
@@ -8713,12 +8725,12 @@ execq(PG_FUNCTION_ARGS)
      */
     if (ret &gt; 0 &amp;&amp; SPI_tuptable != NULL)
     {
-        TupleDesc tupdesc = SPI_tuptable-&gt;tupdesc;
         SPITupleTable *tuptable = SPI_tuptable;
+        TupleDesc tupdesc = tuptable-&gt;tupdesc;
         char buf[8192];
         uint64 j;
 
-        for (j = 0; j &lt; proc; j++)
+        for (j = 0; j &lt; tuptable-&gt;numvals; j++)
         {
             HeapTuple tuple = tuptable-&gt;vals[j];
             int i;
@@ -8771,12 +8783,12 @@ execq(PG_FUNCTION_ARGS)
      */
     if (ret &gt; 0 &amp;&amp; SPI_tuptable != NULL)
     {
-        TupleDesc tupdesc = SPI_tuptable-&gt;tupdesc;
         SPITupleTable *tuptable = SPI_tuptable;
+        TupleDesc tupdesc = tuptable-&gt;tupdesc;
         char buf[8192];
         uint64 j;
 
-        for (j = 0; j &lt; proc; j++)
+        for (j = 0; j &lt; tuptable-&gt;numvals; j++)
         {
             HeapTuple tuple = tuptable-&gt;vals[j];
             int i;

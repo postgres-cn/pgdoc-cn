@@ -43,7 +43,6 @@ ____________________________________________________________________________-->
 CREATE EXTENSION [ IF NOT EXISTS ] <replaceable class="parameter">extension_name</replaceable>
     [ WITH ] [ SCHEMA <replaceable class="parameter">schema_name</replaceable> ]
              [ VERSION <replaceable class="parameter">version</replaceable> ]
-             [ FROM <replaceable class="parameter">old_version</replaceable> ]
              [ CASCADE ]
 </synopsis>
 ____________________________________________________________________________-->
@@ -51,7 +50,6 @@ ____________________________________________________________________________-->
 CREATE EXTENSION [ IF NOT EXISTS ] <replaceable class="parameter">extension_name</replaceable>
     [ WITH ] [ SCHEMA <replaceable class="parameter">schema_name</replaceable> ]
              [ VERSION <replaceable class="parameter">version</replaceable> ]
-             [ FROM <replaceable class="parameter">old_version</replaceable> ]
              [ CASCADE ]
 </synopsis>
  </refsynopsisdiv>
@@ -93,19 +91,37 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   Loading an extension requires the same privileges that would be
-   required to create its component objects.  For most extensions this
-   means superuser or database owner privileges are needed.
    The user who runs <command>CREATE EXTENSION</command> becomes the
-   owner of the extension for purposes of later privilege checks, as well
-   as the owner of any objects created by the extension's script.
+   owner of the extension for purposes of later privilege checks, and
+   normally also becomes the owner of any objects created by the
+   extension's script.
   </para>
 ____________________________________________________________________________-->
   <para>
-   载入一个扩展要求创建其组件对象所要求的特权。对于大部分扩展这意味
-   这需要超级用户或者数据库拥有者的特权。为了以后特权检察的目的，运行
-   <command>CREATE EXTENSION</command>的用户会成为该扩展的
-   拥有者以及由该扩展的脚本创建的任何对象的拥有者。
+   运行<command>CREATE EXTENSION</command>的用户成为扩展的所有者，
+   以进行以后的特权检查，并且通常也成为由扩展的脚本创建的任何对象的所有者。 
+  </para>
+<!--==========================orignal english content==========================
+  <para>
+   Loading an extension ordinarily requires the same privileges that would
+   be required to create its component objects.  For many extensions this
+   means superuser privileges are needed.
+   However, if the extension is marked <firstterm>trusted</firstterm> in
+   its control file, then it can be installed by any user who has
+   <literal>CREATE</literal> privilege on the current database.
+   In this case the extension object itself will be owned by the calling
+   user, but the contained objects will be owned by the bootstrap superuser
+   (unless the extension's script explicitly assigns them to the calling
+   user).  This configuration gives the calling user the right to drop the
+   extension, but not to modify individual objects within it.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   通常，加载扩展需要与创建扩展组件对象所需的特权相同的特权。 对于许多扩展，这意味着需要超级用户特权。
+   但是，如果扩展名在其控制文件中标记为<firstterm>trusted</firstterm>，则该扩展名可以由对当前
+   数据库具有<literal>CREATE</literal>特权的任何用户安装。
+   在这种情况下，扩展对象本身将由主叫用户拥有，但是包含的对象将由引导超级用户拥有（除非扩展的脚本将其明确分配给主叫用户）。
+   此配置使呼叫用户有权删除该扩展名，但不能修改其中的单个对象。
   </para>
 
  </refsect1>
@@ -247,59 +263,6 @@ ____________________________________________________________________________-->
 
      <varlistentry>
 <!--==========================orignal english content==========================
-      <term><replaceable class="parameter">old_version</replaceable></term>
-____________________________________________________________________________-->
-      <term><replaceable class="parameter">old_version</replaceable></term>
-      <listitem>
-<!--==========================orignal english content==========================
-       <para>
-        <literal>FROM</literal> <replaceable class="parameter">old_version</replaceable>
-        must be specified when, and only when, you are attempting to install
-        an extension that replaces an <quote>old style</quote> module that is just
-        a collection of objects not packaged into an extension.  This option
-        causes <command>CREATE EXTENSION</command> to run an alternative installation
-        script that absorbs the existing objects into the extension, instead
-        of creating new objects.  Be careful that <literal>SCHEMA</literal> specifies
-        the schema containing these pre-existing objects.
-       </para>
-____________________________________________________________________________-->
-       <para>
-        当且仅当尝试要安装一个扩展来替代一个<quote>老式</quote>
-        的模块（它只是一组没有被打包成扩展的对象的集合）时，
-        才必须指定
-        <literal>FROM</literal> <replaceable class="parameter">old_version</replaceable>。
-        这个选项导致<command>CREATE EXTENSION</command>运行
-        另一个安装脚本把现有的对象吸收到该扩展中，而不是创建
-        新对象。当心<literal>SCHEMA</literal>指定的是包含已经存在
-        对象的模式。
-       </para>
-
-<!--==========================orignal english content==========================
-       <para>
-        The value to use for <replaceable
-        class="parameter">old_version</replaceable> is determined by the
-        extension's author, and might vary if there is more than one version
-        of the old-style module that can be upgraded into an extension.
-        For the standard additional modules supplied with pre-9.1
-        <productname>PostgreSQL</productname>, use <literal>unpackaged</literal>
-        for <replaceable class="parameter">old_version</replaceable> when
-        updating a module to extension style.
-       </para>
-____________________________________________________________________________-->
-       <para>
-        用于<replaceable
-        class="parameter">old_version</replaceable>的值由扩展的作者决定，
-        且如果有多于一种版本的老式模块可以被升级到扩展，该值还可能变化。
-        对于 9.1 之前的<productname>PostgreSQL</productname>提供的
-        标准附加模块，在升级模块到扩展风格时要为
-        <replaceable class="parameter">old_version</replaceable>使用
-        <literal>unpackaged</literal>。
-       </para>
-      </listitem>
-     </varlistentry>
-     
-     <varlistentry>
-<!--==========================orignal english content==========================
       <term><literal>CASCADE</literal></term>
 ____________________________________________________________________________-->
       <term><literal>CASCADE</literal></term>
@@ -365,6 +328,53 @@ ____________________________________________________________________________-->
    中看到。
   </para>
 
+  <caution>
+<!--==========================orignal english content==========================
+   <para>
+    Installing an extension as superuser requires trusting that the
+    extension's author wrote the extension installation script in a secure
+    fashion.  It is not terribly difficult for a malicious user to create
+    trojan-horse objects that will compromise later execution of a
+    carelessly-written extension script, allowing that user to acquire
+    superuser privileges.  However, trojan-horse objects are only hazardous
+    if they are in the <varname>search_path</varname> during script
+    execution, meaning that they are in the extension's installation target
+    schema or in the schema of some extension it depends on.  Therefore, a
+    good rule of thumb when dealing with extensions whose scripts have not
+    been carefully vetted is to install them only into schemas for which
+    CREATE privilege has not been and will not be granted to any untrusted
+    users.  Likewise for any extensions they depend on.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    以超级用户身份安装扩展程序需要相信扩展程序的作者以安全的方式编写了扩展程序安装脚本。
+    对于恶意用户而言，创建特洛伊木马对象并不困难，而这些特洛伊木马对象会损害以后粗心编写
+    的扩展脚本的执行，从而使该用户获得超级用户特权。但是，仅当木马对象在脚本执行期间位于
+    <varname>search_path</varname>中时，它们才是危险的，这意味着它们位于扩展的安装
+    目标模式或它依赖的某些扩展的模式中。因此，在处理未经仔细审查其脚本的扩展时，一个好的
+    经验法则是仅将其安装到尚未具有CREATE特权且不会授予任何不可信用户的模式中。
+    对它们依赖的任何扩展也是一样。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The extensions supplied with <productname>PostgreSQL</productname> are
+    believed to be secure against installation-time attacks of this sort,
+    except for a few that depend on other extensions.  As stated in the
+    documentation for those extensions, they should be installed into secure
+    schemas, or installed into the same schemas as the extensions they
+    depend on, or both.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    针对此类安装时攻击，<productname>PostgreSQL</productname>提供的插件可以认为是
+    针对这种安装时攻击的安全，除了少数插件依赖于其它的扩展。如这些扩展的文档中所述，应将
+    它们安装到安全模式中，或与它们所依赖的扩展安装在相同的模式中，或拓展和其依赖都安装到
+    安全模式。
+   </para>
+
+  </caution>
+
 <!--==========================orignal english content==========================
   <para>
    For information about writing new extensions, see
@@ -385,37 +395,30 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    Install the <link linkend="hstore">hstore</link> extension into the
-   current database:
+   current database, placing its objects in schema <literal>addons</literal>:
 <programlisting>
+CREATE EXTENSION hstore SCHEMA addons;
+</programlisting>
+   Another way to accomplish the same thing:
+<programlisting>
+SET search_path = addons;
 CREATE EXTENSION hstore;
 </programlisting>
   </para>
 ____________________________________________________________________________-->
   <para>
-   安装<link linkend="hstore">hstore</link>扩展到当前数据库中：
+   安装<link linkend="hstore">hstore</link>扩展到当前数据库中，将其对象放置在
+   <literal>addons</literal>模式中： 
 <programlisting>
+CREATE EXTENSION hstore SCHEMA addons;
+</programlisting>
+   另一种方法：
+<programlisting>
+SET search_path = addons;
 CREATE EXTENSION hstore;
 </programlisting>
   </para>
 
-<!--==========================orignal english content==========================
-  <para>
-   Update a pre-9.1 installation of <literal>hstore</literal> into
-   extension style:
-<programlisting>
-CREATE EXTENSION hstore SCHEMA public FROM unpackaged;
-</programlisting>
-   Be careful to specify the schema in which you installed the existing
-   <literal>hstore</literal> objects.
-  </para>
-____________________________________________________________________________-->
-  <para>
-   升级一个 9.1 之前的<literal>hstore</literal>安装成为扩展：
-<programlisting>
-CREATE EXTENSION hstore SCHEMA public FROM unpackaged;
-</programlisting>
-   要小心地指定安装现有<literal>hstore</literal>对象的模式。
-  </para>
  </refsect1>
 
  <refsect1>

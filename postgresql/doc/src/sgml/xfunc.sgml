@@ -151,12 +151,17 @@ ____________________________________________________________________________-->
     A procedure is a database object similar to a function.  The difference is
     that a procedure does not return a value, so there is no return type
     declaration.  While a function is called as part of a query or DML
-    command, a procedure is called explicitly using
-    the <xref linkend="sql-call"/> statement.
+    command, a procedure is called in isolation using
+    the <xref linkend="sql-call"/> command.  If the CALL command is not
+    part of an explicit transaction, a procedure in many server-side
+    languages can commit, rollback, and begin new transactions during
+    its execution, which is not possible in functions.
    </para>
 ____________________________________________________________________________-->
    <para>
-    过程是一种类似于函数的数据库对象。两者的区别在于过程不返回值，因此没有返回类型声明。而函数可以作为一个查询或者DML命令的一部分被调用，过程则需要明确地用<xref linkend="sql-call"/>语句调用。
+    过程是一种类似于函数的数据库对象。两者的区别在于过程不返回值，因此没有返回类型声明。
+    虽然函数作为查询或 DML 命令的一部分被调用，但过程是使用<xref linkend="sql-call"/>命令单独调用的。
+    如果 CALL 命令不是显式事务的一部分，则许多服务器端语言中的过程可以在其执行期间提交、回滚和开始新事务，这在函数中是不可能的。
    </para>
 
 <!--==========================orignal english content==========================
@@ -256,9 +261,9 @@ ____________________________________________________________________________-->
      Besides <command>SELECT</command> queries, the commands can include data
      modification queries (<command>INSERT</command>,
      <command>UPDATE</command>, and <command>DELETE</command>), as well as
-     other SQL commands. (You cannot use transaction control commands, e.g.
+     other SQL commands. (You cannot use transaction control commands, e.g.,
      <command>COMMIT</command>, <command>SAVEPOINT</command>, and some utility
-     commands, e.g.  <literal>VACUUM</literal>, in <acronym>SQL</acronym> functions.)
+     commands, e.g.,  <literal>VACUUM</literal>, in <acronym>SQL</acronym> functions.)
      However, the final command
      must be a <command>SELECT</command> or have a <literal>RETURNING</literal>
      clause that returns whatever is
@@ -692,11 +697,15 @@ $$ LANGUAGE SQL;
 
 <!--==========================orignal english content==========================
     <para>
-     A <acronym>SQL</acronym> function must return exactly its declared
-     result type.  This may require inserting an explicit cast.
+     If the final <literal>SELECT</literal> or <literal>RETURNING</literal>
+     clause in a <acronym>SQL</acronym> function does not return exactly
+     the function's declared result
+     type, <productname>PostgreSQL</productname> will automatically cast
+     the value to the required type, if that is possible with an implicit
+     or assignment cast.  Otherwise, you must write an explicit cast.
      For example, suppose we wanted the
      previous <function>add_em</function> function to return
-     type <type>float8</type> instead.  This won't work:
+     type <type>float8</type> instead.  It's sufficient to write
 
 <programlisting>
 CREATE FUNCTION add_em(integer, integer) RETURNS float8 AS $$
@@ -704,20 +713,18 @@ CREATE FUNCTION add_em(integer, integer) RETURNS float8 AS $$
 $$ LANGUAGE SQL;
 </programlisting>
 
-     even though in other contexts <productname>PostgreSQL</productname>
-     would be willing to insert an implicit cast to
-     convert <type>integer</type> to <type>float8</type>.
-     We need to write it as
-
-<programlisting>
-CREATE FUNCTION add_em(integer, integer) RETURNS float8 AS $$
-    SELECT ($1 + $2)::float8;
-$$ LANGUAGE SQL;
-</programlisting>
+     since the <type>integer</type> sum can be implicitly cast
+     to <type>float8</type>.
+     (See <xref linkend="typeconv"/> or <xref linkend="sql-createcast"/>
+     for more about casts.)
     </para>
 ____________________________________________________________________________-->
     <para>
-     <acronym>SQL</acronym>函数必须恰好返回其声明的结果类型。这可能会要求插入一个显式的造型。例如，假设我们想要之前的<function>add_em</function>函数返回类型<type>float8</type>。下面的做法是不行的：
+     如果<acronym>SQL</acronym>函数中的最后一个<literal>SELECT</literal>或<literal>RETURNING</literal>
+     子句没有准确返回函数声明的结果类型，<productname>PostgreSQL</productname>将自动将值转换为所需的类型，
+     如果可以使用隐式或赋值转换。否则，您必须编写显式强制转换。
+     例如，假设我们想要之前的<function>add_em</function>函数返回类型<type>float8</type>。
+     写就足够了
 
 <programlisting>
 CREATE FUNCTION add_em(integer, integer) RETURNS float8 AS $$
@@ -725,13 +732,8 @@ CREATE FUNCTION add_em(integer, integer) RETURNS float8 AS $$
 $$ LANGUAGE SQL;
 </programlisting>
 
-     即便在其他的环境中<productname>PostgreSQL</productname>也会想要插入一个隐式造型把<type>integer</type>转换成<type>float8</type>。我们需要把它写成
+     因为<type>integer</type>总和可以隐式转换为<type>float8</type>。（有关强制转换的更多信息，请参阅<xref linkend="typeconv"/>或<xref linkend="sql-createcast"/>。）
 
-<programlisting>
-CREATE FUNCTION add_em(integer, integer) RETURNS float8 AS $$
-    SELECT ($1 + $2)::float8;
-$$ LANGUAGE SQL;
-</programlisting>
     </para>
    </sect2>
 
@@ -897,23 +899,24 @@ $$ LANGUAGE SQL;
       <listitem>
        <para>
         The select list order in the query must be exactly the same as
-        that in which the columns appear in the table associated
-        with the composite type.  (Naming the columns, as we did above,
+        that in which the columns appear in the composite type.
+        (Naming the columns, as we did above,
         is irrelevant to the system.)
        </para>
       </listitem>
       <listitem>
        <para>
-        We must ensure each expression's type matches the corresponding
-        column of the composite type, inserting a cast if necessary.
+        We must ensure each expression's type can be cast to that of
+        the corresponding column of the composite type.
         Otherwise we'll get errors like this:
 <screen>
 <computeroutput>
-ERROR:  function declared to return emp returns varchar instead of text at column 1
+ERROR:  return type mismatch in function declared to return emp
+DETAIL:  Final statement returns text instead of point at column 4.
 </computeroutput>
 </screen>
-        As with the base-type case, the function will not insert any casts
-        automatically.
+        As with the base-type case, the system will not insert explicit
+        casts automatically, only implicit or assignment casts.
        </para>
       </listitem>
      </itemizedlist>
@@ -925,18 +928,19 @@ ____________________________________________________________________________-->
      <itemizedlist>
       <listitem>
        <para>
-        查询中的选择列表顺序必须和列在与组合类型相关的表中出现的顺序完全相同（如我们上面所作的，列的命名与系统无关）。
+        查询中的选择列表顺序必须与列在复合类型中出现的顺序完全相同。（正如我们上面所做的那样，命名列与系统无关。）
        </para>
       </listitem>
       <listitem>
        <para>
-        我们必须确保每个表达式的类型匹配该组合类型相应的列，必要时插入一个造型。否则我们将会得到像这样的错误：
+        我们必须确保每个表达式的类型都可以转换为复合类型的相应列的类型。 否则我们会得到这样的错误：
 <screen>
 <computeroutput>
-ERROR:  function declared to return emp returns varchar instead of text at column 1
+ERROR:  return type mismatch in function declared to return emp
+DETAIL:  Final statement returns text instead of point at column 4.
 </computeroutput>
 </screen>
-        与基础类型的情况一样，该函数将不会自动插入任何造型。
+        与基本类型的情况一样，系统不会自动插入显式转换，只会插入隐式或赋值转换。
        </para>
       </listitem>
      </itemizedlist>
@@ -960,8 +964,7 @@ $$ LANGUAGE SQL;
      Another example is that if we are trying to write a function that
      returns a domain over composite, rather than a plain composite type,
      it is always necessary to write it as returning a single column,
-     since there is no other way to produce a value that is exactly of
-     the domain type.
+     since there is no way to cause a coercion of the whole row result.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -975,7 +978,9 @@ $$ LANGUAGE SQL;
 
      这里我们写了一个只返回正确组合类型的单一列的<command>SELECT</command>。
      在这种情况下这种写法实际并非更好，但是它在一些情况下比较方便
-     &mdash; 例如，我们需要通过调用另一个返回所期望的组合值的函数来计算结果。另一个例子是，如果我们尝试写一个函数返回组合上的一个域，而不是返回纯粹的组合类型，那么总是有必要把它写成返回单一列，因为没有其他办法能够产生一个正好是那种域类型的值。
+     &mdash; 例如，我们需要通过调用另一个返回所期望的组合值的函数来计算结果。
+     另一个例子是，如果我们试图编写一个函数，它返回一个复合类型的域，而不是一个普通的复合类型，
+     总是有必要把它写成返回单个列，因为没有办法导致整行结果。
     </para>
 
 <!--==========================orignal english content==========================
@@ -2239,7 +2244,7 @@ $$ LANGUAGE SQL;
     </para>
    </sect2>
 
-   <sect2>
+   <sect2 id="xfunc-sql-polymorphic-functions">
 <!--==========================orignal english content==========================
     <title>Polymorphic <acronym>SQL</acronym> Functions</title>
 ____________________________________________________________________________-->
@@ -2248,11 +2253,8 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
     <para>
      <acronym>SQL</acronym> functions can be declared to accept and
-     return the polymorphic types <type>anyelement</type>,
-     <type>anyarray</type>, <type>anynonarray</type>,
-     <type>anyenum</type>, and <type>anyrange</type>.  See <xref
-     linkend="extend-types-polymorphic"/> for a more detailed
-     explanation of polymorphic functions. Here is a polymorphic
+     return the polymorphic types described in <xref
+     linkend="extend-types-polymorphic"/>.  Here is a polymorphic
      function <function>make_array</function> that builds up an array
      from two arbitrary data type elements:
 <screen>
@@ -2269,12 +2271,8 @@ SELECT make_array(1, 2) AS intarray, make_array('a'::text, 'b') AS textarray;
     </para>
 ____________________________________________________________________________-->
     <para>
-     <acronym>SQL</acronym>函数可以被声明为接受并且返回多态类型
-     <type>anyelement</type>、<type>anyarray</type>、
-     <type>anynonarray</type>、<type>anyenum</type>以及
-     <type>anyrange</type>。更多关于多态函数的解释请见<xref
-     linkend="extend-types-polymorphic"/>。这里是一个从两种任意数据
-     类型的元素构建一个数组的多态函数<function>make_array</function>：
+     <acronym>SQL</acronym>函数可以声明为接受和返回<xref linkend="extend-types-polymorphic"/>中描述的多态类型。
+     这是一个多态函数<function>make_array</function>，它从两个任意数据类型元素构建一个数组：
 <screen>
 CREATE FUNCTION make_array(anyelement, anyelement) RETURNS anyarray AS $$
     SELECT ARRAY[$1, $2];
@@ -2298,9 +2296,7 @@ SELECT make_array(1, 2) AS intarray, make_array('a'::text, 'b') AS textarray;
      type.
      Without the typecast, you will get errors like this:
 <screen>
-<computeroutput>
-ERROR:  could not determine polymorphic type because input has type "unknown"
-</computeroutput>
+ERROR:  could not determine polymorphic type because input has type unknown
 </screen>
     </para>
 ____________________________________________________________________________-->
@@ -2311,9 +2307,74 @@ ____________________________________________________________________________-->
      <type>unknown</type>的数组也不是一种合法的类型。如果没有改类型
      造型，将得到这样的错误：
 <screen>
-<computeroutput>
-ERROR:  could not determine polymorphic type because input has type "unknown"
-</computeroutput>
+ERROR:  could not determine polymorphic type because input has type unknown
+</screen>
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     With <function>make_array</function> declared as above, you must
+     provide two arguments that are of exactly the same data type; the
+     system will not attempt to resolve any type differences.  Thus for
+     example this does not work:
+<screen>
+SELECT make_array(1, 2.5) AS numericarray;
+ERROR:  function make_array(integer, numeric) does not exist
+</screen>
+     An alternative approach is to use the <quote>common</quote> family of
+     polymorphic types, which allows the system to try to identify a
+     suitable common type:
+<screen>
+CREATE FUNCTION make_array2(anycompatible, anycompatible)
+RETURNS anycompatiblearray AS $$
+    SELECT ARRAY[$1, $2];
+$$ LANGUAGE SQL;
+
+SELECT make_array2(1, 2.5) AS numericarray;
+ numericarray
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ {1,2.5}
+(1 row)
+</screen>
+     Because the rules for common type resolution default to choosing
+     type <type>text</type> when all inputs are of unknown types, this
+     also works:
+<screen>
+SELECT make_array2('a', 'b') AS textarray;
+ textarray 
+-&minus;-&minus;-&minus;-&minus;-&minus;-
+ {a,b}
+(1 row)
+</screen>
+    </para>
+____________________________________________________________________________-->
+    <para>
+     使用上述声明的<function>make_array</function>，您必须提供两个数据类型完全相同的参数； 
+     系统不会尝试解决任何类型差异。因此，例如，这并不工作：
+<screen>
+SELECT make_array(1, 2.5) AS numericarray;
+ERROR:  function make_array(integer, numeric) does not exist
+</screen>
+     另一种方法是使用<quote>common</quote>多态类型系列，它允许系统尝试识别合适的公共类型：
+<screen>
+CREATE FUNCTION make_array2(anycompatible, anycompatible)
+RETURNS anycompatiblearray AS $$
+    SELECT ARRAY[$1, $2];
+$$ LANGUAGE SQL;
+
+SELECT make_array2(1, 2.5) AS numericarray;
+ numericarray
+--------------
+ {1,2.5}
+(1 row)
+</screen>
+     因为当所有输入都是未知类型时，通用类型解析规则默认选择类型<type>text</type>，这也适用：
+<screen>
+SELECT make_array2('a', 'b') AS textarray;
+ textarray 
+-----------
+ {a,b}
+(1 row)
 </screen>
     </para>
 
@@ -2336,7 +2397,7 @@ CREATE FUNCTION invalid_func() RETURNS anyelement AS $$
     SELECT 1;
 $$ LANGUAGE SQL;
 ERROR:  cannot determine result data type
-DETAIL:  A function returning a polymorphic type must have at least one polymorphic argument.
+DETAIL:  A result of type anyelement requires at least one input of type anyelement, anyarray, anynonarray, anyenum, or anyrange.
 </screen>
     </para>
 ____________________________________________________________________________-->
@@ -2357,7 +2418,7 @@ CREATE FUNCTION invalid_func() RETURNS anyelement AS $$
     SELECT 1;
 $$ LANGUAGE SQL;
 ERROR:  cannot determine result data type
-DETAIL:  A function returning a polymorphic type must have at least one polymorphic argument.
+DETAIL:  A result of type anyelement requires at least one input of type anyelement, anyarray, anynonarray, anyenum, or anyrange.
 </screen>
     </para>
 
@@ -3833,6 +3894,9 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
       <title>内建 SQL 类型等效的 C 类型</title>
       <tgroup cols="3">
+       <colspec colname="col1" colwidth="1*"/>
+       <colspec colname="col2" colwidth="1*"/>
+       <colspec colname="col3" colwidth="2*"/>
        <thead>
 <!--==========================orignal english content==========================
         <row>
@@ -4151,13 +4215,13 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
         <row>
          <entry><type>timestamp</type></entry>
-         <entry><type>Timestamp*</type></entry>
+         <entry><type>Timestamp</type></entry>
          <entry><filename>datatype/timestamp.h</filename></entry>
         </row>
 ____________________________________________________________________________-->
         <row>
          <entry><type>timestamp</type></entry>
-         <entry><type>Timestamp*</type></entry>
+         <entry><type>Timestamp</type></entry>
          <entry><filename>datatype/timestamp.h</filename></entry>
         </row>
 <!--==========================orignal english content==========================
@@ -4246,9 +4310,9 @@ PG_FUNCTION_INFO_V1(funcname);
     <para>
      In a version-1 function, each actual argument is fetched using a
      <function>PG_GETARG_<replaceable>xxx</replaceable>()</function>
-     macro that corresponds to the argument's data type.  In non-strict
+     macro that corresponds to the argument's data type.  (In non-strict
      functions there needs to be a previous check about argument null-ness
-     using <function>PG_ARGNULL_<replaceable>xxx</replaceable>()</function>.
+     using <function>PG_ARGISNULL()</function>; see below.)
      The result is returned using a
      <function>PG_RETURN_<replaceable>xxx</replaceable>()</function>
      macro for the return type.
@@ -4260,7 +4324,7 @@ PG_FUNCTION_INFO_V1(funcname);
     </para>
 ____________________________________________________________________________-->
     <para>
-     在版本-1 函数中，每一个实参都使用对应于该参数数据类型的<function>PG_GETARG_<replaceable>xxx</replaceable>()</function>宏取得。在非严格的函数中，需要使用<function>PG_ARGNULL_<replaceable>xxx</replaceable>()</function>对参数是否为空提前做检查。结果要用对应于返回类型的<function>PG_RETURN_<replaceable>xxx</replaceable>()</function>宏返回。<function>PG_GETARG_<replaceable>xxx</replaceable>()</function>的参数是要取得的函数参数的编号，从零开始计。<function>PG_RETURN_<replaceable>xxx</replaceable>()</function>的参数是实际要返回的值。
+     在版本-1 函数中，每一个实参都使用对应于该参数数据类型的<function>PG_GETARG_<replaceable>xxx</replaceable>()</function>宏取得。（在非严格的函数中，需要使用<function>PG_ARGISNULL()</function>对参数是否为空提前做检查；见下文。）结果要用对应于返回类型的<function>PG_RETURN_<replaceable>xxx</replaceable>()</function>宏返回。<function>PG_GETARG_<replaceable>xxx</replaceable>()</function>的参数是要取得的函数参数的编号，从零开始计。<function>PG_RETURN_<replaceable>xxx</replaceable>()</function>的参数是实际要返回的值。
     </para>
 
 <!--==========================orignal english content==========================
@@ -4556,19 +4620,6 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
     <para>
-     At first glance, the version-1 coding conventions might appear to be just
-     pointless obscurantism, over using plain <literal>C</literal> calling
-     conventions.  They do however allow to deal with <literal>NULL</literal>able
-     arguments/return values, and <quote>toasted</quote> (compressed or
-     out-of-line) values.
-    </para>
-____________________________________________________________________________-->
-    <para>
-     乍一看，版本-1编码习惯好像是在使用普通<literal>C</literal>调用约定之上的无意义的愚民政策。不过，它们确实允许处理可为<literal>NULL</literal>的参数/返回值以及被<quote>TOAST</quote>过（压缩或者线外）的值。
-    </para>
-
-<!--==========================orignal english content==========================
-    <para>
      The macro <function>PG_ARGISNULL(<replaceable>n</replaceable>)</function>
      allows a function to test whether each input is null.  (Of course, doing
      this is only necessary in functions not declared <quote>strict</quote>.)
@@ -4584,6 +4635,20 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
     <para>
      宏<function>PG_ARGISNULL(<replaceable>n</replaceable>)</function>允许一个函数测试是否每一个输入为空（当然，只需要在没有声明为<quote>strict</quote>的函数中这样做）。和<function>PG_GETARG_<replaceable>xxx</replaceable>()</function>宏一样，输入参数也是从零开始计数。注意应该在验证了一个参数不是空之后才执行<function>PG_GETARG_<replaceable>xxx</replaceable>()</function>。要返回一个空结果，应执行<function>PG_RETURN_NULL()</function>，它对严格的以及非严格的函数都有用。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     At first glance, the version-1 coding conventions might appear
+     to be just pointless obscurantism, compared to using
+     plain <literal>C</literal> calling conventions.  They do however allow
+     us to deal with <literal>NULL</literal>able arguments/return values,
+     and <quote>toasted</quote> (compressed or out-of-line) values.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     乍一看，与使用普通的<literal>C</literal>调用约定相比，版本 1 编码约定似乎只是毫无意义的愚民政策。
+     然而，它们确实允许我们处理<literal>NULL</literal>able 参数/返回值，以及<quote>toasted</quote>（压缩或离线）值。
     </para>
 
 <!--==========================orignal english content==========================
@@ -5305,29 +5370,77 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
     <para>
-     There is also a special API that provides support for returning
-     sets (multiple rows) from a C-language function.  A set-returning
-     function must follow the version-1 calling conventions.  Also,
-     source files must include <filename>funcapi.h</filename>, as
-     above.
+     C-language functions have two options for returning sets (multiple
+     rows).  In one method, called <firstterm>ValuePerCall</firstterm>
+     mode, a set-returning function is called repeatedly (passing the same
+     arguments each time) and it returns one new row on each call, until
+     it has no more rows to return and signals that by returning NULL.
+     The set-returning function (<acronym>SRF</acronym>) must therefore
+     save enough state across calls to remember what it was doing and
+     return the correct next item on each call.
+     In the other method, called <firstterm>Materialize</firstterm> mode,
+     a SRF fills and returns a tuplestore object containing its
+     entire result; then only one call occurs for the whole result, and
+     no inter-call state is needed.
     </para>
 ____________________________________________________________________________-->
     <para>
-     也提供了一种特殊的 API 来支持从 C 语言函数中返回集合（多个行）。
-     集合返回函数必须遵循版本-1 的调用规范。如上文所述，源文件中还
-     必须包括<filename>funcapi.h</filename>。
+     C 语言函数有两个返回集合（多行）的选项。在一种称为<firstterm>ValuePerCall</firstterm>
+     模式的方法中，一个集合返回函数被重复调用（每次传递相同的参数），并在每次调用时返回一个新行，
+     直到没有更多行要返回并且 通过返回 NULL 来表示这一点。因此，集合返回函数 (<acronym>SRF</acronym>) 
+     必须在调用之间保存足够的状态以记住它在做什么并在每次调用时返回正确的下一项。
+     在另一种称为<firstterm>Materialize</firstterm>模式的方法中，SRF 填充并返回一个包含其整个结果的 tuplestore 对象； 
+     那么整个结果只发生一次调用，不需要调用间状态。
     </para>
 
 <!--==========================orignal english content==========================
     <para>
-     A set-returning function (<acronym>SRF</acronym>) is called
-     once for each item it returns.  The <acronym>SRF</acronym> must
-     therefore save enough state to remember what it was doing and
-     return the next item on each call.
-     The structure <structname>FuncCallContext</structname> is provided to help
-     control this process.  Within a function, <literal>fcinfo-&gt;flinfo-&gt;fn_extra</literal>
-     is used to hold a pointer to <structname>FuncCallContext</structname>
-     across calls.
+     When using ValuePerCall mode, it is important to remember that the
+     query is not guaranteed to be run to completion; that is, due to
+     options such as <literal>LIMIT</literal>, the executor might stop
+     making calls to the set-returning function before all rows have been
+     fetched.  This means it is not safe to perform cleanup activities in
+     the last call, because that might not ever happen.  It's recommended
+     to use Materialize mode for functions that need access to external
+     resources, such as file descriptors.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     使用 ValuePerCall 模式时，重要的是要记住查询不能保证运行完成； 
+     也就是说，由于诸如<literal>LIMIT</literal>之类的选项，
+     执行程序可能会在获取所有行之前停止调用 set-returning 函数。
+     这意味着在最后一次调用中执行清理活动是不安全的，因为这可能永远不会发生。
+     对于需要访问外部资源（例如文件描述符）的函数，建议使用 Materialize 模式。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The remainder of this section documents a set of helper macros that
+     are commonly used (though not required to be used) for SRFs using
+     ValuePerCall mode.  Additional details about Materialize mode can be
+     found in <filename>src/backend/utils/fmgr/README</filename>.  Also,
+     the <filename>contrib</filename> modules in
+     the <productname>PostgreSQL</productname> source distribution contain
+     many examples of SRFs using both ValuePerCall and Materialize mode.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     本节的其余部分记录了一组使用 ValuePerCall 模式的 SRF 常用（尽管不是必须使用）的帮助程序宏。
+     有关 Materialize 模式的其他详细信息可以在<filename>src/backend/utils/fmgr/README</filename>中找到。
+     此外，<productname>PostgreSQL</productname>源代码分发中的<filename>contrib</filename> 
+     模块包含许多使用 ValuePerCall 和 Materialize 模式的 SRF 示例。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To use the ValuePerCall support macros described here,
+     include <filename>funcapi.h</filename>.  These macros work with a
+     structure <structname>FuncCallContext</structname> that contains the
+     state that needs to be saved across calls.  Within the calling
+     SRF, <literal>fcinfo-&gt;flinfo-&gt;fn_extra</literal> is used to
+     hold a pointer to <structname>FuncCallContext</structname> across
+     calls.  The macros automatically fill that field on first use,
+     and expect to find the same pointer there on subsequent uses.
 <programlisting>
 typedef struct FuncCallContext
 {
@@ -5392,12 +5505,11 @@ typedef struct FuncCallContext
     </para>
 ____________________________________________________________________________-->
     <para>
-     对返回的每一个项，一个集合返回函数（<acronym>SRF</acronym>）都会
-     被调用一次。因此，这个<acronym>SRF</acronym>必须保存足够的状态来
-     记住它正在做什么并且在每次调用时返回下一个项。结构
-     <structname>FuncCallContext</structname>被提供来帮助控制这个过程。在
-     一个函数中，<literal>fcinfo-&gt;flinfo-&gt;fn_extra</literal>被用来在
-     多次调用中保持指向<structname>FuncCallContext</structname>的指针。
+     要使用此处描述的 ValuePerCall 支持宏，请包含<filename>funcapi.h</filename>。
+     这些宏与结构<structname>FuncCallContext</structname>一起使用，该结构包含需要跨调用保存的状态。
+     在调用 SRF 中，<literal>fcinfo-&gt;flinfo-&gt;fn_extra</literal>用于在调用之间保存
+     指向<structname>FuncCallContext</structname>的指针。
+     宏在第一次使用时自动填充该字段，并期望在后续使用中找到相同的指针。
 <programlisting>
 typedef struct FuncCallContext
 {
@@ -5457,30 +5569,26 @@ typedef struct FuncCallContext
 
 <!--==========================orignal english content==========================
     <para>
-     An <acronym>SRF</acronym> uses several functions and macros that
-     automatically manipulate the <structname>FuncCallContext</structname>
-     structure (and expect to find it via <literal>fn_extra</literal>).  Use:
+     The macros to be used by an <acronym>SRF</acronym> using this
+     infrastructure are:
 <programlisting>
 SRF_IS_FIRSTCALL()
 </programlisting>
-     to determine if your function is being called for the first or a
-     subsequent time. On the first call (only) use:
+     Use this to determine if your function is being called for the first or a
+     subsequent time. On the first call (only), call:
 <programlisting>
 SRF_FIRSTCALL_INIT()
 </programlisting>
      to initialize the <structname>FuncCallContext</structname>. On every function call,
-     including the first, use:
+     including the first, call:
 <programlisting>
 SRF_PERCALL_SETUP()
 </programlisting>
-     to properly set up for using the <structname>FuncCallContext</structname>
-     and clearing any previously returned data left over from the
-     previous pass.
+     to set up for using the <structname>FuncCallContext</structname>.
     </para>
 ____________________________________________________________________________-->
     <para>
-     <acronym>SRF</acronym>使用一些自动操纵<structname>FuncCallContext</structname>
-     （并且期望通过<literal>fn_extra</literal>找到它）的函数和宏。可使用：
+     使用此基础结构的<acronym>SRF</acronym>将使用的宏是：
 <programlisting>
 SRF_IS_FIRSTCALL()
 </programlisting>
@@ -5488,18 +5596,16 @@ SRF_IS_FIRSTCALL()
 <programlisting>
 SRF_FIRSTCALL_INIT()
 </programlisting>
-     可初始化<structname>FuncCallContext</structname>。在每一次函数调用时（包括第一次）
-     可使用：
+     使用它来确定您的函数是第一次还是随后被调用。 在第一次调用时（仅），调用：
 <programlisting>
 SRF_PERCALL_SETUP()
 </programlisting>
-     为使用<structname>FuncCallContext</structname>做适当的设置并且清除上一次
-     留下来的任何已返回的数据。
+     设置使用<structname>FuncCallContext</structname>。
     </para>
 
 <!--==========================orignal english content==========================
     <para>
-     If your function has data to return, use:
+     If your function has data to return in the current call, use:
 <programlisting>
 SRF_RETURN_NEXT(funcctx, result)
 </programlisting>
@@ -5514,7 +5620,7 @@ SRF_RETURN_DONE(funcctx)
     </para>
 ____________________________________________________________________________-->
     <para>
-     如果你的函数有数据要返回，可使用：
+     如果您的函数有数据要在当前调用中返回，请使用：
 <programlisting>
 SRF_RETURN_NEXT(funcctx, result)
 </programlisting>
@@ -5538,7 +5644,14 @@ SRF_RETURN_DONE(funcctx)
      <structfield>multi_call_memory_ctx</structfield> is a suitable location for any
      data that needs to survive until the <acronym>SRF</acronym> is finished running.  In most
      cases, this means that you should switch into
-     <structfield>multi_call_memory_ctx</structfield> while doing the first-call setup.
+     <structfield>multi_call_memory_ctx</structfield> while doing the
+     first-call setup.
+     Use <literal>funcctx-&gt;user_fctx</literal> to hold a pointer to
+     any such cross-call data structures.
+     (Data you allocate
+     in <structfield>multi_call_memory_ctx</structfield> will go away
+     automatically when the query ends, so it is not necessary to free
+     that data manually, either.)
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -5548,8 +5661,11 @@ ____________________________________________________________________________-->
      如果你想要分配任何需要在多次调用间都存在的数据结构，需要把它们
      放在其他地方。对于任何需要在<acronym>SRF</acronym>结束运行之前都存
      在的数据来说，<structfield>multi_call_memory_ctx</structfield>引用的内存
-     上下文是一个合适的位置。在大部分情况中，这意味着应该在做第一次
-     调用设置时就切换到<structfield>multi_call_memory_ctx</structfield>中。
+     上下文是一个合适的位置。在大多数情况下，这意味着您应该在进行首次调用设置时切换到
+     <structfield>multi_call_memory_ctx</structfield>。 
+     使用<literal>funcctx-&gt;user_fctx</literal>来保存指向任何此类交叉调用数据结构的指针。
+     （您在<structfield>multi_call_memory_ctx</structfield>中分配的数据将在查询结束时自动消失，
+     因此也无需手动释放该数据。）
     </para>
 
     <warning>
@@ -5619,8 +5735,8 @@ my_set_returning_function(PG_FUNCTION_ARGS)
     }
     else
     {
-        /* Here we are done returning items and just need to clean up: */
-        <replaceable>user code</replaceable>
+        /* Here we are done returning items, so just report that fact. */
+        /* (Resist the temptation to put cleanup code here.) */
         SRF_RETURN_DONE(funcctx);
     }
 }
@@ -5667,8 +5783,8 @@ my_set_returning_function(PG_FUNCTION_ARGS)
     }
     else
     {
-        /* 这里已经完成了项的返回并且需要进行清理： */
-        <replaceable>user code</replaceable>
+        /* 这里已经完成了项的返回，所以只报告事实。 */
+        /* （不要将清理代码放在这里的。） */
         SRF_RETURN_DONE(funcctx);
     }
 }
@@ -5904,18 +6020,6 @@ CREATE OR REPLACE FUNCTION retcomposite(IN integer, IN integer,
      注意在这种方法中，函数的输出类型在形式上是一种匿名的
      <structname>record</structname>类型。
     </para>
-
-<!--==========================orignal english content==========================
-    <para>
-     The directory <link linkend="tablefunc"><filename>contrib/tablefunc</filename></link>
-     module in the source distribution contains more examples of
-     set-returning functions.
-    </para>
-____________________________________________________________________________-->
-    <para>
-     源码中的目录<link linkend="tablefunc">contrib/tablefunc</link>
-     下的模块包含集合返回函数更加复杂的例子。
-    </para>
    </sect2>
 
    <sect2>
@@ -5927,11 +6031,9 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
     <para>
      C-language functions can be declared to accept and
-     return the polymorphic types
-     <type>anyelement</type>, <type>anyarray</type>, <type>anynonarray</type>,
-     <type>anyenum</type>, and <type>anyrange</type>.
-     See <xref linkend="extend-types-polymorphic"/> for a more detailed explanation
-     of polymorphic functions. When function arguments or return types
+     return the polymorphic types described in <xref
+     linkend="extend-types-polymorphic"/>.
+     When a function's arguments or return types
      are defined as polymorphic types, the function author cannot know
      in advance what data type it will be called with, or
      need to return. There are two routines provided in <filename>fmgr.h</filename>
@@ -5953,12 +6055,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     C 语言函数可以被声明为接受和返回多态类型
-     <type>anyelement</type>、<type>anyarray</type>、
-     <type>anynonarray</type>、
-     <type>anyenum</type>以及<type>anyrange</type>。
-     关于多态函数的详细介绍请见
-     <xref linkend="extend-types-polymorphic"/>。当函数参数或者返回
+     可以声明 C 语言函数来接受和返回<xref linkend="extend-types-polymorphic"/>中描述的多态类型。当函数参数或者返回
      类型被定义为多态类型时，函数的编写者无法提前知道会用什么数据类型
      调用该函数或者该函数需要返回什么数据类型。在<filename>fmgr.h</filename>
      中提供了两种例程来允许版本-1 的 C 函数发现其参数的实际数据类型以及
@@ -6137,7 +6234,7 @@ ____________________________________________________________________________-->
     </para>
    </sect2>
 
-   <sect2>
+   <sect2 id="xfunc-shared-addin">
 <!--==========================orignal english content==========================
     <title>Shared Memory and LWLocks</title>
 ____________________________________________________________________________-->
@@ -6287,7 +6384,7 @@ ____________________________________________________________________________-->
         exceptions.  Any exceptions must be caught and appropriate errors
         passed back to the C interface.  If possible, compile C++ with
         <option>-fno-exceptions</option> to eliminate exceptions entirely; in such
-        cases, you must check for failures in your C++ code, e.g.  check for
+        cases, you must check for failures in your C++ code, e.g.,  check for
         NULL returned by <function>new()</function>.
        </para>
       </listitem>
