@@ -27,18 +27,15 @@ ____________________________________________________________________________-->
  <para>
   The structures of the catalogs are declared in specially formatted C
   header files in the <filename>src/include/catalog/</filename> directory of
-  the source tree.  In particular, for each catalog there is a header file
+  the source tree.  For each catalog there is a header file
   named after the catalog (e.g., <filename>pg_class.h</filename>
   for <structname>pg_class</structname>), which defines the set of columns
   the catalog has, as well as some other basic properties such as its OID.
-  Other critical files defining the catalog structure
-  include <filename>indexing.h</filename>, which defines the indexes present
-  on all the system catalogs, and <filename>toasting.h</filename>, which
-  defines TOAST tables for catalogs that need one.
  </para>
 ____________________________________________________________________________-->
  <para>
-  目录的结构声明在特殊格式的C头文件中，它们位于源码树的<filename>src/include/catalog/</filename>目录中。特别地，对每一个目录都有一个以其名称命名的头文件（例如，<structname>pg_class</structname>的头文件是<filename>pg_class.h</filename>），头文件定义了目录具有的列集合，以及一些其他的基本属性（例如OID）。其他定义目录结构的重要文件包括<filename>indexing.h</filename>和<filename>toasting.h</filename>，前者定义所有系统目录上的索引，而后者为需要TOAST表的目录定义TOAST表。
+  目录的结构声明在特殊格式的C头文件中，它们位于源码树的<filename>src/include/catalog/</filename>目录中。
+  对每一个目录都有一个以其名称命名的头文件（例如，<structname>pg_class</structname>的头文件是<filename>pg_class.h</filename>），头文件定义了目录具有的列集合，以及一些其他的基本属性（例如OID）。
  </para>
 
 <!--==========================orignal english content==========================
@@ -166,7 +163,8 @@ ____________________________________________________________________________-->
    require all columns that should be non-nullable to be marked so
    in <structname>pg_attribute</structname>.  The bootstrap code will
    automatically mark catalog columns as <literal>NOT NULL</literal>
-   if they are fixed-width and are not preceded by any nullable column.
+   if they are fixed-width and are not preceded by any nullable or
+   variable-width column.
    Where this rule is inadequate, you can force correct marking by using
    <literal>BKI_FORCE_NOT_NULL</literal>
    and <literal>BKI_FORCE_NULL</literal> annotations as needed.
@@ -177,7 +175,7 @@ ____________________________________________________________________________-->
    通过将它们包裹在<literal>#ifdef CATALOG_VARLEN</literal> ... <literal>#endif</literal>（其中<literal>CATALOG_VARLEN</literal>是一个永不被定义的符号）中可以实现这一点。
    这能防止C代码不小心尝试访问可能不在那里或者可能在其他某个偏移位置的域。
    作为一种防止创建不正确行的措施，我们要求所有应该为非空的列在<structname>pg_attribute</structname>中也被标记为非空。
-   如果目录列是定长的并且前面没有任何可以为空的列，bootstrap代码将自动把它标记为<literal>NOT NULL</literal>。
+   如果目录列是定长的并且前面没有任何可以为空或可变宽度的列，bootstrap代码将自动把它标记为<literal>NOT NULL</literal>。
    在这一规则不适用的地方，可以根据需要使用<literal>BKI_FORCE_NOT_NULL</literal>和<literal>BKI_FORCE_NULL</literal>标注强制正确的标记。
   </para>
 
@@ -714,15 +712,22 @@ ____________________________________________________________________________-->
     <listitem>
 <!--==========================orignal english content==========================
      <para>
-      In such a column, all entries must use the symbolic format except
-      when writing <literal>0</literal> for InvalidOid.  (If the column is
+      In some catalog columns, it's allowed for entries to be zero instead
+      of a valid reference.  If this is allowed, write
+      <literal>BKI_LOOKUP_OPT</literal> instead
+      of <literal>BKI_LOOKUP</literal>.  Then you can
+      write <literal>0</literal> for an entry.  (If the column is
       declared <type>regproc</type>, you can optionally
       write <literal>-</literal> instead of <literal>0</literal>.)
+      Except for this special case, all entries in
+      a <literal>BKI_LOOKUP</literal> column must be symbolic references.
       <filename>genbki.pl</filename> will warn about unrecognized names.
      </para>
 ____________________________________________________________________________-->
      <para>
-      在这样的一个列中，所有的项必须使用符号化格式，不过写成<literal>0</literal>（表示InvalidOid）除外（如果列被声明为<type>regproc</type>，可以选择用<literal>-</literal>代替<literal>0</literal>）。对于无法识别的名称，<filename>genbki.pl</filename>将会告警。
+      在一些目录列，允许条目为零而不是有效的引用。如果这是允许的，写<literal>BKI_LOOKUP_OPT</literal>而不是<literal>BKI_LOOKUP</literal>。
+      然后你能对一个条目写<literal>0</literal> 。(如果列为<type>regproc</type>声明，你可以有选择的写<literal>-</literal>而不是<literal>0</literal>。)
+      除了这种特殊情况外，<literal>BKI_LOOKUP</literal>列中的所有条目都必须是符号引用。<filename>genbki.pl</filename>将会警告无法识别的名称。	  
      </para>
     </listitem>
 
@@ -805,22 +810,6 @@ ____________________________________________________________________________-->
      </para>
     </listitem>
 
-    <listitem>
-<!--==========================orignal english content==========================
-     <para>
-      In addition to the generic lookup mechanisms, there is a special
-      convention that <literal>PGNSP</literal> is replaced by the OID of
-      the <literal>pg_catalog</literal> schema,
-      and <literal>PGUID</literal> is replaced by the OID of the bootstrap
-      superuser role.  These usages are somewhat historical but so far
-      there hasn't been a need to generalize them.
-     </para>
-____________________________________________________________________________-->
-     <para>
-      除了通用的查找机制外，还有一个特殊约定，即<literal>PGNSP</literal>用<literal>pg_catalog</literal>模式的OID代替，而<literal>PGUID</literal>用自举超级用户角色的OID取代。这些用法有历史性，但到目前为止没有必要普及他们。
-     </para>
-    </listitem>
-
    </itemizedlist>
 
 <!--==========================orignal english content==========================
@@ -833,6 +822,30 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
    <para>
     <filename>genbki.pl</filename>在运行时会解决所有符号化引用并且把简单的数字OID放到输出的BKI文件中。因此不需要bootstrap后端处理符号化引用。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    It's desirable to mark OID reference columns
+    with <literal>BKI_LOOKUP</literal> or <literal>BKI_LOOKUP_OPT</literal>
+    even if the catalog has no initial data that requires lookup.  This
+    allows <filename>genbki.pl</filename> to record the foreign key
+    relationships that exist in the system catalogs.  That information is
+    used in the regression tests to check for incorrect entries.  See also
+    the macros <literal>DECLARE_FOREIGN_KEY</literal>,
+    <literal>DECLARE_FOREIGN_KEY_OPT</literal>,
+    <literal>DECLARE_ARRAY_FOREIGN_KEY</literal>,
+    and <literal>DECLARE_ARRAY_FOREIGN_KEY_OPT</literal>, which are
+    used to declare foreign key relationships that are too complex
+    for <literal>BKI_LOOKUP</literal> (typically, multi-column foreign
+    keys).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    将OID引用列标记为<literal>BKI_LOOKUP</literal>或<literal>BKI_LOOKUP_OPT</literal>是较为可取的，即使目录没有需要查找的初始数据。
+    这允许<filename>genbki.pl</filename>记录已经存在系统目录中的外键的关系。这些信息在回归测试中用于检查不正确的条目。
+    也可参见宏 <literal>DECLARE_FOREIGN_KEY</literal>,<literal>DECLARE_FOREIGN_KEY_OPT</literal>,<literal>DECLARE_ARRAY_FOREIGN_KEY</literal>,
+    和 <literal>DECLARE_ARRAY_FOREIGN_KEY_OPT</literal>，用于声明<literal>BKI_LOOKUP</literal>过于复杂的外键关系（通常是，多列外键）。
    </para>
   </sect2>
 
@@ -988,7 +1001,7 @@ ____________________________________________________________________________-->
      <filename>reformat_dat_file.pl</filename> can be adapted to perform
      many kinds of bulk changes.  Look for its block comments showing where
      one-off code can be inserted.  In the following example, we are going
-     to consolidate two boolean fields in <structname>pg_proc</structname>
+     to consolidate two Boolean fields in <structname>pg_proc</structname>
      into a char field:
 
      <orderedlist>
@@ -1071,7 +1084,7 @@ $ perl  rewrite_dat_with_prokind.pl  pg_proc.dat
     </para>
 ____________________________________________________________________________-->
     <para>
-     可以修改<filename>reformat_dat_file.pl</filename>执行很多种批量更改。寻找其中展示可以插入一次性代码的注释块。在下面的例子中，我们将把<structname>pg_proc</structname>中的两个boolean域联合成一个char域：
+     可以修改<filename>reformat_dat_file.pl</filename>执行很多种批量更改。寻找其中展示可以插入一次性代码的注释块。在下面的例子中，我们将把<structname>pg_proc</structname>中的两个Boolean域联合成一个char域：
 
      <orderedlist>
       <listitem>
@@ -1171,12 +1184,14 @@ ____________________________________________________________________________-->
    next token that syntactically cannot belong to the preceding
    command starts a new one.  (Usually you would put a new command on
    a new line, for clarity.)  Tokens can be certain key words, special
-   characters (parentheses, commas, etc.), numbers, or double-quoted
-   strings.  Everything is case sensitive.
+   characters (parentheses, commas, etc.), identifiers, numbers, or
+   single-quoted strings.  Everything is case sensitive.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <acronym>BKI</acronym>输入由一个命令序列组成。根据命令的语法，命令由一系列记号构成。记号之间通常由空白分隔，但是在没有歧义时也可不用。没有什么特殊的命令分隔符；语法上无法属于前一命令的记号将开始新的一条命令（通常你会把一个新命令放在一个新行上以保持清晰）。 记号可以是某些关键字、特殊字符（圆括弧，逗号等）、数字或者双引号字串。 所有东西都是大小写敏感的。
+   <acronym>BKI</acronym>输入由一个命令序列组成。根据命令的语法，命令由一系列记号构成。记号之间通常由空白分隔，但是在没有歧义时也可不用。
+   没有什么特殊的命令分隔符；语法上无法属于前一命令的记号将开始新的一条命令（通常你会把一个新命令放在一个新行上以保持清晰）。 
+   记号可以是某些关键字、特殊字符（圆括弧，逗号等）、标识符、数字或者单引号字串。 所有东西都是大小写敏感的。
   </para>
 
 <!--==========================orignal english content==========================
@@ -1375,11 +1390,14 @@ ____________________________________________________________________________-->
      <para>
       NULL values can be specified using the special key word
       <literal>_null_</literal>.  Values that do not look like
-      identifiers or digit strings must be double quoted.
+      identifiers or digit strings must be single-quoted.
+      (To include a single quote in a value, write it twice.
+      Escape-string-style backslash escapes are allowed in the string, too.)
      </para>
 ____________________________________________________________________________-->
      <para>
-      NULL 可以用特殊的关键字<literal>_null_</literal>指定。看起来不像标识符或者数字字符串的值必须被加上双引号。
+      NULL 可以用特殊的关键字<literal>_null_</literal>指定。看起来不像标识符或者数字字符串的值必须被加上单引号。
+      (要在一个值中包含单引号，将其写两次。转义字符串风格的反斜杠转义在字符串中也是允许的。)
      </para>
     </listitem>
    </varlistentry>
@@ -1671,7 +1689,7 @@ ____________________________________________________________________________-->
 <programlisting>
 create test_table 420 (oid = oid, cola = int4, colb = text)
 open test_table
-insert ( 421 1 "value1" )
+insert ( 421 1 'value 1' )
 insert ( 422 2 _null_ )
 close test_table
 </programlisting>
@@ -1682,7 +1700,7 @@ ____________________________________________________________________________-->
 <programlisting>
 create test_table 420 (oid = oid, cola = int4, colb = text)
 open test_table
-insert ( 421 1 "value1" )
+insert ( 421 1 'value 1' )
 insert ( 422 2 _null_ )
 close test_table
 </programlisting>
