@@ -114,7 +114,7 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 
 
 ## 关于许可
-关于本翻译文档遵从[PostgreSQL licence](https://www.postgresql.org/about/licence/)
+关于本翻译文档的使用，遵从[PostgreSQL licence](https://www.postgresql.org/about/licence/)。
 
 
 ## 其它
