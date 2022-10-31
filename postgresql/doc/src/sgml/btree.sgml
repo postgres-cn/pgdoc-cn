@@ -244,7 +244,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    此外，该排序是完全的。也就是说，对于所有非空值<replaceable>A</replaceable>、<replaceable>B</replaceable>、<replaceable>C</replaceable>：
+    此外，该排序是完全的。也就是说，对于所有非空值<replaceable>A</replaceable>、<replaceable>B</replaceable>：
 
     <itemizedlist>
      <listitem>
@@ -335,7 +335,6 @@ ____________________________________________________________________________-->
  <para>
   如<xref linkend="xindex-btree-support-table"/>中所示，btree定义了一种必需的和四种可选的支持函数。这五种用户定义的方法为：
  </para>
-
  <variablelist>
   <varlistentry>
 <!--==========================orignal english content==========================
@@ -390,7 +389,6 @@ ____________________________________________________________________________-->
     </para>
    </listitem>
   </varlistentry>
-
   <varlistentry>
 <!--==========================orignal english content==========================
    <term><function>sortsupport</function></term>
@@ -415,7 +413,6 @@ ____________________________________________________________________________-->
     </para>
    </listitem>
   </varlistentry>
-
   <varlistentry>
 <!--==========================orignal english content==========================
    <term><function>in_range</function></term>
@@ -720,7 +717,6 @@ ____________________________________________________________________________-->
     </para>
    </listitem>
   </varlistentry>
-
   <varlistentry>
 <!--==========================orignal english content==========================
    <term><function>equalimage</function></term>
@@ -898,7 +894,7 @@ ____________________________________________________________________________-->
 <synopsis>
 options(<replaceable>relopts</replaceable> <type>local_relopts *</type>) returns void
 </synopsis>
-     The function is passed a pointer to a <replaceable>local_relopts</replaceable>
+     The function is passed a pointer to a <structname>local_relopts</structname>
      struct, which needs to be filled with a set of operator class
      specific options.  The options can be accessed from other support
      functions using the <literal>PG_HAS_OPCLASS_OPTIONS()</literal> and
@@ -910,7 +906,7 @@ ____________________________________________________________________________-->
 <synopsis>
 options(<replaceable>relopts</replaceable> <type>local_relopts *</type>) returns void
 </synopsis>
-     函数传递一个指向<replaceable>local_relopts</replaceable>结构的指针，需要用一组操作符类特定的选项来填充。
+     函数传递一个指向<structname>local_relopts</structname>结构的指针，需要用一组操作符类特定的选项来填充。
 	 这些选项可以通过<literal>PG_HAS_OPCLASS_OPTIONS()</literal> 和 <literal>PG_GET_OPCLASS_OPTIONS()</literal> 宏，从其他支持的函数进行访问。
     </para>
 <!--==========================orignal english content==========================
@@ -1008,6 +1004,167 @@ ____________________________________________________________________________-->
   </para>
  </sect2>
 
+ <sect2 id="btree-deletion">
+<!--==========================orignal english content==========================
+  <title>Bottom-up Index Deletion</title>
+____________________________________________________________________________-->
+  <title>Bottom-up 索引删除</title>
+<!--==========================orignal english content==========================
+  <para>
+   B-Tree indexes are not directly aware that under MVCC, there might
+   be multiple extant versions of the same logical table row; to an
+   index, each tuple is an independent object that needs its own index
+   entry.  <quote>Version churn</quote> tuples may sometimes
+   accumulate and adversely affect query latency and throughput.  This
+   typically occurs with <command>UPDATE</command>-heavy workloads
+   where most individual updates cannot apply the
+   <acronym>HOT</acronym> optimization.  Changing the value of only
+   one column covered by one index during an <command>UPDATE</command>
+   <emphasis>always</emphasis> necessitates a new set of index tuples
+   &mdash; one for <emphasis>each and every</emphasis> index on the
+   table.  Note in particular that this includes indexes that were not
+   <quote>logically modified</quote> by the <command>UPDATE</command>.
+   All indexes will need a successor physical index tuple that points
+   to the latest version in the table.  Each new tuple within each
+   index will generally need to coexist with the original
+   <quote>updated</quote> tuple for a short period of time (typically
+   until shortly after the <command>UPDATE</command> transaction
+   commits).
+  </para>
+____________________________________________________________________________-->
+  <para>
+   在 MVCC下B-Tree索引不能直接感知，同一个逻辑表行可能存在多个现存版本;对于一个索引来说，每个元组都是一个需要其自己的索引条目的独立的对象。
+   <quote>Version churn</quote>元组有时可能会积累，并且对查询延迟和吞吐量产生影响。
+   这通常发生在<command>UPDATE</command>较为繁重的工作负载中，其中大多数单独的更新不能应用<acronym>HOT</acronym>优化。
+   在<command>UPDATE</command>更改仅一个被一个索引覆盖的列期间，<emphasis>总是</emphasis> 需要一个新的索引元组 &mdash；一个用于表上的<emphasis>each and every</emphasis>索引。
+   特别注意，这包括没有被<command>UPDATE</command>进行<quote>logically modified</quote>的索引。
+   所有索引将需要一个后继的物理索引元组，用于指向表中的最新版本。
+   每个索引中的每个新元组通常需要与原始的<quote>updated</quote>元组共存很短一段时间(通常直到<command>UPDATE</command>事务提交后不久)。
+  </para>
+<!--==========================orignal english content==========================
+  <para>
+   B-Tree indexes incrementally delete version churn index tuples by
+   performing <firstterm>bottom-up index deletion</firstterm> passes.
+   Each deletion pass is triggered in reaction to an anticipated
+   <quote>version churn page split</quote>.  This only happens with
+   indexes that are not logically modified by
+   <command>UPDATE</command> statements, where concentrated build up
+   of obsolete versions in particular pages would occur otherwise.  A
+   page split will usually be avoided, though it's possible that
+   certain implementation-level heuristics will fail to identify and
+   delete even one garbage index tuple (in which case a page split or
+   deduplication pass resolves the issue of an incoming new tuple not
+   fitting on a leaf page).  The worst-case number of versions that
+   any index scan must traverse (for any single logical row) is an
+   important contributor to overall system responsiveness and
+   throughput.  A bottom-up index deletion pass targets suspected
+   garbage tuples in a single leaf page based on
+   <emphasis>qualitative</emphasis> distinctions involving logical
+   rows and versions.  This contrasts with the <quote>top-down</quote>
+   index cleanup performed by autovacuum workers, which is triggered
+   when certain <emphasis>quantitative</emphasis> table-level
+   thresholds are exceeded (see <xref linkend="autovacuum"/>).
+  </para>
+____________________________________________________________________________-->
+  <para>
+   B-Tree索引通过执行<firstterm>bottom-up index deletion</firstterm>传递，增量地删除版本混杂索引元组。
+   每个删除传递都是在预期的<quote>version churn page split</quote>反应时触发的。
+   这只发生在没有被<command>UPDATE</command>语句逻辑修改的索引上，否则将会出现集中生成特定页面中的过时版本。
+   通常会避免页分割，尽管某些实现级别的启发式方法可能无法识别和删除即使一个垃圾索引元组(在这种情况下，页分割或重复数据删除传递解决传入的新元组不适合叶页的问题)。
+   任何索引扫描必须遍历的最坏版本数(对于单个逻辑行)，是整个系统响应能力和吞吐量的重要因素。
+   自下而上的索引删除通道基于涉及逻辑行和版本的定性区分，针对单个叶页中的可疑垃圾元组。
+   bottom-up的索引删除传递针对单个叶页中的可疑垃圾元组，基于涉及逻辑行和版本的<emphasis>quantitative</emphasis>差异。
+   这与autovacuum workers执行的<quote>top-down</quote>索引清理形成对比，其在某些<emphasis>quantitative</emphasis>表级阈值超过时触发(参见 <xref linkend="autovacuum"/>)。
+  </para>
+  <note>
+<!--==========================orignal english content==========================
+   <para>
+    Not all deletion operations that are performed within B-Tree
+    indexes are bottom-up deletion operations.  There is a distinct
+    category of index tuple deletion: <firstterm>simple index tuple
+     deletion</firstterm>.  This is a deferred maintenance operation
+    that deletes index tuples that are known to be safe to delete
+    (those whose item identifier's <literal>LP_DEAD</literal> bit is
+    already set).  Like bottom-up index deletion, simple index
+    deletion takes place at the point that a page split is anticipated
+    as a way of avoiding the split.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    不是所有在B-Tree索引中执行的删除操作，都是bottom-up删除操作。
+    这有一个索引元组删除的独特类别：<firstterm>simple index tuple deletion</firstterm>.  
+    这是一个延迟维护操作，用以删除已知的可以安全删除的索引元组(那些项标识符<literal>LP_DEAD</literal>位已经被设置的)。
+    就像bottom-up索引删除，简单索引删除发生在预期将进行页分割的时候，作为避免分割的一种方式。
+   </para>
+<!--==========================orignal english content==========================
+   <para>
+    Simple deletion is opportunistic in the sense that it can only
+    take place when recent index scans set the
+    <literal>LP_DEAD</literal> bits of affected items in passing.
+    Prior to <productname>PostgreSQL</productname> 14, the only
+    category of B-Tree deletion was simple deletion.  The main
+    differences between it and bottom-up deletion are that only the
+    former is opportunistically driven by the activity of passing
+    index scans, while only the latter specifically targets version
+    churn from <command>UPDATE</command>s that do not logically modify
+    indexed columns.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    某种意义上说，简单删除是具有机会性的，因为它只能在当前索引扫描设定传递所影响项目的<literal>LP_DEAD</literal>位的时候发生。
+    在<productname>PostgreSQL</productname> 14之前，唯一的B-Tree删除类别是简单删除。
+    它和bottom-up删除的主要区别是，前者(简单删除)是由传递索引扫描活动在适当的时候驱动的，而后者专门针对没有进行逻辑修改索引列的<command>UPDATE</command>所带来的版本混杂。
+   </para>
+  </note>
+<!--==========================orignal english content==========================
+  <para>
+   Bottom-up index deletion performs the vast majority of all garbage
+   index tuple cleanup for particular indexes with certain workloads.
+   This is expected with any B-Tree index that is subject to
+   significant version churn from <command>UPDATE</command>s that
+   rarely or never logically modify the columns that the index covers.
+   The average and worst-case number of versions per logical row can
+   be kept low purely through targeted incremental deletion passes.
+   It's quite possible that the on-disk size of certain indexes will
+   never increase by even one single page/block despite
+   <emphasis>constant</emphasis> version churn from
+   <command>UPDATE</command>s.  Even then, an exhaustive <quote>clean
+    sweep</quote> by a <command>VACUUM</command> operation (typically
+   run in an autovacuum worker process) will eventually be required as
+   a part of <emphasis>collective</emphasis> cleanup of the table and
+   each of its indexes.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   Bottom-up索引删除为具有某些工作负载的特定索引执行绝大多数垃圾索引元组清理。
+   对任何B-Tree索引，如果它从<command>UPDATE</command>受到明显的版本混杂，而几乎没有或从未有逻辑更改该索引所覆盖的列，这是可以预见的。
+   每个逻辑行的平均和最坏情况的版本数可以通过目标增量删除传递以保持较低。
+   尽管从 <command>UPDATE</command><emphasis>constant</emphasis> 进行了版本混杂，但某些索引的磁盘大小很可能永远不会增加哪怕一个页面/块。
+   尽管如此，一个由<command>VACUUM</command>操作(通常在autovacuum worker进程中运行)的彻底的<quote>clean sweep</quote> 将最终需要作为表和它的每个索引的<emphasis>集体</emphasis>清理的一部分。
+  </para>
+<!--==========================orignal english content==========================
+  <para>
+   Unlike <command>VACUUM</command>, bottom-up index deletion does not
+   provide any strong guarantees about how old the oldest garbage
+   index tuple may be.  No index can be permitted to retain
+   <quote>floating garbage</quote> index tuples that became dead prior
+   to a conservative cutoff point shared by the table and all of its
+   indexes collectively.  This fundamental table-level invariant makes
+   it safe to recycle table <acronym>TID</acronym>s.  This is how it
+   is possible for distinct logical rows to reuse the same table
+   <acronym>TID</acronym> over time (though this can never happen with
+   two logical rows whose lifetimes span the same
+   <command>VACUUM</command> cycle).
+  </para>
+____________________________________________________________________________-->
+  <para>
+   不像<command>VACUUM</command>，bottom-up索引删除不提供任何关于最古老的垃圾索引元组有多长时间的强保证。
+   没有索引可以被允许保留在由表和所有它的索引共享的保守截止点之前已经失效的<quote>floating garbage</quote>索引元组。
+   这个基本的表级不变量使得回收利用表的<acronym>TID</acronym>是安全的。
+   这就是为什么不同的逻辑行可以随着时间的推移而重新使用相同的表<acronym>TID</acronym>(尽管这在生命周期跨越相同的<command>VACUUM</command>周期的两个逻辑行中永远不会发生)。
+  </para>
+ </sect2>
+
  <sect2 id="btree-deduplication">
 <!--==========================orignal english content==========================
   <title>Deduplication</title>
@@ -1070,19 +1227,21 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    The deduplication process occurs lazily, when a new item is
-   inserted that cannot fit on an existing leaf page.  This prevents
-   (or at least delays) leaf page splits.  Unlike GIN posting list
-   tuples, B-Tree posting list tuples do not need to expand every time
-   a new duplicate is inserted; they are merely an alternative
-   physical representation of the original logical contents of the
-   leaf page.  This design prioritizes consistent performance with
-   mixed read-write workloads.  Most client applications will at least
-   see a moderate performance benefit from using deduplication.
-   Deduplication is enabled by default.
+   inserted that cannot fit on an existing leaf page, though only when
+   index tuple deletion could not free sufficient space for the new
+   item (typically deletion is briefly considered and then skipped
+   over).  Unlike GIN posting list tuples, B-Tree posting list tuples
+   do not need to expand every time a new duplicate is inserted; they
+   are merely an alternative physical representation of the original
+   logical contents of the leaf page.  This design prioritizes
+   consistent performance with mixed read-write workloads.  Most
+   client applications will at least see a moderate performance
+   benefit from using deduplication.  Deduplication is enabled by
+   default.
   </para>
 ____________________________________________________________________________-->
   <para>
-   当插入的新项无法适应现有叶页时，重复数据删除过程进行缓慢。这可以防止（或至少延迟）叶页拆分。 
+   当插入的新项无法适应现有叶页时，重复数据删除过程进行缓慢，虽然只有当索引元组删除不能为新项释放足够的空间时(通常删除会被简单考虑然后跳过)
    不像 GIN 倒排列表元组，B-Tree倒排列表元组不需要在每次插入新重复项时展开;它们仅仅是叶页原始逻辑内容的替代物理表示方式。 
    此设计优先考虑混合读写工作负载的一致性能。 
    大多数客户端应用程序可以从使用重复数据删除中获得适度的性能收益。默认情况下，将启用重复数据删除。
@@ -1129,35 +1288,24 @@ ____________________________________________________________________________-->
   </para>
 <!--==========================orignal english content==========================
   <para>
-   B-Tree indexes are not directly aware that under MVCC, there might
-   be multiple extant versions of the same logical table row; to an
-   index, each tuple is an independent object that needs its own index
-   entry.  <quote>Version duplicates</quote> may sometimes accumulate
-   and adversely affect query latency and throughput.  This typically
-   occurs with <command>UPDATE</command>-heavy workloads where most
-   individual updates cannot apply the <acronym>HOT</acronym>
-   optimization (often because at least one indexed column gets
-   modified, necessitating a new set of index tuple versions &mdash;
-   one new tuple for <emphasis>each and every</emphasis> index).  In
-   effect, B-Tree deduplication ameliorates index bloat caused by
-   version churn.  Note that even the tuples from a unique index are
-   not necessarily <emphasis>physically</emphasis> unique when stored
-   on disk due to version churn.  The deduplication optimization is
-   selectively applied within unique indexes.  It targets those pages
-   that appear to have version duplicates.  The high level goal is to
-   give <command>VACUUM</command> more time to run before an
-   <quote>unnecessary</quote> page split caused by version churn can
-   take place.
+   It is sometimes possible for unique indexes (as well as unique
+   constraints) to use deduplication.  This allows leaf pages to
+   temporarily <quote>absorb</quote> extra version churn duplicates.
+   Deduplication in unique indexes augments bottom-up index deletion,
+   especially in cases where a long-running transaction holds a
+   snapshot that blocks garbage collection.  The goal is to buy time
+   for the bottom-up index deletion strategy to become effective
+   again.  Delaying page splits until a single long-running
+   transaction naturally goes away can allow a bottom-up deletion pass
+   to succeed where an earlier deletion pass failed.
   </para>
 ____________________________________________________________________________-->
   <para>
-   在 MVCC下B-Tree 索引不能直接感知，同一逻辑表行可能有多个现存版本;对于索引，每个元组都是一个独立对象，需要自己的索引条目。
-   <quote>Version duplicates</quote>有时可能会累积并对其查询延迟和吞吐量产生不利影响。
-   这通常发生在<command>UPDATE</command>重的工作负载中，其中大多数单独的更新无法应用<acronym>HOT</acronym>优化（通常因为至少修改了一个索引列，需要一组新的索引元组版本 &mdash;一个新的元组对<emphasis>each and every</emphasis>索引）。 
-   实际上，B-Tree重复数据删除可以改善由版本变动引起的索引膨胀。
-   请注意，即使唯一索引中的元组也不一定<emphasis>物理上</emphasis>唯一的，在版本变化而存储在磁盘上时。 
-   重复数据删除优化有选择地应用于唯一索引中。它针对那些看起来具有重复版本的页面。 
-   高级目标是给<command>VACUUM</command>更多的时间，在版本改动导致<quote>unnecessary</quote>页面拆分之前。
+   有的时候惟一索引(以及惟一约束)可能被使用重复数据删除。
+   这允许叶页临时<quote>absorb</quote> 额外的版本混杂副本。
+   唯一索引中的重复数据删除增强了bottom-up索引删除，特别是在长时间运行的事务持有块垃圾收集的快照的情况下。
+   目的是为了bottom-up索引删除策略变得再次生效争取时间。
+   延迟分页分割，直到单个长时间运行的事务自然消失，可以允许bottom-up删除传递成功，在较早的删除传递失败的地方。
   </para>
   <tip>
 <!--==========================orignal english content==========================
