@@ -124,20 +124,25 @@ ____________________________________________________________________________-->
    The general format of the <filename>pg_hba.conf</filename> file is
    a set of records, one per line. Blank lines are ignored, as is any
    text after the <literal>#</literal> comment character.
-   Records cannot be continued across lines.
+   A record can be continued onto the next line by ending the line with
+   a backslash. (Backslashes are not special except at the end of a line.)
    A record is made
    up of a number of fields which are separated by spaces and/or tabs.
    Fields can contain white space if the field value is double-quoted.
    Quoting one of the keywords in a database, user, or address field (e.g.,
    <literal>all</literal> or <literal>replication</literal>) makes the word lose its special
    meaning, and just match a database, user, or host with that name.
+   Backslash line continuation applies even within quoted text or comments.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <filename>pg_hba.conf</filename>文件的常用格式是一组记录，每行一条。空白行将被忽略， <literal>#</literal>注释字符后面的任何文本也被忽略。记录不能跨行。一条记录由若干用空格
-   和/或制表符分隔的域组成。如果域值用双引号包围，那么它可以包含空白。在数据库、用户或地址域中
-   引用一个关键字（例如，<literal>all</literal>或<literal>replication</literal>）将使该词失去其特殊
-   含义，并且只是匹配一个有该名字的数据库、用户或主机。
+   <filename>pg_hba.conf</filename>文件的常用格式是一组记录，每行一条。
+   空白行将被忽略， <literal>#</literal>注释字符后面的任何文本也被忽略。
+   记录可以延续到下一行并以反斜线结束该行。(反斜线不是特定的的，除了在行尾。)
+   一条记录由若干用空格和/或制表符分隔的域组成。
+   如果域值用双引号包围，那么它可以包含空白。
+   在数据库、用户或地址域中引用一个关键字（例如，<literal>all</literal>或<literal>replication</literal>）将使该词失去其特殊含义，并且只是匹配一个有该名字的数据库、用户或主机。
+   反斜线行的延续在引用文本或注释中也可以使用。
   </para>
 
 <!--==========================orignal english content==========================
@@ -256,14 +261,6 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
        the <literal>hostgssenc</literal> record is ignored except for logging
        a warning that it cannot match any connections.
       </para>
-
-      <para>
-        Note that the only supported
-        <link linkend="auth-methods">authentication methods</link> for use
-        with <acronym>GSSAPI</acronym> encryption
-        are <literal>gss</literal>, <literal>reject</literal>,
-        and <literal>trust</literal>.
-      </para>
      </listitem>
     </varlistentry>
 
@@ -295,8 +292,10 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
        members of the role, directly or indirectly, and not just by
        virtue of being a superuser.
        The value <literal>replication</literal> specifies that the record
-       matches if a physical replication connection is requested (note that
-       replication connections do not specify any particular database).
+       matches if a physical replication connection is requested, however, it
+       doesn't match with logical replication connections. Note that physical
+       replication connections do not specify any particular database whereas
+       logical replication connections do specify it.
        Otherwise, this is the name of
        a specific <productname>PostgreSQL</productname> database.
        Multiple database names can be supplied by separating them with
@@ -662,7 +661,7 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
       </para>
 
       <para>
-       In addition to the method-specific options listed below, there is one
+       In addition to the method-specific options listed below, there is a
        method-independent authentication option <literal>clientcert</literal>, which
        can be specified in any <literal>hostssl</literal> record.
        This option can be set to <literal>verify-ca</literal> or
@@ -675,6 +674,28 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
        method (see <xref linkend="auth-cert"/>) but enables pairing
        the verification of client certificates with any authentication
        method that supports <literal>hostssl</literal> entries.
+      </para>
+      <para>
+       On any record using client certificate authentication (i.e. one
+       using the <literal>cert</literal> authentication method or one
+       using the <literal>clientcert</literal> option), you can specify
+       which part of the client certificate credentials to match using
+       the <literal>clientname</literal> option. This option can have one
+       of two values. If you specify <literal>clientname=CN</literal>, which
+       is the default, the username is matched against the certificate's
+       <literal>Common Name (CN)</literal>. If instead you specify
+       <literal>clientname=DN</literal> the username is matched against the
+       entire <literal>Distinguished Name (DN)</literal> of the certificate.
+       This option is probably best used in conjunction with a username map.
+       The comparison is done with the <literal>DN</literal> in
+       <ulink url="https://tools.ietf.org/html/rfc2253">RFC 2253</ulink>
+       format. To see the <literal>DN</literal> of a client certificate
+       in this format, do
+<programlisting>
+openssl x509 -in myclient.crt -noout --subject -nameopt RFC2253 | sed "s/^subject=//"
+</programlisting>
+        Care needs to be taken when using this option, especially when using
+        regular expression matching against the <literal>DN</literal>.
       </para>
      </listitem>
     </varlistentry>
@@ -704,7 +725,7 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
      <listitem>
       <para>
        这条记录匹配企图使用 Unix 域套接字的连接。
-	   如果没有这种类型的记录，就不允许 Unix 域套接字连接。
+       如果没有这种类型的记录，就不允许 Unix 域套接字连接。
       </para>
      </listitem>
     </varlistentry>
@@ -755,12 +776,8 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
       </para>
 
       <para>
-	   要使用这个选项，服务器必须具备<acronym>GSSAPI</acronym>支持。
-	   否则，除了记录无法匹配任何连接的警告以外，<literal>hostgssenc</literal>记录将被忽略。
-      </para>
-
-      <para>
-		注意使用<acronym>GSSAPI</acronym>加密时能够支持的<link linkend="auth-methods">authentication methods</link> 包括 <literal>gss</literal>,<literal>reject</literal>,和 <literal>trust</literal>.
+       要使用这个选项，服务器必须具备<acronym>GSSAPI</acronym>支持。
+       否则，除了记录无法匹配任何连接的警告以外，<literal>hostgssenc</literal>记录将被忽略。
       </para>
      </listitem>
     </varlistentry>
@@ -769,8 +786,8 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
      <term><literal>hostnogssenc</literal></term>
      <listitem>
       <para>
-	   这个记录类型具有与<literal>hostgssenc</literal>相反的表现;
-	   它仅匹配通过不使用<acronym>GSSAPI</acronym>加密的TCP/IP进行的连接尝试。
+       这个记录类型具有与<literal>hostgssenc</literal>相反的表现;
+       它仅匹配通过不使用<acronym>GSSAPI</acronym>加密的TCP/IP进行的连接尝试。
       </para>
      </listitem>
     </varlistentry>
@@ -783,7 +800,8 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
        值 <literal>sameuser</literal>指定如果被请求的数据库和请求的用户同名，则匹配。
        值<literal>samerole</literal>指定请求的用户必须是一个与数据库同名的角色中的成员（<literal>samegroup</literal>是一个已经废弃了，但目前仍然被接受的<literal>samerole</literal>同义词）。
        对于一个用于<literal>samerole</literal>目的的角色，超级用户不会被考虑为其中的成员，除非它们是该角色的显式成员（直接或间接），而不是由于超级用户的原因。
-       值<literal>replication</literal>指定如果一个物理复制连接被请求则该记录匹配（注意复制连接不指定任何特定的数据库）。
+       值<literal>replication</literal>指定如果一个物理复制连接被请求则该记录匹配，不过，它不匹配逻辑复制连接。
+       注意，物理复制连接不指定任何特定的数据库而逻辑复制连接需要指定。
        在其它情况里，这就是一个特定的<productname>PostgreSQL</productname>数据库名字。
        可以通过用逗号分隔的方法指定多个数据库，也可以通过在文件名前面放<literal>@</literal>来指定一个包含数据库名的文件。
       </para>
@@ -795,9 +813,9 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
      <listitem>
       <para>
        指定这条记录匹配哪些数据库用户名。值<literal>all</literal>指定它匹配所有用户。
-	   否则，它要么是一个特定数据库用户的名字或者是一个有前导<literal>+</literal>的组名称（回想一下，在<productname>PostgreSQL</productname>里，用户和组没有真正的区别，<literal>+</literal>实际表示<quote>匹配这个角色的任何直接或间接成员角色</quote>，而没有<literal>+</literal>记号的名字只匹配指定的角色）。
-	   出于这个目的，如果超级用户显式的是一个角色的成员（直接或间接），那么超级用户将只被认为是该角色的一个成员而不是作为一个超级用户。
-	   多个用户名可以通过用逗号分隔的方法提供。一个包含用户名的文件可以通过在文件名前面加上<literal>@</literal>来指定。
+       否则，它要么是一个特定数据库用户的名字或者是一个有前导<literal>+</literal>的组名称（回想一下，在<productname>PostgreSQL</productname>里，用户和组没有真正的区别，<literal>+</literal>实际表示<quote>匹配这个角色的任何直接或间接成员角色</quote>，而没有<literal>+</literal>记号的名字只匹配指定的角色）。
+       出于这个目的，如果超级用户显式的是一个角色的成员（直接或间接），那么超级用户将只被认为是该角色的一个成员而不是作为一个超级用户。
+       多个用户名可以通过用逗号分隔的方法提供。一个包含用户名的文件可以通过在文件名前面加上<literal>@</literal>来指定。
       </para>
      </listitem>
     </varlistentry>
@@ -812,7 +830,7 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
       <para>
        一个 IP 地址范围以该范围的开始地址的标准数字记号指定，然后是一个斜线（<literal>/</literal>）
        和一个<acronym>CIDR</acronym>掩码长度。掩码长度表示客户端 IP 地址必须匹配的高序二进制位位数。
-	   在给出的 IP 地址中，这个长度的右边的二进制位必须为零。 在 IP 地址、<literal>/</literal>和 CIDR 掩码长度之间不能有空白。
+       在给出的 IP 地址中，这个长度的右边的二进制位必须为零。 在 IP 地址、<literal>/</literal>和 CIDR 掩码长度之间不能有空白。
       </para>
 
       <para>
@@ -828,7 +846,7 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
 
       <para>
        一个以 IPv4 格式给出的项将只匹配 IPv4 连接并且一个以 IPv6 格式给出的项将只匹配 IPv6 连接，即使对应的地址在 IPv4-in-IPv6 范围内。
-	   请注意如果系统的 C 库不支持 IPv6 地址，那么 IPv6 格式中的项将被拒绝。
+       请注意如果系统的 C 库不支持 IPv6 地址，那么 IPv6 格式中的项将被拒绝。
       </para>
 
       <para>
@@ -838,18 +856,18 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
       <para>
        若果指定了一个主机名（任何除 IP 地址单位或特殊关键字之外的都被作为主机名处理），
        该名称会与客户端的 IP 地址的反向名字解析（例如使用 DNS 时的反向 DNS 查找）结果进行比较。
-	   主机名比较是大小写敏感的。如果匹配上，那么将在主机名上执行一次正向名字解析（例如正向 DNS 查找）来检查它解析到的任何地址是否等于客户端的 IP 地址。如果两个方向都匹配，则该项被认为匹配（<filename>pg_hba.conf</filename>中使用的主机名应该是客户端 IP 地址的地址到名字解析返回的结果，否则该行将不会匹配。某些主机名数据库允许将一个 IP 地址关联多个主机名，但是当被要求解析一个 IP 地址时，操作系统将只返回一个主机名）。
+       主机名比较是大小写敏感的。如果匹配上，那么将在主机名上执行一次正向名字解析（例如正向 DNS 查找）来检查它解析到的任何地址是否等于客户端的 IP 地址。如果两个方向都匹配，则该项被认为匹配（<filename>pg_hba.conf</filename>中使用的主机名应该是客户端 IP 地址的地址到名字解析返回的结果，否则该行将不会匹配。某些主机名数据库允许将一个 IP 地址关联多个主机名，但是当被要求解析一个 IP 地址时，操作系统将只返回一个主机名）。
       </para>
 
       <para>
        一个以点号（<literal>.</literal>）开始的主机名声明匹配实际主机名的后缀。
-	   因此<literal>.example.com</literal>将匹配<literal>foo.example.com</literal>（但不匹配<literal>example.com</literal>）。
+       因此<literal>.example.com</literal>将匹配<literal>foo.example.com</literal>（但不匹配<literal>example.com</literal>）。
       </para>
 
       <para>
        当主机名在<filename>pg_hba.conf</filename>中被指定时，你应该保证名字解析很快。
-	   建立一个类似<command>nscd</command>的本地名字解析缓存是一种不错的选择。
-	   另外，你可能希望启用配置参数<varname>log_hostname</varname>来在日志中查看客户端的主机名而不是 IP 地址。
+       建立一个类似<command>nscd</command>的本地名字解析缓存是一种不错的选择。
+       另外，你可能希望启用配置参数<varname>log_hostname</varname>来在日志中查看客户端的主机名而不是 IP 地址。
       </para>
 
       <para>
@@ -1044,9 +1062,22 @@ hostnogssenc  <replaceable>database</replaceable>  <replaceable>user</replaceabl
       <para>
        除了下文列出的与方法相关的选项之外，还有一个与方法无关的认证选项<literal>clientcert</literal>，它可以在任何<literal>hostssl</literal>记录中指定。
        这个选项可以被设置到<literal>verify-ca</literal>或<literal>verify-full</literal>.
-	   这两个选项都需要客户端提供有效的(受信任的)SSL证书，并且<literal>verify-full</literal>额外强制证书中的<literal>cn</literal>(通用名称)匹配用户名或适用的映射。
-	   这种行为类似于<literal>cert</literal>认证方法 (参见 <xref linkend="auth-cert"/>)，
-	   但是允许客户端证书的验证与任何支持<literal>hostssl</literal>登记的认证方法相搭配。
+       这两个选项都需要客户端提供有效的(受信任的)SSL证书，并且<literal>verify-full</literal>额外强制证书中的<literal>cn</literal>(通用名称)匹配用户名或适用的映射。
+       这种行为类似于<literal>cert</literal>认证方法 (参见 <xref linkend="auth-cert"/>)，
+       但是允许客户端证书的验证与任何支持<literal>hostssl</literal>登记的认证方法相搭配。
+      </para>
+      <para>
+       在使用客户端证书任何的任何记录上(即一个使用<literal>cert</literal>认证方法或一个使用<literal>clientcert</literal>选项)，你可以使用<literal>clientname</literal>选项指定要匹配的客户端证书凭证的哪一部分。
+       这个选项可以用两个值中的一个。
+       如果你指定<literal>clientname=CN</literal>，这是默认值，则用户名将与证书的<literal>Common Name (CN)</literal>进行匹配。
+       如果你指定<literal>clientname=DN</literal>，则用户名将与证书的整个 <literal>Distinguished Name (DN)</literal>进行匹配。
+       这个选项最好与用户名映射一起使用。
+       <literal>DN</literal>在<ulink url="https://tools.ietf.org/html/rfc2253">RFC 2253</ulink>格式的完成完成比较
+       要在这种格式中查看客户端证书的<literal>DN</literal> ，请执行
+<programlisting>
+openssl x509 -in myclient.crt -noout --subject -nameopt RFC2253 | sed "s/^subject=//"
+</programlisting>
+        使用这个选项时要小心，特别是使用正则表达式匹配<literal>DN</literal>的时候。
       </para>
      </listitem>
     </varlistentry>
@@ -1395,7 +1426,7 @@ ____________________________________________________________________________-->
 <synopsis>
 <replaceable>map-name</replaceable> <replaceable>system-username</replaceable> <replaceable>database-username</replaceable>
 </synopsis>
-   Comments and whitespace are handled in the same way as in
+   Comments, whitespace and line continuations are handled in the same way as in
    <filename>pg_hba.conf</filename>.  The
    <replaceable>map-name</replaceable> is an arbitrary name that will be used to
    refer to this mapping in <filename>pg_hba.conf</filename>. The other
@@ -1409,7 +1440,10 @@ ____________________________________________________________________________-->
 <synopsis>
 <replaceable>map-name</replaceable> <replaceable>system-username</replaceable> <replaceable>database-username</replaceable>
 </synopsis>
-   以在<filename>pg_hba.conf</filename>中同样的方式处理注释和空白。<replaceable>map-name</replaceable>是一个任意名称，它将被用于在<filename>pg_hba.conf</filename>中引用该映射。其他两个域指定一个操作系统用户名和一个匹配的数据库用户名。相同的<replaceable>map-name</replaceable>可以被反复地用在同一个映射中指定多个用户映射。
+   以在<filename>pg_hba.conf</filename>中同样的方式处理注释，空白和行延续。
+   <replaceable>map-name</replaceable>是一个任意名称，它将被用于在<filename>pg_hba.conf</filename>中引用该映射。
+   其他两个域指定一个操作系统用户名和一个匹配的数据库用户名。
+   相同的<replaceable>map-name</replaceable>可以被反复地用在同一个映射中指定多个用户映射。
   </para>
 <!--==========================orignal english content==========================
   <para>
@@ -1577,7 +1611,8 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       <link linkend="auth-ident">Ident authentication</link>, which
-      relies on an <quote>Identification Protocol</quote> (RFC 1413)
+      relies on an <quote>Identification Protocol</quote>
+      (<ulink url="https://tools.ietf.org/html/rfc1413">RFC 1413</ulink>)
       service on the client's machine.  (On local Unix-socket connections,
       this is treated as peer authentication.)
      </para>
@@ -1651,7 +1686,7 @@ ____________________________________________________________________________-->
     </listitem>
     <listitem>
      <para>
-      <link linkend="auth-ident">Ident authentication</link>, 依靠客户机器上的 <quote>Identification Protocol</quote> (RFC 1413)服务，(在本地Unix-socket 连接,这个按对等认证处理)。
+      <link linkend="auth-ident">Ident authentication</link>, 依靠客户机器上的 <quote>Identification Protocol</quote> (<ulink url="https://tools.ietf.org/html/rfc1413">RFC 1413</ulink>)服务，(在本地Unix-socket 连接,这个按对等认证处理)。
      </para>
     </listitem>
     <listitem>
@@ -2011,28 +2046,25 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     <productname>GSSAPI</productname> is an industry-standard protocol
-    for secure authentication defined in RFC 2743.
-
+    for secure authentication defined in
+    <ulink url="https://tools.ietf.org/html/rfc2743">RFC 2743</ulink>.
     <productname>PostgreSQL</productname>
-    supports <productname>GSSAPI</productname> for use as either an encrypted,
-    authenticated layer, or for authentication only.
+    supports <productname>GSSAPI</productname> for authentication,
+    communications encryption, or both.
     <productname>GSSAPI</productname> provides automatic authentication
     (single sign-on) for systems that support it. The authentication itself is
     secure.  If <productname>GSSAPI</productname> encryption
-    (see <literal>hostgssenc</literal>) or <acronym>SSL</acronym> encryption are
+    or <acronym>SSL</acronym> encryption is
     used, the data sent along the database connection will be encrypted;
     otherwise, it will not.
    </para>
 ____________________________________________________________________________-->
    <para>
-    <productname>GSSAPI</productname>是用于 RFC 2743 中定义的安全认证的一个工业标准协议。
-	
-	<productname>PostgreSQL</productname>根据 RFC 1964 支持带<productname>Kerberos</productname>认证的<productname>GSSAPI</productname>。
-	<productname>GSSAPI</productname>为支持它的系统提供自动认证（单点登录）。
-	认证本身是安全的，但通过数据库连接发送的数据将不被加密，除非使用<acronym>SSL</acronym>。
-	<productname>PostgreSQL</productname>支持<productname>GSSAPI</productname>用于加密、认证层或仅用于认证。
-    <productname>GSSAPI</productname> 提供自动认证(single sign-on单点登录) 给支持该功能的系统。认证本身是安全的。 
-	如果使用了<productname>GSSAPI</productname> 加密(参见 <literal>hostgssenc</literal>) 或<acronym>SSL</acronym> 加密, 数据库连接发送的数据将被加密，否则将不加密。
+    <productname>GSSAPI</productname>是用于<ulink url="https://tools.ietf.org/html/rfc2743">RFC 2743</ulink>中定义的安全认证的一个工业标准协议。
+    <productname>PostgreSQL</productname>支持<productname>GSSAPI</productname>用于认证，通讯加密或两者都做。
+    <productname>GSSAPI</productname>为支持它的系统提供自动认证（单点登录）。
+    认证本身是安全的。
+    如果使用了<productname>GSSAPI</productname> 加密或<acronym>SSL</acronym>加密，数据库连接发送的数据将被加密，否则将不加密。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2048,66 +2080,70 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     When <productname>GSSAPI</productname> uses
-    <productname>Kerberos</productname>, it uses a standard principal
-    in the format
+    <productname>Kerberos</productname>, it uses a standard service
+    principal (authentication identity) name in the format
     <literal><replaceable>servicename</replaceable>/<replaceable>hostname</replaceable>@<replaceable>realm</replaceable></literal>.
-    The PostgreSQL server will accept any principal that is included in the keytab used by
-    the server, but care needs to be taken to specify the correct principal details when
-    making the connection from the client using the <literal>krbsrvname</literal> connection parameter. (See
-    also <xref linkend="libpq-paramkeywords"/>.) The installation default can be
-    changed from the default <literal>postgres</literal> at build time using
-    <literal>./configure -&minus;with-krb-srvnam=</literal><replaceable>whatever</replaceable>.
-    In most environments,
-    this parameter never needs to be changed.
-    Some Kerberos implementations might require a different service name,
-    such as Microsoft Active Directory which requires the service name
-    to be in upper case (<literal>POSTGRES</literal>).
+    The principal name used by a particular installation is not encoded in
+    the <productname>PostgreSQL</productname> server in any way; rather it
+    is specified in the <firstterm>keytab</firstterm> file that the server
+    reads to determine its identity.  If multiple principals are listed in
+    the keytab file, the server will accept any one of them.
+    The server's realm name is the preferred realm specified in the Kerberos
+    configuration file(s) accessible to the server.
    </para>
 ____________________________________________________________________________-->
    <para>
-    当<productname>GSSAPI</productname>使用<productname>Kerberos</productname>时，
-    它会使用格式为
-    <literal><replaceable>servicename</replaceable>/<replaceable>hostname</replaceable>@<replaceable>realm</replaceable></literal>的标准 principal。
-    PostgreSQL服务器将接受该服务器所使用的 keytab 中包括的任何 principal，但是在从使用
-    <literal>krbsrvname</literal>连接参数的客户端建立连接时要注意指定正确的 principal 细节（另见
-    <xref linkend="libpq-paramkeywords"/>）。安装的默认值<literal>postgres</literal>
-    可以在编译时使用
-    <literal>./configure --with-krb-srvnam=</literal><replaceable>其他值</replaceable>修改。
-    在大部分的环境中，这个参数从不需要被更改。某些 Kerberos 实现可能要求一个不同的服务名，
-    例如 Microsoft Active Directory 要求服务名是大写形式（<literal>POSTGRES</literal>）。
-   </para>
-<!--==========================orignal english content==========================
-   <para>
-    <replaceable>hostname</replaceable> is the fully qualified host name of the
-    server machine. The service principal's realm is the preferred realm
-    of the server machine.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    <replaceable>hostname</replaceable>是服务器机器的被完全限定的主机名。服务 principal 的 realm 
-    是该服务器机器的首选 realm。
+    当<productname>GSSAPI</productname> 使用<productname>Kerberos</productname>的时候， 它使用一个标准服务主体(身份验证)名称，以<literal><replaceable>servicename</replaceable>/<replaceable>hostname</replaceable>@<replaceable>realm</replaceable></literal>的格式。
+    特定安装使用的主体名称(principal name)没有被以任何方式编码在<productname>PostgreSQL</productname>服务器中；而是被指定在<firstterm>keytab</firstterm>文件中，服务器读取该文件以决定它的身份。
+    如果在keytab文件中罗列着多个主体，服务器将接受其中任何一个。
+    服务器的领域名称(realm name)是在服务器可访问的Kerberos配置文件中指定的优先领域。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
-    Client principals can be mapped to different <productname>PostgreSQL</productname>
-    database user names with <filename>pg_ident.conf</filename>.  For example,
+    When connecting, the client must know the principal name of the server
+    it intends to connect to.  The <replaceable>servicename</replaceable>
+    part of the principal is ordinarily <literal>postgres</literal>,
+    but another value can be selected via <application>libpq</application>'s
+    <xref linkend="libpq-connect-krbsrvname"/> connection parameter.
+    The <replaceable>hostname</replaceable> part is the fully qualified
+    host name that <application>libpq</application> is told to connect to.
+    The realm name is the preferred realm specified in the Kerberos
+    configuration file(s) accessible to the client.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当连接时，客户端必须知道它打算连接的服务器的主体名称。
+    主体名称的<replaceable>servicename</replaceable>部分通常是<literal>postgres</literal>，但是其他值可以通过<application>libpq</application>的<xref linkend="libpq-connect-krbsrvname"/>连接参数来选择。
+    <replaceable>hostname</replaceable>部分是<application>libpq</application>告知要连接的全限制的主机名称。
+    领域名称是在客户端可访问的Kerberos配置文件中指定的优先领域。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The client will also have a principal name for its own identity
+    (and it must have a valid ticket for this principal).  To
+    use <productname>GSSAPI</productname> for authentication, the client
+    principal must be associated with
+    a <productname>PostgreSQL</productname> database user name.
+    The <filename>pg_ident.conf</filename> configuration file can be used
+    to map principals to user names; for example,
     <literal>pgusername@realm</literal> could be mapped to just <literal>pgusername</literal>.
     Alternatively, you can use the full <literal>username@realm</literal> principal as
     the role name in <productname>PostgreSQL</productname> without any mapping.
    </para>
 ____________________________________________________________________________-->
    <para>
-    客户端 principal 可以被通过<filename>pg_ident.conf</filename>映射到不同的
-    <productname>PostgreSQL</productname>数据库用户名。例如，
-    <literal>pgusername@realm</literal>可能会被映射到<literal>pgusername</literal>。
-    或者，你可以使用完整的<literal>username@realm</literal>当事人作为
-    <productname>PostgreSQL</productname>中的角色而无需任何映射。
+    客户端也可以有主体名称作为它自己的身份(并且它必须拥有针对这个主体的有效的标签[ticket])。
+    要使用<productname>GSSAPI</productname>做身份验证，客户端的主体必须与<productname>PostgreSQL</productname>数据库用户名关联。
+    <filename>pg_ident.conf</filename>配置文件可以用于映射主体到用户名；例如，<literal>pgusername@realm</literal>可能会被映射到<literal>pgusername</literal>。
+    或者，你可以使用完整的<literal>username@realm</literal>当事人作为<productname>PostgreSQL</productname>中的角色而无需任何映射。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
-    <productname>PostgreSQL</productname> also supports a parameter to strip the realm from
+    <productname>PostgreSQL</productname> also supports mapping
+    client principals to user names by just stripping the realm from
     the principal.  This method is supported for backwards compatibility and is
     strongly discouraged as it is then impossible to distinguish different users
     with the same user name but coming from different realms.  To enable this,
@@ -2121,67 +2157,57 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    <productname>PostgreSQL</productname>也支持一个参数把 realm 从 principal 中剥离。这种方法是为了向后兼容性，并且我们强烈反对使用它，因为这样就无法区分具有相同用户名却来自不同 realm 的不同用户了。要启用这种方法，可将<literal>include_realm</literal>设置为 0。对于简单的单 realm 安装，这样做并且设置<literal>krb_realm</literal>参数（这会检查 principal 的 realm 是否正好匹配<literal>krb_realm</literal>中的参数）仍然是安全的。但比起在<filename>pg_ident.conf</filename>中指定一个显式映射来说，这种方法的能力较低。
+    <productname>PostgreSQL</productname>也支持映射客户端主体到用户名，通过从主体中剥离领域(realm)的方式。
+    这种方法是为了向后兼容性，并且我们强烈反对使用它，因为这样就无法区分具有相同用户名却来自不同 realm 的不同用户了。
+    要启用这种方法，可将<literal>include_realm</literal>设置为 0。
+    对于简单的单 realm 安装，这样做并且设置<literal>krb_realm</literal>参数（这会检查 principal 的 realm 是否正好匹配<literal>krb_realm</literal>中的参数）仍然是安全的。
+    但比起在<filename>pg_ident.conf</filename>中指定一个显式映射来说，这种方法的能力较低。
    </para>
 
 <!--==========================orignal english content==========================
    <para>
-    Make sure that your server keytab file is readable (and preferably
-    only readable, not writable) by the <productname>PostgreSQL</productname>
-    server account.  (See also <xref linkend="postgres-user"/>.) The location
-    of the key file is specified by the <xref
-    linkend="guc-krb-server-keyfile"/> configuration
-    parameter. The default is
-    <filename>/usr/local/pgsql/etc/krb5.keytab</filename> (or whatever
-    directory was specified as <varname>sysconfdir</varname> at build time).
+    The location of the server's keytab file is specified by the <xref
+    linkend="guc-krb-server-keyfile"/> configuration parameter.
     For security reasons, it is recommended to use a separate keytab
     just for the <productname>PostgreSQL</productname> server rather
-    than opening up permissions on the system keytab file.
+    than allowing the server to read the system keytab file.
+    Make sure that your server keytab file is readable (and preferably
+    only readable, not writable) by the <productname>PostgreSQL</productname>
+    server account.  (See also <xref linkend="postgres-user"/>.)
    </para>
 ____________________________________________________________________________-->
    <para>
-    确认你的服务器的 keytab 文件是可以被<productname>PostgreSQL</productname>服务器帐
-    户读取的（最好是只读的） (又见<xref linkend="postgres-user"/>）。密钥文件的位置由配置
-    参数<xref linkend="guc-krb-server-keyfile"/>指定。默认是<filename>/usr/local/pgsql/etc/krb5.keytab</filename>（或者任何在编译的时候作为<varname>sysconfdir</varname>的目录）。
-    出于安全原因，推荐对<productname>PostgreSQL</productname>服务器使用一个独立
-    的 keytab而不是开放系统 keytab 文件的权限。
+    服务器的keytab文件的位置是由<xref linkend="guc-krb-server-keyfile"/>配置参数指定的。
+    出于安全原因，它建议针对<productname>PostgreSQL</productname>使用独立的keytab而不是允许服务器读取系统的keytab文件。
+    确保你的服务器的keytab文件是对<productname>PostgreSQL</productname>服务器账号可读的(并且最好是只读的，不可写)
+    (参见<xref linkend="postgres-user"/>。)
    </para>
+
 <!--==========================orignal english content==========================
    <para>
-    The keytab file is generated by the Kerberos software; see the
-    Kerberos documentation for details. The following example is
-   for MIT-compatible Kerberos 5 implementations:
+    The keytab file is generated using the Kerberos software; see the
+    Kerberos documentation for details. The following example shows
+    doing this using the <application>kadmin</application> tool of
+    MIT-compatible Kerberos 5 implementations:
 <screen>
-<prompt>kadmin% </prompt><userinput>ank -randkey postgres/server.my.domain.org</userinput>
+<prompt>kadmin% </prompt><userinput>addprinc -randkey postgres/server.my.domain.org</userinput>
 <prompt>kadmin% </prompt><userinput>ktadd -k krb5.keytab postgres/server.my.domain.org</userinput>
 </screen>
    </para>
 ____________________________________________________________________________-->
    <para>
-    keytab 文件由 Kerberos 软件生成，详见 Kerberos 文档。下面是 MIT 兼容的 Kerberos 5 实现的例子：
+    keytab 文件用 Kerberos 软件生成；详见 Kerberos 文档。
+    下面展示了用 MIT 兼容的 Kerberos 5 实现的<application>kadmin</application>来做这个的例子：
 <screen>
-<prompt>kadmin% </prompt><userinput>ank -randkey postgres/server.my.domain.org</userinput>
+<prompt>kadmin% </prompt><userinput>addprinc -randkey postgres/server.my.domain.org</userinput>
 <prompt>kadmin% </prompt><userinput>ktadd -k krb5.keytab postgres/server.my.domain.org</userinput>
 </screen>
    </para>
 
 <!--==========================orignal english content==========================
    <para>
-    When connecting to the database make sure you have a ticket for a
-    principal matching the requested database user name. For example, for
-    database user name <literal>fred</literal>, principal
-    <literal>fred@EXAMPLE.COM</literal> would be able to connect. To also allow
-    principal <literal>fred/users.example.com@EXAMPLE.COM</literal>, use a user name
-    map, as described in <xref linkend="auth-username-maps"/>.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    当连接到数据库时，确保你有一个匹配被请求数据库用户名的 principal 的票据。例如，对于数据库用户名<literal>fred</literal>，principal  <literal>fred@EXAMPLE.COM</literal>将能够连接。要也允许 principal <literal>fred/users.example.com@EXAMPLE.COM</literal>，可使用一个用户名映射，如<xref linkend="auth-username-maps"/>中所述。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    The following configuration options are supported for <productname>GSSAPI</productname>:
+    The following authentication options are supported for
+    the <productname>GSSAPI</productname> authentication method:
     <variablelist>
      <varlistentry>
       <term><literal>include_realm</literal></term>
@@ -2204,7 +2230,7 @@ ____________________________________________________________________________-->
       <term><literal>map</literal></term>
       <listitem>
        <para>
-        Allows for mapping between system and database user names. See
+        Allows mapping from client principals to database user names. See
         <xref linkend="auth-username-maps"/> for details.  For a GSSAPI/Kerberos
         principal, such as <literal>username@EXAMPLE.COM</literal> (or, less
         commonly, <literal>username/hostbased@EXAMPLE.COM</literal>), the
@@ -2233,13 +2259,15 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    下列被支持的配置选项用于<productname>GSSAPI</productname>：
+    <productname>GSSAPI</productname>验证方法支持下列身份验证选项:
     <variablelist>
      <varlistentry>
       <term><literal>include_realm</literal></term>
       <listitem>
        <para>
-        如果设置为 0，在通过用户名映射之前（<xref linkend="auth-username-maps"/>），来自已认证用户 principal 的 realm 名称会被剥离掉。我们不鼓励这样做，这种方法主要是为了向后兼容性而存在的，因为它在多 realm 环境中是不安全的（除非也使用 <literal>krb_realm</literal>）。推荐用户让<literal>include_realm</literal>设置为默认值（1）并且在<filename>pg_ident.conf</filename>中提供一条显式的映射来把 principal 名称转换成<productname>PostgreSQL</productname>用户名。
+        如果设置为 0，在通过用户名映射之前（<xref linkend="auth-username-maps"/>），来自已认证用户 principal 的 realm 名称会被剥离掉。
+        我们不鼓励这样做，这种方法主要是为了向后兼容性而存在的，因为它在多 realm 环境中是不安全的（除非也使用 <literal>krb_realm</literal>）。
+        推荐用户让<literal>include_realm</literal>设置为默认值（1）并且在<filename>pg_ident.conf</filename>中提供一条显式的映射来把 principal 名称转换成<productname>PostgreSQL</productname>用户名。
        </para>
       </listitem>
      </varlistentry>
@@ -2248,14 +2276,9 @@ ____________________________________________________________________________-->
       <term><literal>map</literal></term>
       <listitem>
        <para>
-        允许在系统和数据库用户名之间的映射。详见<xref linkend="auth-username-maps"/>。
-        对于一个 GSSAPI/Kerberos 原则，例如<literal>username@EXAMPLE.COM</literal>
-        （或者更不常见的<literal>username/hostbased@EXAMPLE.COM</literal>），
-        用于映射的用户名会是<literal>username@EXAMPLE.COM</literal>（或者
-        <literal>username/hostbased@EXAMPLE.COM</literal>，相应地），除非
-        <literal>include_realm</literal>已经被设置为 0，在那种情况下
-        <literal>username</literal>（或者<literal>username/hostbased</literal>）是
-        映射时被视作系统用户名的东西。
+        允许从客户端主体到数据库用户名之间的映射。
+        详见<xref linkend="auth-username-maps"/>。
+        对于一个 GSSAPI/Kerberos 原则，例如<literal>username@EXAMPLE.COM</literal>（或者更不常见的<literal>username/hostbased@EXAMPLE.COM</literal>），用于映射的用户名会是<literal>username@EXAMPLE.COM</literal>（或者 <literal>username/hostbased@EXAMPLE.COM</literal>，相应地），除非 <literal>include_realm</literal>已经被设置为 0，在那种情况下 <literal>username</literal>（或者<literal>username/hostbased</literal>）是映射时被视作系统用户名的东西。
        </para>
       </listitem>
      </varlistentry>
@@ -2264,13 +2287,30 @@ ____________________________________________________________________________-->
       <term><literal>krb_realm</literal></term>
       <listitem>
        <para>
-        设置 realm 为对用户 principal 名进行匹配的范围。
-        如果这个参数被设置，只有那个 realm 的用户将被接受。
-        如果它没有被设置，任何 realm 的用户都能连接，服从任何已完成的用户名映射。
+        Sets the realm to match user principal names against. If this parameter
+        is set, only users of that realm will be accepted.  If it is not set,
+        users of any realm can connect, subject to whatever user name mapping
+        is done.
        </para>
       </listitem>
      </varlistentry>
     </variablelist>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    In addition to these settings, which can be different for
+    different <filename>pg_hba.conf</filename> entries, there is the
+    server-wide <xref linkend="guc-krb-caseins-users"/> configuration
+    parameter.  If that is set to true, client principals are matched to
+    user map entries case-insensitively.  <literal>krb_realm</literal>, if
+    set, is also matched case-insensitively.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    在这些设置之外，对于不同的<filename>pg_hba.conf</filename>项可能有所不同，还有服务器范围的<xref linkend="guc-krb-caseins-users"/> 配置参数。
+    如果设置为真，客户端主体匹配用户映射条目是大小写不敏感的。
+    如果设置了<literal>krb_realm</literal>，也不区分大小写。
    </para>
   </sect1>
 
@@ -2383,7 +2423,7 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         Allows for mapping between system and database user names. See
-        <xref linkend="auth-username-maps"/> for details.  For a SSPI/Kerberos
+        <xref linkend="auth-username-maps"/> for details.  For an SSPI/Kerberos
         principal, such as <literal>username@EXAMPLE.COM</literal> (or, less
         commonly, <literal>username/hostbased@EXAMPLE.COM</literal>), the
         user name used for mapping is
@@ -2548,7 +2588,8 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     The <quote>Identification Protocol</quote> is described in
-    RFC 1413. Virtually every Unix-like
+    <ulink url="https://tools.ietf.org/html/rfc1413">RFC 1413</ulink>.
+    Virtually every Unix-like
     operating system ships with an ident server that listens on TCP
     port 113 by default. The basic functionality of an ident server
     is to answer questions like <quote>What user initiated the
@@ -2562,7 +2603,10 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    <quote>Identification Protocol（标识协议）</quote>在 RFC 1413 中描述。实际上每个类 Unix 操作系统都带着一个默认监听 TCP 113 端口的 ident 服务器。ident 服务器的基本功能是回答类似这样的问题：<quote>哪个用户从你的端口<replaceable>X</replaceable>发起了连接并且连到了我的端口<replaceable>Y</replaceable>？</quote> 。因为当一个物理连接被建立后，<productname>PostgreSQL</productname>既知道<replaceable>X</replaceable>也知道<replaceable>Y</replaceable>， 所以它可以询问尝试连接的客户端主机上的 ident 服务器并且在理论上可以判断任意给定连接的操作系统用户。
+    <quote>Identification Protocol（标识协议）</quote>在 <ulink url="https://tools.ietf.org/html/rfc1413">RFC 1413</ulink>中描述。
+    实际上每个类 Unix 操作系统都带着一个默认监听 TCP 113 端口的 ident 服务器。
+    ident 服务器的基本功能是回答类似这样的问题：<quote>哪个用户从你的端口<replaceable>X</replaceable>发起了连接并且连到了我的端口<replaceable>Y</replaceable>？</quote> 。
+    因为当一个物理连接被建立后，<productname>PostgreSQL</productname>既知道<replaceable>X</replaceable>也知道<replaceable>Y</replaceable>， 所以它可以询问尝试连接的客户端主机上的 ident 服务器并且在理论上可以判断任意给定连接的操作系统用户。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2793,8 +2837,8 @@ ____________________________________________________________________________-->
        <para>
         Set to 1 to make the connection between PostgreSQL and the LDAP server
         use TLS encryption.  This uses the <literal>StartTLS</literal>
-        operation per RFC 4513.  See also the <literal>ldapscheme</literal>
-        option for an alternative.
+        operation per <ulink url="https://tools.ietf.org/html/rfc4513">RFC 4513</ulink>.
+        See also the <literal>ldapscheme</literal> option for an alternative.
        </para>
       </listitem>
      </varlistentry>
@@ -2832,7 +2876,9 @@ ____________________________________________________________________________-->
       <term><literal>ldaptls</literal></term>
       <listitem>
        <para>
-        设置为1以使PostgreSQL和LDAP服务器之间的连接使用TLS加密。这会按照RFC 4513使用<literal>StartTLS</literal>操作。其他选择还可以参考<literal>ldapscheme</literal>选项。
+        设置为1以使PostgreSQL和LDAP服务器之间的连接使用TLS加密。
+        这会按照<ulink url="https://tools.ietf.org/html/rfc4513">RFC 4513</ulink>使用<literal>StartTLS</literal>操作。
+        其他选择还可以参考<literal>ldapscheme</literal>选项。
        </para>
       </listitem>
      </varlistentry>
@@ -2955,7 +3001,8 @@ ____________________________________________________________________________-->
        <term><literal>ldapurl</literal></term>
        <listitem>
         <para>
-         An RFC 4516 LDAP URL.  This is an alternative way to write some of the
+         An <ulink url="https://tools.ietf.org/html/rfc4516">RFC 4516</ulink>
+         LDAP URL.  This is an alternative way to write some of the
          other LDAP options in a more compact and standard form.  The format is
 <synopsis>
 ldap[s]://<replaceable>host</replaceable>[:<replaceable>port</replaceable>]/<replaceable>basedn</replaceable>[?[<replaceable>attribute</replaceable>][?[<replaceable>scope</replaceable>][?[<replaceable>filter</replaceable>]]]]
@@ -3043,7 +3090,8 @@ ____________________________________________________________________________-->
        <term><literal>ldapurl</literal></term>
        <listitem>
         <para>
-         一个RFC 4516 LDAP URL。这是一种用更紧凑和标准的形式书写某些其他LDAP选项的可选方法。格式是
+         一个<ulink url="https://tools.ietf.org/html/rfc4516">RFC 4516</ulink> LDAP URL。
+         这是一种用更紧凑和标准的形式书写某些其他LDAP选项的可选方法。格式是
 <synopsis>
 ldap[s]://<replaceable>host</replaceable>[:<replaceable>port</replaceable>]/<replaceable>basedn</replaceable>[?[<replaceable>attribute</replaceable>][?[<replaceable>scope</replaceable>][?[<replaceable>filter</replaceable>]]]]
 </synopsis>
@@ -3097,14 +3145,15 @@ ____________________________________________________________________________-->
      If <productname>PostgreSQL</productname> was compiled with
      <productname>OpenLDAP</productname> as the LDAP client library, the
      <literal>ldapserver</literal> setting may be omitted.  In that case, a
-     list of host names and ports is looked up via RFC 2782 DNS SRV records.
+     list of host names and ports is looked up via
+     <ulink url="https://tools.ietf.org/html/rfc2782">RFC 2782</ulink> DNS SRV records.
      The name <literal>_ldap._tcp.DOMAIN</literal> is looked up, where
      <literal>DOMAIN</literal> is extracted from <literal>ldapbasedn</literal>.
    </para>
 ____________________________________________________________________________-->
    <para>
-	 如果<productname>PostgreSQL</productname>与<productname>OpenLDAP</productname>一起编译为LDAP客户端库，<literal>ldapserver</literal> 设置可能被省略。
-	 在这种情况下，主机名和端口列表通过RFC 2782 DNS SRV记录来进行查询。
+     如果<productname>PostgreSQL</productname>与<productname>OpenLDAP</productname>一起编译为LDAP客户端库，<literal>ldapserver</literal> 设置可能被省略。
+     在这种情况下，主机名和端口列表通过<ulink url="https://tools.ietf.org/html/rfc2782">RFC 2782</ulink> DNS SRV记录来进行查询。
      查询名称<literal>_ldap._tcp.DOMAIN</literal>，<literal>DOMAIN</literal>是从<literal>ldapbasedn</literal>中摘取的。
    </para>
 
@@ -3390,7 +3439,7 @@ ____________________________________________________________________________-->
        <term><literal>radiusidentifiers</literal></term>
        <listitem>
         <para>
-         在 RADIUS 请求中字符串被用作<literal>NAS Identifier</literal>。 
+         在 RADIUS 请求中字符串被用作<literal>NAS Identifier</literal>。
          这个参数可以被用于识别用户尝试连接哪些数据库集群，可以被用于 RADIUS 服务器上的策略匹配。
          如果没有指定标识符，默认使用<literal>postgresql</literal>。		 
         </para>
