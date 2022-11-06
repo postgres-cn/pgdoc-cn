@@ -272,7 +272,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     逻辑复制允许数据库服务器发送数据修改流给另一台服务器。<productname>PostgreSQL</productname>的逻辑复制从WAL中构建出一个逻辑数据修改流。逻辑复制允许复制个体表中的数据更改。逻辑复制不要求特定的服务器作为主服务器或者复制机，而是允许数据以多方向流动。更多有关逻辑复制的信息，请参考<xref linkend="logical-replication"/>。通过逻辑解码接口（<xref linkend="logicaldecoding"/>），第三方扩展也能提供类似的功能。
+     逻辑复制允许数据库服务器发送数据更新流给另一台服务器。<productname>PostgreSQL</productname>逻辑复制从WAL构建出逻辑数据更新流。逻辑复制允许您逐个表复制数据更改。此外，发布数据更新的服务器可以同时订阅其他服务器的更改，从而允许数据在多个方向流动。有关逻辑复制的更多信息，请参考 <xref linkend="logical-replication"/>。通过逻辑解码接口 (<xref linkend="logicaldecoding"/>)，第三方扩展也能提供类似的功能。
     </para>
    </listitem>
   </varlistentry>
@@ -294,7 +294,8 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     一个主-备复制设置会把所有数据修改查询发送到主服务器。主服务器异步地将数据修改发送给后备服务器。当主服务器正在运行时，后备服务器可以回答只读查询。后备服务器对数据仓库查询是一种理想的选择。
+     基于触发器的复制通常会将修改数据的查询发送到指定的主服务器。它在逐个表的基础上工作，主服务器（通常）将数据更改异步发送到备用服务器。
+     主服务器运行时，备用服务器可以响应查询，并执行本地数据修改或写入操作。这种形式的复制通常用于减轻大数据分析型平台或者数据仓库查询负荷。
     </para>
 
 <!--==========================orignal english content==========================
@@ -353,8 +354,10 @@ ____________________________________________________________________________-->
      are examples of this type of replication.
     </para>
 ____________________________________________________________________________-->
-    <para>
-     如果查询被简单地且未经修改地广播，<function>random()</function>、<function>CURRENT_TIMESTAMP</function>之类的函数以及序列在不同服务器上可能有不同的值。这是因为每一个服务器会独立地操作，并且 SQL 查询被广播（而不是真正被修改的行）。如果这不可接受，中间件或应用必须从一个单一服务器查询这样的值并且然后将那些值用在写查询中。另一个选项是将这个复制选项和一种传统主-备设置一起使用，即数据修改查询只被发送给主服务器并且通过主-备复制传播到后备服务器，而不是通过复制中间件。必须要注意的是，所有事务要么在所有服务器上都提交，要么在所有服务器上都中止，也许可以使用两阶段提交（<xref linkend="sql-prepare-transaction"/>和<xref linkend="sql-commit-prepared"/>）。<productname>Pgpool-II</productname>和<productname>Continuent Tungsten</productname>是这种复制类型的例子。
+    <para>如果查询未经修改发送，则函数的<function>random()</function>随机值和<function>CURRENT_TIMESTAMP</function>函数的当前时间和序列值可能因不同服务器而异。
+    因为每个服务器独立运行，并且它发送 SQL 查询而没有真正的更改数据。如果这是不可接受的，那么中间件或应用程序必须从单一服务器源确定此类值，并将结果用于写入查询。
+    还必须注意确保所有服务器在提交或中止事务时都是相同的。这将涉及使用 两阶段提交（<xref linkend="sql-prepare-transaction"/>和<xref linkend="sql-commit-prepared"/> ）。
+    <productname>Pgpool-II</productname>和<productname>Continuent Tungsten</productname>就是这种复制的例子。
     </para>
    </listitem>
   </varlistentry>
@@ -1014,12 +1017,17 @@ ____________________________________________________________________________-->
 
   </sect2>
 
-  <sect2 id="standby-server-operation">
+  <sect2 id="standby-server-operation" xreflabel="Standby Server Operation">
 <!--==========================orignal english content==========================
    <title>Standby Server Operation</title>
 ____________________________________________________________________________-->
    <title>后备服务器操作</title>
 
+   <para>
+    服务器启动时，数据目录中存在<anchor id="file-standby-signal" xreflabel="standby.signal"/>
+    <filename>standby.signal</filename>
+    <indexterm><primary><filename>standby.signal</filename></primary></indexterm>文件，服务器进入standby模式。
+   </para>
 <!--==========================orignal english content==========================
    <para>
     In standby mode, the server continuously applies WAL received from the
@@ -1073,7 +1081,7 @@ ____________________________________________________________________________-->
    </para>
   </sect2>
 
-  <sect2 id="preparing-master-for-standby">
+  <sect2 id="preparing-primary-for-standby">
 <!--==========================orignal english content==========================
    <title>Preparing the Master for Standby Servers</title>
 ____________________________________________________________________________-->
@@ -1140,7 +1148,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    要建立后备服务器，恢复从主服务器取得的基础备份（<xref linkend="backup-pitr-recovery"/>）。在后备服务器的集簇数据目录中创建一个文件<filename>standby.signal</filename>。将<xref linkend="guc-restore-command"/>设置为一个从 WAL 归档中复制文件的简单命令。
+    要建立后备服务器，恢复从主服务器取得的基础备份（<xref linkend="backup-pitr-recovery"/>）。在后备服务器的集簇数据目录中创建一个文件<link linkend="file-standby-signal"><filename>standby.signal</filename></link><indexterm><primary>standby.signal</primary></indexterm>。将<xref linkend="guc-restore-command"/>设置为一个从 WAL 归档中复制文件的简单命令。
     如果你计划为了高可用性目的建立多个后备服务器，确认<varname>recovery_target_timeline</varname>被设置为<literal>latest</literal> (默认)来使得该后备服务器遵循发生在故障转移到另一个后备服务器之后发生的时间线改变。
    </para>
 
@@ -1155,7 +1163,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
      <para>
-     不要把 pg_standby 或相似的工具和这里描述的内建后备模式一起使用。如果文件不存在，<xref linkend="guc-restore-command"/>应该立即返回，如果必要该服务器将再次尝试该命令。使用类似 pg_standby 的工具请见<xref linkend="log-shipping-alternative"/>。
+     <xref linkend="guc-restore-command"/>应该立即返回，如果必要该服务器将再次尝试该命令。
     </para>
    </note>
 
@@ -1874,7 +1882,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    一旦流复制已经被配置，配置同步复制就只需要一个额外的配置步骤：<xref linkend="guc-synchronous-standby-names"/>必须被设置为一个非空值。<varname>synchronous_commit</varname>也必须被设置为<literal>on</literal>，但由于这是默认值，通常不需要改变（见<xref linkend="runtime-config-wal-settings"/>和<xref linkend="runtime-config-replication-master"/>）。这样的配置将导致每一次提交都等待确认消息，以保证后备服务器已经将提交记录写入到持久化存储中。<varname>synchronous_commit</varname>可以由个体用户设置，因此它可以在配置文件中配置、可以为特定用户或数据库配置或者由应用动态配置，这样可以在一种每事务基础上控制持久性保证。
+    一旦流复制已经被配置，配置同步复制就只需要一个额外的配置步骤：<xref linkend="guc-synchronous-standby-names"/>必须被设置为一个非空值。<varname>synchronous_commit</varname>也必须被设置为<literal>on</literal>，但由于这是默认值，通常不需要改变（见<xref linkend="runtime-config-wal-settings"/>和<xref linkend="runtime-config-replication-primary"/>）。这样的配置将导致每一次提交都等待确认消息，以保证后备服务器已经将提交记录写入到持久化存储中。<varname>synchronous_commit</varname>可以由个体用户设置，因此它可以在配置文件中配置、可以为特定用户或数据库配置或者由应用动态配置，这样可以在一种每事务基础上控制持久性保证。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2454,296 +2462,6 @@ ____________________________________________________________________________-->
    </para>
   </sect1>
 
-  <sect1 id="log-shipping-alternative">
-<!--==========================orignal english content==========================
-   <title>Alternative Method for Log Shipping</title>
-____________________________________________________________________________-->
-   <title>日志传送的替代方法</title>
-
-<!--==========================orignal english content==========================
-   <para>
-    An alternative to the built-in standby mode described in the previous
-    sections is to use a <varname>restore_command</varname> that polls the archive location.
-    This was the only option available in versions 8.4 and below. See the
-    <xref linkend="pgstandby"/> module for a reference implementation of this.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    前一节描述的内建后备模式的一种替代方案是使用一个轮询归档位置的<varname>restore_command</varname>。这是版本 8.4 及以下版本中唯一可用的选项。关于这种实现的一个参考请见<xref linkend="pgstandby"/>模块。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    Note that in this mode, the server will apply WAL one file at a
-    time, so if you use the standby server for queries (see Hot Standby),
-    there is a delay between an action in the master and when the
-    action becomes visible in the standby, corresponding to the time it takes
-    to fill up the WAL file. <varname>archive_timeout</varname> can be used to make that delay
-    shorter. Also note that you can't combine streaming replication with
-    this method.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    注意在这种模式中，服务器将一次应用一整个文件的 WAL，因此如果你使用后备服务器来查询（见热备），那么主服务器上的一个动作和后备服务器上该动作变得可见之间会有一个延迟，该延迟对应着填满 WAL 文件的时间。<varname>archive_timeout</varname>可以被用来缩短该延迟。
-    还要注意你不能把流复制和这种方法组合起来使用。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    The operations that occur on both primary and standby servers are
-    normal continuous archiving and recovery tasks. The only point of
-    contact between the two database servers is the archive of WAL files
-    that both share: primary writing to the archive, standby reading from
-    the archive. Care must be taken to ensure that WAL archives from separate
-    primary servers do not become mixed together or confused. The archive
-    need not be large if it is only required for standby operation.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    在主服务器和后备服务器上都会发生的操作是通常的连续归档和恢复任务。两个数据库服务器之间唯一的接触点是两者共享的 WAL 文件归档：主服务器写这个归档，后备服务器读取这个归档。必须要小心地保证来自独立主服务器的 WAL 归档不会混合在一起或者混淆。如果归档只被后备操作需要，它不必很大。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    The magic that makes the two loosely coupled servers work together is
-    simply a <varname>restore_command</varname> used on the standby that,
-    when asked for the next WAL file, waits for it to become available from
-    the primary. Normal recovery
-    processing would request a file from the WAL archive, reporting failure
-    if the file was unavailable.  For standby processing it is normal for
-    the next WAL file to be unavailable, so the standby must wait for
-    it to appear. For files ending in
-    <literal>.history</literal> there is no need to wait, and a non-zero return
-    code must be returned. A waiting <varname>restore_command</varname> can be
-    written as a custom script that loops after polling for the existence of
-    the next WAL file. There must also be some way to trigger failover, which
-    should interrupt the <varname>restore_command</varname>, break the loop and
-    return a file-not-found error to the standby server. This ends recovery
-    and the standby will then come up as a normal server.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    使得两台松耦合的服务器一起工作的诀窍是在后备服务器上使用的<varname>restore_command</varname>，当要求下一个 WAL 文件时，会等待它在主服务器上变得可用。正常的恢复处理将从 WAL 归档请求一个文件，如果该文件不可用则会报告失败。对于后备处理来说下一个 WAL 文件不可用很正常，因此后备服务器必须等待它出现。对于以<literal>.backup</literal>或<literal>.history</literal>结尾的文件没有必要等待，并且必须返回一个非零的返回码。一个等待的<varname>restore_command</varname>可以用一种习惯的脚本编写，在其中轮询下一个 WAL 文件的存在之后进行循环。也必须有某种方式来触发故障转移，那将打断<varname>restore_command</varname>：打破循环并返回一个文件未找到错误给后备服务器。这会结束恢复并且后备服务器将接下来变成一个正常的服务器。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    Pseudocode for a suitable <varname>restore_command</varname> is:
-<programlisting>
-triggered = false;
-while (!NextWALFileReady() &amp;&amp; !triggered)
-{
-    sleep(100000L);         /* wait for ~0.1 sec */
-    if (CheckForExternalTrigger())
-        triggered = true;
-}
-if (!triggered)
-        CopyWALFileForRecovery();
-</programlisting>
-   </para>
-____________________________________________________________________________-->
-   <para>
-    一个合适的<varname>restore_command</varname>的伪代码是：
-<programlisting>
-triggered = false;
-while (!NextWALFileReady() &amp;&amp; !triggered)
-{
-    sleep(100000L);         /* wait for ~0.1 sec */
-    if (CheckForExternalTrigger())
-        triggered = true;
-}
-if (!triggered)
-        CopyWALFileForRecovery();
-</programlisting>
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    A working example of a waiting <varname>restore_command</varname> is provided
-    in the <xref linkend="pgstandby"/> module. It
-    should be used as a reference on how to correctly implement the logic
-    described above. It can also be extended as needed to support specific
-    configurations and environments.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    在<xref linkend="pgstandby"/>模块中提供了一个等待的<varname>restore_command</varname>的工作例子。它也可被用作如何正确实现上述逻辑的参考。它也可以根据需要被扩展来支持指定的配置和环境。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    The method for triggering failover is an important part of planning
-    and design. One potential option is the <varname>restore_command</varname>
-    command.  It is executed once for each WAL file, but the process
-    running the <varname>restore_command</varname> is created and dies for
-    each file, so there is no daemon or server process, and
-    signals or a signal handler cannot be used. Therefore, the
-    <varname>restore_command</varname> is not suitable to trigger failover.
-    It is possible to use a simple timeout facility, especially if
-    used in conjunction with a known <varname>archive_timeout</varname>
-    setting on the primary. However, this is somewhat error prone
-    since a network problem or busy primary server might be sufficient
-    to initiate failover. A notification mechanism such as the explicit
-    creation of a trigger file is ideal, if this can be arranged.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    触发故障转移的方法是规划和设计中的一个重要部分。一种潜在的选项是<varname>restore_command</varname>命令。它对每一个 WAL 文件被执行一次，但是运行<varname>restore_command</varname>的进程会为每一个文件创建和死亡，因此没有守护进程或服务器进程，并且也不能使用信号或信号句柄。因此，<varname>restore_command</varname>不适合于触发故障转移。可以使用一种简单的超时功能，特别是和主服务器上已知的<varname>archive_timeout</varname>设置一起。但是，由于一个网络问题或者繁忙的主服务器可能足以发起故障转移，这有点容易产生错误。如果可以安排，一种提醒机制（例如显式创建一个触发器文件）是最理想的。
-   </para>
-
-  <sect2 id="warm-standby-config">
-<!--==========================orignal english content==========================
-   <title>Implementation</title>
-____________________________________________________________________________-->
-   <title>实现</title>
-
-<!--==========================orignal english content==========================
-   <para>
-    The short procedure for configuring a standby server using this alternative
-    method is as follows. For
-    full details of each step, refer to previous sections as noted.
-    <orderedlist>
-     <listitem>
-      <para>
-       Set up primary and standby systems as nearly identical as
-       possible, including two identical copies of
-       <productname>PostgreSQL</productname> at the same release level.
-      </para>
-     </listitem>
-     <listitem>
-      <para>
-       Set up continuous archiving from the primary to a WAL archive
-       directory on the standby server. Ensure that
-       <xref linkend="guc-archive-mode"/>,
-       <xref linkend="guc-archive-command"/> and
-       <xref linkend="guc-archive-timeout"/>
-       are set appropriately on the primary
-       (see <xref linkend="backup-archiving-wal"/>).
-      </para>
-     </listitem>
-     <listitem>
-      <para>
-       Make a base backup of the primary server (see <xref
-       linkend="backup-base-backup"/>), and load this data onto the standby.
-      </para>
-     </listitem>
-     <listitem>
-      <para>
-       Begin recovery on the standby server from the local WAL
-       archive, using <varname>restore_command</varname> that waits
-       as described previously (see <xref linkend="backup-pitr-recovery"/>).
-      </para>
-     </listitem>
-    </orderedlist>
-   </para>
-____________________________________________________________________________-->
-   <para>
-    使用这种替代方案配置一个后备服务器的简短过程如下所示。对于每一步的细节，可以参考之前的小节。
-    <orderedlist>
-     <listitem>
-      <para>
-       尽可能将主系统和后背系统设置成近乎一致，包括在同一发行级别上的两个相同的<productname>PostgreSQL</productname>拷贝。
-      </para>
-     </listitem>
-     <listitem>
-      <para>
-       在后备服务器上建立从主系统到一个 WAL 归档目录的连续归档。确保在主服务器上<xref linkend="guc-archive-mode"/>、<xref linkend="guc-archive-command"/>和<xref linkend="guc-archive-timeout"/>被恰当地设置（见<xref linkend="backup-archiving-wal"/>）。
-      </para>
-     </listitem>
-     <listitem>
-      <para>
-       建立主服务器的一个基础备份（见<xref linkend="backup-base-backup"/>），并且把该数据载入到后备服务器。
-      </para>
-     </listitem>
-     <listitem>
-      <para>
-       在后备服务器上开始从本地 WAL 归档的恢复，按之前所述用<varname>restore_command</varname>等待（见<xref linkend="backup-pitr-recovery"/>）。
-      </para>
-     </listitem>
-    </orderedlist>
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    Recovery treats the WAL archive as read-only, so once a WAL file has
-    been copied to the standby system it can be copied to tape at the same
-    time as it is being read by the standby database server.
-    Thus, running a standby server for high availability can be performed at
-    the same time as files are stored for longer term disaster recovery
-    purposes.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    恢复将 WAL 归档当作只读的来处理，因此一旦一个 WAL 文件已经被复制到后备系统，在它正在被后备数据库服务器读取时可以被同时复制到磁带。因此，可以在为了长期灾难恢复目的存储文件的同时运行一个用于高可用性的后备服务器。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    For testing purposes, it is possible to run both primary and standby
-    servers on the same system. This does not provide any worthwhile
-    improvement in server robustness, nor would it be described as HA.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    为了测试的目的，可以在一个相同的系统上运行主服务器和后备服务器。这对于服务器鲁棒性并不会提供任何有意义的改进，对 HA 也一样。
-   </para>
-  </sect2>
-
-  <sect2 id="warm-standby-record">
-<!--==========================orignal english content==========================
-   <title>Record-Based Log Shipping</title>
-____________________________________________________________________________-->
-   <title>基于记录的日志传送</title>
-
-<!--==========================orignal english content==========================
-   <para>
-    It is also possible to implement record-based log shipping using this
-    alternative method, though this requires custom development, and changes
-    will still only become visible to hot standby queries after a full WAL
-    file has been shipped.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    也可以使用这种替代方法来实现基于记录的日志传送，不过这需要定制开发，并且只有在一整个 WAL 文件被传送之后改变才会对热后备查询可见。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    An external program can call the <function>pg_walfile_name_offset()</function>
-    function (see <xref linkend="functions-admin"/>)
-    to find out the file name and the exact byte offset within it of
-    the current end of WAL.  It can then access the WAL file directly
-    and copy the data from the last known end of WAL through the current end
-    over to the standby servers.  With this approach, the window for data
-    loss is the polling cycle time of the copying program, which can be very
-    small, and there is no wasted bandwidth from forcing partially-used
-    segment files to be archived.  Note that the standby servers'
-    <varname>restore_command</varname> scripts can only deal with whole WAL files,
-    so the incrementally copied data is not ordinarily made available to
-    the standby servers.  It is of use only when the primary dies &mdash;
-    then the last partial WAL file is fed to the standby before allowing
-    it to come up.  The correct implementation of this process requires
-    cooperation of the <varname>restore_command</varname> script with the data
-    copying program.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    一个外部程序可以调用<function>pg_walfile_name_offset()</function>函数（见<xref linkend="functions-admin"/>）来找出 WAL 的当前末端的文件名和其中准确的字节偏移。它接着可以直接访问 WAL 文件并且将从上一个已知的 WAL 末尾到当前末尾之间的数据拷贝到后备服务器。通过这种方法，数据丢失的窗口是复制程序的轮询周期时间，这可以为非常小，并且不会有强制部分使用的段文件被归档所浪费的带宽。注意后备服务器的<varname>restore_command</varname>脚本只能处理整个 WAL 文件，因此增量复制的数据通常不会对后备服务器可用。只有当主服务器死掉时它才有用 &mdash; 那时最后一个部分 WAL 文件会在允许它发生之前被喂给后备服务器。这个处理的正确实现要求<varname>restore_command</varname>脚本和数据复制程序的合作。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    Starting with <productname>PostgreSQL</productname> version 9.0, you can use
-    streaming replication (see <xref linkend="streaming-replication"/>) to
-    achieve the same benefits with less effort.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    从<productname>PostgreSQL</productname> 版本 9.0 开始，你可以使用流复制（见<xref linkend="streaming-replication"/>）来实现事半功倍的效果。
-   </para>
-  </sect2>
- </sect1>
-
  <sect1 id="hot-standby">
 <!--==========================orignal english content==========================
   <title>Hot Standby</title>
@@ -3168,8 +2886,9 @@ ____________________________________________________________________________-->
     write complex programs that restore the database to particular states.
    </para>
 ____________________________________________________________________________-->
-   <para>
-    用户将可以通过发出<command>SHOW transaction_read_only</command>来了解他们的会话是不是只读的。此外，一组函数（<xref linkend="functions-recovery-info-table"/>）允许用户访问关于后备服务器的信息。这些允许你编写关心数据库当前状态的程序。这些可以被用来监控恢复的进度，或者允许你编写恢复数据库到特定状态的复杂程序。
+     <para>
+    用户可以通过<command>SHOW in_hot_standby</command>来检查hot standby会话是否是活跃的 (在服务器版本 14 之前该参数<varname>in_hot_standby</varname>不存在。对于更早版本的服务器，可行的替代方法是 <command>SHOW transaction_read_only</command>。)  此外， 还有一些函数
+     (<xref linkend="functions-recovery-info-table"/>) 允许用户访问有关备用服务器的信息。 它们允许您编写程序来识别数据库当前的状态。用于监控恢复进度， 或者您可以编写复杂的程序将数据库恢复到特定状态。
    </para>
   </sect2>
 
@@ -3488,6 +3207,9 @@ ____________________________________________________________________________-->
    <para>
     查询取消的数量和原因可以使用后备服务器上的<structname>pg_stat_database_conflicts</structname>系统视图查看。<structname>pg_stat_database</structname>系统视图也包含汇总信息。
    </para>
+   <para>
+    当 WAL 重放由于冲突而需要比<varname>deadlock_timeout</varname>更长时间时，用户可以控制是否打印日志消息。由参数 <xref linkend="guc-log-recovery-conflict-waits"/> 控制。
+   </para>
   </sect2>
 
   <sect2 id="hot-standby-admin">
@@ -3544,7 +3266,7 @@ LOG:  database system is ready to accept read only connections
    </para>
 ____________________________________________________________________________-->
    <para>
-    如果<varname>hot_standby</varname>在<filename>postgresql.conf</filename>中被设置为<literal>on</literal>并且存在一个<filename>standby.signal</filename>文件，服务器将运行在热备模式。但是，可能需要一些时间来允许热备连接，因为在服务器完成足够的恢复来为查询提供一个一致的状态之前，它将不会接受连接。在此期间，尝试连接的客户端将被一个错误消息拒绝。要确认服务器已经可连接，要么循环地从应用尝试连接，要么在服务器日志中查找这些消息：
+    如果<varname>hot_standby</varname>在<filename>postgresql.conf</filename>中被设置为<literal>on</literal>并且存在一个<link linkend="file-standby-signal"><filename>standby.signal</filename></link><indexterm><primary>standby.signal</primary><secondary>热备</secondary></indexterm>文件，服务器将运行在热备模式。但是，可能需要一些时间来允许热备连接，因为在服务器完成足够的恢复来为查询提供一个一致的状态之前，它将不会接受连接。在此期间，尝试连接的客户端将被一个错误消息拒绝。要确认服务器已经可连接，要么循环地从应用尝试连接，要么在服务器日志中查找这些消息：
 
 <programlisting>
 LOG:  entering standby mode
@@ -3618,8 +3340,7 @@ LOG:  database system is ready to accept read only connections
    </para>
 ____________________________________________________________________________-->
    <para>
-    如果后备服务器上某些参数在主服务器上已经被改变，它们的设置将需要重新配置。对这些参数，在后备服务器上的值必须等于或者大于主服务器上的值。因此，如果想要增加这些值，就应该在把这些更改应用到主服务器之前，先在所有的后备服务器上做同样的事情。反过来，如果想要减小这些值，就应该在把这些更改应用到所有后备服务器之前，先在主服务器上做同样的事情。如果这些参数没有被设置得足够高，后备服务器将拒绝开始。较高的值被提供之后，服务器重新启动再次开始恢复。这些参数是：
-
+    设置几个参数可确定用于跟踪事务ID、锁和预备事务的共享内存大小。备用服务器上的设置必须大于或等于主服务器上的设置，以确保在恢复过程中不会耗尽共享内存。例如，如果主数据库正在执行预备事务，而备用数据库没有获取共享内存来跟踪预备事务，则备用数据库将无法继续恢复，直到配置更改。受影响的参数是：
       <itemizedlist>
        <listitem>
         <para>
@@ -3647,6 +3368,19 @@ ____________________________________________________________________________-->
         </para>
        </listitem>
       </itemizedlist>
+    确保这不是问题的可靠方法是使备用数据库上的这些参数的值等于或大于主数据库上的值。因此，如果您想增加这些值，您应该先更改备用服务器上的设置，然后再更改主服务器上的设置。相反，如果要减小这些值，则应先更改主服务器上的设置，然后再更改备用服务器上的设置。请记住，当一个备用数据库被提升时，它会成为后续备用数据库所需参数设置的新基准。因此，最好在所有备用服务器上保持这些设置相同，这样在切换/故障转移期间就不会出现问题。
+   </para>
+
+   <para>
+   WAL 跟踪主节点上这些参数的变化。如果热备处理一个 WAL，表明主节点当前值大于备用数据库上的值，它将记录一个警告并中止恢复。例如:
+<screen>
+WARNING：由于参数设置不足，无法进行热备
+详细信息：max_connections = 80 的设置低于主服务器上的设置，其值为 100。
+LOG：恢复已暂停
+详细信息：如果恢复未暂停，服务器将关闭。
+提示：您可以在进行必要的配置更改后重新启动服务器。
+</screen>
+    此时，您应该更改备库设置并重新启动实例以继续恢复。如果备库不是热备，不兼容的参数更改将立即将其关闭而不会暂停。因为这样继续开机没有意义。
    </para>
 
 <!--==========================orignal english content==========================
