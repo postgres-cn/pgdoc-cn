@@ -100,8 +100,10 @@ number of clients: 10
 number of threads: 1
 number of transactions per client: 1000
 number of transactions actually processed: 10000/10000
-tps = 85.184871 (including connections establishing)
-tps = 85.296346 (excluding connections establishing)
+latency average = 11.013 ms
+latency stddev = 7.351 ms
+initial connection time = 45.758 ms
+tps = 896.967014 (without initial connection time)
 </screen>
 
   The first six lines report some of the most important parameter
@@ -110,8 +112,7 @@ tps = 85.296346 (excluding connections establishing)
   and number of transactions per client); these will be equal unless the run
   failed before completion.  (In <option>-T</option> mode, only the actual
   number of transactions is printed.)
-  The last two lines report the number of transactions per second,
-  figured with and without counting the time to start database sessions.
+  The last line reports the number of transactions per second.
  </para>
 ____________________________________________________________________________-->
  <para>
@@ -125,11 +126,15 @@ number of clients: 10
 number of threads: 1
 number of transactions per client: 1000
 number of transactions actually processed: 10000/10000
-tps = 85.184871 (including connections establishing)
-tps = 85.296346 (excluding connections establishing)
+latency average = 11.013 ms
+latency stddev = 7.351 ms
+initial connection time = 45.758 ms
+tps = 896.967014 (without initial connection time)
 </screen>
 
-  前六行报告一些最重要的参数设置。接下来的行报告完成的事务数以及预期的事务数（后者就是客户端数量与每个客户端事务数的乘积），除非运行在完成之前失败，这些值应该是相等的（在<option>-T</option>模式中，只有实际的事务数会被打印出来）。最后两行报告每秒的事务数，分别代表包括和不包括开始数据库会话所花时间的情况。
+  前六行报告一些最重要的参数设置。
+  接下来的行报告完成的事务数以及预期的事务数（后者就是客户端数量与每个客户端事务数的乘积），除非运行在完成之前失败，这些值应该是相等的（在<option>-T</option>模式中，只有实际的事务数会被打印出来）。
+  最后一行报告每秒的事务数。
  </para>
 
 <!--==========================orignal english content==========================
@@ -265,6 +270,18 @@ ____________________________________________________________________________-->
     initialization arguments:
 
     <variablelist>
+
+     <varlistentry>
+      <term><replaceable class="parameter">dbname</replaceable></term>
+      <listitem>
+       <para>
+        Specifies the name of the database to test in. If this is
+        not specified, the environment variable
+        <envar>PGDATABASE</envar> is used. If that is not set, the
+        user name specified for the connection is used.
+       </para>
+      </listitem>
+     </varlistentry>
 
      <varlistentry>
       <term><option>-i</option></term>
@@ -502,6 +519,17 @@ ____________________________________________________________________________-->
     <variablelist>
 
      <varlistentry>
+      <term><replaceable class="parameter">dbname</replaceable></term>
+      <listitem>
+       <para>
+        指定要测试的数据库的名称。
+        如果这个没有被指定，将使用环境变量<envar>PGDATABASE</envar>。
+        如果那个也没有设定，将使用指定要连接的用户名称。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-i</option></term>
       <term><option>--initialize</option></term>
       <listitem>
@@ -702,14 +730,18 @@ ____________________________________________________________________________-->
       <term><option>-&minus;builtin</option>=<replaceable>scriptname[@weight]</replaceable></term>
       <listitem>
        <para>
-        Add the specified built-in script to the list of executed scripts.
-        An optional integer weight after <literal>@</literal> allows to adjust the
-        probability of drawing the script.  If not specified, it is set to 1.
+        Add the specified built-in script to the list of scripts to be executed.
         Available built-in scripts are: <literal>tpcb-like</literal>,
         <literal>simple-update</literal> and <literal>select-only</literal>.
         Unambiguous prefixes of built-in names are accepted.
-        With special name <literal>list</literal>, show the list of built-in scripts
+        With the special name <literal>list</literal>, show the list of built-in scripts
         and exit immediately.
+       </para>
+       <para>
+        Optionally, write an integer weight after <literal>@</literal> to
+        adjust the probability of selecting this script versus other ones.
+        The default weight is 1.
+        See below for details.
        </para>
       </listitem>
      </varlistentry>
@@ -763,10 +795,16 @@ ____________________________________________________________________________-->
       <term><option>-&minus;file=</option><replaceable>filename[@weight]</replaceable></term>
       <listitem>
        <para>
-        Add a transaction script read from <replaceable>filename</replaceable> to
-        the list of executed scripts.
-        An optional integer weight after <literal>@</literal> allows to adjust the
-        probability of drawing the test.
+        Add a transaction script read from <replaceable>filename</replaceable>
+        to the list of scripts to be executed.
+       </para>
+       <para>
+        Optionally, write an integer weight after <literal>@</literal> to
+        adjust the probability of selecting this script versus other ones.
+        The default weight is 1.
+        (To use a script file name that includes an <literal>@</literal>
+        character, append a weight so that there is no ambiguity, for
+        example <literal>filen@me@1</literal>.)
         See below for details.
        </para>
       </listitem>
@@ -1121,8 +1159,17 @@ ____________________________________________________________________________-->
       <term><option>--builtin</option>=<replaceable>scriptname[@weight]</replaceable></term>
       <listitem>
        <para>
-        把指定的内建脚本加入到要执行的脚本列表中。<literal>@</literal>之后是一个可选的整数权重，它允许调节抽取该脚本的可能性。如果没有指定，它会被设置为 1。可用的内建脚本有：<literal>tpcb-like</literal>、<literal>simple-update</literal>和<literal>select-only</literal>。这里也接受内建名称无歧义的前缀缩写。如果用上特殊的名字<literal>list</literal>，将会显示内建脚本的列表并且立刻退出。
+        把指定的内建脚本加入到要被执行的脚本列表中。
+        可用的内建脚本有：<literal>tpcb-like</literal>、<literal>simple-update</literal>和<literal>select-only</literal>。
+        这里也接受内建名称无歧义的前缀缩写。
+        如果用上特殊的名字<literal>list</literal>，将会显示内建脚本的列表并且立刻退出。
        </para>
+       <para>
+        可选的，在<literal>@</literal>后面写一个整数权重以调整选择这个脚本而不是其它的概率。
+        默认的权重为1。
+        详情如下。
+       </para>
+
       </listitem>
      </varlistentry>
 
@@ -1171,7 +1218,13 @@ ____________________________________________________________________________-->
       <term><option>--file=</option><replaceable>filename[@weight]</replaceable></term>
       <listitem>
        <para>
-        把一个从<replaceable>filename</replaceable>读到的事务脚本加入到被执行的脚本列表中。<literal>@</literal>后面是一个可选的整数权重，它允许调节抽取该测试的可能性。详见下文。
+        把一个从<replaceable>filename</replaceable>读到的事务脚本加入到被执行的脚本列表中。
+       </para>
+       <para>
+        可选的，在<literal>@</literal>后写一个整数权重以调整选择这个脚本而非其他的概率。
+        默认权重为1.
+        (要使用包含<literal>@</literal>字符的脚本文件名，附加权重在后面以避免歧义，例如<literal>filen@me@1</literal>。)
+        详情如下。
        </para>
       </listitem>
      </varlistentry>
@@ -1594,6 +1647,10 @@ ____________________________________________________________________________-->
   <variablelist>
    <varlistentry>
 <!--==========================orignal english content==========================
+    <term><envar>PGDATABASE</envar></term>
+____________________________________________________________________________-->
+    <term><envar>PGDATABASE</envar></term>
+<!--==========================orignal english content==========================
     <term><envar>PGHOST</envar></term>
 ____________________________________________________________________________-->
     <term><envar>PGHOST</envar></term>
@@ -1659,16 +1716,19 @@ ____________________________________________________________________________-->
   <para>
    <application>pgbench</application> executes test scripts chosen randomly
    from a specified list.
-   They include built-in scripts with <option>-b</option> and
-   user-provided custom scripts with <option>-f</option>.
-   Each script may be given a relative weight specified after a
-   <literal>@</literal> so as to change its drawing probability.
+   The scripts may include built-in scripts specified with <option>-b</option>
+   and user-provided scripts specified with <option>-f</option>.
+   Each script may be given a relative weight specified after an
+   <literal>@</literal> so as to change its selection probability.
    The default weight is <literal>1</literal>.
    Scripts with a weight of <literal>0</literal> are ignored.
  </para>
 ____________________________________________________________________________-->
   <para>
-   <application>pgbench</application>执行从指定列表中随机选中的测试脚本。它们包括带有<option>-b</option>的内建脚本和带有<option>-f</option>的用户提供的自定义脚本。每一个脚本可以在其后用<literal>@</literal>指定一个相对权重，这样可以更改该脚本的抽取概率。默认权重是<literal>1</literal>。权重为<literal>0</literal>的脚本会被忽略。
+   <application>pgbench</application>执行从指定列表中随机选中的测试脚本。
+   这个脚本包括带有<option>-b</option>指定的内建脚本和带有<option>-f</option>指定的用户提供的自定义脚本。
+   每一个脚本可以在其后用<literal>@</literal>指定一个相对权重，这样可以更改该脚本的选择概率。
+   默认权重是<literal>1</literal>。权重为<literal>0</literal>的脚本会被忽略。
  </para>
 
 <!--==========================orignal english content==========================
@@ -1688,49 +1748,28 @@ ____________________________________________________________________________-->
    <listitem><!--==========================orignal english content==========================
 <para><literal>BEGIN;</literal></para>
 ____________________________________________________________________________-->
-<!--==========================orignal english content==========================
-<para><literal>BEGIN;</literal></para>
-____________________________________________________________________________-->
 <para><literal>BEGIN;</literal></para></listitem>
    <listitem><!--==========================orignal english content==========================
-<para><literal>UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;</literal></para>
-____________________________________________________________________________-->
-<!--==========================orignal english content==========================
 <para><literal>UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;</literal></para>
 ____________________________________________________________________________-->
 <para><literal>UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;</literal></para></listitem>
    <listitem><!--==========================orignal english content==========================
 <para><literal>SELECT abalance FROM pgbench_accounts WHERE aid = :aid;</literal></para>
 ____________________________________________________________________________-->
-<!--==========================orignal english content==========================
-<para><literal>SELECT abalance FROM pgbench_accounts WHERE aid = :aid;</literal></para>
-____________________________________________________________________________-->
 <para><literal>SELECT abalance FROM pgbench_accounts WHERE aid = :aid;</literal></para></listitem>
    <listitem><!--==========================orignal english content==========================
-<para><literal>UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;</literal></para>
-____________________________________________________________________________-->
-<!--==========================orignal english content==========================
 <para><literal>UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;</literal></para>
 ____________________________________________________________________________-->
 <para><literal>UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;</literal></para></listitem>
    <listitem><!--==========================orignal english content==========================
 <para><literal>UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;</literal></para>
 ____________________________________________________________________________-->
-<!--==========================orignal english content==========================
-<para><literal>UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;</literal></para>
-____________________________________________________________________________-->
 <para><literal>UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;</literal></para></listitem>
    <listitem><!--==========================orignal english content==========================
 <para><literal>INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);</literal></para>
 ____________________________________________________________________________-->
-<!--==========================orignal english content==========================
-<para><literal>INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);</literal></para>
-____________________________________________________________________________-->
 <para><literal>INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);</literal></para></listitem>
    <listitem><!--==========================orignal english content==========================
-<para><literal>END;</literal></para>
-____________________________________________________________________________-->
-<!--==========================orignal english content==========================
 <para><literal>END;</literal></para>
 ____________________________________________________________________________-->
 <para><literal>END;</literal></para></listitem>
@@ -1797,7 +1836,7 @@ ____________________________________________________________________________-->
     Before <productname>PostgreSQL</productname> 9.6, SQL commands in script files
     were terminated by newlines, and so they could not be continued across
     lines.  Now a semicolon is <emphasis>required</emphasis> to separate consecutive
-    SQL commands (though a SQL command does not need one if it is followed
+    SQL commands (though an SQL command does not need one if it is followed
     by a meta command).  If you need to create a script file that works with
     both old and new versions of <application>pgbench</application>, be sure to write
     each SQL command on a single line ending with a semicolon.
@@ -1812,7 +1851,7 @@ ____________________________________________________________________________-->
   <para>
    There is a simple variable-substitution facility for script files.
    Variable names must consist of letters (including non-Latin letters),
-   digits, and underscores.
+   digits, and underscores, with the first character not being a digit.
    Variables can be set by the command-line <option>-D</option> option,
    explained above, or by the meta commands explained below.
    In addition to any variables preset by <option>-D</option> command-line options,
@@ -1820,7 +1859,7 @@ ____________________________________________________________________________-->
    <xref linkend="pgbench-automatic-variables"/>. A value specified for these
    variables using <option>-D</option> takes precedence over the automatic presets.
    Once set, a variable's
-   value can be inserted into a SQL command by writing
+   value can be inserted into an SQL command by writing
    <literal>:</literal><replaceable>variablename</replaceable>.  When running more than
    one client session, each session has its own set of variables.
    <application>pgbench</application> supports up to 255 variable uses in one
@@ -1828,18 +1867,16 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   对脚本文件有一种简单的变量替换功能。变量名必须由字母（包括非拉丁字母）、数字以及下划线构成。如上所述，变量可以用命令行的
-   <option>-D</option>选项设置，或者按下文所说的使用元命令设置。
-   除了用<option>-D</option>命令行选项预先设置的任何变量之外，
-   还有一些被自动预先设置的变量，它们被列在
-   <xref linkend="pgbench-automatic-variables"/>中。一个用<option>-D</option>
-   为这些变量值指定的值会优先于自动的预设值。
-   一旦被设置，可以在 SQL 命令中写<literal>:</literal><replaceable>variablename</replaceable>
-   来插入一个变量的值。当运行多于一个客户端会话时，每一个会话拥有它自己的变量集合。
+   对脚本文件有一种简单的变量替换功能。变量名必须由字母（包括非拉丁字母）、数字以及下划线构成，并且首个字符不能是数字。
+   如上所述，变量可以用命令行的 <option>-D</option>选项设置，或者按下文所说的使用元命令设置。
+   除了用<option>-D</option>命令行选项预先设置的任何变量之外，还有一些被自动预先设置的变量，它们被列在<xref linkend="pgbench-automatic-variables"/>中。
+   一个用<option>-D</option>为这些变量值指定的值会优先于自动的预设值。
+   一旦被设置，可以在 SQL 命令中写<literal>:</literal><replaceable>variablename</replaceable>来插入一个变量的值。
+   当运行多于一个客户端会话时，每一个会话拥有它自己的变量集合。
    <application>pgbench</application>在一个语句中支持使用多达255个变量。
-   </para>
-  
-  <table id="pgbench-automatic-variables">
+  </para>
+
+   <table id="pgbench-automatic-variables">
 <!--==========================orignal english content==========================
     <title>pgbench Automatic Variables</title>
 ____________________________________________________________________________-->
@@ -1875,12 +1912,12 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
       <row>
        <entry> <literal>default_seed</literal> </entry>
-       <entry>seed used in hash functions by default</entry>
+       <entry>seed used in hash and pseudorandom permutation functions by default</entry>
       </row>
 ____________________________________________________________________________-->
       <row>
        <entry> <literal>default_seed</literal> </entry>
-       <entry>默认在哈希函数中使用的种子</entry>
+       <entry>默认在哈希和伪随机置换函数中使用的种子</entry>
       </row>
 
 <!--==========================orignal english content==========================
@@ -1968,6 +2005,17 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
      <para>
       使用<literal>\aset</literal>命令时，所有组合的SQL查询（由<literal>\;</literal>分隔）将其列存储到以列名命名的变量中，如果提供，则以<replaceable>前缀</replaceable>作为前缀。如果查询不返回任何行，则不进行赋值，并且可以测试变量是否存在以检测这一点。如果查询返回多行，则保留最后一个值。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      <literal>\gset</literal> and <literal>\aset</literal> cannot be used in
+      pipeline mode, since the query results are not yet available by the time
+      the commands would need them.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <literal>\gset</literal> 和 <literal>\aset</literal> 不能用在管道模式，因为在命令需要它们的时候，查询结果还不可用。
      </para>
 
 <!--==========================orignal english content==========================
@@ -2262,6 +2310,36 @@ ____________________________________________________________________________-->
 </programlisting></para>
     </listitem>
    </varlistentry>
+
+   <varlistentry id='pgbench-metacommand-pipeline'>
+<!--==========================orignal english content==========================
+    <term><literal>\startpipeline</literal></term>
+____________________________________________________________________________-->
+    <term><literal>\startpipeline</literal></term>
+<!--==========================orignal english content==========================
+    <term><literal>\endpipeline</literal></term>
+____________________________________________________________________________-->
+    <term><literal>\endpipeline</literal></term>
+
+    <listitem>
+<!--==========================orignal english content==========================
+      <para>
+        These commands delimit the start and end of a pipeline of SQL
+        statements.  In pipeline mode, statements are sent to the server
+        without waiting for the results of previous statements.  See
+        <xref linkend="libpq-pipeline-mode"/> for more details.
+        Pipeline mode requires the use of extended query protocol.
+     </para>
+____________________________________________________________________________-->
+      <para>
+        这些命令界定SQL语句的管道的起始和结束。
+        在管道模式，语句发送给服务器，而不用等待前一个语句的结果。
+        详情参见<xref linkend="libpq-pipeline-mode"/>。
+        管道模式需要用到扩展查询协议。
+     </para>
+    </listitem>
+   </varlistentry>
+
   </variablelist>
  </refsect2>
 
@@ -2293,7 +2371,7 @@ ____________________________________________________________________________-->
     <title>pgbench Operators</title>
 ____________________________________________________________________________-->
     <title>pgbench操作符</title>
-     <tgroup cols="1">
+    <tgroup cols="1">
      <thead>
 <!--==========================orignal english content==========================
       <row>
@@ -2993,9 +3071,9 @@ ____________________________________________________________________________-->
         <returnvalue>-2.0</returnvalue>
        </para></entry>
       </row>
-    </tbody>
-   </tgroup>
-  </table>
+     </tbody>
+    </tgroup>
+   </table>
  </refsect2>
 
  <refsect2 id="pgbench-builtin-functions">
@@ -3386,6 +3464,41 @@ ____________________________________________________________________________-->
         <returnvalue>22</returnvalue>
        </para></entry>
       </row>
+
+<!--==========================orignal english content==========================
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>permute</function> ( <parameter>i</parameter>, <parameter>size</parameter> [, <parameter>seed</parameter> ] )
+        <returnvalue>integer</returnvalue>
+       </para>
+       <para>
+        Permuted value of <parameter>i</parameter>, in the range
+        <literal>[0, size)</literal>.  This is the new position of
+        <parameter>i</parameter> (modulo <parameter>size</parameter>) in a
+        pseudorandom permutation of the integers <literal>0...size-1</literal>,
+        parameterized by <parameter>seed</parameter>, see below.
+       </para>
+       <para>
+        <literal>permute(0, 4)</literal>
+        <returnvalue>an integer between 0 and 3</returnvalue>
+       </para></entry>
+      </row>
+____________________________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>permute</function> ( <parameter>i</parameter>, <parameter>size</parameter> [, <parameter>seed</parameter> ] )
+        <returnvalue>integer</returnvalue>
+       </para>
+       <para>
+        <parameter>i</parameter>的排列值，在范围<literal>[0, size)</literal>之间。
+        这是<parameter>i</parameter>(模数 <parameter>size</parameter>)在整数<literal>0...size-1</literal>的伪随机排列中的新位置，由<parameter>seed</parameter>参数化，如下所示。
+       </para>
+       <para>
+        <literal>permute(0, 4)</literal>
+        <returnvalue>an integer between 0 and 3</returnvalue>
+       </para></entry>
+      </row>
+
 <!--==========================orignal english content==========================
       <row>
        <entry role="func_table_entry"><para role="func_signature">
@@ -3742,46 +3855,121 @@ ____________________________________________________________________________-->
     </listitem>
    </itemizedlist>
 
+   <note>
+<!--==========================orignal english content==========================
+    <para>
+      When designing a benchmark which selects rows non-uniformly, be aware
+      that the rows chosen may be correlated with other data such as IDs from
+      a sequence or the physical row ordering, which may skew performance
+      measurements.
+    </para>
+____________________________________________________________________________-->
+    <para>
+      在设计不一致选择行的基准时，要注意行的选择可能与其他数据相关，例如来自序列的IDs或物理行排序，这可能会影响性能度量。
+    </para>
+<!--==========================orignal english content==========================
+    <para>
+      To avoid this, you may wish to use the <function>permute</function>
+      function, or some other additional step with similar effect, to shuffle
+      the selected rows and remove such correlations.
+    </para>
+____________________________________________________________________________-->
+    <para>
+      为了避免这个，您可能希望使用<function>permute</function>函数，或其他具有类似效果的额外步骤，来打乱选定的行并移除此类相关性。
+    </para>
+   </note>
+
 <!--==========================orignal english content==========================
   <para>
     Hash functions <literal>hash</literal>, <literal>hash_murmur2</literal> and
     <literal>hash_fnv1a</literal> accept an input value and an optional seed parameter.
     In case the seed isn't provided the value of <literal>:default_seed</literal>
     is used, which is initialized randomly unless set by the command-line
-    <literal>-D</literal> option. Hash functions can be used to scatter the
-    distribution of random functions such as <literal>random_zipfian</literal> or
-    <literal>random_exponential</literal>. For instance, the following pgbench
-    script simulates possible real world workload typical for social media and
-    blogging platforms where few accounts generate excessive load:
-
-<programlisting>
-\set r random_zipfian(0, 100000000, 1.07)
-\set k abs(hash(:r)) % 1000000
-</programlisting>
-
-    In some cases several distinct distributions are needed which don't correlate
-    with each other and this is when implicit seed parameter comes in handy:
-
-<programlisting>
-\set k1 abs(hash(:r, :default_seed + 123)) % 1000000
-\set k2 abs(hash(:r, :default_seed + 321)) % 1000000
-</programlisting>
+    <literal>-D</literal> option.
   </para>
 ____________________________________________________________________________-->
   <para>
-    哈希函数<literal>hash</literal>、<literal>hash_murmur2</literal>以及<literal>hash_fnv1a</literal>接受一个输入值和一个可选的种子参数。在没有提供种子的情况下，会使用<literal>:default_seed</literal>的值，该变量会被随机地初始化，除非用命令行的<literal>-D</literal> 选项重载。哈希函数可以被用于分散<literal>random_zipfian</literal>或<literal>random_exponential</literal>这样的随机函数的分布。例如，下列pgbench脚本模拟了社交媒体和博客平台上很常见的真实负载，其中少数账号产生了过量的负载：
+    哈希函数<literal>hash</literal>、<literal>hash_murmur2</literal>以及<literal>hash_fnv1a</literal>接受一个输入值和一个可选的种子参数。
+    在没有提供种子的情况下，会使用<literal>:default_seed</literal>的值，该变量会被随机地初始化，除非用命令行的<literal>-D</literal> 选项重载。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+    <literal>permute</literal> accepts an input value, a size, and an optional
+    seed parameter.  It generates a pseudorandom permutation of integers in
+    the range <literal>[0, size)</literal>, and returns the index of the input
+    value in the permuted values.  The permutation chosen is parameterized by
+    the seed, which defaults to <literal>:default_seed</literal>, if not
+    specified.  Unlike the hash functions, <literal>permute</literal> ensures
+    that there are no collisions or holes in the output values.  Input values
+    outside the interval are interpreted modulo the size.  The function raises
+    an error if the size is not positive.  <function>permute</function> can be
+    used to scatter the distribution of non-uniform random functions such as
+    <literal>random_zipfian</literal> or <literal>random_exponential</literal>
+    so that values drawn more often are not trivially correlated.  For
+    instance, the following <application>pgbench</application> script
+    simulates a possible real world workload typical for social media and
+    blogging platforms where a few accounts generate excessive load:
 
 <programlisting>
-\set r random_zipfian(0, 100000000, 1.07)
-\set k abs(hash(:r)) % 1000000
+\set size 1000000
+\set r random_zipfian(1, :size, 1.07)
+\set k 1 + permute(:r, :size)
 </programlisting>
 
-    在一些情况中需要几个不同的分布，它们彼此之间不相关并且隐式的随机数参数在此时就能派上用场：
+    In some cases several distinct distributions are needed which don't correlate
+    with each other and this is when the optional seed parameter comes in handy:
 
 <programlisting>
-\set k1 abs(hash(:r, :default_seed + 123)) % 1000000
-\set k2 abs(hash(:r, :default_seed + 321)) % 1000000
+\set k1 1 + permute(:r, :size, :default_seed + 123)
+\set k2 1 + permute(:r, :size, :default_seed + 321)
 </programlisting>
+
+    A similar behavior can also be approximated with <function>hash</function>:
+
+<programlisting>
+\set size 1000000
+\set r random_zipfian(1, 100 * :size, 1.07)
+\set k 1 + abs(hash(:r)) % :size
+</programlisting>
+
+    However, since <function>hash</function> generates collisions, some values
+    will not be reachable and others will be more frequent than expected from
+    the original distribution.
+  </para>
+____________________________________________________________________________-->
+  <para>
+    <literal>permute</literal>接受一个输入值，大小，和一个可选种子参数。
+    它生成范围在<literal>[0, size)</literal>的整数的伪随机排列，并返回排列值中的输入值的索引。
+    排列选择由种子参数化，默认为<literal>:default_seed</literal>，如果没有指定。
+    与hash函数不同，<literal>permute</literal>确保输出值中没有冲突或空洞。
+    在间隔之外的输入值以其大小为模进行解释。
+    如果大小不是正的，则该函数会抛出一个错误。
+    <function>permute</function>可用于分散不一致随机函数的分布，如 <literal>random_zipfian</literal> 或 <literal>random_exponential</literal> ，以便更经常获取的值不是琐碎相关的。
+    例如，下面的<application>pgbench</application>脚本模拟了社交媒体和博客平台可能存在的实际工作负载，其中一些账户产生了大量的负载:
+
+<programlisting>
+\set size 1000000
+\set r random_zipfian(1, :size, 1.07)
+\set k 1 + permute(:r, :size)
+</programlisting>
+
+    在一些情况中需要几个不同的分布，它们彼此之间不相关并且可选的随机数参数在此时就能派上用场：
+
+<programlisting>
+\set k1 1 + permute(:r, :size, :default_seed + 123)
+\set k2 1 + permute(:r, :size, :default_seed + 321)
+</programlisting>
+
+    类似的行为也可以接近于<function>hash</function>:
+
+<programlisting>
+\set size 1000000
+\set r random_zipfian(1, 100 * :size, 1.07)
+\set k 1 + abs(hash(:r)) % :size
+</programlisting>
+
+    然而，由于<function>hash</function>生成冲突，有些值将无法达成，而另一些值将比原始分布中的预期更频繁。
   </para>
 
 <!--==========================orignal english content==========================
@@ -4077,22 +4265,22 @@ number of clients: 10
 number of threads: 1
 number of transactions per client: 1000
 number of transactions actually processed: 10000/10000
-latency average = 15.844 ms
-latency stddev = 2.715 ms
-tps = 618.764555 (including connections establishing)
-tps = 622.977698 (excluding connections establishing)
+latency average = 10.870 ms
+latency stddev = 7.341 ms
+initial connection time = 30.954 ms
+tps = 907.949122 (without initial connection time)
 statement latencies in milliseconds:
-        0.002  \set aid random(1, 100000 * :scale)
-        0.005  \set bid random(1, 1 * :scale)
-        0.002  \set tid random(1, 10 * :scale)
-        0.001  \set delta random(-5000, 5000)
-        0.326  BEGIN;
-        0.603  UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
-        0.454  SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
-        5.528  UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
-        7.335  UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
-        0.371  INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
-        1.212  END;
+    0.001  \set aid random(1, 100000 * :scale)
+    0.001  \set bid random(1, 1 * :scale)
+    0.001  \set tid random(1, 10 * :scale)
+    0.000  \set delta random(-5000, 5000)
+    0.046  BEGIN;
+    0.151  UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
+    0.107  SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
+    4.241  UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
+    5.245  UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
+    0.102  INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
+    0.974  END;
 </screen>
   </para>
 ____________________________________________________________________________-->
@@ -4107,22 +4295,22 @@ number of clients: 10
 number of threads: 1
 number of transactions per client: 1000
 number of transactions actually processed: 10000/10000
-latency average = 15.844 ms
-latency stddev = 2.715 ms
-tps = 618.764555 (including connections establishing)
-tps = 622.977698 (excluding connections establishing)
+latency average = 10.870 ms
+latency stddev = 7.341 ms
+initial connection time = 30.954 ms
+tps = 907.949122 (without initial connection time)
 statement latencies in milliseconds:
-        0.002  \set aid random(1, 100000 * :scale)
-        0.005  \set bid random(1, 1 * :scale)
-        0.002  \set tid random(1, 10 * :scale)
-        0.001  \set delta random(-5000, 5000)
-        0.326  BEGIN;
-        0.603  UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
-        0.454  SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
-        5.528  UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
-        7.335  UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
-        0.371  INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
-        1.212  END;
+    0.001  \set aid random(1, 100000 * :scale)
+    0.001  \set bid random(1, 1 * :scale)
+    0.001  \set tid random(1, 10 * :scale)
+    0.000  \set delta random(-5000, 5000)
+    0.046  BEGIN;
+    0.151  UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
+    0.107  SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
+    4.241  UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
+    5.245  UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
+    0.102  INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
+    0.974  END;
 </screen>
   </para>
 
