@@ -44,7 +44,9 @@ REINDEX [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] { IN
 
 <phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
 
-    VERBOSE
+    CONCURRENTLY [ <replaceable class="parameter">boolean</replaceable> ]
+    TABLESPACE <replaceable class="parameter">new_tablespace</replaceable>
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
 </synopsis>
 ____________________________________________________________________________-->
 <synopsis>
@@ -52,7 +54,9 @@ REINDEX [ ( <replaceable class="parameter">option</replaceable> [, ...] ) ] { IN
 
 <phrase>其中 <replaceable class="parameter">选项</replaceable> 可以是以下之一：</phrase>
 
-    VERBOSE
+    CONCURRENTLY [ <replaceable class="parameter">boolean</replaceable> ]
+    TABLESPACE <replaceable class="parameter">new_tablespace</replaceable>
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -165,11 +169,14 @@ ____________________________________________________________________________-->
     <listitem>
 <!--==========================orignal english content==========================
      <para>
-      Recreate the specified index.
+      Recreate the specified index. This form of <command>REINDEX</command>
+      cannot be executed inside a transaction block when used with a
+      partitioned index.
      </para>
 ____________________________________________________________________________-->
      <para>
       重新创建指定的索引。
+      当与分区索引一起使用时，<command>REINDEX</command>的这种形式不能在事务块内部执行。
      </para>
     </listitem>
    </varlistentry>
@@ -184,11 +191,14 @@ ____________________________________________________________________________-->
      <para>
       Recreate all indexes of the specified table.  If the table has a
       secondary <quote>TOAST</quote> table, that is reindexed as well.
+      This form of <command>REINDEX</command> cannot be executed inside a
+      transaction block when used with a partitioned table.
      </para>
 ____________________________________________________________________________-->
      <para>
-      重新创建指定表的所有索引。如果该表有一个二级
-      <quote>TOAST</quote>表，它也会被重索引。
+      重新创建指定表的所有索引。
+      如果该表有一个二级<quote>TOAST</quote>表，它也会被重索引。
+      当与分区表一起使用时，<command>REINDEX</command>的这种形式不能再事务块内部执行。
      </para>
     </listitem>
    </varlistentry>
@@ -319,6 +329,23 @@ ____________________________________________________________________________-->
 
    <varlistentry>
 <!--==========================orignal english content==========================
+    <term><literal>TABLESPACE</literal></term>
+____________________________________________________________________________-->
+    <term><literal>TABLESPACE</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Specifies that indexes will be rebuilt on a new tablespace.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      指定将在新表空间上重建的索引。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
     <term><literal>VERBOSE</literal></term>
 ____________________________________________________________________________-->
     <term><literal>VERBOSE</literal></term>
@@ -330,6 +357,47 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
      <para>
       在每个索引被重建时打印进度报告。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><replaceable class="parameter">boolean</replaceable></term>
+____________________________________________________________________________-->
+    <term><replaceable class="parameter">boolean</replaceable></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Specifies whether the selected option should be turned on or off.
+      You can write <literal>TRUE</literal>, <literal>ON</literal>, or
+      <literal>1</literal> to enable the option, and <literal>FALSE</literal>,
+      <literal>OFF</literal>, or <literal>0</literal> to disable it.  The
+      <replaceable class="parameter">boolean</replaceable> value can also
+      be omitted, in which case <literal>TRUE</literal> is assumed.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      指定选择的选项是否打开或关闭。
+      你可以写<literal>TRUE</literal>、<literal>ON</literal>、或者<literal>1</literal> 以激活该选项，以及<literal>FALSE</literal>、<literal>OFF</literal>、或<literal>0</literal>以禁用它。
+      <replaceable class="parameter">boolean</replaceable>值也可以被省略，在假设为<literal>TRUE</literal>的情况下。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><replaceable class="parameter">new_tablespace</replaceable></term>
+____________________________________________________________________________-->
+    <term><replaceable class="parameter">new_tablespace</replaceable></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      The tablespace where indexes will be rebuilt.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      将被重建索引的表空间。
      </para>
     </listitem>
    </varlistentry>
@@ -432,25 +500,24 @@ ____________________________________________________________________________-->
    <command>REINDEX</command> is similar to a drop and recreate of the index
    in that the index contents are rebuilt from scratch.  However, the locking
    considerations are rather different.  <command>REINDEX</command> locks out writes
-   but not reads of the index's parent table.  It also takes an exclusive lock
-   on the specific index being processed, which will block reads that attempt
-   to use that index.  In contrast, <command>DROP INDEX</command> momentarily takes
-   an exclusive lock on the parent table, blocking both writes and reads.  The
-   subsequent <command>CREATE INDEX</command> locks out writes but not reads; since
-   the index is not there, no read will attempt to use it, meaning that there
-   will be no blocking but reads might be forced into expensive sequential
-   scans.
+   but not reads of the index's parent table.  It also takes an
+   <literal>ACCESS EXCLUSIVE</literal> lock on the specific index being processed,
+   which will block reads that attempt to use that index.  In contrast,
+   <command>DROP INDEX</command> momentarily takes an
+   <literal>ACCESS EXCLUSIVE</literal> lock on the parent table, blocking both
+   writes and reads.  The subsequent <command>CREATE INDEX</command> locks out
+   writes but not reads; since the index is not there, no read will attempt to
+   use it, meaning that there will be no blocking but reads might be forced
+   into expensive sequential scans.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <command>REINDEX</command>类似于删除索引并且重建索引，在其中
-   索引内容会被从头开始建立。不过，锁定方面的考虑却相当不同。
+   <command>REINDEX</command>类似于删除索引并且重建索引，在其中索引内容会被从头开始建立。
+   不过，锁定方面的考虑却相当不同。
    <command>REINDEX</command>会用锁排斥写，但不会排斥在索引的父表上的读。
-   它也会在被处理的索引上取得一个排他锁，该锁将会阻塞对该索引的使用尝试。
-   相反，<command>DROP INDEX</command> 会暂时在附表上取得一个排他锁，阻塞
-   写和读。后续的<command>CREATE INDEX</command>会排斥写但不排斥读，由于
-   该索引不存在，所以不会有读取它的尝试，这意味着不会有阻塞但是读操作可能
-   被强制成昂贵的顺序扫描。
+   它也会在被处理的索引上取得一个<literal>ACCESS EXCLUSIVE</literal>锁，该锁将会阻塞对该索引的使用尝试。
+   相反，<command>DROP INDEX</command> 会暂时在附表上取得一个<literal>ACCESS EXCLUSIVE</literal>锁，阻塞写和读。
+   后续的<command>CREATE INDEX</command>会排斥写但不排斥读，由于该索引不存在，所以不会有读取它的尝试，这意味着不会有阻塞但是读操作可能被强制成昂贵的顺序扫描。
   </para>
 
 <!--==========================orignal english content==========================
@@ -473,12 +540,51 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   Reindexing partitioned tables or partitioned indexes is not supported.
-   Each individual partition can be reindexed separately instead.
+   Reindexing partitioned indexes or partitioned tables is supported
+   with <command>REINDEX INDEX</command> or <command>REINDEX TABLE</command>,
+   respectively. Each partition of the specified partitioned relation is
+   reindexed in a separate transaction. Those commands cannot be used inside
+   a transaction block when working on a partitioned table or index.
   </para>
 ____________________________________________________________________________-->
   <para>
-   不支持重建分区表的索引或者分区索引。不过可以单独为每个分区重建索引。
+   可以支持对分区索引或分区表重建索引，分别通过<command>REINDEX INDEX</command> 或 <command>REINDEX TABLE</command>。
+   指定分区关系的每个分区在一个单独的事务中重建索引。
+   当工作在分区表或索引上面时，那些命令不能在事务块内部使用。
+  </para>
+  
+<!--==========================orignal english content==========================
+  <para>
+   When using the <literal>TABLESPACE</literal> clause with
+   <command>REINDEX</command> on a partitioned index or table, only the
+   tablespace references of the leaf partitions are updated. As partitioned
+   indexes are not updated, it is recommended to separately use
+   <command>ALTER TABLE ONLY</command> on them so as any new partitions
+   attached inherit the new tablespace. On failure, it may not have moved
+   all the indexes to the new tablespace. Re-running the command will rebuild
+   all the leaf partitions and move previously-unprocessed indexes to the new
+   tablespace.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当在已分区的索引或表上使用<literal>TABLESPACE</literal>子句和<command>REINDEX</command>时，只有叶子分区的表空间引用被更新。
+   由于分区索引不会被更新，因此建议单独对它们使用<command>ALTER TABLE ONLY</command>，以便任何附加的新分区继承新的表空间。
+   失败的话，它可能没有将所有的索引转移到新的表空间。
+   重新运行该命令将重新构建所有叶子分区，并将以前未处理的索引转移到新的表空间。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   If <literal>SCHEMA</literal>, <literal>DATABASE</literal> or
+   <literal>SYSTEM</literal> is used with <literal>TABLESPACE</literal>,
+   system relations are skipped and a single <literal>WARNING</literal>
+   will be generated. Indexes on TOAST tables are rebuilt, but not moved
+   to the new tablespace.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   如果<literal>SCHEMA</literal>、<literal>DATABASE</literal>或<literal>SYSTEM</literal>一起使用，系统关系会被跳过，并且将会生成单个<literal>WARNING</literal>。
+   TOAST表上的索引会重建，但不会移动到新的表空间。
   </para>
 
   <refsect2 id="sql-reindex-concurrently" xreflabel="Rebuilding Indexes Concurrently">
@@ -721,6 +827,20 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
+    Like any long-running transaction, <command>REINDEX</command> on a table
+    can affect which tuples can be removed by concurrent
+    <command>VACUUM</command> on any other table.
+    Excepted from this are operations with the <literal>CONCURRENTLY</literal>
+    option for indexes that are not partial and do not index any expressions.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    就像任何长时间运行的事务一样，表上的<command>REINDEX</command> 会影响可以通过任何其他表上的并发<command>VACUUM</command>删除哪些元组。
+    对非部分使用<literal>CONCURRENTLY</literal>选项的操作除外，并且不索引任何表达式。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
     <command>REINDEX SYSTEM</command> does not support
     <command>CONCURRENTLY</command> since system catalogs cannot be reindexed
     concurrently.
@@ -743,6 +863,18 @@ ____________________________________________________________________________-->
     此外，排除约束的索引不能并发重新编制索引。 如果此命令中直接命名了这样的索引，则会引发错误。 
     如果并发重新编制具有排除约束索引的表或数据库，将跳过这些索引。 （它可以不使用<command>CONCURRENTLY</command>选项来重新编制这样的索引）。
    </para>
+
+<!--==========================orignal english content==========================
+  <para>
+    Each backend running <command>REINDEX</command> will report its progress
+    in the <structname>pg_stat_progress_create_index</structname> view. See
+    <xref linkend="create-index-progress-reporting"/> for details.
+  </para>
+____________________________________________________________________________-->
+  <para>
+    每个后端运行<command>REINDEX</command>将在<structname>pg_stat_progress_create_index</structname>视图中报告它的进度。
+    详见<xref linkend="create-index-progress-reporting"/>。
+  </para>
   </refsect2>
  </refsect1>
 
@@ -853,6 +985,7 @@ ____________________________________________________________________________-->
    <member><xref linkend="sql-createindex"/></member>
    <member><xref linkend="sql-dropindex"/></member>
    <member><xref linkend="app-reindexdb"/></member>
+   <member><xref linkend="create-index-progress-reporting"/></member>
   </simplelist>
  </refsect1>
 </refentry>
