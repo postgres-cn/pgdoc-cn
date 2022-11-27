@@ -15,6 +15,9 @@ ____________________________________________________________________________-->
   <primary>range type</primary>
  </indexterm>
 
+ <indexterm>
+  <primary>multirange type</primary>
+ </indexterm>
 <!--==========================orignal english content==========================
  <para>
   Range types are data types representing a range of values of some
@@ -45,11 +48,15 @@ ____________________________________________________________________________-->
   范围类型非常有用，因为它们可以表达一种单一范围值中的多个元素值，并且可以很清晰地表达诸如范围重叠等概念。用于时间安排的时间和日期范围是最清晰的例子；但是价格范围、一种仪器的量程等等也都有用。
  </para>
 
+  <para>
+   每个范围类型都有对应的多范围类型。多重范围是非连续、非空、非 NULL 范围的有序列表。大多数范围运算符也适用于多个范围并具有一些独特的函数。
+  </para>
+
  <sect2 id="rangetypes-builtin">
 <!--==========================orignal english content==========================
-  <title>Built-in Range Types</title>
+  <title>Built-in Range Types and Multirange Types</title>
 ____________________________________________________________________________-->
-  <title>内建范围类型</title>
+  <title>内建范围类型和多范围类型</title>
 
 <!--==========================orignal english content==========================
  <para>
@@ -96,31 +103,37 @@ ____________________________________________________________________________-->
     <listitem>
       <para>
        <type>int4range</type> &mdash; <type>integer</type>的范围
+       <type>int4multirange</type> &mdash; 相应的多重范围
       </para>
     </listitem>
     <listitem>
       <para>
        <type>int8range</type> &mdash; <type>bigint</type>的范围
+       <type>int8multirange</type> &mdash; 相应的多重范围
       </para>
     </listitem>
     <listitem>
       <para>
        <type>numrange</type> &mdash; <type>numeric</type>的范围
+       <type>nummultirange</type> &mdash; 相应的多重范围
       </para>
     </listitem>
     <listitem>
       <para>
        <type>tsrange</type> &mdash; <type>不带时区的 timestamp</type>的范围
+       <type>tsmultirange</type> &mdash; 相应的多重范围
       </para>
     </listitem>
     <listitem>
       <para>
        <type>tstzrange</type> &mdash; <type>带时区的 timestamp</type>的范围
+       <type>tstzmultirange</type> &mdash; 相应的多重范围
       </para>
     </listitem>
     <listitem>
       <para>
        <type>daterange</type> &mdash; <type>date</type>的范围
+       <type>datemultirange</type> &mdash; 相应的多重范围
       </para>
     </listitem>
   </itemizedlist>
@@ -414,13 +427,29 @@ SELECT '[4,4]'::int4range;
 SELECT '[4,4)'::int4range;
 </programlisting>
   </para>
+
+
+  <para>
+   多范围输入是一个大括号 (<literal>{</literal> 和
+   <literal>}</literal>) 其中包含零个或多个以逗号分隔的有效范围。括号和逗号周围允许有空格。
+   为了使人想起数组语法，但多范围要更简单，只有一个维度，并且不需要在内容周围加上引号 (尽管范围的边界可以用引号引起来)
+  </para>
+
+  <para>
+  Examples:
+<programlisting>
+SELECT '{}'::int4multirange;
+SELECT '{[3,7)}'::int4multirange;
+SELECT '{[3,7), [8,9)}'::int4multirange;
+</programlisting>
+  </para>
  </sect2>
 
  <sect2 id="rangetypes-construct">
 <!--==========================orignal english content==========================
   <title>Constructing Ranges</title>
 ____________________________________________________________________________-->
-  <title>构造范围</title>
+  <title>构造范围和多范围</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -478,6 +507,16 @@ SELECT int8range(1, 14, '(]');
 SELECT numrange(NULL, 2.2);
 </programlisting>
   </para>
+
+    <para>
+     每个范围类型还有一个与多范围类型同名的多范围构造函数。构造函数接受零个或多个参数，所有参数都在适当的类型范围内。例如：
+
+  <programlisting>
+  SELECT nummultirange();
+  SELECT nummultirange(numrange(1.0, 14.0));
+  SELECT nummultirange(numrange(1.0, 14.0), numrange(20.0, 25.0));
+  </programlisting>
+    </para>
  </sect2>
 
  <sect2 id="rangetypes-discrete">
@@ -591,6 +630,9 @@ SELECT '[1.234, 5.678]'::floatrange;
 
    因为<type>float8</type>没有有意义的<quote>步长</quote>，我们在这个例子中没有定义一个正规化函数。
   </para>
+    <para>
+    当您定义自己的范围时，您会自动获得相应的多范围类型。
+    </para>
   
 <!--==========================orignal english content==========================
   <para>
@@ -736,20 +778,19 @@ CREATE INDEX reservation_idx ON reservation USING GIST (during);
   </para>
 ____________________________________________________________________________-->
   <para>
-   可以为范围类型的表列创建 GiST 和 SP-GiST 索引。例如，要创建一个 GiST 索引：
+   可以为范围类型的表列创建 GiST 和 SP-GiST 索引。在多范围类型的列上也可以创建GiST 索引。例如，要创建一个 GiST 索引：
 <programlisting>
 CREATE INDEX reservation_idx ON reservation USING GIST (during);
 </programlisting>
-   一个 GiST 或 SP-GiST 索引可以加速涉及以下范围操作符的查询：
-   <literal>=</literal>、
-   <literal>&amp;&amp;</literal>、
-   <literal>&lt;@</literal>、
-   <literal>@&gt;</literal>、
-   <literal>&lt;&lt;</literal>、
-   <literal>&gt;&gt;</literal>、
-   <literal>-|-</literal>、
-   <literal>&amp;&lt;</literal>以及
-   <literal>&amp;&gt;</literal>
+   范围类型上使用 GiST 或 SP-GiST 索引可以加速涉及以下范围操作符的查询：
+      <literal>&amp;&amp;</literal>,
+      <literal>&lt;@</literal>,
+      <literal>@&gt;</literal>,
+      <literal>&lt;&lt;</literal>,
+      <literal>&gt;&gt;</literal>,
+      <literal>-|-</literal>,
+      <literal>&amp;&lt;</literal>, 和
+      <literal>&amp;&gt;</literal>
    （详见<xref linkend="range-operators-table"/>）。
   </para>
 
