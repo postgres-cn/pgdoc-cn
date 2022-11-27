@@ -51,7 +51,8 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
     ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
     DISABLE_PAGE_SKIPPING [ <replaceable class="parameter">boolean</replaceable> ]
     SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
-    INDEX_CLEANUP [ <replaceable class="parameter">boolean</replaceable> ]
+    INDEX_CLEANUP { AUTO | ON | OFF }
+    PROCESS_TOAST [ <replaceable class="parameter">boolean</replaceable> ]
     TRUNCATE [ <replaceable class="parameter">boolean</replaceable> ]
     PARALLEL <replaceable class="parameter">integer</replaceable>
 
@@ -72,7 +73,8 @@ VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ <replaceable class="paramet
     ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
     DISABLE_PAGE_SKIPPING [ <replaceable class="parameter">boolean</replaceable> ]
     SKIP_LOCKED [ <replaceable class="parameter">boolean</replaceable> ]
-    INDEX_CLEANUP [ <replaceable class="parameter">boolean</replaceable> ]
+    INDEX_CLEANUP { AUTO | ON | OFF }
+    PROCESS_TOAST [ <replaceable class="parameter">boolean</replaceable> ]
     TRUNCATE [ <replaceable class="parameter">boolean</replaceable> ]
     PARALLEL <replaceable class="parameter">integer</replaceable>
 
@@ -141,12 +143,18 @@ ____________________________________________________________________________-->
    specify parallel workers as zero.  <command>VACUUM FULL</command> rewrites
    the entire contents of the table into a new disk file with no extra space,
    allowing unused space to be returned to the operating system.  This form is
-   much slower and requires an exclusive lock on each table while it is being
-   processed.
+   much slower and requires an <literal>ACCESS EXCLUSIVE</literal> lock on
+   each table while it is being processed.
   </para>
 ____________________________________________________________________________-->
   <para>
-   简单的 <command>VACUUM</command>（不带<literal>FULL</literal>）简单地收回空间并使其可以被重用。这种形式的命令可以和表的普通读写操作并行，因为它不会获得一个排他锁。但是，这种形式中额外的空间并没有被还给操作系统（在大多数情况下），它仅仅被保留在同一个表中以备重用。它还允许我们利用多个 CPU 来处理索引。 此功能称为<firstterm>parallel vacuum</firstterm>。要禁用此功能，可以使用<literal>PARALLEL</literal>选项并将并行工作程序指定为零。<command>VACUUM FULL</command>将表的整个内容重写到一个新的磁盘文件中，并且不包含额外的空间，这使得没有被使用的空间被还给操作系统。这种形式的命令更慢并且在其被处理时要求在每个表上保持一个排他锁。
+   简单的 <command>VACUUM</command>（不带<literal>FULL</literal>）简单地收回空间并使其可以被重用。
+   这种形式的命令可以和表的普通读写操作并行，因为它不会获得一个排他锁。
+   但是，这种形式中额外的空间并没有被还给操作系统（在大多数情况下），它仅仅被保留在同一个表中以备重用。
+   它还允许我们利用多个 CPU 来处理索引。 此功能称为<firstterm>parallel vacuum</firstterm>。
+   要禁用此功能，可以使用<literal>PARALLEL</literal>选项并将并行工作程序指定为零。
+   <command>VACUUM FULL</command>将表的整个内容重写到一个新的磁盘文件中，并且不包含额外的空间，这使得没有被使用的空间被还给操作系统。
+   这种形式的命令更慢并且在其被处理时要求在每个表上保持一个<literal>ACCESS EXCLUSIVE</literal> 锁。
   </para>
 
 <!--==========================orignal english content==========================
@@ -322,28 +330,97 @@ ____________________________________________________________________________-->
     <listitem>
 <!--==========================orignal english content==========================
      <para>
-      Specifies that <command>VACUUM</command> should attempt to remove
-      index entries pointing to dead tuples.  This is normally the desired
-      behavior and is the default unless the
-      <literal>vacuum_index_cleanup</literal> option has been set to false
-      for the table to be vacuumed.  Setting this option to false may be
-      useful when it is necessary to make vacuum run as quickly as possible,
-      for example to avoid imminent transaction ID wraparound
-      (see <xref linkend="vacuum-for-wraparound"/>).  However, if index
-      cleanup is not performed regularly, performance may suffer, because
-      as the table is modified, indexes will accumulate dead tuples
-      and the table itself will accumulate dead line pointers that cannot be
-      removed until index cleanup is completed.  This option has no effect
-      for tables that do not have an index and is ignored if the
+      Normally, <command>VACUUM</command> will skip index vacuuming
+      when there are very few dead tuples in the table.  The cost of
+      processing all of the table's indexes is expected to greatly
+      exceed the benefit of removing dead index tuples when this
+      happens.  This option can be used to force
+      <command>VACUUM</command> to process indexes when there are more
+      than zero dead tuples.  The default is <literal>AUTO</literal>,
+      which allows <command>VACUUM</command> to skip index vacuuming
+      when appropriate.  If <literal>INDEX_CLEANUP</literal> is set to
+      <literal>ON</literal>, <command>VACUUM</command> will
+      conservatively remove all dead tuples from indexes.  This may be
+      useful for backwards compatibility with earlier releases of
+      <productname>PostgreSQL</productname> where this was the
+      standard behavior.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      通常，当表中的死亡元组很少时，<command>VACUUM</command>将跳过索引清理。
+      处理全部表索引的成本预计将大大超过删除死索引元组的好处，当这发生时。
+      当多于零个死元组时，此选项可用于强制<command>VACUUM</command>处理索引。
+      默认值是<literal>AUTO</literal>，这允许<command>VACUUM</command>在适当的时候略过索引清理。
+      如果<literal>INDEX_CLEANUP</literal>设置为<literal>ON</literal>，<command>VACUUM</command>将适当地从索引中删除所有死元组。
+      这对于向后兼容<productname>PostgreSQL</productname>的早期版本是很有用的，在那里这是标准的行为。
+     </para>
+<!--==========================orignal english content==========================
+     <para>
+      <literal>INDEX_CLEANUP</literal> can also be set to
+      <literal>OFF</literal> to force <command>VACUUM</command> to
+      <emphasis>always</emphasis> skip index vacuuming, even when
+      there are many dead tuples in the table.  This may be useful
+      when it is necessary to make <command>VACUUM</command> run as
+      quickly as possible to avoid imminent transaction ID wraparound
+      (see <xref linkend="vacuum-for-wraparound"/>).  However, the
+      wraparound failsafe mechanism controlled by <xref
+       linkend="guc-vacuum-failsafe-age"/>  will generally trigger
+      automatically to avoid transaction ID wraparound failure, and
+      should be preferred.  If index cleanup is not performed
+      regularly, performance may suffer, because as the table is
+      modified indexes will accumulate dead tuples and the table
+      itself will accumulate dead line pointers that cannot be removed
+      until index cleanup is completed.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <literal>INDEX_CLEANUP</literal>也可以设置为<literal>OFF</literal>来强制<command>VACUUM</command> <emphasis>总是</emphasis> 略过索引清理，即使表中有许多死元组。
+      当需要使<command>VACUUM</command>尽可能快地运行，以避免临近的事务ID回卷时，这可能很有用(参见<xref linkend="vacuum-for-wraparound"/>)。
+      然而，由<xref linkend="guc-vacuum-failsafe-age"/>控制的回卷失效保护机制通常会自动触发，以避免事务ID回卷失败，并且将被优先考虑。
+      如果索引清理不被定期执行，性能可能会变差，
+      因为当表被修改时，索引会累积死元组，并且表自己也会累积死线指针，这些在索引清理完成之前无法删除。
+     </para>
+<!--==========================orignal english content==========================
+     <para>
+      This option has no effect for tables that have no index and is
+      ignored if the <literal>FULL</literal> option is used.  It also
+      has no effect on the transaction ID wraparound failsafe
+      mechanism.  When triggered it will skip index vacuuming, even
+      when <literal>INDEX_CLEANUP</literal> is set to
+      <literal>ON</literal>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      该选项对没有索引的表无影响，并且如果使用了<literal>FULL</literal>选项就会被忽略。
+      它对事务ID回卷失效保护机制也没有影响。
+      当触发它时会略过索引抽清理，即使<literal>INDEX_CLEANUP</literal>设置为<literal>ON</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+<!--==========================orignal english content==========================
+    <term><literal>PROCESS_TOAST</literal></term>
+____________________________________________________________________________-->
+    <term><literal>PROCESS_TOAST</literal></term>
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Specifies that <command>VACUUM</command> should attempt to process the
+      corresponding <literal>TOAST</literal> table for each relation, if one
+      exists. This is usually the desired behavior and is the default.
+      Setting this option to false may be useful when it is only necessary to
+      vacuum the main relation. This option is required when the
       <literal>FULL</literal> option is used.
      </para>
 ____________________________________________________________________________-->
      <para>
-      规定<command>VACUUM</command>尝试删除指向死元组的索引条目。 
-      这通常是所需的行为，并且是默认行为，除非将<literal>vacuum_index_cleanup</literal> 选项设置为 false，对要被清空的表。 
-      如果需要尽快运行清空操作的话，将此选项设置为 false 可能很有用，例如，为了避免即将发生的事务 ID 回绕[wraparound]（请参阅 <xref linkend="vacuum-for-wraparound"/>）。 
-      但是，如果不定期执行索引清理，性能可能会受到影响，因为随着表的修改，索引将累积死元组，并且表本身将累积死行指针，在索引清理完成之前都无法删除。 
-      此选项对于没有索引的表无效，如果使用 <literal>FULL</literal>  选项，则忽略此选项。
+      Specifies that <command>VACUUM</command> should attempt to process the
+      corresponding <literal>TOAST</literal> table for each relation, if one
+      exists. This is usually the desired behavior and is the default.
+      Setting this option to false may be useful when it is only necessary to
+      vacuum the main relation. This option is required when the
+      <literal>FULL</literal> option is used.
      </para>
     </listitem>
    </varlistentry>
@@ -391,7 +468,7 @@ ____________________________________________________________________________-->
       to perform the operation is equal to the number of indexes on the
       relation that support parallel vacuum which is limited by the number of
       workers specified with <literal>PARALLEL</literal> option if any which is
-      further limited by <xref linkend="guc-max-parallel-workers-maintenance"/>.
+      further limited by <xref linkend="guc-max-parallel-maintenance-workers"/>.
       An index can participate in parallel vacuum if and only if the size of the
       index is more than <xref linkend="guc-min-parallel-index-scan-size"/>.
       Please note that it is not guaranteed that the number of parallel workers
@@ -409,7 +486,7 @@ ____________________________________________________________________________-->
       使用<replaceable class="parameter">integer</replaceable>后台处理器并行执行<command>VACUUM</command>
       的索引真空和索引清理阶段（每个真空阶段的详细信息请参考<xref linkend="vacuum-phases"/>)）。
       用于执行操作的处理器数量等于关系上支持并行清理的索引数量，该数量受<literal>PARALLEL</literal>
-      选项指定的工人数量的限制，如果有的话，该数量还受到<xref linkend="guc-max-parallel-workers-maintenance"/>限制。
+      选项指定的工人数量的限制，如果有的话，该数量还受到<xref linkend="guc-max-parallel-maintenance-workers"/>限制。
       当且仅当索引的大小大于<xref linkend="guc-min-parallel-index-scan-size"/>时，索引才能参与并行清理。
       请注意，不保证在执行期间会使用<replaceable class="parameter">integer</replaceable>中指定的并行工作线程数。
       清理运行时可能需要比指定的更少的处理器，甚至根本没有处理器。每个索引只能使用一名处理器。
@@ -627,6 +704,22 @@ ____________________________________________________________________________-->
    <para>
     <productname>PostgreSQL</productname>包括了一个<quote>autovacuum</quote>工具，它可以自动进行例行的清理维护。关于自动和手动清理的更多信息请见<xref linkend="routine-vacuuming"/>。
    </para>
+<!--==========================orignal english content==========================
+   <para>
+    Each backend running <command>VACUUM</command> without the
+    <literal>FULL</literal> option will report its progress in the
+    <structname>pg_stat_progress_vacuum</structname> view. Backends running
+    <command>VACUUM FULL</command> will instead report their progress in the
+    <structname>pg_stat_progress_cluster</structname> view. See
+    <xref linkend="vacuum-progress-reporting"/> and
+    <xref linkend="cluster-progress-reporting"/> for details.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    每个后端运行没有<literal>FULL</literal>选项的<command>VACUUM</command>时，将在<structname>pg_stat_progress_vacuum</structname>视图中报告它的进度。
+    运行<command>VACUUM FULL</command>的后端将改为在<structname>pg_stat_progress_cluster</structname>视图中报告它的进度。
+    详见<xref linkend="vacuum-progress-reporting"/> 和 <xref linkend="cluster-progress-reporting"/>。
+   </para>
  </refsect1>
 
  <refsect1>
@@ -678,6 +771,8 @@ ____________________________________________________________________________-->
    <member><xref linkend="app-vacuumdb"/></member>
    <member><xref linkend="runtime-config-resource-vacuum-cost"/></member>
    <member><xref linkend="autovacuum"/></member>
+   <member><xref linkend="vacuum-progress-reporting"/></member>
+   <member><xref linkend="cluster-progress-reporting"/></member>
   </simplelist>
  </refsect1>
 </refentry>
