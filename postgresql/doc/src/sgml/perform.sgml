@@ -65,7 +65,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    <productname>PostgreSQL</productname>为每个收到查询产生一个<firstterm>查询计划</firstterm>。 选择正确的计划来匹配查询结构和数据的属性对于好的性能来说绝对是最关键的，因此系统包含了一个复杂的<firstterm>规划器</firstterm>来尝试选择好的计划。 你可以使用<xref linkend="sql-explain"/>命令察看规划器为任何查询生成的查询计划。 阅读查询计划是一门艺术，它要求一些经验来掌握，但是本节只试图覆盖一些基础。
+    <productname>PostgreSQL</productname>为每个收到查询产生一个<firstterm>查询计划</firstterm>。 选择正确的计划来匹配查询结构和数据的属性对于好的性能来说绝对是最关键的，因此系统包含了一个复杂的<firstterm>规划器</firstterm>来尝试选择好的计划。 你可以使用<link linkend="sql-explain"><command>EXPLAIN</command></link>命令察看规划器为任何查询生成的查询计划。 阅读查询计划是一门艺术，它要求一些经验来掌握，但是本节只试图覆盖一些基础。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1359,13 +1359,14 @@ EXPLAIN ANALYZE UPDATE tenk1 SET hundred = hundred + 1 WHERE unique1 &lt; 100;
 
                                                            QUERY PLAN
 -------------------------------------------------------------------&zwsp;-------------------------------------------------------------
- Update on tenk1  (cost=5.07..229.46 rows=101 width=250) (actual time=14.628..14.628 rows=0 loops=1)
-   -&gt;  Bitmap Heap Scan on tenk1  (cost=5.07..229.46 rows=101 width=250) (actual time=0.101..0.439 rows=100 loops=1)
+ Update on tenk1  (cost=5.08..230.08 rows=0 width=0) (actual time=3.791..3.792 rows=0 loops=1)
+   -&gt;  Bitmap Heap Scan on tenk1  (cost=5.08..230.08 rows=102 width=10) (actual time=0.069..0.513 rows=100 loops=1)
          Recheck Cond: (unique1 &lt; 100)
-         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.04 rows=101 width=0) (actual time=0.043..0.043 rows=100 loops=1)
+         Heap Blocks: exact=90
+         -&gt;  Bitmap Index Scan on tenk1_unique1  (cost=0.00..5.05 rows=102 width=0) (actual time=0.036..0.037 rows=300 loops=1)
                Index Cond: (unique1 &lt; 100)
- Planning time: 0.079 ms
- Execution time: 14.727 ms
+ Planning Time: 0.113 ms
+ Execution Time: 3.850 ms
 
 ROLLBACK;
 </screen>
@@ -1431,28 +1432,28 @@ ____________________________________________________________________________-->
 
 <screen>
 EXPLAIN UPDATE parent SET f2 = f2 + 1 WHERE f1 = 101;
-                                    QUERY PLAN
--------------------------------------------------------------------&zwsp;----------------
- Update on parent  (cost=0.00..24.53 rows=4 width=14)
-   Update on parent
-   Update on child1
-   Update on child2
-   Update on child3
-   -&gt;  Seq Scan on parent  (cost=0.00..0.00 rows=1 width=14)
-         Filter: (f1 = 101)
-   -&gt;  Index Scan using child1_f1_key on child1  (cost=0.15..8.17 rows=1 width=14)
-         Index Cond: (f1 = 101)
-   -&gt;  Index Scan using child2_f1_key on child2  (cost=0.15..8.17 rows=1 width=14)
-         Index Cond: (f1 = 101)
-   -&gt;  Index Scan using child3_f1_key on child3  (cost=0.15..8.17 rows=1 width=14)
-         Index Cond: (f1 = 101)
+                                              QUERY PLAN
+-------------------------------------------------------------------&zwsp;-----------------------------------
+ Update on parent  (cost=0.00..24.59 rows=0 width=0)
+   Update on parent parent_1
+   Update on child1 parent_2
+   Update on child2 parent_3
+   Update on child3 parent_4
+   -&gt;  Result  (cost=0.00..24.59 rows=4 width=14)
+         -&gt;  Append  (cost=0.00..24.54 rows=4 width=14)
+               -&gt;  Seq Scan on parent parent_1  (cost=0.00..0.00 rows=1 width=14)
+                     Filter: (f1 = 101)
+               -&gt;  Index Scan using child1_pkey on child1 parent_2  (cost=0.15..8.17 rows=1 width=14)
+                     Index Cond: (f1 = 101)
+               -&gt;  Index Scan using child2_pkey on child2 parent_3  (cost=0.15..8.17 rows=1 width=14)
+                     Index Cond: (f1 = 101)
+               -&gt;  Index Scan using child3_pkey on child3 parent_4  (cost=0.15..8.17 rows=1 width=14)
+                     Index Cond: (f1 = 101)
 </screen>
 
     在这个例子中，更新节点需要考虑三个子表以及最初提到的父表。因此有四个输入
     的扫描子计划，每一个对应于一个表。为清楚起见，在更新节点上标注了将被更新
-    的相关目标表，显示的顺序与相应的子计划相同（这些标注是从
-    <productname>PostgreSQL</productname> 9.5 开始新增的，在以前的版本中读者必须通过
-    观察子计划才能知道这些目标表）。
+    的相关目标表，显示的顺序与相应的子计划相同。
    </para>
    
 <!--==========================orignal english content==========================
@@ -1973,7 +1974,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    统计信息对象可以使用<xref linkend="sql-createstatistics"/>命令创建。这样一个对象的创建仅仅是创建了一个目录项来表示对统计信息有兴趣。实际的数据收集是由<command>ANALYZE</command>（或者是一个手工命令，或者是后台的自动分析）执行的。收集到的值可以在<link linkend="catalog-pg-statistic-ext-data"><structname>pg_statistic_ext_data</structname></link>目录中看到。
+    统计信息对象可以使用<link linkend="sql-createstatistics"><command>CREATE STATISTICS</command></link>命令创建。这样一个对象的创建仅仅是创建了一个目录项来表示对统计信息有兴趣。实际的数据收集是由<command>ANALYZE</command>（或者是一个手工命令，或者是后台的自动分析）执行的。收集到的值可以在<link linkend="catalog-pg-statistic-ext-data"><structname>pg_statistic_ext_data</structname></link>目录中看到。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2739,7 +2740,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    使用<xref linkend="sql-copy"/>在一条命令中装载所有记录，而不是一系列<command>INSERT</command>命令。 <command>COPY</command>命令是为装载大量行而优化过的； 它没<command>INSERT</command>那么灵活，但是在大量数据装载时导致的负荷也更少。 因为<command>COPY</command>是单条命令，因此使用这种方法填充表时无须关闭自动提交。
+    使用<link linkend="sql-copy"><command>COPY</command></link>在一条命令中装载所有记录，而不是一系列<command>INSERT</command>命令。 <command>COPY</command>命令是为装载大量行而优化过的； 它没<command>INSERT</command>那么灵活，但是在大量数据装载时导致的负荷也更少。 因为<command>COPY</command>是单条命令，因此使用这种方法填充表时无须关闭自动提交。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2755,7 +2756,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    如果你不能使用<command>COPY</command>，那么使用<xref linkend="sql-prepare"/>来创建一个预备<command>INSERT</command>语句也有所帮助，然后根据需要使用<command>EXECUTE</command>多次。这样就避免了重复分析和规划<command>INSERT</command>的负荷。不同接口以不同的方式提供该功能， 可参阅接口文档中的<quote>预备语句</quote>。
+    如果你不能使用<command>COPY</command>，那么使用<link linkend="sql-prepare"><command>PREPARE</command></link>来创建一个预备<command>INSERT</command>语句也有所帮助，然后根据需要使用<command>EXECUTE</command>多次。这样就避免了重复分析和规划<command>INSERT</command>的负荷。不同接口以不同的方式提供该功能， 可参阅接口文档中的<quote>预备语句</quote>。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2929,7 +2930,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    当使用 WAL 归档或流复制向一个安装中载入大量数据时，在录入结束后执行一次新的基础备份比处理大量的增量 WAL 数据更快。为了防止载入时记录增量 WAL，通过将<xref linkend="guc-wal-level"/>设置为<literal>minimal</literal>、将<xref linkend="guc-archive-mode"/>设置为<literal>off</literal>以及将<xref linkend="guc-max-wal-senders"/>设置为零来禁用归档和流复制。 但需要注意的是，修改这些设置需要重启服务。
+    当使用 WAL 归档或流复制向一个安装中载入大量数据时，在录入结束后执行一次新的基础备份比处理大量的增量 WAL 数据更快。为了防止载入时记录增量 WAL，通过将<xref linkend="guc-wal-level"/>设置为<literal>minimal</literal>、将<xref linkend="guc-archive-mode"/>设置为<literal>off</literal>以及将<xref linkend="guc-max-wal-senders"/>设置为零来禁用归档和流复制。 但需要注意的是，修改这些设置需要重启服务，从而使先前进行的基本备份无法用于存档恢复或备用服务器，并可能导致数据丢失。
    </para>
 
 <!--==========================orignal english content==========================
@@ -2971,7 +2972,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    不管什么时候你显著地改变了表中的数据分布后，我们都强烈推荐运行<xref linkend="sql-analyze"/>。着包括向表中批量载入大量数据。运行<command>ANALYZE</command>（或者<command>VACUUM ANALYZE</command>）保证规划器有表的最新统计信息。 如果没有统计数据或者统计数据过时，那么规划器在查询规划时可能做出很差劲决定，导致在任意表上的性能低下。需要注意的是，如果启用了 autovacuum 守护进程，它可能会自动运行<command>ANALYZE</command>；参阅<xref linkend="vacuum-for-statistics"/>和<xref linkend="autovacuum"/>。
+    不管什么时候你显著地改变了表中的数据分布后，我们都强烈推荐运行<link linkend="sql-analyze"><command>ANALYZE</command></link>。着包括向表中批量载入大量数据。运行<command>ANALYZE</command>（或者<command>VACUUM ANALYZE</command>）保证规划器有表的最新统计信息。 如果没有统计数据或者统计数据过时，那么规划器在查询规划时可能做出很差劲决定，导致在任意表上的性能低下。需要注意的是，如果启用了 autovacuum 守护进程，它可能会自动运行<command>ANALYZE</command>；参阅<xref linkend="vacuum-for-statistics"/>和<xref linkend="autovacuum"/>。
    </para>
   </sect2>
 
@@ -3218,7 +3219,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    持久性是数据库的一个保证已提交事务的记录的特性（即使是发生服务器崩溃或断电）。 然而，持久性会明显增加数据库的负荷，因此如果你的站点不需要这个保证，<productname>PostgreSQL</productname>可以被配置成运行更快。在这种情况下，你可以调整下列配置来提高性能。除了下面列出的，在数据库软件崩溃的情况下也能保证持久性。当这些设置被使用时，只有突然的操作系统停止会产生数据丢失或损坏的风险。
+    持久性是数据库的一个保证已提交事务的记录的特性（即使是发生服务器崩溃或断电）。 然而，持久性会明显增加数据库的负荷，因此如果你的站点不需要这个保证，<productname>PostgreSQL</productname>可以被配置成运行更快。在这种情况下，你可以调整下列配置来提高性能。除了下面列出的，在数据库软件崩溃的情况下也能保证持久性。当这些设置被使用时，只有操作系统突然的崩溃会产生数据丢失或损坏的风险。
 
     <itemizedlist>
      <listitem>
