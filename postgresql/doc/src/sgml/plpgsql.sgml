@@ -68,7 +68,7 @@ ____________________________________________________________________________-->
     <itemizedlist>
      <listitem>
       <para>
-       可以被用来创建函数和触发器过程，
+       可以被用来创建函数，存储过程，和触发器过程，
       </para>
      </listitem>
      <listitem>
@@ -83,7 +83,7 @@ ____________________________________________________________________________-->
      </listitem>
      <listitem>
       <para>
-       继承所有用户定义类型、函数和操作符，
+       继承所有用户定义类型、函数、存储过程和操作符，
       </para>
      </listitem>
      <listitem>
@@ -857,6 +857,12 @@ $$ LANGUAGE plpgsql;
 
       注意我们忽略了<literal>RETURNS real</literal> &mdash; 我们也可以包括它，但是那将是冗余。
      </para>
+     <para>
+           调用带有 <literal>OUT</literal> 参数的函数， 在函数调用中省略输出参数：
+     <programlisting>
+     SELECT sales_tax(100.00);
+     </programlisting>
+     </para>
 
 <!--==========================orignal english content==========================
      <para>
@@ -888,10 +894,35 @@ BEGIN
     prod := x * y;
 END;
 $$ LANGUAGE plpgsql;
+SELECT * FROM sum_n_product(2, 4);
+ sum | prod
+-----+------
+   6 |    8
 </programlisting>
 
       如<xref linkend="xfunc-output-parameters"/>中所讨论的，这实际上为该函数的结果创建了一个匿名记录类型。如果给定了一个<literal>RETURNS</literal>子句，它必须<literal>RETURNS record</literal>。
      </para>
+          <para>
+           对于存储过程同样有效，例如：
+
+     <programlisting>
+     CREATE PROCEDURE sum_n_product(x int, y int, OUT sum int, OUT prod int) AS $$
+     BEGIN
+         sum := x + y;
+         prod := x * y;
+     END;
+     $$ LANGUAGE plpgsql;
+     </programlisting>
+
+           在一次存储过程调用中，所有参数必须定义申明。对于出参，SQL调用执行存储过程时可指定为<literal>NULL</literal>:
+     <programlisting>
+     CALL sum_n_product(2, 4, NULL, NULL);
+      sum | prod
+     -----+------
+        6 |    8
+     </programlisting>
+           但是，当通过 <application>PL/pgSQL</application>调用执行存储过程时, 你应该为任何输出参数写一个变量；该变量将接收调用的结果。 详见 <xref linkend="plpgsql-statements-calling-procedure"/>。
+          </para>
 
 <!--==========================orignal english content==========================
      <para>
@@ -1552,7 +1583,7 @@ IF <replaceable>expression</replaceable> THEN ...
 <synopsis>
 SELECT <replaceable>expression</replaceable>
 </synopsis>
-     来计算该表达式。如<xref linkend="plpgsql-var-subst"/>中所详细讨论的，在构造该<command>SELECT</command>命令时，<application>PL/pgSQL</application>变量名的每一次出现会被参数所替换。这允许<command>SELECT</command>的查询计划仅被准备一次并且被重用于之后的对于该变量不同值的计算。因此，在一个表达式第一次被使用时实际发生的本质上是一个<command>PREPARE</command>命令。例如，如果我们已经声明了两个整数变量<literal>x</literal>和<literal>y</literal>，并且我们写了
+     来计算该表达式。如<xref linkend="plpgsql-var-subst"/>中所详细讨论的，在构造该<command>SELECT</command>命令时，<application>PL/pgSQL</application>变量名的每一次出现会被查询参数所替换。这允许<command>SELECT</command>的查询计划仅被准备一次并且被重用于之后的对于该变量不同值的计算。因此，在一个表达式第一次被使用时实际发生的本质上是一个<command>PREPARE</command>命令。例如，如果我们已经声明了两个整数变量<literal>x</literal>和<literal>y</literal>，并且我们写了
 <programlisting>
 IF x &lt; y THEN ...
 </programlisting>
@@ -1562,6 +1593,15 @@ PREPARE <replaceable>statement_name</replaceable>(integer, integer) AS SELECT $1
 </programlisting>
      并且然后为每一次<command>IF</command>语句的执行，这个预备语句都会被<command>EXECUTE</command>，执行时使用变量的当前值作为参数值。通常这些细节对于一个<application>PL/pgSQL</application>用户并不重要，但是在尝试诊断一个问题时了解它们很有用。更多信息可见<xref linkend="plpgsql-plan-caching"/>。
     </para>
+        <para>
+         因为一个 <replaceable>expression</replaceable> 可以被转换成
+         <literal>SELECT</literal> 命令，它可以包含与普通<literal>SELECT</literal>命令相同的子句，但是，它不能包含顶级<literal>UNION</literal>，<literal>INTERSECT</literal>， 或者 <literal>EXCEPT</literal>子句。例如，您可以检查表是否非空：
+    <programlisting>
+    IF count(*) &gt; 0 FROM my_table THEN ...
+    </programlisting>
+         因为在 <literal>IF</literal> 和 <literal>THEN</literal>之间的<replaceable>expression</replaceable>被解析为  <literal>SELECT count(*) &gt; 0 FROM my_table</literal>。
+          <literal>SELECT</literal> 必须生成一个单行列，不能超过一行。 (如果没有行数据返回， 结果为NULL。)
+        </para>
   </sect1>
 
   <sect1 id="plpgsql-statements">
@@ -1582,7 +1622,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    在这一节和接下来的小节中，我们会描述<application>PL/pgSQL</application>能明确理解的所有语句类型。任何不被识别为这些语句类型之一的被假定为是一个 SQL 命令，并且会被发送给主数据库引擎执行，具体如<xref linkend="plpgsql-statements-sql-noresult"/>和<xref linkend="plpgsql-statements-sql-onerow"/>中所述。
+    在这一节和接下来的小节中，我们会描述<application>PL/pgSQL</application>能明确理解的所有语句类型。任何不被识别为这些语句类型之一的被假定为是一个 SQL 命令，并且会被发送给主数据库引擎执行，具体如<xref linkend="plpgsql-statements-general-sql"/>中所述。
    </para>
 
    <sect2 id="plpgsql-statements-assignment">
@@ -1618,7 +1658,7 @@ ____________________________________________________________________________-->
       该表达式必须得到一个单一值（如果该变量是一个行或记录变量，
       它可能是一个行值）。该目标变量可以是一个简单变量（
       可以选择用一个块名限定）、一个行或记录变量的域或是一个简单
-      变量或域的数组元素。
+      变量或域的数组的元素或者数组的切片。
      等号（<literal>=</literal>）可以被用来代替 PL/SQL-兼容的
       <literal>:=</literal>。
     </para>
@@ -1660,15 +1700,18 @@ ____________________________________________________________________________-->
 <programlisting>
 tax := subtotal * 0.06;
 my_record.user_id := 20;
+my_array[j] := 20;
+my_array[1:3] := array[1,2,3];
+complex_array[n].realpart = 12.3;
 </programlisting>
     </para>
    </sect2>
 
-   <sect2 id="plpgsql-statements-sql-noresult">
+   <sect2 id="plpgsql-statements-general-sql">
 <!--==========================orignal english content==========================
     <title>Executing a Command with No Result</title>
 ____________________________________________________________________________-->
-    <title>执行一个没有结果的命令</title>
+    <title>执行SQL命令</title>
 
 <!--==========================orignal english content==========================
     <para>
@@ -1679,7 +1722,12 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     对于任何不返回行的 SQL 命令（例如没有一个<literal>RETURNING</literal>子句的<command>INSERT</command>），你可以通过把该命令直接写在一个 <application>PL/pgSQL</application> 函数中执行它。
+     通常，任何不返回行的 SQL 命令，你可以通过把该命令直接写在一个 <application>PL/pgSQL</application> 函数中执行它。
+     例如，创建和填充表数据，你可以这样写：
+     <programlisting>
+     CREATE TABLE mytable (id int primary key, data text);
+     INSERT INTO mytable VALUES (1,'one'), (2,'two');
+     </programlisting>
     </para>
 
 <!--==========================orignal english content==========================
@@ -1692,7 +1740,18 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     任何出现在该命令文本中的<application>PL/pgSQL</application>变量名被当作一个参数，并且接着该变量的当前值被提供为运行时该参数的值。这与早前描述的对表达式的处理完全相似，详见<xref linkend="plpgsql-var-subst"/>。
+         如果命令返回行 (例如 <command>SELECT</command>，
+         或者 <command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command>
+         带有 <literal>RETURNING</literal>的命令)，有两种方式处理。
+         当命令最多返回一行，或者你只关心第一行的输出时，像往常一样编写命令，但要添加一个<literal>INTO</literal>子句来捕获输出，如<xref linkend="plpgsql-statements-sql-onerow"/>中所述。为了处理所有的输出行，把命令写成<command>FOR</command>循环的数据源，如 <xref linkend="plpgsql-records-iterating"/>中所述。
+        </para>
+
+        <para>
+         简单地执行静态定义的 SQL 命令通常是不够的。通常，您会希望使用使用可变数据值的命令，或者甚至以更基本的方式进行更改，例如在不同时间使用不同的表名。同样，有两种方法，视情况而定。
+        </para>
+
+        <para>
+         <application>PL/pgSQL</application> 变量值可以自动插入到可优化的SQL命令中，这些命令是<command>SELECT</command>、<command>INSERT</command>、<command>UPDATE</command>、<command>DELETE</command>，以及某些包含其中之一的实用命令，例如<command>EXPLAIN</command>和<command>CREATE TABLE ...  AS SELECT</command>。 在这些命令中，任何出现在该命令文本中的<application>PL/pgSQL</application>变量名被查询参数替换，并且接着该变量的当前值被提供为运行时该参数的值。这与早前描述的对表达式的处理完全相似，详见<xref linkend="plpgsql-var-subst"/>。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1704,8 +1763,15 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     当以这种方式执行一个 SQL 命令时，如<xref linkend="plpgsql-plan-caching"/>中讨论的，<application>PL/pgSQL</application>会为该命令缓存并重用执行计划。
+     当以这种方式执行一个可优化的 SQL 命令时，如<xref linkend="plpgsql-plan-caching"/>中讨论的，<application>PL/pgSQL</application>会为该命令缓存并重用执行计划。
     </para>
+        <para>
+        不可优化的SQL命令（也称为实用命令）不能够接受查询参数。 所以自动替换<application>PL/pgSQL</application>的变量在这类命令中不起作用。 要在从<application>PL/pgSQL</application>执行的实用程序命令中包含非常量文本，你必须将实用程序命令构建为一个字符串，然后<command>EXECUTE</command>它，如<xref linkend="plpgsql-statements-executing-dyn"/>中所讨论的。
+        </para>
+
+        <para>
+         <command>EXECUTE</command>也必须使用，如果你想以某种其他方式修改命令，而不是提供数据值，例如改变表名。
+        </para>
 
 <!--==========================orignal english content==========================
     <para>
@@ -1741,7 +1807,7 @@ ____________________________________________________________________________-->
 PERFORM <replaceable>query</replaceable>;
 </synopsis>
 
-     这会执行<replaceable>query</replaceable>并且丢弃掉结果。以写一个SQL <command>SELECT</command>命令相同的方式写该<replaceable>query</replaceable>，并且将初始的关键词<command>SELECT</command>替换为<command>PERFORM</command>。对于<command>WITH</command>查询，使用<command>PERFORM</command>并且接着把该查询放在圆括号中（在这种情况中，该查询只能返回一行）。<application>PL/pgSQL</application>变量将被替换到该查询中，正像对不返回结果的命令所作的那样，并且计划被以相同的方式被缓存。还有，如果该查询产生至少一行，特殊变量<literal>FOUND</literal>会被设置为真，而如果它不产生行则设置为假（见<xref linkend="plpgsql-statements-diagnostics"/>）。
+     这会执行<replaceable>query</replaceable>并且丢弃掉结果。以写一个SQL <command>SELECT</command>命令相同的方式写该<replaceable>query</replaceable>，并且将初始的关键词<command>SELECT</command>替换为<command>PERFORM</command>。对于<command>WITH</command>查询，使用<command>PERFORM</command>并且接着把该查询放在圆括号中（在这种情况中，该查询只能返回一行）。<application>PL/pgSQL</application>变量将被替换到该查询中，正如上面描述的查询，并且计划被以相同的方式被缓存。还有，如果该查询产生至少一行，特殊变量<literal>FOUND</literal>会被设置为真，而如果它不产生行则设置为假（见<xref linkend="plpgsql-statements-diagnostics"/>）。
     </para>
 
     <note>
@@ -1781,7 +1847,7 @@ PERFORM create_mv('cs_session_page_requests_mv', my_query);
 <!--==========================orignal english content==========================
     <title>Executing a Query with a Single-Row Result</title>
 ____________________________________________________________________________-->
-    <title>执行一个有单一行结果的查询</title>
+    <title>执行一个有单一行结果的命令</title>
 
 <!--==========================orignal english content==========================
     <indexterm zone="plpgsql-statements-sql-onerow">
@@ -1843,7 +1909,7 @@ UPDATE ... RETURNING <replaceable>expressions</replaceable> INTO <optional>STRIC
 DELETE ... RETURNING <replaceable>expressions</replaceable> INTO <optional>STRICT</optional> <replaceable>target</replaceable>;
 </synopsis>
 
-     其中<replaceable>target</replaceable>可以是一个记录变量、一个行变量或一个有逗号分隔的简单变量和记录/行域列表。<application>PL/pgSQL</application>变量将被替换到该查询的剩余部分中，并且计划会被缓存，正如之前描述的对不返回行的命令所做的。这对<command>SELECT</command>、带有<literal>RETURNING</literal>的<command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command>以及返回行集结果的工具命令（例如<command>EXPLAIN</command>）。除了<literal>INTO</literal>子句，SQL 命令和它在<application>PL/pgSQL</application>之外的写法一样。
+     其中<replaceable>target</replaceable>可以是一个记录变量、一个行变量或一个有逗号分隔的简单变量和记录/行域列表。<application>PL/pgSQL</application>变量将被替换到该命令的剩余部分中(即除了<literal>INTO</literal> 子句所有的)，正如之前描述的，计划以同样的方式缓存。这对<command>SELECT</command>、带有<literal>RETURNING</literal>的<command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command>以及返回行集的某些工具命令（例如<command>EXPLAIN</command>）。除了<literal>INTO</literal>子句，SQL 命令和它在<application>PL/pgSQL</application>之外的写法一样。
     </para>
 
    <tip>
@@ -1873,7 +1939,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     如果一行或一个变量列表被用作目标，该查询的结果列必须完全匹配该结果的结构，包括数量和数据类型，否则会发生一个运行时错误。当一个记录变量是目标时，它会自动地把自身配置成查询结果列组成的行类型。
+     如果一个行变量或一个变量列表被用作目标，该命令的结果列必须完全匹配该结果的结构，包括数量和数据类型，否则会发生一个运行时错误。当一个记录变量是目标时，它会自动地把自身配置成命令的结果列组成的行类型。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1931,7 +1997,7 @@ END;
     </para>
 ____________________________________________________________________________-->
     <para>
-     如果<literal>STRICT</literal>没有在<literal>INTO</literal>子句中被指定，那么<replaceable>target</replaceable>将被设置为该查询返回的第一个行，或者在该查询不返回行时设置为空（注意除非使用了<literal>ORDER BY</literal>，否则<quote>第一行</quote>的界定并不清楚）。第一行之后的任何结果行都会被抛弃。你可以检查特殊的<literal>FOUND</literal>变量（见<xref linkend="plpgsql-statements-diagnostics"/>）来确定是否返回了一行：
+     如果<literal>STRICT</literal>没有在<literal>INTO</literal>子句中被指定，那么<replaceable>target</replaceable>将被设置为该命令返回的第一个行，或者在该命令不返回行时设置为空（注意除非使用了<literal>ORDER BY</literal>，否则<quote>第一行</quote>的界定并不清楚）。第一行之后的任何结果行都会被抛弃。你可以检查特殊的<literal>FOUND</literal>变量（见<xref linkend="plpgsql-statements-diagnostics"/>）来确定是否返回了一行：
 
 <programlisting>
 SELECT * INTO myrec FROM emp WHERE empname = myname;
@@ -1940,7 +2006,7 @@ IF NOT FOUND THEN
 END IF;
 </programlisting>
 
-     如果指定了<literal>STRICT</literal>选项，该查询必须刚好返回一行或者将会报告一个运行时错误，该错误可能是<literal>NO_DATA_FOUND</literal>（没有行）或<literal>TOO_MANY_ROWS</literal>（多于一行）。如果你希望捕捉该错误，可以使用一个异常块，例如：
+     如果指定了<literal>STRICT</literal>选项，该命令必须刚好返回一行或者将会报告一个运行时错误，该错误可能是<literal>NO_DATA_FOUND</literal>（没有行）或<literal>TOO_MANY_ROWS</literal>（多于一行）。如果你希望捕捉该错误，可以使用一个异常块，例如：
 
 <programlisting>
 BEGIN
@@ -2005,7 +2071,7 @@ ____________________________________________________________________________-->
     <para>
      如果为该函数启用了If <literal>print_strict_params</literal>，那么当因为
      <literal>STRICT</literal>的要求没有被满足而抛出一个错误时，该错误消息
-     的<literal>DETAIL</literal>将包括传递给该查询的参数信息。可以通过设置
+     的<literal>DETAIL</literal>将包括传递给该命令的参数信息。可以通过设置
      <varname>plpgsql.print_strict_params</varname>为所有函数更改
      <literal>print_strict_params</literal>设置，但是只有修改后被编译的函数
      才会生效。也可以使用一个编译器选项来为一个函数启用它，例如：
@@ -2041,16 +2107,6 @@ ____________________________________________________________________________-->
       <literal>STRICT</literal>选项匹配 Oracle PL/SQL 的<command>SELECT INTO</command>和相关语句的行为。
      </para>
     </note>
-
-<!--==========================orignal english content==========================
-    <para>
-     To handle cases where you need to process multiple result rows
-     from a SQL query, see <xref linkend="plpgsql-records-iterating"/>.
-    </para>
-____________________________________________________________________________-->
-    <para>
-     对于要处理来自于一个 SQL 查询的结果行的情况，请见<xref linkend="plpgsql-records-iterating"/>。
-    </para>
 
    </sect2>
 
@@ -2134,7 +2190,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     <literal>INTO</literal>子句指定一个返回行的 SQL 命令的结果应该被赋值到哪里。如果提供了一个行或变量列表，它必须完全匹配查询结果的结构（当使用一个记录变量时，它会自动把它自己配置为匹配结果结构）。如果返回多个行，只有第一个行会被赋值给<literal>INTO</literal>变量。如果没有返回行，NULL 会被赋值给<literal>INTO</literal>变量。如果没有指定<literal>INTO</literal>变量，该查询结果会被抛弃。
+     <literal>INTO</literal>子句指定一个返回行的 SQL 命令的结果应该被赋值到哪里。如果提供了一个行或变量列表，它必须完全匹配查询命令结果的结构（当一个记录变量被提供时，它会自动把它自己配置为匹配结果结构）。如果返回多个行，只有第一个行会被赋值给<literal>INTO</literal>变量。如果没有返回行，NULL 会被赋值给<literal>INTO</literal>变量。如果没有指定<literal>INTO</literal>变量，该查询结果会被抛弃。
     </para>
 
 <!--==========================orignal english content==========================
@@ -2212,15 +2268,19 @@ EXECUTE 'SELECT count(*) FROM '
    INTO c
    USING checked_user, checked_date;
 </programlisting>
-     一种更干净的方法是为表名或者列名使用<function>format()</function>的
-     <literal>%I</literal>规范（被新行分隔的字符串会被串接起来）：
+     一种更干净的方法是使用<function>format()</function>的
+     <literal>%I</literal>规范，插入自带引号的表名或者列名：
 <programlisting>
 EXECUTE format('SELECT count(*) FROM %I '
    'WHERE inserted_by = $1 AND inserted &lt;= $2', tabname)
    INTO c
    USING checked_user, checked_date;
 </programlisting>
-     另一个关于参数符号的限制是，它们只能在<command>SELECT</command>、<command>INSERT</command>、<command>UPDATE</command>和<command>DELETE</command>命令中工作。在另一种语句类型（通常被称为实用语句）中，即使值是数据值，你也必须将它们以文本形式插入。
+ (此示例依赖于隐式连接由换行符分隔的字符串文字的 SQL 规则)
+    </para>
+
+    <para>
+     另一个关于参数符号的限制是，它们只能在可优化的命令<command>SELECT</command>、<command>INSERT</command>、<command>UPDATE</command>和<command>DELETE</command>中有效。在另一种语句类型（通常被称为实用语句）中，即使值是数据值，你也必须将它们以文本形式插入。
     </para>
 
 <!--==========================orignal english content==========================
@@ -2269,7 +2329,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     <application>PL/pgSQL</application>中的<command>EXECUTE</command>语句与<xref linkend="sql-execute"/> <productname>PostgreSQL</productname>服务器支持的 SQL 语句无关。服务器的<command>EXECUTE</command>语句不能直接在<application>PL/pgSQL</application>函数中使用（并且也没有必要）。
+     <application>PL/pgSQL</application>中的<command>EXECUTE</command>语句与<link linkend="sql-execute"><command>EXECUTE</command></link> <productname>PostgreSQL</productname>服务器支持的 SQL 语句无关。服务器的<command>EXECUTE</command>语句不能直接在<application>PL/pgSQL</application>函数中使用（并且也没有必要）。
     </para>
    </note>
 
@@ -3334,7 +3394,7 @@ ____________________________________________________________________________-->
 <application>PL/pgSQL</application>函数，存储过程或<command>DO</command>块可以使用
 <command>CALL</command>调用存储过程。
 输出参数的处理方式与纯SQL中<command>CALL</command>的工作方式不同。
-存储过程的每个<literal>INOUT</literal>参数必须和<command>CALL</command>语句中的变量对应，
+存储过程的每个<literal>OUT</literal> 或者 <literal>INOUT</literal>参数必须和<command>CALL</command>语句中的变量对应，
 并且无论存储过程返回什么，都会在返回后赋值给该变量。
 例如：
 <programlisting>
@@ -3354,6 +3414,7 @@ BEGIN
 END;
 $$;
 </programlisting>
+     与输出参数相对应的变量可以是一个简单的变量或一个组合型变量的字段。 目前，它不能是一个数组的元素。
     </para>
    </sect2>
 
@@ -4449,7 +4510,7 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-     <application>PL/pgSQL</application>变量会被替换到查询文本中，并且如<xref linkend="plpgsql-var-subst"/>和<xref linkend="plpgsql-plan-caching"/>中详细讨论的，查询计划会被缓存以用于可能的重用。
+     <application>PL/pgSQL</application>变量会被查询参数替换，并且如<xref linkend="plpgsql-var-subst"/>和<xref linkend="plpgsql-plan-caching"/>中详细讨论的，查询计划会被缓存以用于可能的重用。
     </para>
 
 <!--==========================orignal english content==========================
@@ -5377,6 +5438,9 @@ DECLARE
 </programlisting>
      所有这三个变量都是<type>refcursor</type>类型，但是第一个可以用于任何查询，而第二个已经被<firstterm>绑定</firstterm>了一个完全指定的查询，并且最后一个被绑定了一个参数化查询。（游标被打开时，<literal>key</literal>将被一个整数参数值替换）。变量<literal>curs1</literal>被称为<firstterm>未绑定</firstterm>，因为它没有被绑定到任何特定查询。
     </para>
+        <para>
+        如果游标查询<literal>FOR UPDATE/SHARE</literal>使用，则该<literal>SCROLL</literal>选项不可用。此外，最好用于涉及可变函数的查询<literal>NO SCROLL</literal>。 <literal>SCROLL</literal>的实现假定重新加载查询的输出将返回一致的结果，而易失性函数并非如此。
+        </para>
    </sect2>
 
    <sect2 id="plpgsql-cursor-opening">
@@ -8174,7 +8238,7 @@ ____________________________________________________________________________-->
     column reference is syntactically allowed.  As an extreme case, consider
     this example of poor programming style:
 <programlisting>
-INSERT INTO foo (foo) VALUES (foo);
+INSERT INTO foo (foo) VALUES (foo(foo));
 </programlisting>
     The first occurrence of <literal>foo</literal> must syntactically be a table
     name, so it will not be substituted, even if the function has a variable
@@ -8185,14 +8249,13 @@ INSERT INTO foo (foo) VALUES (foo);
    </para>
 ____________________________________________________________________________-->
    <para>
-    一个<application>PL/pgSQL</application>函数中的 SQL 语句和表达式能够引用该函数的变量和参数。在现象背后，<application>PL/pgSQL</application>会为这些引用替换查询参数。只有在语法上允许一个参数或列引用的地方才会替换参数。作为一种极端情况，考虑这个编程风格糟糕的例子：
+    一个<application>PL/pgSQL</application>函数中的 SQL 语句和表达式能够引用该函数的变量和参数。在现象背后，<application>PL/pgSQL</application>会为这些引用替换查询参数。只有在语法上允许的地方才会替换参数。作为一种极端情况，考虑这个编程风格糟糕的例子：
 <programlisting>
-INSERT INTO foo (foo) VALUES (foo);
+INSERT INTO foo (foo) VALUES (foo(foo));
 </programlisting>
-    <literal>foo</literal>的第一次出现在语法上必须是一个表名， 因此它将不会被替换，即使该函数有一个名为<literal>foo</literal>的变量。第二次出现必须是该表的一列的名称，因此它也将不会被替换。只有第三次出现是对该函数变量引用的候选。
+    <literal>foo</literal>的第一次出现在语法上必须是一个表名， 因此它将不会被替换，即使该函数有一个名为<literal>foo</literal>的变量。第二次出现必须是该表的一列的名称，因此它也将不会被替换。同样，第三位应该是一个函数名。因此它也不被替换。只有最后一个位置是<application>PL/pgSQL</application>函数中变量引用的候选者。
    </para>
 
-   <note>
 <!--==========================orignal english content==========================
     <para>
      <productname>PostgreSQL</productname> versions before 9.0 would try
@@ -8200,9 +8263,8 @@ INSERT INTO foo (foo) VALUES (foo);
     </para>
 ____________________________________________________________________________-->
     <para>
-     <productname>PostgreSQL</productname> 9.0 之前的版本将尝试替换所有三种情况的变量，这会导致语法错误。
+     另一种理解方式是，变量替换只能将数据值插入到 SQL 命令中。命令引用的数据库对象不能动态更改。（如果你想这样做，你必须动态构造命令字符串，如<xref linkend="plpgsql-statements-executing-dyn"/>中所述。）
     </para>
-   </note>
 
 <!--==========================orignal english content==========================
    <para>
@@ -8435,7 +8497,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    当前变量替换只能在<command>SELECT</command>、<command>INSERT</command>、<command>UPDATE</command>和<command>DELETE</command>命令中工作，因为主 SQL 引擎只允许查询参数在这些命令中。要在其他语句类型（通常被称为实用语句）中使用一个非常量名称或值，你必须将实用语句构建为一个字符串并且<command>EXECUTE</command>它。
+    当前变量替换只能在<command>SELECT</command>、<command>INSERT</command>、<command>UPDATE</command>和<command>DELETE</command>还有包含下列之一的命令 (比如 <command>EXPLAIN</command> 和 <command>CREATE TABLE ... AS SELECT</command>)中有效，因为主 SQL 引擎只允许查询参数在这些命令中。要在其他语句类型（通常被称为实用语句）中使用一个非常量名称或值，你必须将实用语句构建为一个字符串并且<command>EXECUTE</command>它。
    </para>
 
   </sect2>
@@ -9392,7 +9454,7 @@ ____________________________________________________________________________-->
     <itemizedlist>
      <listitem>
       <para>
-       如果一个 SQL 命令中使用的名字可能是一个表的列名或者是对一个函数中变量的引用，那么<application>PL/SQL</application>会将它当作一个列名。如<xref linkend="plpgsql-var-subst"/>中所述，这对应的是<application>PL/pgSQL</application>的 <literal>plpgsql.variable_conflict</literal> = <literal>use_column</literal>行为（不是默认行为）。通常最好是首先避免这种歧义，但如果不得不移植依赖于该行为的大量代码，那么设置<literal>variable_conflict</literal>将是最好的方案。
+       如果一个 SQL 命令中使用的名字可能是一个表的列名或者是对一个函数中变量的引用，那么<application>PL/SQL</application>会将它当作一个列名。默认情况下， <application>PL/pgSQL</application>会抛出名称模糊的错误， 你可以指定<literal>plpgsql.variable_conflict</literal>=<literal>use_column</literal>来改变这一行为以匹配<application>PL/SQL</application>。如<xref linkend="plpgsql-var-subst"/>中所述。通常最好是首先避免这种歧义，但如果不得不移植依赖于该行为的大量代码，那么设置<literal>variable_conflict</literal>将是最好的方案。
       </para>
      </listitem>
 
