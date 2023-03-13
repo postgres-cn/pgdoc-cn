@@ -115,8 +115,11 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  现在你只需要从一个外部表<command>SELECT</command>来访问存储在它的底层的远程表中的数据。你也可以使用<command>INSERT</command>、<command>UPDATE</command>或<command>DELETE</command>修改远程表（当然，你在你的用户映射中已经指定的远程用户必须具有做这些事情的权限）。
+  现在你只需要从一个外部表<command>SELECT</command>来访问存储在它的底层的远程表中的数据。你也可以使用<command>INSERT</command>、<command>UPDATE</command>、<command>DELETE</command>或<command>TRUNCATE</command>修改远程表（当然，你在你的用户映射中已经指定的远程用户必须具有做这些事情的权限）。
  </para>
+ <para>
+   请注意，在访问或修改远程表时, <command>SELECT</command>, <command>UPDATE</command>, <command>DELETE</command>或<command>TRUNCATE</command>中指定的<literal>ONLY</literal>选项没有效果。
+  </para>
  
 <!--==========================orignal english content==========================
  <para>
@@ -134,7 +137,7 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
  <para>
   注意当前<filename>postgres_fdw</filename>缺少对于带<literal>ON CONFLICT DO UPDATE</literal>子句的<command>INSERT</command>语句的支持。不过，它支持<literal>ON CONFLICT DO NOTHING</literal>子句，已提供的唯一索引推断说明会被省略。
-  另请注意<filename>postgres_fdw</filename>支持 <command>UPDATE</command> 语句在分区表上执行的行移动调用，但是它目前不处理这样的情况：选择将移动行插入到的远程分区也是稍后将更新的<command>UPDATE</command>目标分区。
+  请注意，<filename>postgres_fdw</filename>还支持由在分区表上执行的<command>UPDATE</command>语句触发的行移动，但目前不处理远程分区选择插入移动行的情况，并且该远程分区本身也是同一命令中将在其他位置更新的<command>UPDATE</command>目标分区。
  </para>
 
 <!--==========================orignal english content==========================
@@ -149,7 +152,7 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  我们通常推荐一个外部表的列被声明为与被引用的远程表列完全相同的数据类型和排序规则（如果可用）。尽管<filename>postgres_fdw</filename>目前已经能够容忍在需要时执行数据类型转换，但是当类型或排序规则不匹配时可能会发生奇怪的语义异常，因为远程服务器解释<literal>WHERE</literal>子句时可能会与本地服务器有所不同。
+  我们通常推荐一个外部表的列被声明为与被引用的远程表列完全相同的数据类型和排序规则（如果可用）。尽管<filename>postgres_fdw</filename>目前已经能够容忍在需要时执行数据类型转换，但是当类型或排序规则不匹配时可能会发生奇怪的语义异常，因为远程服务器解释查询条件时可能会与本地服务器有所不同。
  </para>
 
 <!--==========================orignal english content==========================
@@ -448,7 +451,7 @@ ____________________________________________________________________________-->
       </para>
 ____________________________________________________________________________-->
       <para>
-       这个选项是一个要被加到那个服务器上所有外部表扫描的估计启动代价的数字值。这表示建立一个连接、在远端解析和规查询的额外负荷等。默认值是<literal>100</literal>。
+       这个选项是一个要被加到那个服务器上所有外部表扫描的估计启动代价的浮点值。这表示建立一个连接、在远端解析和规查询的额外负荷等。默认值是<literal>100</literal>。
       </para>
      </listitem>
     </varlistentry>
@@ -470,7 +473,7 @@ ____________________________________________________________________________-->
       </para>
 ____________________________________________________________________________-->
       <para>
-       这个选项是一个数字值，它被用作那个服务器上外部表扫描的每元组额外代价，它可以为一个外部服务器指定。这表示在服务器之间数据传输的额外负荷。你可以增加或减少这个数来反映到远程服务器更高或更低的网络延迟。默认值是<literal>0.01</literal>。
+       这个选项是一个浮点值，它被用作那个服务器上外部表扫描的每元组额外代价，它可以为一个外部服务器指定。这表示在服务器之间数据传输的额外负荷。你可以增加或减少这个数来反映到远程服务器更高或更低的网络延迟。默认值是<literal>0.01</literal>。
       </para>
      </listitem>
     </varlistentry>
@@ -581,9 +584,59 @@ ____________________________________________________________________________-->
      </listitem>
     </varlistentry>
 
+  <varlistentry>
+       <term><literal>batch_size</literal></term>
+       <listitem>
+        <para>
+         这个选项指定了每次插入操作中<filename>postgres_fdw</filename>的行数。应该在每个插入操作中插入多少行。它可以被指定为一个
+         可以为一个外域表或一个外域服务器指定。在一个表上指定的选项覆盖为服务器指定的选项，默认是<literal>1</literal>。
+        </para>
+
+        <para>
+         请注意，<filename>postgres_fdw</filename>一次插入的实际行数取决于列数和提供的数据。
+         取决于列的数量和提供的
+         <literal>batch_size</literal>值。这个批处理是作为一个单一的
+         查询，并且libpq协议（<filename>postgres_fdw</filename>用来连接到远程服务器）。
+         用于连接到远程服务器）将单个查询中的参数数量限制为65535。
+         单个查询的参数数量限制为65535。当列的数量*<literal>batch_size</literal>
+         超过限制时，<literal>batch_size</literal>将被调整以避免错误。
+         避免出错。
+        </para>
+       </listitem>
+      </para>
+   </varlistentry>
    </variablelist>
 
   </sect3>
+
+  <sect3>
+     <title>Asynchronous Execution Options</title>
+
+     <para>
+      <filename>postgres_fdw</filename> 支持异步执行，可以并发地运行一个 <structname>Append</structname> 节点的多个部分，相比串行化的方式能获得更好的性能提升。可以使用以下选项来控制该执行行为：
+     </para>
+
+     <variablelist>
+
+      <varlistentry>
+       <term><literal>async_capable</literal></term>
+       <listitem>
+        <para>
+         这个选项控制<filename>postgres_fdw</filename>是否允许异步执行的外部表被同时扫描。它可以为一个外部表或一个外部服务器指定。一个表级的选项覆盖一个服务器级的选项。默认是<literal>false</literal>。
+        </para>
+
+        <para>
+        为了确保从外部服务器返回的数据一致性，<filename>postgres_fdw</filename> 只会为一个特定的外部服务器打开一个连接，并且顺序运行所有针对该服务器的查询，即使涉及多个外部表也是如此，除非这些表受不同用户映射的影响。在这种情况下，禁用此选项可能更有效，以消除运行异步查询所带来的开销。
+        </para>
+
+        <para>
+        在一个<structname>Append</structname>节点中，即使有部分子计划是同步执行，也有部分子计划是异步执行，异步执行仍被应用。在这种情况下，如果异步子计划是使用<filename>postgres_fdw</filename>处理的，则需要等到至少有一个同步子计划返回所有元组，才能返回异步子计划的元组，因为当异步子计划等待发送给外部服务器的异步查询的结果时，同步子计划正在执行。该行为可能会在未来的版本中更改。
+        </para>
+       </listitem>
+      </varlistentry>
+
+     </variablelist>
+    </sect3>
 
   <sect3>
 <!--==========================orignal english content==========================
@@ -641,8 +694,32 @@ ____________________________________________________________________________-->
     </varlistentry>
 
    </variablelist>
+
   </sect3>
-  
+    <sect3>
+     <title>Truncatability Options</title>
+
+     <para>
+     默认情况下，使用 <filename>postgres_fdw</filename> 的所有外部表都被认为是可截断的。可以使用以下选项覆盖该行为：
+     </para>
+
+     <variablelist>
+
+      <varlistentry>
+       <term><literal>truncatable</literal></term>
+       <listitem>
+        <para>
+        此选项控制<filename>postgres_fdw</filename>是否允许使用 <command>TRUNCATE</command> 命令截断外部表。它可以指定为外部表或外部服务器。 表级别的选项将覆盖服务器级别的选项。默认值为<literal>true</literal>。
+        </para>
+
+        <para>
+         当然，如果远程表实际上无法被清空，那么就会出现错误。该选项的使用主要可以在不查询远程服务器的情况下本地抛出错误。
+        </para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </sect3>
+
   <sect3>
 <!--==========================orignal english content==========================
    <title>Importing Options</title>
@@ -692,6 +769,11 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
       <para>
        这个选项控制是否在从外部服务器导入的外部表定义中包括列的<literal>COLLATE</literal>选项。默认是<literal>true</literal>。如果远程服务器具有和本地服务器不同的排序规则名集合，可能需要关闭这个选项，在不同的操作系统上运行时很可能就是这样。
+       这么做，然而有一个非常严重的风险，即导入表的列排序规则(collations)将不匹配基础数据，从而导致异常的查询行为。
+      </para>
+
+      <para>
+       即使此参数设置为<literal>true</literal>，导入远程服务器默认排序规则的列也存在风险。它们将以<literal>COLLATE "default"</literal>被导入，这将选择本地服务器的默认排序规则，而这可能是不同的。
       </para>
      </listitem>
     </varlistentry>
@@ -718,6 +800,14 @@ ____________________________________________________________________________-->
       </para>
      </listitem>
     </varlistentry>
+    <varlistentry>
+         <term><literal>import_generated</literal></term>
+         <listitem>
+          <para>
+          此选项控制导入自外部服务器的外部表定义是否包括列 <literal>GENERATED</literal> 表达式。 默认值为 <literal>true</literal>，如果导入的生成表达式使用本地不存在的函数或运算符，则整个 <command>IMPORT</command> 将失败。
+          </para>
+         </listitem>
+        </varlistentry>
     <varlistentry>
 <!--==========================orignal english content==========================
      <term><literal>import_not_null</literal></term>
@@ -754,7 +844,7 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    注意除<literal>NOT NULL</literal>之外的约束将不会从远程表中导入。虽然<productname>PostgreSQL</productname>确实支持外部表上的<literal>CHECK</literal>约束，但不会自动导入它们，因为存在本地和远程服务器计算约束表达式方式不同的风险。<literal>CHECK</literal>约束中的任何这类不一致都可能导致查询优化中很难检测的错误。因此，如果你希望导入<literal>CHECK</literal>约束，你必须手工来做，并且你应该仔细地验证每一个这种约束的语义。有关处理外部表上<literal>CHECK</literal>约束的更多细节，请见<xref linkend="sql-createforeigntable"/>。
+    注意除<literal>NOT NULL</literal>之外的约束将不会从远程表中导入。虽然<productname>PostgreSQL</productname>确实支持外部表上的检查约束，但不会自动导入它们，因为存在本地和远程服务器计算约束表达式方式不同的风险。检查约束中的任何这类不一致都可能导致查询优化中很难检测的错误。因此，如果你希望导入检查约束，你必须手工来做，并且你应该仔细地验证每一个这种约束的语义。有关处理外部表上检查约束的更多细节，请见<xref linkend="sql-createforeigntable"/>。
    </para>
 
 <!--==========================orignal english content==========================
@@ -768,13 +858,84 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    自动排除作为其他表的分区的表或外部表。分区表被导入，除非它们是其他表的分区。
-	由于所有数据都可以通过作为分区层次根的分区表来访问，
-	所以这种方法应该允许访问所有数据而不创建额外的对象。
+   作为其他表的分区的表或外部表只在明确指定它们在限制为<literal>LIMIT TO</literal>子句中时才被导入。否则，它们将自动从<xref linkend="sql-importforeignschema"/>中排除。由于可以通过分区层次结构的根即分区表来访问所有数据，因此仅导入分区表应该允许访问所有数据而不创建额外的对象。
    </para>
 
    </sect3>
+   <sect3>
+       <title>Connection Management Options</title>
+
+       <para>
+        默认情况下，<filename>postgres_fdw</filename>连接到外部服务器的所有连接都保持打开状态以便于重复使用。
+       </para>
+
+       <variablelist>
+
+        <varlistentry>
+         <term><literal>keep_connections</literal></term>
+         <listitem>
+          <para>
+          该选项控制<filename>postgres_fdw</filename>是否保持与外部服务器的连接，以便后续查询可以重复使用它们。它仅适用于外部服务器。默认情况下为<literal>on</literal>。如果设置为<literal>off</literal>，则每个事务结束时将丢弃到该外部服务器的所有连接。
+         </para>
+         </listitem>
+        </varlistentry>
+
+       </variablelist>
+      </sect3>
  </sect2>
+
+<sect2>
+  <title>Functions</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><function>postgres_fdw_get_connections(OUT server_name text, OUT valid boolean) returns setof record</function></term>
+    <listitem>
+     <para>
+      该函数返回所有由本地会话到外部服务器<filename>postgres_fdw</filename>建立的开放连接的外部服务器名称。此外，它还返回每个连接是否有效。如果当前本地事务中使用外部服务器连接，但其外部服务器或用户映射已更改或删除，则返回<literal>false</literal>（注：如果服务器已删除，则无效连接的服务器名称将为<literal>NULL</literal>），然后这些无效连接将在该事务结束时关闭。否则将返回<literal>true</literal>。如果没有打开的连接，则不返回记录。该函数的示例用法：
+<screen>
+postgres=# SELECT * FROM postgres_fdw_get_connections() ORDER BY 1;
+ server_name | valid
+-------------+-------
+ loopback1   | t
+ loopback2   | f
+</screen>
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>postgres_fdw_disconnect(server_name text) returns boolean</function></term>
+    <listitem>
+     <para>
+     该函数从本地会话到给定名称的外部服务器上使用的所有由<filename>postgres_fdw</filename>建立的连接。注意，可以使用不同的用户映射在给定服务器上建立多个连接。如果在当前本地事务中使用了这些连接，则它们不会被断开，并报告警告消息。如果至少断开一个连接，此功能将返回<literal>true</literal>，否则返回<literal>false</literal>。如果找不到具有给定名称的外部服务器，将报告错误。该函数的示例用法：
+<screen>
+postgres=# SELECT postgres_fdw_disconnect('loopback1');
+ postgres_fdw_disconnect
+-------------------------
+ t
+</screen>
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>postgres_fdw_disconnect_all() returns boolean</function></term>
+    <listitem>
+     <para>
+     该函数会从本地会话到外部服务器断开<filename>postgres_fdw</filename>建立的所有连接。如果这些连接在当前事务中使用，则不会断开并报告警告消息。如果至少断开了一个连接，则该函数返回<literal>true</literal>，否则返回<literal>false</literal>。 返回该函数的用例示例：
+<screen>
+postgres=# SELECT postgres_fdw_disconnect_all();
+ postgres_fdw_disconnect_all
+-----------------------------
+ t
+</screen>
+     </para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+
+</sect2>
 
  <sect2>
 <!--==========================orignal english content==========================
@@ -793,7 +954,13 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   <filename>postgres_fdw</filename>在第一个使用关联到外部服务器的外部表的查询期间建立一个到外部服务器的连接。这个连接会被保持，并被重用于同一个会话中的后续查询。但是，如果使用了多个用户实体（用户映射）来访问外部服务器，会为每一个用户映射建立一个连接。
+   <filename>postgres_fdw</filename>在第一个使用关联到外部服务器的外部表的查询期间建立一个到外部服务器的连接。默认地这个连接会被保持，并被重用于同一个会话中的后续查询。这个行为可以通过外部服务器的<literal>keep_connections</literal>选项来控制，如果使用了多个用户实体（用户映射）来访问外部服务器，会为每一个用户映射建立一个连接。
+  </para>
+  <para>
+   当更改外部服务器或用户映射的定义或删除它们时，相关的连接可能会关闭。但是请注意，如果在当前本地事务中使用任何连接，则将其保留到事务结束。已关闭的连接将在未来使用一个外部表的查询时重新建立。
+  </para>
+  <para>
+     一旦与外部服务器建立了连接，默认情况下会一直保持直到相应本地或远程会话退出。如果想显式断开一个连接，可以将外部服务器的<literal>keep_connections</literal> 选项禁用，或使用<function>postgres_fdw_disconnect</function> 和<function>postgres_fdw_disconnect_all</function>函数。例如，这些函数对于关闭不再需要的连接很有用，从而释放外部服务器上的连接。
   </para>
  </sect2>
 
@@ -1152,7 +1319,7 @@ CREATE FOREIGN TABLE foreign_table (
         OPTIONS (schema_name 'some_schema', table_name 'some_table');
 </programlisting>
 
-   <command>CREATE FOREIGN TABLE</command>中声明的列数据类型和其他性质必须要匹配实际的远程表。列名也必须匹配，不过也可以为个别列附上<literal>column_name</literal>选项以表示它们在远程服务器上对应哪个列。在很多情况中，要手工构造外部表定义，使用<xref linkend="sql-importforeignschema"/>会更好。
+   <command>CREATE FOREIGN TABLE</command>中声明的列数据类型和其他性质必须要匹配实际的远程表。列名也必须匹配，不过也可以为个别列附上<literal>column_name</literal>选项以表示它们在远程服务器上对应哪个列。在很多情况中，要手工构造外部表定义，使用<link linkend="sql-importforeignschema"><command>IMPORT FOREIGN SCHEMA</command></link>会更好。
   </para>
  </sect2>
  
