@@ -58,7 +58,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   从数据库中检索数据的过程或命令叫做<firstterm>查询</firstterm>。在 SQL 里<xref linkend="sql-select"/>命令用于指定查询。 <command>SELECT</command>命令的一般语法是
+   从数据库中检索数据的过程或命令叫做<firstterm>查询</firstterm>。在 SQL 里<link linkend="sql-select"><command>SELECT</command></link>命令用于指定查询。 <command>SELECT</command>命令的一般语法是
 <synopsis>
 <optional>WITH <replaceable>with_queries</replaceable></optional> SELECT <replaceable>select_list</replaceable> FROM <replaceable>table_expression</replaceable> <optional><replaceable>sort_specification</replaceable></optional>
 </synopsis>
@@ -2479,6 +2479,50 @@ GROUP BY GROUPING SETS (
 </programlisting>
    </para>
 
+  <para>
+      <indexterm zone="queries-grouping-sets">
+       <primary>ALL</primary>
+       <secondary>GROUP BY ALL</secondary>
+      </indexterm>
+      <indexterm zone="queries-grouping-sets">
+       <primary>DISTINCT</primary>
+       <secondary>GROUP BY DISTINCT</secondary>
+      </indexterm>
+       当一次指定多个分组项时，最终的分组集合可能包含重复项。例如：
+  <programlisting>
+  GROUP BY ROLLUP (a, b), ROLLUP (a, c)
+  </programlisting>
+      等同于
+  <programlisting>
+  GROUP BY GROUPING SETS (
+      (a, b, c),
+      (a, b),
+      (a, b),
+      (a, c),
+      (a),
+      (a),
+      (a, c),
+      (a),
+      ()
+  )
+  </programlisting>
+      如果这些重复项是不希望出现的，可以在<literal>GROUP BY</literal>上直接使用<literal>DISTINCT</literal>子句来删除它们。因此：
+  <programlisting>
+  GROUP BY <emphasis>DISTINCT</emphasis> ROLLUP (a, b), ROLLUP (a, c)
+  </programlisting>
+      等同于
+  <programlisting>
+  GROUP BY GROUPING SETS (
+      (a, b, c),
+      (a, b),
+      (a, c),
+      (a),
+      ()
+  )
+  </programlisting>
+      这与使用<literal>SELECT DISTINCT</literal>不同，因为输出行仍然可能包含重复项。如果任何一个未分组的列包含 NULL，则无法区分其与分组该列时使用的 NULL。
+     </para>
+
   <note>
 <!--==========================orignal english content==========================
    <para>
@@ -2756,15 +2800,16 @@ SELECT a "value", b + c AS sum FROM ...
    </para>
 ____________________________________________________________________________-->
    <para>
-    只有在新列无法匹配任何<productname>PostgreSQL</productname>关键词（见<xref linkend="sql-keywords-appendix"/>）时，<literal>AS</literal>关键词是可选的。为了避免一个关键字的意外匹配，你可以使用双引号来修饰列名。例如，<literal>VALUE</literal>是一个关键字，所以下面的语句不会工作：
+    <literal>AS</literal>关键词通常是可选的，但在某些情况下，如果想要的列名与<productname>PostgreSQL</productname>关键词相匹配，你必须写上<literal>AS</literal>或双引号的列名，以避免歧义。(<xref linkend="sql-keywords-appendix"/>显示了哪些关键词需要用<literal>AS</literal>作为列标签)。例如，<literal>FROM</literal>就是这样的一个关键词，所以下面的语句是行不通的：
 <programlisting>
-SELECT a value, b + c AS sum FROM ...
+SELECT a from, b + c AS sum FROM ...
 </programlisting>
-    但是这个可以：
+    但是以下任意一种会起作用：
 <programlisting>
-SELECT a "value", b + c AS sum FROM ...
+SELECT a AS from, b + c AS sum FROM ...
+SELECT a "from", b + c AS sum FROM ...
 </programlisting>
-    为了防止未来可能的关键词增加，我们推荐总是写<literal>AS</literal>或者用双引号修饰输出列名。
+    为了防止未来可能的关键词增加，我们推荐总是写<literal>AS</literal>或者用双引号修饰输出列名以保证最大的安全性。
    </para>
 
    <note>
@@ -2795,7 +2840,12 @@ ____________________________________________________________________________-->
    </indexterm>
 ____________________________________________________________________________-->
    <indexterm zone="queries-distinct">
+       <primary>ALL</primary>
+       <secondary>SELECT ALL</secondary>
+   </indexterm>
+   <indexterm zone="queries-distinct">
     <primary>DISTINCT</primary>
+    <secondary>SELECT DISTINCT</secondary>
    </indexterm>
 
 <!--==========================orignal english content==========================
@@ -2897,7 +2947,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <title>Combining Queries</title>
 ____________________________________________________________________________-->
-  <title>组合查询</title>
+  <title>组合查询(<literal>UNION</literal>, <literal>INTERSECT</literal>, <literal>EXCEPT</literal>)</title>
 
 <!--==========================orignal english content==========================
   <indexterm zone="queries-union">
@@ -2985,14 +3035,7 @@ ____________________________________________________________________________-->
 <replaceable>query1</replaceable> INTERSECT <optional>ALL</optional> <replaceable>query2</replaceable>
 <replaceable>query1</replaceable> EXCEPT <optional>ALL</optional> <replaceable>query2</replaceable>
 </synopsis>
-   <replaceable>query1</replaceable>和<replaceable>query2</replaceable>都是可以使用以上所有特性的查询。集合操作也可以嵌套和级连，例如
-<synopsis>
-<replaceable>query1</replaceable> UNION <replaceable>query2</replaceable> UNION <replaceable>query3</replaceable>
-</synopsis>
-   实际执行的是：
-<synopsis>
-(<replaceable>query1</replaceable> UNION <replaceable>query2</replaceable>) UNION <replaceable>query3</replaceable>
-</synopsis>
+   <replaceable>query1</replaceable>和<replaceable>query2</replaceable>都是可以使用以上所有特性的查询。
   </para>
 
 <!--==========================orignal english content==========================
@@ -3046,6 +3089,36 @@ ____________________________________________________________________________-->
   <para>
    为了计算两个查询的并、交、差，这两个查询必须是<quote>并操作兼容的</quote>，也就意味着它们都返回同样数量的列， 并且对应的列有兼容的数据类型，如<xref linkend="typeconv-union-case"/>中描述的那样。
   </para>
+   <para>
+     集合操作可以组合使用，例如：
+  <synopsis>
+  <replaceable>query1</replaceable> UNION <replaceable>query2</replaceable> EXCEPT <replaceable>query3</replaceable>
+  </synopsis>
+     等价于：
+  <synopsis>
+  (<replaceable>query1</replaceable> UNION <replaceable>query2</replaceable>) EXCEPT <replaceable>query3</replaceable>
+  </synopsis>
+  如下所示，您可以使用括号来控制计算顺序。如果没有括号，则 <literal>UNION</literal> 和 <literal>EXCEPT</literal> 从左到右进行关联，但 <literal>INTERSECT</literal> 的绑定比这两个运算符更紧密。因此
+  <synopsis>
+  <replaceable>query1</replaceable> UNION <replaceable>query2</replaceable> INTERSECT <replaceable>query3</replaceable>
+  </synopsis>
+     意思是
+  <synopsis>
+  <replaceable>query1</replaceable> UNION (<replaceable>query2</replaceable> INTERSECT <replaceable>query3</replaceable>)
+  </synopsis>
+  你也可以用括号包裹一个单独的<replaceable>query</replaceable>。如果<replaceable>query</replaceable>需要使用后续部分中讨论的任何子句（例如<literal>LIMIT</literal>），那么这一点非常重要。没有括号，将会得到语法错误，否则子句将被解析为适用于集合操作的输出，而不是它的输入之一。例如，
+  <synopsis>
+  SELECT a FROM b UNION SELECT x FROM y LIMIT 10
+  </synopsis>
+     是可以接受的，但它的意思是
+  <synopsis>
+  (SELECT a FROM b UNION SELECT x FROM y) LIMIT 10
+  </synopsis>
+     不是
+  <synopsis>
+  SELECT a FROM b UNION (SELECT x FROM y LIMIT 10)
+  </synopsis>
+    </para>
  </sect1>
 
 
@@ -3053,7 +3126,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <title>Sorting Rows</title>
 ____________________________________________________________________________-->
-  <title>行排序</title>
+  <title>行排序(<literal>ORDER BY</literal>)</title>
 
 <!--==========================orignal english content==========================
   <indexterm zone="queries-order">
@@ -3590,6 +3663,10 @@ GROUP BY region, product;
 
    它只显示在高销售区域每种产品的销售总额。<literal>WITH</literal>子句定义了两个辅助语句<structname>regional_sales</structname>和<structname>top_regions</structname>，其中<structname>regional_sales</structname>的输出用在<structname>top_regions</structname>中而<structname>top_regions</structname>的输出用在主<command>SELECT</command>查询。这个例子可以不用<literal>WITH</literal>来书写，但是我们必须要用两层嵌套的子<command>SELECT</command>。使用这种方法要更简单些。
   </para>
+   </sect2>
+
+   <sect2 id="queries-with-recursive">
+    <title>Recursive Queries</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -3764,6 +3841,117 @@ GROUP BY sub_part
 </programlisting>
   </para>
 
+  <sect3 id="queries-with-search">
+     <title>Search Order</title>
+
+     <para>
+     当使用递归查询计算树形遍历时，你可能希望以深度优先或广度优先的顺序对结果进行排序。这可以通过计算与其他数据列一起的排序列来实现，并在最后用它来对结果进行排序。请注意，这实际上并不能控制查询评估访问行的顺序；这在SQL中总是取决于实现。这种方法只是提供了一种方便的方法来对结果进行排序。
+     </para>
+
+     <para>
+     为了创建深度优先顺序，我们针对每个结果行计算已访问的行数组。例如，考虑使用<structfield>link</structfield>字段对表<structname>tree</structname>进行搜索的以下查询：
+  <programlisting>
+  WITH RECURSIVE search_tree(id, link, data) AS (
+      SELECT t.id, t.link, t.data
+      FROM tree t
+    UNION ALL
+      SELECT t.id, t.link, t.data
+      FROM tree t, search_tree st
+      WHERE t.id = st.link
+  )
+  SELECT * FROM search_tree;
+  </programlisting>
+
+      为了增加深度优先的排序信息，你可以这样写：
+
+  <programlisting>
+  WITH RECURSIVE search_tree(id, link, data, <emphasis>path</emphasis>) AS (
+      SELECT t.id, t.link, t.data, <emphasis>ARRAY[t.id]</emphasis>
+      FROM tree t
+    UNION ALL
+      SELECT t.id, t.link, t.data, <emphasis>path || t.id</emphasis>
+      FROM tree t, search_tree st
+      WHERE t.id = st.link
+  )
+  SELECT * FROM search_tree <emphasis>ORDER BY path</emphasis>;
+  </programlisting>
+     </para>
+
+     <para>
+     在需要使用多个字段来识别行的一般情况下，使用一组行记录。例如，如果我们需要跟踪 <structfield>f1</structfield> 和 <structfield>f2</structfield> 字段，则使用一个行记录数组：
+
+  <programlisting>
+  WITH RECURSIVE search_tree(id, link, data, <emphasis>path</emphasis>) AS (
+      SELECT t.id, t.link, t.data, <emphasis>ARRAY[ROW(t.f1, t.f2)]</emphasis>
+      FROM tree t
+    UNION ALL
+      SELECT t.id, t.link, t.data, <emphasis>path || ROW(t.f1, t.f2)</emphasis>
+      FROM tree t, search_tree st
+      WHERE t.id = st.link
+  )
+  SELECT * FROM search_tree <emphasis>ORDER BY path</emphasis>;
+  </programlisting>
+     </para>
+
+     <tip>
+      <para>
+      在通常情况下只需要跟踪一个字段，可以省略 <literal>ROW()</literal> 语法。这样可以使用简单的数组而不是复合类型数组，提高效率。
+      </para>
+     </tip>
+
+     <para>
+      为了创建一个广度优先的顺序，你可以添加一个跟踪搜索深度的列，例如：
+
+  <programlisting>
+  WITH RECURSIVE search_tree(id, link, data, <emphasis>depth</emphasis>) AS (
+      SELECT t.id, t.link, t.data, <emphasis>0</emphasis>
+      FROM tree t
+    UNION ALL
+      SELECT t.id, t.link, t.data, <emphasis>depth + 1</emphasis>
+      FROM tree t, search_tree st
+      WHERE t.id = st.link
+  )
+  SELECT * FROM search_tree <emphasis>ORDER BY depth</emphasis>;
+  </programlisting>
+      添加数据列作为二级排序列以获得稳定的排序。
+     </para>
+
+     <tip>
+      <para>
+       递归查询评估算法以广度优先搜索顺序生成其输出。但是，这是一种实施细节，可能不能依赖它。每个级别内行的顺序肯定是未定义的，因此在任何情况下都可能需要一些显式排序。
+      </para>
+     </tip>
+
+     <para>
+      有内置的语法可以计算深度或广度优先排序列。例如：
+  <programlisting>
+  WITH RECURSIVE search_tree(id, link, data) AS (
+      SELECT t.id, t.link, t.data
+      FROM tree t
+    UNION ALL
+      SELECT t.id, t.link, t.data
+      FROM tree t, search_tree st
+      WHERE t.id = st.link
+  ) <emphasis>SEARCH DEPTH FIRST BY id SET ordercol</emphasis>
+  SELECT * FROM search_tree ORDER BY ordercol;
+
+  WITH RECURSIVE search_tree(id, link, data) AS (
+      SELECT t.id, t.link, t.data
+      FROM tree t
+    UNION ALL
+      SELECT t.id, t.link, t.data
+      FROM tree t, search_tree st
+      WHERE t.id = st.link
+  ) <emphasis>SEARCH BREADTH FIRST BY id SET ordercol</emphasis>
+  SELECT * FROM search_tree ORDER BY ordercol;
+  </programlisting>
+      这个语法会在内部扩展为类似于上面手动编写的表单。 <literal>SEARCH</literal> 子句指定要搜索深度优先还是广度优先，要跟踪进行排序的列的列表以及包含可用于排序的结果数据的列名称。该列将隐式地添加到CTE的输出行中。
+     </para>
+    </sect3>
+
+    <sect3 id="queries-with-cycle">
+     <title>Cycle Detection</title>
+
 <!--==========================orignal english content==========================
   <para>
    When working with recursive queries it is important to be sure that
@@ -3780,7 +3968,7 @@ GROUP BY sub_part
 
 <programlisting>
 WITH RECURSIVE search_graph(id, link, data, depth) AS (
-    SELECT g.id, g.link, g.data, 1
+    SELECT g.id, g.link, g.data, 0
     FROM graph g
   UNION ALL
     SELECT g.id, g.link, g.data, sg.depth + 1
@@ -3822,7 +4010,7 @@ ____________________________________________________________________________-->
 
 <programlisting>
 WITH RECURSIVE search_graph(id, link, data, depth) AS (
-    SELECT g.id, g.link, g.data, 1
+    SELECT g.id, g.link, g.data, 0
     FROM graph g
   UNION ALL
     SELECT g.id, g.link, g.data, sg.depth + 1
@@ -3832,20 +4020,20 @@ WITH RECURSIVE search_graph(id, link, data, depth) AS (
 SELECT * FROM search_graph;
 </programlisting>
 
-   如果<structfield>link</structfield>关系包含环，这个查询将会循环。因为我们要求一个<quote>depth</quote>输出，仅仅将<literal>UNION ALL</literal> 改为<literal>UNION</literal>不会消除循环。反过来在我们顺着一个特定链接路径搜索时，我们需要识别我们是否再次到达了一个相同的行。我们可以向这个有循环倾向的查询增加两个列<structfield>path</structfield>和<structfield>cycle</structfield>：
+   如果<structfield>link</structfield>关系包含环，这个查询将会循环。因为我们要求一个<quote>depth</quote>输出，仅仅将<literal>UNION ALL</literal> 改为<literal>UNION</literal>不会消除循环。反过来在我们顺着一个特定链接路径搜索时，我们需要识别我们是否再次到达了一个相同的行。我们可以向这个有循环倾向的查询增加两个列<structfield>is_cycle</structfield>和<structfield>path</structfield>：
 
 <programlisting>
-WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
-    SELECT g.id, g.link, g.data, 1,
-      ARRAY[g.id],
-      false
+WITH RECURSIVE search_graph(id, link, data, depth, <emphasis>is_cycle, path</emphasis>) AS (
+    SELECT g.id, g.link, g.data, 0,
+      <emphasis>false,
+      ARRAY[g.id]</emphasis>
     FROM graph g
   UNION ALL
     SELECT g.id, g.link, g.data, sg.depth + 1,
-      path || g.id,
-      g.id = ANY(path)
+      <emphasis>g.id = ANY(path),
+      path || g.id</emphasis>
     FROM graph g, search_graph sg
-    WHERE g.id = sg.link AND NOT cycle
+    WHERE g.id = sg.link <emphasis>AND NOT is_cycle</emphasis>
 )
 SELECT * FROM search_graph;
 </programlisting>
@@ -3880,17 +4068,17 @@ ____________________________________________________________________________-->
    在通常情况下如果需要检查多于一个域来识别一个环，请用行数组。例如，如果我们需要比较域<structfield>f1</structfield>和<structfield>f2</structfield>：
 
 <programlisting>
-WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
-    SELECT g.id, g.link, g.data, 1,
-      ARRAY[ROW(g.f1, g.f2)],
-      false
+WITH RECURSIVE search_graph(id, link, data, depth, <emphasis>is_cycle, path</emphasis>) AS (
+    SELECT g.id, g.link, g.data, 0,
+      <emphasis>false,
+      ARRAY[ROW(g.f1, g.f2)]</emphasis>
     FROM graph g
   UNION ALL
     SELECT g.id, g.link, g.data, sg.depth + 1,
-      path || ROW(g.f1, g.f2),
-      ROW(g.f1, g.f2) = ANY(path)
+      <emphasis>ROW(g.f1, g.f2) = ANY(path),
+      path || ROW(g.f1, g.f2)</emphasis>
     FROM graph g, search_graph sg
-    WHERE g.id = sg.link AND NOT cycle
+    WHERE g.id = sg.link <emphasis>AND NOT is_cycle</emphasis>
 )
 SELECT * FROM search_graph;
 </programlisting>
@@ -3909,6 +4097,22 @@ ____________________________________________________________________________-->
    </para>
   </tip>
 
+  <para>
+     有一种内置的语法可以简化环路检测。上面的查询也可以这样编写：
+  <programlisting>
+  WITH RECURSIVE search_graph(id, link, data, depth) AS (
+      SELECT g.id, g.link, g.data, 1
+      FROM graph g
+    UNION ALL
+      SELECT g.id, g.link, g.data, sg.depth + 1
+      FROM graph g, search_graph sg
+      WHERE g.id = sg.link
+  ) <emphasis>CYCLE id SET is_cycle USING path</emphasis>
+  SELECT * FROM search_graph;
+  </programlisting>
+     内部将被重写成上述形式。<literal>CYCLE</literal> 子句首先指定要跟踪的列以检测循环，然后是一个列名，它将显示是否检测到循环，最后是将跟踪路径的其他列的名称。 循环和路径列将隐含地添加到 CTE 的输出行中。
+    </para>
+
   <tip>
 <!--==========================orignal english content==========================
    <para>
@@ -3918,8 +4122,9 @@ ____________________________________________________________________________-->
     <quote>path</quote> column constructed in this way.
    </para>
 ____________________________________________________________________________-->
+
    <para>
-    递归查询计算算法使用宽度优先搜索顺序产生它的输出。你可以通过让外部查询<literal>ORDER BY</literal>一个以这种方法构建的<quote>path</quote>，用来以深度优先搜索顺序显示结果。
+    循环路径列的计算方法与上一节中显示的深度优先排序列相同。 一个查询可以同时有<literal>SEARCH</literal>和<literal>CYCLE</literal>子句，但是深度优先的搜索规范和周期检测规范会产生多余的计算，所以只使用<literal>CYCLE</literal>子句并按路径列排序会更有效率。 如果想要进行广度优先排序，那么同时指定<literal>SEARCH</literal>和<literal>CYCLE</literal>会很有用。
    </para>
   </tip>
 
@@ -3936,7 +4141,7 @@ WITH RECURSIVE t(n) AS (
   UNION ALL
     SELECT n+1 FROM t
 )
-SELECT n FROM t LIMIT 100;
+SELECT n FROM t <emphasis>LIMIT 100</emphasis>;
 </programlisting>
 
    This works because <productname>PostgreSQL</productname>'s implementation
@@ -3958,11 +4163,16 @@ WITH RECURSIVE t(n) AS (
   UNION ALL
     SELECT n+1 FROM t
 )
-SELECT n FROM t LIMIT 100;
+SELECT n FROM t <emphasis>LIMIT 100</emphasis>;
 </programlisting>
 
    这会起作用，因为<productname>PostgreSQL</productname>的实现只计算<literal>WITH</literal>查询中被父查询实际取到的行。不推荐在生产中使用这个技巧，因为其他系统可能以不同方式工作。同样，如果你让外层查询排序递归查询的结果或者把它们连接成某种其他表，这个技巧将不会起作用，因为在这些情况下外层查询通常将尝试取得<literal>WITH</literal>查询的所有输出。
   </para>
+    </sect3>
+   </sect2>
+
+   <sect2>
+    <title>Common Table Expression Materialization</title>
 
 <!--==========================orignal english content==========================
   <para>
@@ -3991,6 +4201,7 @@ ____________________________________________________________________________-->
    但是，从另一方面来看，优化器不能将来自父查询的约束下推到乘法引用<literal>WITH</literal>查询，因为当他应该只影响一个时它可能会影响所有使用<literal>WITH</literal>查询的输出的使用。
    乘法引用<literal>WITH</literal>查询通常将会被按照所写的方式计算，而不抑制父查询以后可能会抛弃的行（但是，如上所述，如果对查询的引用只请求有限数目的行，计算可能会提前停止）。
   </para>
+
 
 <!--==========================orignal english content==========================
   <para>
