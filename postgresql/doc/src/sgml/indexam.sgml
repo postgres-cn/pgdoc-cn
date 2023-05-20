@@ -263,6 +263,7 @@ typedef struct IndexAmRoutine
     amproperty_function amproperty;     /* can be NULL */
     ambuildphasename_function ambuildphasename;   /* can be NULL */
     amvalidate_function amvalidate;
+    amadjustmembers_function amadjustmembers; /* can be NULL */
     ambeginscan_function ambeginscan;
     amrescan_function amrescan;
     amgettuple_function amgettuple;     /* can be NULL */
@@ -367,7 +368,12 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   <structname>IndexAmRoutine</structname>中的有些标志域的含义并不那么直观。<structfield>amcanunique</structfield>的要求在<xref linkend="index-unique-checks"/>中讨论。<structfield>amcanmulticol</structfield>标志断言该索引访问方法支持多列索引， <structfield>amoptionalkey</structfield>断言它允许对那种在第一个索引列上没有给出可索引限制子句的扫描。如果<structfield>amcanmulticol</structfield>为假，那么<structfield>amoptionalkey</structfield>实际上说的是该访问方法是否允许不带限制子句的全索引扫描。 那些支持多索引列的访问方法<emphasis>必须</emphasis>支持那些在省略了除第一个列之外的任何或所有其它列上约束的扫描；不过，它们被允许去要求在第一个列上出现一些限制，并且这一点是以把<structfield>amoptionalkey</structfield>设置为假作为标志的。一个索引 AM 可能将<structfield>amoptionalkey</structfield>设置为假的一种原因是，如果它不索引空值。因为大多数可索引的操作符都是严格的并且因此不能对空输入返回真，所以不为空值存储索引项咋看上去很吸引人：因为它们不 可能被一个索引扫描返回。不过，当一个索引扫描对于一个给定索引列上没有约束子句时，这种讨论就不成立了。实际上，这意 味着设置了<structfield>amoptionalkey</structfield>为真的索引必须索引空值，因为规划器可能会决定在根本没有扫描键的时候使用这样的索引。一个相关的限制是一个支持 多索引列的索引访问方法<emphasis>必须</emphasis>支持索引第一列之后的列中的空值，因 为规划器会认为这个索引可以用于在那些列上没有限制的查询。例如，考虑一个在(a,b)上的索引和一个有<literal>WHERE a = 4</literal>的查询。系统会认为该索引可以用于扫描 <literal>a = 4</literal>的行， 如果索引忽略了 b 为空的行，那么就是错误的。不过，忽略那些在第一个索引列上值为空的行是 OK 的。一个索引空的索引访问方法可能也会设置<structfield>amsearchnulls</structfield>，表明它支持将<literal>IS NULL</literal>和<literal>IS NOT NULL</literal>子句作为搜索条件。
+   <structname>IndexAmRoutine</structname>中的有些标志域的含义并不那么直观。<structfield>amcanunique</structfield>的要求在<xref linkend="index-unique-checks"/>中讨论。<structfield>amcanmulticol</structfield>标志断言该索引访问方法支持多键列索引， <structfield>amoptionalkey</structfield>断言它允许对那种在第一个索引列上没有给出可索引限制子句的扫描。如果<structfield>amcanmulticol</structfield>为假，那么<structfield>amoptionalkey</structfield>实际上说的是该访问方法是否允许不带限制子句的全索引扫描。 那些支持多索引列的访问方法<emphasis>必须</emphasis>支持那些在省略了除第一个列之外的任何或所有其它列上约束的扫描；不过，它们被允许去要求在第一个列上出现一些限制，并且这一点是以把<structfield>amoptionalkey</structfield>设置为假作为标志的。一个索引 AM 可能将<structfield>amoptionalkey</structfield>设置为假的一种原因是，如果它不索引空值。因为大多数可索引的操作符都是严格的并且因此不能对空输入返回真，所以不为空值存储索引项咋看上去很吸引人：因为它们不 可能被一个索引扫描返回。不过，当一个索引扫描对于一个给定索引列上没有约束子句时，这种讨论就不成立了。实际上，这意 味着设置了<structfield>amoptionalkey</structfield>为真的索引必须索引空值，因为规划器可能会决定在根本没有扫描键的时候使用这样的索引。一个相关的限制是一个支持 多索引列的索引访问方法<emphasis>必须</emphasis>支持索引第一列之后的列中的空值，因 为规划器会认为这个索引可以用于在那些列上没有限制的查询。例如，考虑一个在(a,b)上的索引和一个有<literal>WHERE a = 4</literal>的查询。系统会认为该索引可以用于扫描 <literal>a = 4</literal>的行， 如果索引忽略了 b 为空的行，那么就是错误的。不过，忽略那些在第一个索引列上值为空的行是 OK 的。一个索引空的索引访问方法可能也会设置<structfield>amsearchnulls</structfield>，表明它支持将<literal>IS NULL</literal>和<literal>IS NOT NULL</literal>子句作为搜索条件。
+  </para>
+
+  <para>
+  <structfield>amcaninclude</structfield> 一个标志指示此访问方法是否支持 <quote>included</quote>列，这些列可以包含除键列之外的其他列（不处理它们） 。上一段中的要求仅适用于关键列。除其他外，<structfield>amcanmulticol</structfield>=<literal>false</literal>
+   和 <structfield>amcaninclude</structfield>=<literal>true</literal>组合是实用的。这表明可以有包含列，而只有一个键列。此外，<structfield>amoptionalkey</structfield>独立地，包含列必须可以为空。
   </para>
 
  </sect1>
@@ -472,11 +478,15 @@ aminsert (Relation indexRelation,
           ItemPointer heap_tid,
           Relation heapRelation,
           IndexUniqueCheck checkUnique,
+          bool indexUnchanged,
           IndexInfo *indexInfo);
 </programlisting>
    向现有索引插入一个新元组。<literal>values</literal>和<literal>isnull</literal>数组给出需要被索引的键值，而<literal>heap_tid</literal>是要被索引的 TID。 如果该访问方法支持唯一索引（它的<structfield>amcanunique</structfield>标志为真），那么<literal>checkUnique</literal>指示要执行的唯一性检查类型。这根据唯一约束是否为可推迟的而变化，详见<xref linkend="index-unique-checks"/>。通常在执行唯一性检查时访问方法仅需要<literal>heapRelation</literal>参数（因为那时它将不得不到堆中验证元组的存活性）。
   </para>
 
+  <para>
+  <literal>indexUnchanged</literal>布尔值暗示了索引元组的性质。如果为真，则元组是现有索引元组的副本。新元组是逻辑上不变的后继 MVCC 元组版本。当<command>UPDATE</command>执行，没有更改任何被索引的列，但仍请求索引中的新版本时，就会发生这种情况。当同一逻辑行的多个版本累积时，索引 AM 可以使用此提示来决定是否对索引的某些部分应用自下而上的索引删除。请注意更新非键列不会影响<literal>indexUnchanged</literal>的值。
+  </para>
 <!--==========================orignal english content==========================
   <para>
    The function's Boolean result value is significant only when
@@ -603,7 +613,7 @@ amvacuumcleanup (IndexVacuumInfo *info,
   </para>
 ____________________________________________________________________________-->
   <para>
-   从<productname>PostgreSQL</productname> 8.4 开始，<function>amvacuumcleanup</function>将也会在一个<command>ANALYZE</command>操作结束时被调用。这种情况中<literal>stats</literal>总是 NULL 并且任何返回值都将会被忽略。这种情况可以通过检测<literal>info-&gt;analyze_only</literal>来区分。我们建议，在这样的调用中访问方法除了做插入后的清理之外什么也不做，并且那是仅仅是在一个自动清理工作者进程中。
+   <function>amvacuumcleanup</function>将也会在一个<command>ANALYZE</command>操作结束时被调用。这种情况中<literal>stats</literal>总是 NULL 并且任何返回值都将会被忽略。这种情况可以通过检测<literal>info-&gt;analyze_only</literal>来区分。我们建议，在这样的调用中访问方法除了做插入后的清理之外什么也不做，并且那是仅仅是在一个自动清理工作者进程中。
   </para>
 
 <!--==========================orignal english content==========================
@@ -627,7 +637,9 @@ ____________________________________________________________________________-->
 bool
 amcanreturn (Relation indexRelation, int attno);
 </programlisting>
-   通过返回型为一个<structname>IndexTuple</structname>的索引项的被索引列值，检查索引是否能在给定列上支持<link linkend="indexes-index-only-scans"><firstterm>只用索引的扫描</firstterm></link>。属性编号从 1 开始编号，即第一列的 attno 是 1。如果支持返回 TRUE，否则返回 FALSE。如果访问方法 完全不支持只用索引的扫描，其<structname>IndexAmRoutine</structname>结构中的<structfield>amcanreturn</structfield>域可以被设置为 NULL。
+   通过返回型为一个<structname>IndexTuple</structname>的索引项的被索引列值，检查索引是否能在给定列上支持<link linkend="indexes-index-only-scans"><firstterm>只用索引的扫描</firstterm></link>。属性编号从 1 开始编号，即第一列的 attno 是 1。如果支持返回 TRUE，否则返回 FALSE。
+   对于包含列（如果支持），此函数将始终返回 true，因为包含列不能被检索是没有意义的。
+如果访问方法 完全不支持只用索引的扫描，其<structname>IndexAmRoutine</structname>结构中的<structfield>amcanreturn</structfield>域可以被设置为 NULL。
   </para>
 
 <!--==========================orignal english content==========================
@@ -754,13 +766,13 @@ amproperty (Oid index_oid, int attno,
    core code does not know how to do that and will return NULL.  It may
    also be advantageous to implement <literal>AMPROP_RETURNABLE</literal> testing,
    if that can be done more cheaply than by opening the index and calling
-   <structfield>amcanreturn</structfield>, which is the core code's default behavior.
+   <function>amcanreturn</function>, which is the core code's default behavior.
    The default behavior should be satisfactory for all other standard
    properties.
   </para>
 ____________________________________________________________________________-->
   <para>
-   支持排序操作符的访问方法应该实现<literal>AMPROP_DISTANCE_ORDERABLE</literal>性质测试，因为核心代码不知道如何做该测试并且会返回 NULL。如果有比打开索引并调用<structfield>amcanreturn</structfield>（这是核心代码的默认行为）更廉价的方法来做<literal>AMPROP_RETURNABLE</literal>测试，最好也实现它。默认行为应该对所有其他标准性质是符合要求的。
+   支持排序操作符的访问方法应该实现<literal>AMPROP_DISTANCE_ORDERABLE</literal>性质测试，因为核心代码不知道如何做该测试并且会返回 NULL。如果有比打开索引并调用<function>amcanreturn</function>（这是核心代码的默认行为）更廉价的方法来做<literal>AMPROP_RETURNABLE</literal>测试，最好也实现它。默认行为应该对所有其他标准性质是符合要求的。
   </para>
 
 <!--==========================orignal english content==========================
@@ -804,9 +816,30 @@ ____________________________________________________________________________-->
 bool
 amvalidate (Oid opclassoid);
 </programlisting>
-   只要访问方法能够，为指定的操作符类验证系统目录项。例如，这可能包括所有所需支持函数所提供的测试。如果该 opclass 不合法，<function>amvalidate</function>函数必须返回假。所存在的问题应由<function>ereport</function>消息报告。
+   只要访问方法能够，为指定的操作符类验证系统目录项。例如，这可能包括所有所需支持函数所提供的测试。如果该 opclass 不合法，<function>amvalidate</function>函数必须返回假。所存在的问题应由<function>ereport</function>消息报告，通常情况下在 <literal>INFO</literal> 级。
   </para>
-
+ <para>
+<programlisting>
+void
+amadjustmembers (Oid opfamilyoid,
+                 Oid opclassoid,
+                 List *operators,
+                 List *functions);
+</programlisting>
+访问方法在合理可能的情况下验证提议的新运算符族的运算符和函数成员，并在默认值不足时设置依赖类型。
+这在执行期间<command>CREATE OPERATOR CLASS</command>调用 <command>ALTER OPERATOR FAMILY ADD</command>在后一种情况下，
+<parameter>opclassoid</parameter>是<literal>InvalidOid</literal>。
+ <type>List</type>参数是<filename>amapi.h</filename>中定义<structname>OpFamilyMember</structname>结构的列表
+  此函数执行的测试通常是由<function>amvalidate</function>执行的测试的子集
+ 因为<function>amadjustmembers</function>不能假设观察到所有成员集。
+ 例如，验证支持函数调用的形式是合理的，但不能验证是否提供了所有必需的支持函数。任何问题都会导致错误。 
+ <structname>OpFamilyMember</structname>在 opclass 的情况下，
+ 核心代码使用对结构的依赖字段的<command>CREATE OPERATOR CLASS</command>硬依赖进行初始化。
+ <command>ALTER OPERATOR FAMILY ADD</command>如果是这样，用软依赖初始化 opfamily。
+ 如果其他行为更合适， <function>amadjustmembers</function>可以调整这些字段。
+ 比如GIN、GiST、SP-GiST等索引格式，算子和opclass的相关性比较低，可以自由添加或删除算子成员，
+ 总是对opfamily设置软依赖。对其他支持功能设置软依赖项也很常见，以便在必要时可以将其删除。
+  </para>
 <!--==========================orignal english content==========================
   <para>
    The purpose of an index, of course, is to support scans for tuples matching
@@ -888,7 +921,7 @@ amrescan (IndexScanDesc scan,
 <!--==========================orignal english content==========================
   <para>
 <programlisting>
-boolean
+bool
 amgettuple (IndexScanDesc scan,
             ScanDirection direction);
 </programlisting>
@@ -911,7 +944,7 @@ amgettuple (IndexScanDesc scan,
 ____________________________________________________________________________-->
   <para>
 <programlisting>
-boolean
+bool
 amgettuple (IndexScanDesc scan,
             ScanDirection direction);
 </programlisting>
@@ -924,7 +957,8 @@ amgettuple (IndexScanDesc scan,
    scans</link> (i.e., <function>amcanreturn</function> returns true for it),
    then on success the AM must also check <literal>scan-&gt;xs_want_itup</literal>,
    and if that is true it must return the originally indexed data for the
-   index entry.  The data can be returned in the form of an
+   index entry. Columns for which <function>amcanreturn</function> returns
+   false can be returned as nulls. The data can be returned in the form of an
    <structname>IndexTuple</structname> pointer stored at <literal>scan-&gt;xs_itup</literal>,
    with tuple descriptor <literal>scan-&gt;xs_itupdesc</literal>; or in the form of
    a <structname>HeapTuple</structname> pointer stored at <literal>scan-&gt;xs_hitup</literal>,
@@ -938,7 +972,7 @@ amgettuple (IndexScanDesc scan,
   </para>
 ____________________________________________________________________________-->
   <para>
-   如果索引支持<link linkend="indexes-index-only-scans">只用索引扫描</link>（即<function>amcanreturn</function>对它返回 TRUE），则在成功时 AM 也必须检查<literal>scan-&gt;xs_want_itup</literal>，并且如果检查为真它必须返回索引项的原始被索引数据。该数据的返回形式可以是一个存储在<literal>scan-&gt;xs_itup</literal>中的<structname>IndexTuple</structname>指针外加元组描述符<literal>scan-&gt;xs_itupdesc</literal>，或者是一个存储在<literal>scan-&gt;xs_hitup</literal>中的<structname>HeapTuple</structname>指针外加元组描述符<literal>scan-&gt;xs_hitupdesc</literal>（在重构可能无法放在一个<structname>IndexTuple</structname>中的数据时，应该使用后一种格式）。不管是哪种形式，访问方法应该负责管理好指针引用的数据。至少在为扫描下一次调用<function>amgettuple</function>、<function>amrescan</function>或<function>amendscan</function>之前，该数据必须是完好的。
+   如果索引支持<link linkend="indexes-index-only-scans">只用索引扫描</link>（即<function>amcanreturn</function>对其任何一列返回 TRUE），则在成功时 AM 也必须检查<literal>scan-&gt;xs_want_itup</literal>，并且如果检查为真它必须返回索引项的原始被索引数据。<function>amcanreturn</function>返回false的列可以作为nulls返回。该数据的返回形式可以是一个存储在<literal>scan-&gt;xs_itup</literal>中的<structname>IndexTuple</structname>指针外加元组描述符<literal>scan-&gt;xs_itupdesc</literal>，或者是一个存储在<literal>scan-&gt;xs_hitup</literal>中的<structname>HeapTuple</structname>指针外加元组描述符<literal>scan-&gt;xs_hitupdesc</literal>（在重构可能无法放在一个<structname>IndexTuple</structname>中的数据时，应该使用后一种格式）。不管是哪种形式，访问方法应该负责管理好指针引用的数据。至少在为扫描下一次调用<function>amgettuple</function>、<function>amrescan</function>或<function>amendscan</function>之前，该数据必须是完好的。
   </para>
 
 <!--==========================orignal english content==========================
@@ -1430,7 +1464,7 @@ ____________________________________________________________________________-->
   </para>
 ____________________________________________________________________________-->
   <para>
-   索引访问方法必须支持多个进程对索引的并发更新。在索引扫描期间，核心<productname>PostgreSQL</productname>系统在索引上获取 <literal>AccessShareLock</literal>，并且在更新索引时（包括普通<command>VACUUM</command>）获取<literal>RowExclusiveLock</literal>。因为这些锁类型不会冲突，所以访问方法负责处理它可能需要的任何细粒度锁。把索引作为一个整体的排他锁只会在索引创建、删除或<command>REINDEX</command>时被使用。
+   索引访问方法必须支持多个进程对索引的并发更新。在索引扫描期间，核心<productname>PostgreSQL</productname>系统在索引上获取 <literal>AccessShareLock</literal>，并且在更新索引时（包括普通<command>VACUUM</command>）获取<literal>RowExclusiveLock</literal>。因为这些锁类型不会冲突，所以访问方法负责处理它可能需要的任何细粒度锁。把索引作为一个整体的<literal>ACCESS EXCLUSIVE</literal> 锁只会在索引创建、删除或<command>REINDEX</command>时被使用 (<literal>SHARE UPDATE EXCLUSIVE</literal> 取而代之的是用 <literal>CONCURRENTLY</literal>)。
   </para>
 
 <!--==========================orignal english content==========================

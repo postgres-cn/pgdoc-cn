@@ -127,7 +127,7 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  RFC 7159 指定 JSON 字符串应以 UTF8 编码。因此 JSON 类型不可能严格遵守 JSON 规范，除非数据库编码
+  <acronym>RFC</acronym> 7159 指定 JSON 字符串应以 UTF8 编码。因此 JSON 类型不可能严格遵守 JSON 规范，除非数据库编码
   是 UTF8。尝试直接包括数据库编码中无法表示的字符将会失败。反过来，能
   在数据库编码中表示但是不在 UTF8 中的字符是被允许的。
  </para>
@@ -151,7 +151,7 @@ ____________________________________________________________________________-->
  </para>
 ____________________________________________________________________________-->
  <para>
-  RFC 7159 允许 JSON 字符串包含<literal>\u<replaceable>XXXX</replaceable></literal>
+  <acronym>RFC</acronym> 7159 允许 JSON 字符串包含<literal>\u<replaceable>XXXX</replaceable></literal>
   所标记的 Unicode 转义序列。在<type>json</type>类型的输入函数中，不管数据库
   编码如何都允许 Unicode 转义，并且只检查语法正确性（即，跟在<literal>\u</literal>
   后面的四个十六进制位）。但是，<type>jsonb</type>的输入函数更加严格：它不允许对无法在数据库
@@ -956,7 +956,7 @@ ____________________________________________________________________________-->
 SELECT jdoc->'guid', jdoc->'name' FROM api WHERE jdoc @@ '$.tags[*] == "qui"';
 </programlisting>
 <programlisting>
-SELECT jdoc->'guid', jdoc->'name' FROM api WHERE jdoc @? '$.tags[*] ? (@ == "qui")';
+SELECT jdoc->'guid', jdoc->'name' FROM api WHERE jdoc @@ '$.tags[*] ? (@ == "qui")';
 </programlisting>
     GIN 索引从<literal>jsonpath</literal>中提取如下格式的语句： <replaceable>accessors_chain</replaceable> = <replaceable>const</replaceable>。
     存取器链可能由<literal>.key</literal><literal>[*]</literal>, 和 <literal>[<replaceable>index</replaceable>]</literal> 存取器组成。
@@ -1149,6 +1149,78 @@ ____________________________________________________________________________-->
 </synopsis>
       基本 JSON 值的比较会使用低层<productname>PostgreSQL</productname>
       数据类型相同的比较规则进行。字符串的比较会使用默认的数据库排序规则。
+  </para>
+ </sect2>
+
+ <sect2 id="jsonb-subscripting">
+  <title><type>jsonb</type> 下标</title>
+  <para>
+   <type>jsonb</type> 数据类型支持用于检索和修改元素的数组样式索引。 嵌套值与 <literal>jsonb_set</literal> 函数中<literal>path</literal>参数规则相同，可以被链式下标表达式指定。如果<type>jsonb</type>
+   类型的值是一个数组，数值下标从零开始，负整数从数组的最后的元素倒数。 不支持切片表达式。下标表达式的结果始终是 jsonb 数据类型。
+  </para>
+
+  <para>
+   <command>UPDATE</command> 语句或许在
+   <literal>SET</literal> 子句中使用下标来修改 <type>jsonb</type> 值。下标路径必须对它存在范围内的所有受影响的值都是可遍历的。 例如，<literal>val</literal>,<literal>val['a']</literal>,和 <literal>val['a']['b']</literal>如果每个路径都是一个对象，  则<literal>val['a']['b']['c']</literal>路径可以一直被遍历访问到 <literal>c</literal>， 如果 <literal>val['a']</literal> 或者 <literal>val['a']['b']</literal>
+   中任何一个没有定义， 将创建为空对象并根据需要进行填充。 但是， 如果 <literal>val</literal> 本身或者其中任何一个中间值被定义为非对象， 例如 字符串， 数字，或者<literal>jsonb</literal> <literal>null</literal>等，将无法访问并发生错误，事务将中止。
+  </para>
+
+  <para>
+   下标语法的例子:
+
+<programlisting>
+
+-- -- 通过键获取对象值
+SELECT ('{"a": 1}'::jsonb)['a'];
+
+--  通过键路径提取嵌套对象的值
+SELECT ('{"a": {"b": {"c": 1}}}'::jsonb)['a']['b']['c'];
+
+-- 通过索引获取数组元素
+SELECT ('[1, "2", null]'::jsonb)[1];
+
+-- 按键更新对象值。请注意“1”周围的单引号。
+-- 赋值的值也必须是jsonb类型
+UPDATE table_name SET jsonb_field['key'] = '1';
+
+--  如果 jsonb_field['a']['b'] 中的任何数据不是对象，这将导致错误。
+-- 例如，值 {"a": 1} 具有键 'a' 的数值。
+UPDATE table_name SET jsonb_field['a']['b']['c'] = '1';
+
+-- 在 WHERE 子句中使用下标过滤数据。
+-- 由于下标的结果是jsonb，所以要与之比较的值也一定是jsonb。
+-- 双引号还使“值”成为有效的 jsonb 字符串。
+SELECT * FROM table_name WHERE jsonb_field['key'] = '"value"';
+</programlisting>
+
+   <type>jsonb</type>不同于 <literal>jsonb_set</literal>，通过下标赋值处理边界情况. 当源值 <type>jsonb</type>
+   是 <literal>NULL</literal>时, 赋值通过下标处理，
+   好像是空JSON值 类型（对象或数组）隐含在下标键中：
+
+<programlisting>
+-- 如果 jsonb_field 为 NULL，返回结果将是 {"a": 1}
+UPDATE table_name SET jsonb_field['a'] = '1';
+
+-- 如果 jsonb_field 为 NULL，返回结果将是 [1]
+UPDATE table_name SET jsonb_field[0] = '1';
+</programlisting>
+   如果您为缺少元素的数组指定索引，则会添加<literal>NULL</literal> 元素， 直到索引可达并且可以设置值。
+<programlisting>
+-- 如果 jsonb_field 是 [] 返回结果是 [null, null, 2],
+-- 如果 jsonb_field 是 [0]，返回结果是 [0, null, 2]
+UPDATE table_name SET jsonb_field[2] = '2';
+</programlisting>
+
+   <type>jsonb</type> 值接受赋值给不存在的下标路径，只要最后一个可以被访问到的元素是一个对象或者数组 ，正如相应的下标所暗示的那样。（没有访问到路径中最后一个下标指定的元素，可能是任何值）创建嵌套数组或对象结构，如在前面的例子中，指定的下标路径用 <literal>null</literal>填充
+
+<programlisting>
+-- 如果 jsonb_field 是 {}，返回结果是 {"a": [{"b": 1}]}
+UPDATE table_name SET jsonb_field['a'][0]['b'] = '1';
+
+-- 如果 jsonb_field 为 []，返回结果是 [null, {"a": 1}]
+UPDATE table_name SET jsonb_field[1]['a'] = '1';
+</programlisting>
+
   </para>
  </sect2>
 
