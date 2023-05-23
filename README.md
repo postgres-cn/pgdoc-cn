@@ -112,6 +112,11 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 
 关于html页面和sgml文件的对应关系，可通过点击“在线阅读”web页面右上角的“纠错本页面”链接跳转到Github仓库中的相应sgml文件的编辑页面。
 
+
+## 关于许可
+关于本翻译文档的使用，遵从[PostgreSQL licence](https://www.postgresql.org/about/licence/)。
+
+
 ## 其它
 1. Github仓库中的sgml文件编码是UTF8。
 2. Github仓库中的修正会由不定期的反映到在线中文手册中，如果发生了编译错误，可查看相应版本的日志文件，比如：[http://postgres.cn/docs/13/build.log](http://postgres.cn/docs/13/build.log)。
