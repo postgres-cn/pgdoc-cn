@@ -201,7 +201,8 @@ GetForeignRelSize(PlannerInfo *root,
      (The initial value is
      from <structname>pg_class</structname>.<structfield>reltuples</structfield>
      which represents the total row count seen by the
-     last <command>ANALYZE</command>.)
+     last <command>ANALYZE</command>; it will be <literal>-1</literal> if
+     no <command>ANALYZE</command> has been done on this foreign table.)
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -210,7 +211,8 @@ ____________________________________________________________________________-->
      如果该函数能够计算出一个平均结果行宽度的更好的估计值，该函数也可能选择更新<literal>baserel-&gt;width</literal>。
      (初始值基于列数据类型和最后一个<command>ANALYZE</command>测量的列平均宽度值。)
      此外，如果该函数能够更好地计算出外部表的总行数，则该函数可以更新<literal>baserel-&gt;tuples</literal>。
-     （初始值来自<structname>pg_class</structname>。<structfield>reltuples</structfield>表示最后一次<command>ANALYZE</command>看到的总行数。）
+     （初始值来自<structname>pg_class</structname>。
+     <structfield>reltuples</structfield>表示最后一次<command>ANALYZE</command>看到的总行数;如果没有<command>ANALYZE</command>在此外表上完成，它将是<literal>-1</literal>。）
     </para>
 
 <!--==========================orignal english content==========================
@@ -692,7 +694,8 @@ ____________________________________________________________________________-->
     <para>
 <programlisting>
 void
-AddForeignUpdateTargets(Query *parsetree,
+AddForeignUpdateTargets(PlannerInfo *root,
+                        Index rtindex,
                         RangeTblEntry *target_rte,
                         Relation target_relation);
 </programlisting>
@@ -710,7 +713,8 @@ ____________________________________________________________________________-->
     <para>
 <programlisting>
 void
-AddForeignUpdateTargets(Query *parsetree,
+AddForeignUpdateTargets(PlannerInfo *root,
+                        Index rtindex,
                         RangeTblEntry *target_rte,
                         Relation target_relation);
 </programlisting>
@@ -720,36 +724,43 @@ AddForeignUpdateTargets(Query *parsetree,
 
 <!--==========================orignal english content==========================
     <para>
-     To do that, add <structname>TargetEntry</structname> items to
-     <literal>parsetree-&gt;targetList</literal>, containing expressions for the
-     extra values to be fetched.  Each such entry must be marked
-     <structfield>resjunk</structfield> = <literal>true</literal>, and must have a distinct
-     <structfield>resname</structfield> that will identify it at execution time.
-     Avoid using names matching <literal>ctid<replaceable>N</replaceable></literal>,
-     <literal>wholerow</literal>, or
-     <literal>wholerow<replaceable>N</replaceable></literal>, as the core system can
-     generate junk columns of these names.
-     If the extra expressions are more complex than simple Vars, they
-     must be run through <function>eval_const_expressions</function>
-     before adding them to the target list.
+     To do that, construct a <structname>Var</structname> representing
+     an extra value you need, and pass it
+     to <function>add_row_identity_var</function>, along with a name for
+     the junk column.  (You can do this more than once if several columns
+     are needed.)  You must choose a distinct junk column name for each
+     different <structname>Var</structname> you need, except
+     that <structname>Var</structname>s that are identical except for
+     the <structfield>varno</structfield> field can and should share a
+     column name.
+     The core system uses the junk column names
+     <literal>tableoid</literal> for a
+     table's <structfield>tableoid</structfield> column,
+     <literal>ctid</literal>
+     or <literal>ctid<replaceable>N</replaceable></literal>
+     for <structfield>ctid</structfield>,
+     <literal>wholerow</literal>
+     for a whole-row <structname>Var</structname> marked with
+     <structfield>vartype</structfield> = <type>RECORD</type>,
+     and <literal>wholerow<replaceable>N</replaceable></literal>
+     for a whole-row <structname>Var</structname> with
+     <structfield>vartype</structfield> equal to the table's declared row type.
+     Re-use these names when you can (the planner will combine duplicate
+     requests for identical junk columns).  If you need another kind of
+     junk column besides these, it might be wise to choose a name prefixed
+     with your extension name, to avoid conflicts against other FDWs.
     </para>
 ____________________________________________________________________________-->
     <para>
-     要做到这一点，向<literal>parsetree-&gt;targetList</literal>中增加<structname>TargetEntry</structname>项，它们包含要被获取的额外值的表达式。每一个这样的项必须被标记为<structfield>resjunk</structfield> = <literal>true</literal>，并且必须有一个可区分的<structfield>resname</structfield>用于在执行期间标识它。请避免使用匹配<literal>ctid<replaceable>N</replaceable></literal>、<literal>wholerow</literal>或<literal>wholerow<replaceable>N</replaceable></literal>的名字，因为核心系统可能会生成使用这些名字的junk列。如果额外的表达式比简单的Var更加复杂，在把它们加入到目标列表之前必须把它们用<function>eval_const_expressions</function>进行处理。
-    </para>
-
-<!--==========================orignal english content==========================
-    <para>
-     Although this function is called during planning, the
-     information provided is a bit different from that available to other
-     planning routines.
-     <literal>parsetree</literal> is the parse tree for the <command>UPDATE</command> or
-     <command>DELETE</command> command, while <literal>target_rte</literal> and
-     <literal>target_relation</literal> describe the target foreign table.
-    </para>
-____________________________________________________________________________-->
-    <para>
-     尽管这个函数在规划过程中被调用，但所提供的信息与其他规划例程可用的信息有点区别。<literal>parsetree</literal>是<command>UPDATE</command>或<command>DELETE</command>命令的分析树，而<literal>target_rte</literal>和<literal>target_relation</literal>描述目标外部表。
+     要做到这一点，构造一个<structname>Var</structname>以表示你需要的额外值，并将其传递给<function>add_row_identity_var</function>，与junk列的名称一起。
+     (如果需要多个列，你可以多次执行此操作。)
+     你必须为你需要的每个不同的<structname>Var</structname>选择一个不同的junk列名，除了<structname>Var</structname>s是相同的，以及除了<structfield>varno</structfield>字段能够并且应该共享一个列名。
+     核心系统使用junk列名<literal>tableoid</literal>来表示表的<structfield>tableoid</structfield>列，
+     <literal>ctid</literal> 或 <literal>ctid<replaceable>N</replaceable></literal> 表示 <structfield>ctid</structfield>，
+     <literal>wholerow</literal> 表示以 <structfield>vartype</structfield> = <type>RECORD</type>标记的整个行 <structname>Var</structname> ，
+     以及<literal>wholerow<replaceable>N</replaceable></literal>表示 整个行 <structname>Var</structname> ，其<structfield>vartype</structfield>等于表的声明行类型。
+     在你可以的情况下重新用这些名称(计划器将合并完全相同的junk列的重复请求)。
+     如果你还需要除此之外的其他类型的junk列，也许明智的方法是选择以扩展名为前缀的名称，以避免与其他FDWs发生冲突。
     </para>
 
 <!--==========================orignal english content==========================
@@ -803,12 +814,16 @@ PlanForeignModify(PlannerInfo *root,
      <literal>resultRelation</literal> identifies the target foreign table by its
      range table index.  <literal>subplan_index</literal> identifies which target of
      the <structname>ModifyTable</structname> plan node this is, counting from zero;
-     use this if you want to index into <literal>plan-&gt;plans</literal> or other
-     substructure of the <literal>plan</literal> node.
+     use this if you want to index into per-target-relation substructures of the
+     <literal>plan</literal> node.
     </para>
 ____________________________________________________________________________-->
     <para>
-     <literal>root</literal>是规划器关于该查询的全局信息。<literal>plan</literal>是<structname>ModifyTable</structname>计划节点，它除了<structfield>fdwPrivLists</structfield>域之外是完整的。<literal>resultRelation</literal>通过目标外部表的范围表索引来标识它。<literal>subplan_index</literal>标识这是<structname>ModifyTable</structname>计划节点的哪个目标，从零开始计数；如果你希望索引到<literal>plan-&gt;plans</literal>或其他<literal>plan</literal>节点的子结构中，请使用它。
+     <literal>root</literal>是规划器关于该查询的全局信息。
+     <literal>plan</literal>是<structname>ModifyTable</structname>计划节点，它除了<structfield>fdwPrivLists</structfield>域之外是完整的。
+     <literal>resultRelation</literal>通过目标外部表的范围表索引来标识它。
+     <literal>subplan_index</literal>标识这是<structname>ModifyTable</structname>计划节点的哪个目标，从零开始计数；
+     如果你希望索引到<literal>plan</literal>节点的每-目标-关系子结构中，请使用它。
     </para>
 
 <!--==========================orignal english content==========================
@@ -846,8 +861,9 @@ BeginForeignModify(ModifyTableState *mtstate,
      Begin executing a foreign table modification operation.  This routine is
      called during executor startup.  It should perform any initialization
      needed prior to the actual table modifications.  Subsequently,
-     <function>ExecForeignInsert</function>, <function>ExecForeignUpdate</function> or
-     <function>ExecForeignDelete</function> will be called for each tuple to be
+     <function>ExecForeignInsert/ExecForeignBatchInsert</function>,
+     <function>ExecForeignUpdate</function> or
+     <function>ExecForeignDelete</function> will be called for tuple(s) to be
      inserted, updated, or deleted.
     </para>
 ____________________________________________________________________________-->
@@ -861,7 +877,10 @@ BeginForeignModify(ModifyTableState *mtstate,
                    int eflags);
 </programlisting>
 
-     开始执行一个外部表修改操作。这个例程在执行器启动期间被调用。它应该执行任何先于实际表修改的初始化工作。随后，<function>ExecForeignInsert</function>、<function>ExecForeignUpdate</function>或<function>ExecForeignDelete</function>将被为每一个将被插入、更新或删除的元组调用。
+     开始执行一个外部表修改操作。
+     这个例程在执行器启动期间被调用。
+     它应该执行任何先于实际表修改的初始化工作。
+     随后，<function>ExecForeignInsert/ExecForeignBatchInsert</function>、<function>ExecForeignUpdate</function>或<function>ExecForeignDelete</function>将被为被插入、更新或删除的元组调用。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1002,6 +1021,138 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
     <para>
 <programlisting>
+TupleTableSlot **
+ExecForeignBatchInsert(EState *estate,
+                       ResultRelInfo *rinfo,
+                       TupleTableSlot **slots,
+                       TupleTableSlot **planSlots,
+                       int *numSlots);
+</programlisting>
+
+     Insert multiple tuples in bulk into the foreign table.
+     The parameters are the same for <function>ExecForeignInsert</function>
+     except <literal>slots</literal> and <literal>planSlots</literal> contain
+     multiple tuples and <literal>*numSlots</literal> specifies the number of
+     tuples in those arrays.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+TupleTableSlot **
+ExecForeignBatchInsert(EState *estate,
+                       ResultRelInfo *rinfo,
+                       TupleTableSlot **slots,
+                       TupleTableSlot **planSlots,
+                       int *numSlots);
+</programlisting>
+
+     将多个元组成批地插入外表。
+     参数与<function>ExecForeignInsert</function>相同，除了<literal>slots</literal> 和 <literal>planSlots</literal>包含多个元组，并且<literal>*numSlots</literal>指定这些数组中的元组的数量。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The return value is an array of slots containing the data that was
+     actually inserted (this might differ from the data supplied, for
+     example as a result of trigger actions.)
+     The passed-in <literal>slots</literal> can be re-used for this purpose.
+     The number of successfully inserted tuples is returned in
+     <literal>*numSlots</literal>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     返回值是一个槽的数组，包含实际插入的数据(这可能与提供的数据不同，例如作为触发器活动的结果)。
+     传入的<literal>slots</literal>可以重复用于此目的。
+     成功插入元组的数量以<literal>*numSlots</literal>返回。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The data in the returned slot is used only if the <command>INSERT</command>
+     statement involves a view
+     <literal>WITH CHECK OPTION</literal>; or if the foreign table has
+     an <literal>AFTER ROW</literal> trigger.  Triggers require all columns,
+     but the FDW could choose to optimize away returning some or all columns
+     depending on the contents of the
+     <literal>WITH CHECK OPTION</literal> constraints.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     只有当<command>INSERT</command> 语句涉及到<literal>WITH CHECK OPTION</literal>视图时，返回槽中的数据才会被使用;或者如果外表有一个<literal>AFTER ROW</literal>触发器时。
+     触发器需要所有列，但是FDW可以根据<literal>WITH CHECK OPTION</literal>约束的内容选择优化返回部分或全部列。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExecForeignBatchInsert</function> or
+     <function>GetForeignModifyBatchSize</function> pointer is set to
+     <literal>NULL</literal>, attempts to insert into the foreign table will
+     use <function>ExecForeignInsert</function>.
+     This function is not used if the <command>INSERT</command> has the
+     <literal>RETURNING</literal> clause.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>ExecForeignBatchInsert</function> 或 <function>GetForeignModifyBatchSize</function>指针被设置为<literal>NULL</literal>，尝试插入外表将使用<function>ExecForeignInsert</function>。
+     如果<command>INSERT</command>有<literal>RETURNING</literal>子句，这个函数不被使用。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Note that this function is also called when inserting routed tuples into
+     a foreign-table partition.  See the callback functions
+     described below that allow the FDW to support that.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     注意这个函数也会被调用，当把路由元组插入外表分区时。
+     请参阅下面允许FDW支持该功能的回调函数的描述。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+int
+GetForeignModifyBatchSize(ResultRelInfo *rinfo);
+</programlisting>
+
+     Report the maximum number of tuples that a single
+     <function>ExecForeignBatchInsert</function> call can handle for
+     the specified foreign table.  The executor passes at most
+     the given number of tuples to <function>ExecForeignBatchInsert</function>.
+     <literal>rinfo</literal> is the <structname>ResultRelInfo</structname> struct describing
+     the target foreign table.
+     The FDW is expected to provide a foreign server and/or foreign
+     table option for the user to set this value, or some hard-coded value.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+int
+GetForeignModifyBatchSize(ResultRelInfo *rinfo);
+</programlisting>
+
+     报告单个<function>ExecForeignBatchInsert</function>调用可以为指定外表处理的元组的最大数量。
+     执行器传递最多给定数量的元组到<function>ExecForeignBatchInsert</function>。
+     <literal>rinfo</literal>是描述目标外表的<structname>ResultRelInfo</structname>结构体。
+     FDW应该为用户提供一个外部服务器和/或外部表选项来设置这个值，或者一些硬-编码的值。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExecForeignBatchInsert</function> or
+     <function>GetForeignModifyBatchSize</function> pointer is set to
+     <literal>NULL</literal>, attempts to insert into the foreign table will
+     use <function>ExecForeignInsert</function>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>ExecForeignBatchInsert</function> 或 <function>GetForeignModifyBatchSize</function> 指针被设置为<literal>NULL</literal>，尝试插入到外表将使用<function>ExecForeignInsert</function>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
 TupleTableSlot *
 ExecForeignUpdate(EState *estate,
                   ResultRelInfo *rinfo,
@@ -1016,10 +1167,14 @@ ExecForeignUpdate(EState *estate,
      <literal>slot</literal> contains the new data for the tuple; it will match the
      row-type definition of the foreign table.
      <literal>planSlot</literal> contains the tuple that was generated by the
-     <structname>ModifyTable</structname> plan node's subplan; it differs from
-     <literal>slot</literal> in possibly containing additional <quote>junk</quote>
-     columns.  In particular, any junk columns that were requested by
-     <function>AddForeignUpdateTargets</function> will be available from this slot.
+     <structname>ModifyTable</structname> plan node's subplan.  Unlike
+     <literal>slot</literal>, this tuple contains only the new values for
+     columns changed by the query, so do not rely on attribute numbers of the
+     foreign table to index into <literal>planSlot</literal>.
+     Also, <literal>planSlot</literal> typically contains
+     additional <quote>junk</quote> columns.  In particular, any junk columns
+     that were requested by <function>AddForeignUpdateTargets</function> will
+     be available from this slot.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -1031,7 +1186,14 @@ ExecForeignUpdate(EState *estate,
                   TupleTableSlot *planSlot);
 </programlisting>
 
-     更新外部表中的一个元组。<literal>estate</literal>是查询的全局执行状态。<literal>rinfo</literal>是描述目标外部表的<structname>ResultRelInfo</structname>结构。<literal>slot</literal>包含元组的新数据；它将匹配外部表的行类型定义。<literal>planSlot</literal>包含由<structname>ModifyTable</structname>计划节点的子计划生成的元组；它与<literal>slot</literal>不同，它可能包含额外的<quote>junk</quote>列（<command>INSERT</command>情况通常不关心<literal>planSlot</literal>，但是为了完整性还是在这里提供它）。特殊地，任何<function>AddForeignUpdateTargets</function>所要求的junk列在这个槽中都是有效的。
+     更新外部表中的一个元组。
+     <literal>estate</literal>是查询的全局执行状态。
+     <literal>rinfo</literal>是描述目标外部表的<structname>ResultRelInfo</structname>结构。
+     <literal>slot</literal>包含元组的新数据；它将匹配外部表的行类型定义。
+     <literal>planSlot</literal>包含由<structname>ModifyTable</structname>计划节点的子计划生成的元组。
+     不像<literal>slot</literal>，此元组仅包含查询所更改的列的新值，因此不依赖外表的属性号来索引<literal>planSlot</literal>。
+     此外，<literal>planSlot</literal>通常包含额外的<quote>junk</quote>列。
+     特殊地，任何<function>AddForeignUpdateTargets</function>所要求的junk列在这个槽中都是有效的。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1061,9 +1223,9 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-    在返回槽中的数据只有在<command>UPDATE</command>语句具有一个<literal>RETURNING</literal>子句或者包括一个视图<literal>WITH CHECK OPTION</literal>；或者如果外部表具有一个<literal>AFTER ROW</literal>触发器时才被使用。
-    触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</literal>子句的内容或<literal>WITH CHECK OPTION</literal> 约束返回某些或全部列。
-    不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
+     在返回槽中的数据只有在<command>UPDATE</command>语句具有一个<literal>RETURNING</literal>子句或者包括一个视图<literal>WITH CHECK OPTION</literal>；或者如果外部表具有一个<literal>AFTER ROW</literal>触发器时才被使用。
+     触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</literal>子句的内容或<literal>WITH CHECK OPTION</literal> 约束返回某些或全部列。
+     不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1135,7 +1297,9 @@ ____________________________________________________________________________-->
     </para>
 ____________________________________________________________________________-->
     <para>
-    在返回槽中的数据只有在<command>DELETE</command>查询具有一个<literal>RETURNING</literal>子句或者外部表具有一个<literal>AFTER ROW</literal>触发器时才被使用。触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</literal>子句的内容返回某些或全部列。不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
+     在返回槽中的数据只有在<command>DELETE</command>查询具有一个<literal>RETURNING</literal>子句或者外部表具有一个<literal>AFTER ROW</literal>触发器时才被使用。
+     触发器要求所有的列，但是 FDW 应该选择优化成根据<literal>RETURNING</literal>子句的内容返回某些或全部列。
+     不管怎样，某些槽必须被返回来指示成功，或者查询报告的行计数将会是错误的。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1208,8 +1372,9 @@ BeginForeignInsert(ModifyTableState *mtstate,
      in both cases when it is the partition chosen for tuple routing and the
      target specified in a <command>COPY FROM</command> command.  It should
      perform any initialization needed prior to the actual insertion.
-     Subsequently, <function>ExecForeignInsert</function> will be called for
-     each tuple to be inserted into the foreign table.
+     Subsequently, <function>ExecForeignInsert</function> or
+     <function>ExecForeignBatchInsert</function> will be called for
+     tuple(s) to be inserted into the foreign table.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -1219,7 +1384,10 @@ BeginForeignInsert(ModifyTableState *mtstate,
                    ResultRelInfo *rinfo);
 </programlisting>
 
-     开始在外部表上执行插入操作。当外部表被选中作为元组路由的分区以及<command>COPY FROM</command>命令中指定的目标时，在第一个元组被插入到该外部表之前会调用这个例程。它应该执行实际插入之前所需的任何初始化工作。随后，为每一个被插入到该外部表的元组都将调用<function>ExecForeignInsert</function>。
+     开始在外部表上执行插入操作。
+     当外部表被选中作为元组路由的分区以及<command>COPY FROM</command>命令中指定的目标时，在第一个元组被插入到该外部表之前会调用这个例程。
+     它应该执行实际插入之前所需的任何初始化工作。
+     随后，为每一个被插入到该外部表的元组都将调用<function>ExecForeignInsert</function>或<function>ExecForeignBatchInsert</function>。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1266,12 +1434,12 @@ ____________________________________________________________________________-->
     <para>
      Note that if the FDW does not support routable foreign-table partitions
      and/or executing <command>COPY FROM</command> on foreign tables, this
-     function or <function>ExecForeignInsert</function> subsequently called
-     must throw error as needed.
+     function or <function>ExecForeignInsert/ExecForeignBatchInsert</function>
+     subsequently called must throw error as needed.
     </para>
 ____________________________________________________________________________-->
     <para>
-     请注意如果 FDW 不支持在外表上的可路由外表分区和/或执行 <command>COPY FROM</command> ，这个函数或 <function>ExecForeignInsert</function> 后续的调用必须根据需要发出错误。
+     请注意如果 FDW 不支持在外表上的可路由外表分区和/或执行 <command>COPY FROM</command> ，这个函数或 <function>ExecForeignInsert/ExecForeignBatchInsert</function> 后续的调用必须根据需要发出错误。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1413,15 +1581,21 @@ PlanDirectModify(PlannerInfo *root,
      To execute the direct modification on the remote server, this function
      must rewrite the target subplan with a <structname>ForeignScan</structname> plan
      node that executes the direct modification on the remote server.  The
-     <structfield>operation</structfield> field of the <structname>ForeignScan</structname> must
-     be set to the <literal>CmdType</literal> enumeration appropriately; that is,
+     <structfield>operation</structfield> and <structfield>resultRelation</structfield> fields
+     of the <structname>ForeignScan</structname> must be set appropriately.
+     <structfield>operation</structfield> must be set to the <literal>CmdType</literal>
+     enumeration corresponding to the statement kind (that is,
      <literal>CMD_UPDATE</literal> for <command>UPDATE</command>,
      <literal>CMD_INSERT</literal> for <command>INSERT</command>, and
-     <literal>CMD_DELETE</literal> for <command>DELETE</command>.
+     <literal>CMD_DELETE</literal> for <command>DELETE</command>), and the
+     <literal>resultRelation</literal> argument must be copied to the
+     <structfield>resultRelation</structfield> field.
     </para>
 ____________________________________________________________________________-->
     <para>
-     要在远程服务器上执行直接修改，这个函数必须用一个<structname>ForeignScan</structname>计划节点（它在远程服务器上执行直接修改）重写目标子计划。<structname>ForeignScan</structname>的<structfield>operation</structfield>域必须被合适地设置为<literal>CmdType</literal>枚举值，即<literal>CMD_UPDATE</literal>表示<command>UPDATE</command>、<literal>CMD_INSERT</literal>表示<command>INSERT</command>而<literal>CMD_DELETE</literal>表示<command>DELETE</command>。
+     要在远程服务器上执行直接修改，这个函数必须用一个<structname>ForeignScan</structname>计划节点（它在远程服务器上执行直接修改）重写目标子计划。
+     <structname>ForeignScan</structname>的<structfield>operation</structfield>和<structfield>resultRelation</structfield>字段必须被合适地设置。
+     <structfield>operation</structfield>必须被设置为与语句类型相对应的<literal>CmdType</literal>枚举值(也就是，<literal>CMD_UPDATE</literal> 对 <command>UPDATE</command>、<literal>CMD_INSERT</literal> 对 <command>INSERT</command>、以及<literal>CMD_DELETE</literal> 对 <command>DELETE</command>)，并且<literal>resultRelation</literal> 参数必须拷贝到 <structfield>resultRelation</structfield> 字段。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1513,9 +1687,8 @@ IterateDirectModify(ForeignScanState *node);
      needed for the <literal>RETURNING</literal> calculation, returning it in a
      tuple table slot (the node's <structfield>ScanTupleSlot</structfield> should be
      used for this purpose).  The data that was actually inserted, updated
-     or deleted must be stored in the
-     <literal>es_result_relation_info-&gt;ri_projectReturning-&gt;pi_exprContext-&gt;ecxt_scantuple</literal>
-     of the node's <structname>EState</structname>.
+     or deleted must be stored in
+     <literal>node->resultRelInfo->ri_projectReturning-&gt;pi_exprContext-&gt;ecxt_scantuple</literal>.
      Return NULL if no more rows are available.
      Note that this is called in a short-lived memory context that will be
      reset between invocations.  Create a memory context in
@@ -1529,7 +1702,12 @@ TupleTableSlot *
 IterateDirectModify(ForeignScanState *node);
 </programlisting>
 
-     当<command>INSERT</command>、<command>UPDATE</command>或者<command>DELETE</command>查询没有<literal>RETURNING</literal>子句时，完成远程服务器上的直接修改后返回 NULL。当查询有该子句时，取出一个包含<literal>RETURNING</literal>计算所需数据的结果，用一个元组表槽返回它（节点的<structfield>ScanTupleSlot</structfield>应被用于这一目的）。实际被插入、更新或者删除的数据必须被存储在该节点的<structname>EState</structname>的<literal>es_result_relation_info-&gt;ri_projectReturning-&gt;pi_exprContext-&gt;ecxt_scantuple</literal>中。如果没有更多行可用，则返回 NULL。注意这个函数会在一个短期生存的内存上下文中被调用，该上下文会在两次调用之间被重置。如果需要一个长期存在的存储，可以在<function>BeginDirectModify</function>中创建一个内存上下文，或者使用该节点的<structname>EState</structname>中的<structfield>es_query_cxt</structfield>。
+     当<command>INSERT</command>、<command>UPDATE</command>或者<command>DELETE</command>查询没有<literal>RETURNING</literal>子句时，完成远程服务器上的直接修改后返回 NULL。
+     当查询有该子句时，取出一个包含<literal>RETURNING</literal>计算所需数据的结果，用一个元组表槽返回它（节点的<structfield>ScanTupleSlot</structfield>应被用于这一目的）。
+     实际被插入、更新或者删除的数据必须被存储在<literal>node->resultRelInfo->ri_projectReturning-&gt;pi_exprContext-&gt;ecxt_scantuple</literal>中。
+     如果没有更多行可用，则返回 NULL。
+     注意这个函数会在一个短期生存的内存上下文中被调用，该上下文会在两次调用之间被重置。
+     如果需要一个长期存在的存储，可以在<function>BeginDirectModify</function>中创建一个内存上下文，或者使用该节点的<structname>EState</structname>中的<structfield>es_query_cxt</structfield>。
     </para>
 
 <!--==========================orignal english content==========================
@@ -1602,6 +1780,105 @@ ____________________________________________________________________________-->
      如果<function>EndDirectModify</function>指针被设置为<literal>NULL</literal>，不会尝试在远程服务器上执行直接修改。
     </para>
 
+   </sect2>
+
+   <sect2 id="fdw-callbacks-truncate">
+<!--==========================orignal english content==========================
+    <title>FDW Routines for <command>TRUNCATE</command></title>
+____________________________________________________________________________-->
+    <title>FDW Routines for <command>TRUNCATE</command></title>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ExecForeignTruncate(List *rels,
+                    DropBehavior behavior,
+                    bool restart_seqs);
+</programlisting>
+
+     Truncate foreign tables.  This function is called when
+     <xref linkend="sql-truncate"/> is executed on a foreign table.
+     <literal>rels</literal> is a list of <structname>Relation</structname>
+     data structures of foreign tables to truncate.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+ExecForeignTruncate(List *rels,
+                    DropBehavior behavior,
+                    bool restart_seqs);
+</programlisting>
+
+     截断外表。
+     当在外表上执行<xref linkend="sql-truncate"/>时该函数被调用。
+     <literal>rels</literal>是要截断的外表的<structname>Relation</structname>数据结构的列表。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     <literal>behavior</literal> is either <literal>DROP_RESTRICT</literal>
+     or <literal>DROP_CASCADE</literal> indicating that the
+     <literal>RESTRICT</literal> or <literal>CASCADE</literal> option was
+     requested in the original <command>TRUNCATE</command> command,
+     respectively.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <literal>behavior</literal>是<literal>DROP_RESTRICT</literal>或<literal>DROP_CASCADE</literal>，分别表示在原始的<command>TRUNCATE</command>命令中请求了<literal>RESTRICT</literal> 或 <literal>CASCADE</literal>选项。
+    </para>
+    
+<!--==========================orignal english content==========================
+    <para>
+     If <literal>restart_seqs</literal> is <literal>true</literal>,
+     the original <command>TRUNCATE</command> command requested the
+     <literal>RESTART IDENTITY</literal> behavior, otherwise the
+     <literal>CONTINUE IDENTITY</literal> behavior was requested.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<literal>restart_seqs</literal>为<literal>true</literal>，原始的<command>TRUNCATE</command>命令需要<literal>RESTART IDENTITY</literal>行为，否则将需要<literal>CONTINUE IDENTITY</literal>行为。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     Note that the <literal>ONLY</literal> options specified
+     in the original <command>TRUNCATE</command> command are not passed to
+     <function>ExecForeignTruncate</function>.  This behavior is similar to
+     the callback functions of <command>SELECT</command>,
+     <command>UPDATE</command> and <command>DELETE</command> on
+     a foreign table.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     注意在原始<command>TRUNCATE</command> 命令中指定的<literal>ONLY</literal>选项不会传递给<function>ExecForeignTruncate</function>。
+     这个行为类似于外表上的<command>SELECT</command>、<command>UPDATE</command> 和 <command>DELETE</command>的回调函数。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     <function>ExecForeignTruncate</function> is invoked once per
+     foreign server for which foreign tables are to be truncated.
+     This means that all foreign tables included in <literal>rels</literal>
+     must belong to the same server.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     对于要被截断的外表的每个外表服务器，<function>ExecForeignTruncate</function>被调用一次。
+     这意味着包含在<literal>rels</literal> 中的所有外表必须属于相同的服务器。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the <function>ExecForeignTruncate</function> pointer is set to
+     <literal>NULL</literal>, attempts to truncate foreign tables will
+     fail with an error message.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果<function>ExecForeignTruncate</function>指针被设置为<literal>NULL</literal>，截断外表的尝试将失败并随带错误消息。
+    </para>
    </sect2>
 
    <sect2 id="fdw-callbacks-row-locking">
@@ -1811,7 +2088,8 @@ ____________________________________________________________________________-->
     <para>
 <programlisting>
 bool
-RecheckForeignScan(ForeignScanState *node, TupleTableSlot *slot);
+RecheckForeignScan(ForeignScanState *node,
+                   TupleTableSlot *slot);
 </programlisting>
      重新检查之前返回的元组是否仍然匹配相关的扫描和连接条件，并且可能提供该元组的一个修改版本。对于不执行连接下推的外部数据包装器，通常把这设置为<literal>NULL</literal>并且恰当地设置<structfield>fdw_recheck_quals</structfield>会更方便。不过当外部连接被下推时，把与所有基表相关的检查重新应用在结果元组上是不够的，即便所有需要的属性都存在也是如此，因为匹配某个条件失败可能会导致某些属性变成 NULL，而不是没有元组被返回。<literal>RecheckForeignScan</literal>能够重新检查条件，并且在它们仍然满足时返回真，否则返回假，但是它也能够在提供的槽中存储一个替换元组。
     </para>
@@ -2317,6 +2595,157 @@ ShutdownForeignScan(ForeignScanState *node);
 </programlisting>
     在预见到节点将不会被执行完时释放资源。这个函数不会在所有的情况中执行，有时会在没有先调用这个函数之前调用<literal>EndForeignScan</literal>。由于在这个回调被调用之后并行查询使用的DSM段将被销毁，希望在DMS段消失前采取某种行动的外部数据包装器应该实现这个方法。
    </para>
+   </sect2>
+
+   <sect2 id="fdw-callbacks-async">
+<!--==========================orignal english content==========================
+    <title>FDW Routines for Asynchronous Execution</title>
+____________________________________________________________________________-->
+    <title>FDW Routines for Asynchronous Execution</title>
+<!--==========================orignal english content==========================
+    <para>
+     A <structname>ForeignScan</structname> node can, optionally, support
+     asynchronous execution as described in
+     <filename>src/backend/executor/README</filename>.  The following
+     functions are all optional, but are all required if asynchronous
+     execution is to be supported.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <structname>ForeignScan</structname>节点能够，可选的，支持异步执行，就像<filename>src/backend/executor/README</filename>中所描述的那样。
+     以下函数都是可选的，但是如果要支持异步执行，则都是必需的。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+bool
+IsForeignPathAsyncCapable(ForeignPath *path);
+</programlisting>
+     Test whether a given <structname>ForeignPath</structname> path can scan
+     the underlying foreign relation asynchronously.
+     This function will only be called at the end of query planning when the
+     given path is a direct child of an <structname>AppendPath</structname>
+     path and when the planner believes that asynchronous execution improves
+     performance, and should return true if the given path is able to scan the
+     foreign relation asynchronously.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+bool
+IsForeignPathAsyncCapable(ForeignPath *path);
+</programlisting>
+     测试给定的<structname>ForeignPath</structname>路径是否可以异步扫描底层外部关系。
+     当给定路径是<structname>AppendPath</structname>路径的直接子路径，并且计划器认为异步执行提高性能时，才会在查询计划结束时调用该函数。
+     如果给出的路径能够异步扫描外部关系，则将返回真。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If this function is not defined, it is assumed that the given path scans
+     the foreign relation using <function>IterateForeignScan</function>.
+     (This implies that the callback functions described below will never be
+     called, so they need not be provided either.)
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果这个函数没有被定义，则假定给定的路径使用<function>IterateForeignScan</function>扫描外部关系。
+     (这意味着下面描述的回调函数将永远不会被调用，因此它们也不需要被提供。)
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ForeignAsyncRequest(AsyncRequest *areq);
+</programlisting>
+     Produce one tuple asynchronously from the
+     <structname>ForeignScan</structname> node.  <literal>areq</literal> is
+     the <structname>AsyncRequest</structname> struct describing the
+     <structname>ForeignScan</structname> node and the parent
+     <structname>Append</structname> node that requested the tuple from it.
+     This function should store the tuple into the slot specified by
+     <literal>areq-&gt;result</literal>, and set
+     <literal>areq-&gt;request_complete</literal> to <literal>true</literal>;
+     or if it needs to wait on an event external to the core server such as
+     network I/O, and cannot produce any tuple immediately, set the flag to
+     <literal>false</literal>, and set
+     <literal>areq-&gt;callback_pending</literal> to <literal>true</literal>
+     for the <structname>ForeignScan</structname> node to get a callback from
+     the callback functions described below.  If no more tuples are available,
+     set the slot to NULL or an empty slot, and the
+     <literal>areq-&gt;request_complete</literal> flag to
+     <literal>true</literal>.  It's recommended to use
+     <function>ExecAsyncRequestDone</function> or
+     <function>ExecAsyncRequestPending</function> to set the output parameters
+     in the <literal>areq</literal>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+ForeignAsyncRequest(AsyncRequest *areq);
+</programlisting>
+     从<structname>ForeignScan</structname>节点异步的生成一个元组。
+     <literal>areq</literal>是描述<structname>ForeignScan</structname>节点和父<structname>Append</structname>节点请求元组的<structname>AsyncRequest</structname>结构。
+     该函数应该将元组存储在<literal>areq-&gt;result</literal>指定的槽中，并将<literal>areq-&gt;request_complete</literal>设置为<literal>true</literal>；或者如果它需要等待核心服务器外部的事件，例如网络I/O，并且不能立刻生成任何元组，则将设置标记为<literal>false</literal>，并且将<literal>areq-&gt;callback_pending</literal>设置为<literal>true</literal>，以便<structname>ForeignScan</structname>节点从下面描述的回调函数中获取回调。
+     如果没有更多的元组可用，则将槽位设置为NULL或空槽位，以及将<literal>areq-&gt;request_complete</literal>标志设置为<literal>true</literal>。
+     建议使用<function>ExecAsyncRequestDone</function> 或 <function>ExecAsyncRequestPending</function>来设置<literal>areq</literal>中的输出参数。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ForeignAsyncConfigureWait(AsyncRequest *areq);
+</programlisting>
+     Configure a file descriptor event for which the
+     <structname>ForeignScan</structname> node wishes to wait.
+     This function will only be called when the
+     <structname>ForeignScan</structname> node has the
+     <literal>areq-&gt;callback_pending</literal> flag set, and should add
+     the event to the <structfield>as_eventset</structfield> of the parent
+     <structname>Append</structname> node described by the
+     <literal>areq</literal>.  See the comments for
+     <function>ExecAsyncConfigureWait</function> in
+     <filename>src/backend/executor/execAsync.c</filename> for additional
+     information.  When the file descriptor event occurs,
+     <function>ForeignAsyncNotify</function> will be called.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+ForeignAsyncConfigureWait(AsyncRequest *areq);
+</programlisting>
+     配置一个为了<structname>ForeignScan</structname> 节点希望等待的文件描述符事件。
+     只有当<structname>ForeignScan</structname>节点具有<literal>areq-&gt;callback_pending</literal>标志设置时，这个函数将会被调用，并且应该将事件添加到由<literal>areq</literal>描述的父<structname>Append</structname>节点的<structfield>as_eventset</structfield> 中。
+     更多的信息，请参阅针对<filename>src/backend/executor/execAsync.c</filename>中的<function>ExecAsyncConfigureWait</function>的注释。
+     当文件描述符事件发生时，<function>ForeignAsyncNotify</function>将被调用。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+<programlisting>
+void
+ForeignAsyncNotify(AsyncRequest *areq);
+</programlisting>
+     Process a relevant event that has occurred, then produce one tuple
+     asynchronously from the <structname>ForeignScan</structname> node.
+     This function should set the output parameters in the
+     <literal>areq</literal> in the same way as
+     <function>ForeignAsyncRequest</function>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+<programlisting>
+void
+ForeignAsyncNotify(AsyncRequest *areq);
+</programlisting>
+     处理已经发生的相关事件，然后从<structname>ForeignScan</structname>节点异步的生成一个元组。
+     该函数将设置<literal>areq</literal> 中的输出参数，与<function>ForeignAsyncRequest</function>的方法相同。
+    </para>
    </sect2>
 
    <sect2 id="fdw-callbacks-reparameterize-paths">
