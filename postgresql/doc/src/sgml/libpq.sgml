@@ -160,35 +160,53 @@ PGconn *PQconnectdbParams(const char * const *keywords,
       </para>
 
       <para>
-       When <literal>expand_dbname</literal> is non-zero, the
-       <parameter>dbname</parameter> key word value is allowed to be recognized
-       as a connection string. Only the first occurrence of
-       <parameter>dbname</parameter> is expanded this way, any subsequent
-       <parameter>dbname</parameter> value is processed as plain database name. More
-       details on the possible connection string formats appear in
-       <xref linkend="libpq-connstring"/>.
-      </para>
-
-      <para>
        The passed arrays can be empty to use all default parameters, or can
-       contain one or more parameter settings. They should be matched in length.
-       Processing will stop at the first <symbol>NULL</symbol> element
+       contain one or more parameter settings. They must be matched in length.
+       Processing will stop at the first <symbol>NULL</symbol> entry
        in the <literal>keywords</literal> array.
+       Also, if the <literal>values</literal> entry associated with a
+       non-<symbol>NULL</symbol> <literal>keywords</literal> entry is
+       <symbol>NULL</symbol> or an empty string, that entry is ignored and
+       processing continues with the next pair of array entries.
       </para>
 
       <para>
-       If  any  parameter is <symbol>NULL</symbol> or an empty string, the corresponding
-       environment variable (see <xref linkend="libpq-envars"/>) is checked.
-       If the  environment  variable is not set either, then the indicated
-       built-in defaults are used.
+       When <literal>expand_dbname</literal> is non-zero, the value for
+       the first <parameter>dbname</parameter> key word is checked to see
+       if it is a <firstterm>connection string</firstterm>.  If so, it
+       is <quote>expanded</quote> into the individual connection
+       parameters extracted from the string.  The value is considered to
+       be a connection string, rather than just a database name, if it
+       contains an equal sign (<literal>=</literal>) or it begins with a
+       URI scheme designator.  (More details on connection string formats
+       appear in <xref linkend="libpq-connstring"/>.)  Only the first
+       occurrence of <parameter>dbname</parameter> is treated in this way;
+       any subsequent <parameter>dbname</parameter> parameter is processed
+       as a plain database name.
       </para>
 
       <para>
-       In general key words are processed from the beginning of these arrays in index
-       order. The effect of this is that when key words are repeated, the last processed
-       value is retained. Therefore, through careful placement of the
-       <parameter>dbname</parameter> key word, it is possible to determine what may
-       be overridden by a <parameter>conninfo</parameter> string, and what may not.
+       In general the parameter arrays are processed from start to end.
+       If any key word is repeated, the last value (that is
+       not <symbol>NULL</symbol> or empty) is used.  This rule applies in
+       particular when a key word found in a connection string conflicts
+       with one appearing in the <literal>keywords</literal> array.  Thus,
+       the programmer may determine whether array entries can override or
+       be overridden by values taken from a connection string.  Array
+       entries appearing before an expanded <parameter>dbname</parameter>
+       entry can be overridden by fields of the connection string, and in
+       turn those fields are overridden by array entries appearing
+       after <parameter>dbname</parameter> (but, again, only if those
+       entries supply non-empty values).
+      </para>
+
+      <para>
+       After processing all the array entries and any expanded connection
+       string, any connection parameters that remain unset are filled with
+       default values.  If an unset parameter's corresponding environment
+       variable (see <xref linkend="libpq-envars"/>) is set, its value is
+       used.  If the environment variable is not set either, then the
+       parameter's built-in default value is used.
       </para>
 
      </listitem>
@@ -250,6 +268,11 @@ PGconn *PQsetdbLogin(const char *pghost,
         is taken as a <parameter>conninfo</parameter> string in exactly the same way as
         if it had been passed to <xref linkend="libpq-PQconnectdb"/>, and the remaining
         parameters are then applied as specified for <xref linkend="libpq-PQconnectdbParams"/>.
+      </para>
+
+      <para>
+        <literal>pgtty</literal> is no longer used and any value passed will
+        be ignored.
       </para>
      </listitem>
     </varlistentry>
@@ -664,8 +687,8 @@ void PQreset(PGconn *conn);
 
       <para>
        This function will close the connection
-       to the server and attempt to  reestablish  a  new
-       connection to the same server, using all the same
+       to the server and attempt to establish a new
+       connection, using all the same
        parameters previously used.  This might be useful for
        error recovery if a working connection is lost.
       </para>
@@ -688,7 +711,7 @@ PostgresPollingStatusType PQresetPoll(PGconn *conn);
 
       <para>
        These functions will close the connection to the server and attempt to
-       reestablish a new connection to the same server, using all the same
+       establish a new connection, using all the same
        parameters previously used. This can be useful for error recovery if a
        working connection is lost. They differ from <xref linkend="libpq-PQreset"/> (above) in that they
        act in a nonblocking manner. These functions suffer from the same
@@ -834,7 +857,8 @@ int callback_fn(char *buf, int size, PGconn *conn);
        its path will be in <literal>conn->sslkey</literal> when the callback
        is invoked. This will be empty if the default key path is being used.
        For keys that are engine specifiers, it is up to engine implementations
-       whether they use the OpenSSL password callback or define their own handling.
+       whether they use the <productname>OpenSSL</productname> password
+       callback or define their own handling.
       </para>
 
       <para>
@@ -912,19 +936,32 @@ PGconn *PQconnectdbParams(const char * const *keywords,
       </para>
 
       <para>
-       当<literal>expand_dbname</literal>为非零时，<parameter>dbname</parameter>关键词的值被允许识别为一个连接字符串。只有<parameter>dbname</parameter>的第一次出现会按这种方式扩展，任何后续<parameter>dbname</parameter>值会被当做一个普通数据库名处理。有关可能的连接字符串格式的详情可见<xref linkend="libpq-connstring"/>。
+       被传递的数组可以为空，这样就会使用所有默认参数。
+       也可以只包含一个或几个参数设置。他们在长度上必须匹配。
+       对于参数数组的处理将会停止于<literal>keywords</literal>数组中第一个<symbol>NULL</symbol>元素。
+       而且，如果与非-<symbol>NULL</symbol> <literal>keywords</literal>条目相关联的<literal>values</literal>条目为<symbol>NULL</symbol>或者空字符串，则忽略该项并继续处理下一对数组项。
       </para>
 
       <para>
-       被传递的数组可以为空，这样就会使用所有默认参数。也可以只包含一个或几个参数设置。两个参数数组应该在长度上匹配。对于参数数组的处理将会停止于<literal>keywords</literal>数组中第一个非-<symbol>NULL</symbol>元素。
+       当<literal>expand_dbname</literal>为非零时，会检查第一个<parameter>dbname</parameter>关键词的值以查看它是否为一个<firstterm>connection string</firstterm>。
+       如果是，它被<quote>扩展</quote>到从字符串中提取的单独的连接参数。
+       该值被认为是一个连接字符串，而不仅是一个数据库名称，如果它包含一个等号(<literal>=</literal>)或者它以URI模式标志符开头，
+       (有关连接字符串格式的更多详情可见<xref linkend="libpq-connstring"/>。)
+       只有<parameter>dbname</parameter>的第一次出现会按这种方式处理，任何后续<parameter>dbname</parameter>值会被当做一个普通数据库名处理。
       </para>
 
       <para>
-       如果任何一个参数是<symbol>NULL</symbol>或者一个空字符串，那么将会检查相应的环境变量（见<xref linkend="libpq-envars"/>）。如果该环境变量也没有被设置，那么将使用内建的默认值。
+       通常，参数数组从开头到结尾进行处理。
+       当关键词有重复时，使用最后一个值(不是 <symbol>NULL</symbol> 或空)。
+       此规则特别适用于连接字符串中的关键字与一个出现在<literal>keywords</literal>数组中的关键字冲突的情况。
+       因此，程序员可以决定数组条目是否能被覆盖或用连接字符串获取的值覆盖。
+       出现在扩展的<parameter>dbname</parameter>条目之前的数组条目可以被连接字符串的字段所覆盖，反之，这些字段被<parameter>dbname</parameter>之后出现的数组条目所覆盖。(但是，再有，只有在那些条目支持非空值时。)
       </para>
 
       <para>
-       通常，关键词的处理是从这些数组的头部开始并且以索引顺序进行。这样做的效果就是，当关键词有重复时，只会保留最后一个被处理的值。因此，通过小心地放置关键词<parameter>dbname</parameter>，可以决定什么会被一个<parameter>conninfo</parameter>字符串所重载，以及什么不会被重载。
+       在处理完所有数组条目和任何扩展的连接字符串后，所有未设置的连接参数都将使用默认值填充。
+       如果一个未设置参数的相关环境变量(参见 <xref linkend="libpq-envars"/>)被设置了，它的值会被使用。
+       如果环境变量未被设置，则使用参数的内置默认值。
       </para>
 
      </listitem>
@@ -975,6 +1012,10 @@ PGconn *PQsetdbLogin(const char *pghost,
 
       <para>
         如果<parameter>dbName</parameter>包含一个<symbol>=</symbol>符号或者具有一个合法的连接<acronym>URI</acronym>前缀，它会被当作一个<parameter>conninfo</parameter>字符串，就好像它已经被传递给了<xref linkend="libpq-PQconnectdb"/>，并且剩余的参数则被应用为指定给<xref linkend="libpq-PQconnectdbParams"/>。
+      </para>
+
+      <para>
+        <literal>pgtty</literal> 已经不再使用，任何传递的值将被忽略。
       </para>
      </listitem>
     </varlistentry>
@@ -1281,7 +1322,8 @@ void PQreset(PGconn *conn);
       </para>
 
       <para>
-       此函数将关闭与服务器的连接，并且使用所有之前使用过的参数尝试重新建立与同一个服务器的连接。这可能有助于在工作连接丢失后的错误恢复。
+       此函数将关闭与服务器的连接，并尝试建立一个新连接，用之前使用过的所有参数。
+       这可能有助于在工作连接丢失后的错误恢复。
       </para>
      </listitem>
     </varlistentry>
@@ -1301,7 +1343,10 @@ PostgresPollingStatusType PQresetPoll(PGconn *conn);
       </para>
 
       <para>
-       这些函数将关闭与服务器的连接，并且使用所有之前使用过的参数尝试重新建立与同一个服务器的连接。这可能有助于在工作连接丢失后的错误恢复。它们和上面的<xref linkend="libpq-PQreset"/>的不同在于它们工作在非阻塞方式。这些函数受到<xref linkend="libpq-PQconnectStartParams"/>、<function>PQconnectStart</function>和<function>PQconnectPoll</function>相同的限制。
+       这些函数将关闭与服务器的连接，并且使用所有之前使用过的参数尝试建立一个新连接。
+       这可能有助于在工作连接丢失后的错误恢复。
+       它们和上面的<xref linkend="libpq-PQreset"/>的不同在于它们工作在非阻塞方式。
+       这些函数受到<xref linkend="libpq-PQconnectStartParams"/>、<function>PQconnectStart</function>和<function>PQconnectPoll</function>相同的限制。
       </para>
 
       <para>
@@ -1410,7 +1455,8 @@ int callback_fn(char *buf, int size, PGconn *conn);
 
       <para>
        如果用户指定了一个显式的密钥位置，那么当调用回调时，它的路径将在<literal>conn->sslkey</literal>中。
-       如果使用默认密钥路径，则这将为空。对于作为引擎说明符的密钥，由引擎实现决定它们是使用OpenSSL密码回调还是定义自己的处理方式。
+       如果使用默认密钥路径，则这将为空。
+       对于作为引擎说明符的密钥，由引擎实现决定它们是使用<productname>OpenSSL</productname>密码回调还是定义自己的处理方式。
       </para>
 
       <para>
@@ -1469,7 +1515,7 @@ ____________________________________________________________________________-->
    <para>
     Several <application>libpq</application> functions parse a user-specified string to obtain
     connection parameters.  There are two accepted formats for these strings:
-    plain <literal>keyword = value</literal> strings
+    plain keyword/value strings
     and URIs.  URIs generally follow
     <ulink url="https://tools.ietf.org/html/rfc3986">RFC
     3986</ulink>, except that multi-host connection strings are allowed
@@ -1477,7 +1523,9 @@ ____________________________________________________________________________-->
    </para>
 ____________________________________________________________________________-->
    <para>
-    几个<application>libpq</application>函数会解析一个用户指定的字符串来获得连接参数。这些字符串有两种被接受的格式：纯<literal>关键词 = 值</literal>字符串以及URI。URI通常遵循<ulink url="https://tools.ietf.org/html/rfc3986">RFC 3986</ulink>，除非像下文进一步描述的那样允许多主机连接字符串。
+    几个<application>libpq</application>函数会解析一个用户指定的字符串来获得连接参数。
+    这些字符串有两种被接受的格式：纯的关键词/值字符串以及URI。
+    URI通常遵循<ulink url="https://tools.ietf.org/html/rfc3986">RFC 3986</ulink>，除非像下文进一步描述的那样允许多主机连接字符串。
    </para>
 
    <sect3>
@@ -1488,17 +1536,22 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    In the first format, each parameter setting is in the form
-    <literal>keyword = value</literal>.  Spaces around the equal sign are
+    In the keyword/value format, each parameter setting is in the form
+    <replaceable>keyword</replaceable> <literal>=</literal>
+    <replaceable>value</replaceable>, with space(s) between settings.
+    Spaces around a setting's equal sign are
     optional. To write an empty value, or a value containing spaces, surround it
-    with single quotes, e.g., <literal>keyword = 'a value'</literal>. Single
-    quotes and backslashes within
-    the value must be escaped with a backslash, i.e., <literal>\'</literal> and
+    with single quotes, for example <literal>keyword = 'a value'</literal>.
+    Single quotes and backslashes within
+    a value must be escaped with a backslash, i.e., <literal>\'</literal> and
     <literal>\\</literal>.
    </para>
 ____________________________________________________________________________-->
    <para>
-    在第一种格式中，每一个参数设置的形式都是<literal>关键词 = 值</literal>。等号周围的空白是可选的。要写一个空值或一个包含空白的值，将它用单引号包围，例如<literal>关键词 = 'a value'</literal>。值里面的单引号和反斜线必须用一个反斜线转义，即<literal>\'</literal>和<literal>\\</literal>。
+    在关键词/值格式中，每一个参数设置的形式都是<replaceable>关键词</replaceable> <literal>=</literal> <replaceable>值</replaceable>，在设置之间有空白。
+    设置的等号周围的空白是可选的。
+    要写一个空值或一个包含空白的值，将它用单引号包围，例如<literal>关键词 = 'a value'</literal>。
+    值里面的单引号和反斜线必须用一个反斜线转义，即<literal>\'</literal>和<literal>\\</literal>。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1537,14 +1590,38 @@ ____________________________________________________________________________-->
    <para>
    The general form for a connection <acronym>URI</acronym> is:
 <synopsis>
-postgresql://[user[:password]@][netloc][:port][,...][/dbname][?param1=value1&amp;...]
+postgresql://<optional><replaceable>userspec</replaceable>@</optional><optional><replaceable>hostspec</replaceable></optional><optional>/<replaceable>dbname</replaceable></optional><optional>?<replaceable>paramspec</replaceable></optional>
+
+<phrase>where <replaceable>userspec</replaceable> is:</phrase>
+
+<replaceable>user</replaceable><optional>:<replaceable>password</replaceable></optional>
+
+<phrase>and <replaceable>hostspec</replaceable> is:</phrase>
+
+<optional><replaceable>host</replaceable></optional><optional>:<replaceable>port</replaceable></optional><optional>,...</optional>
+
+<phrase>and <replaceable>paramspec</replaceable> is:</phrase>
+
+<replaceable>name</replaceable>=<replaceable>value</replaceable><optional>&amp;...</optional>
 </synopsis>
    </para>
 ____________________________________________________________________________-->
    <para>
    一个连接<acronym>URI</acronym>的一般形式是：
 <synopsis>
-postgresql://[user[:password]@][netloc][:port][,...][/dbname][?param1=value1&amp;...]
+postgresql://<optional><replaceable>userspec</replaceable>@</optional><optional><replaceable>hostspec</replaceable></optional><optional>/<replaceable>dbname</replaceable></optional><optional>?<replaceable>paramspec</replaceable></optional>
+
+<phrase>where <replaceable>userspec</replaceable> is:</phrase>
+
+<replaceable>user</replaceable><optional>:<replaceable>password</replaceable></optional>
+
+<phrase>and <replaceable>hostspec</replaceable> is:</phrase>
+
+<optional><replaceable>host</replaceable></optional><optional>:<replaceable>port</replaceable></optional><optional>,...</optional>
+
+<phrase>and <replaceable>paramspec</replaceable> is:</phrase>
+
+<replaceable>name</replaceable>=<replaceable>value</replaceable><optional>&amp;...</optional>
 </synopsis>
    </para>
 
@@ -1552,8 +1629,8 @@ postgresql://[user[:password]@][netloc][:port][,...][/dbname][?param1=value1&amp
    <para>
     The <acronym>URI</acronym> scheme designator can be either
     <literal>postgresql://</literal> or <literal>postgres://</literal>.  Each
-    of the <acronym>URI</acronym> parts is optional.  The following examples
-    illustrate valid <acronym>URI</acronym> syntax uses:
+    of the remaining <acronym>URI</acronym> parts is optional.  The
+    following examples illustrate valid <acronym>URI</acronym> syntax:
 <programlisting>
 postgresql://
 postgresql://localhost
@@ -1564,15 +1641,23 @@ postgresql://user:secret@localhost
 postgresql://other@localhost/otherdb?connect_timeout=10&amp;application_name=myapp
 postgresql://host1:123,host2:456/somedb?target_session_attrs=any&amp;application_name=myapp
 </programlisting>
-    Components of the hierarchical part of the <acronym>URI</acronym> can also
-    be given as parameters.  For example:
+    Values that would normally appear in the hierarchical part of
+    the <acronym>URI</acronym> can alternatively be given as named
+    parameters.  For example:
 <programlisting>
 postgresql:///mydb?host=localhost&amp;port=5433
 </programlisting>
+    All named parameters must match key words listed in
+    <xref linkend="libpq-paramkeywords"/>, except that for compatibility
+    with JDBC connection <acronym>URI</acronym>s, instances
+    of <literal>ssl=true</literal> are translated into
+    <literal>sslmode=require</literal>.
    </para>
 ____________________________________________________________________________-->
    <para>
-    <acronym>URI</acronym>模式标志符可以是<literal>postgresql://</literal>或<literal>postgres://</literal>。每一个<acronym>URI</acronym>部分都是可选的。下列例子展示了合法的<acronym>URI</acronym>语法：
+    <acronym>URI</acronym>模式标志符可以是<literal>postgresql://</literal>或<literal>postgres://</literal>。
+    每一个剩下的<acronym>URI</acronym>部分都是可选的。
+    下列例子展示了合法的<acronym>URI</acronym>语法：
 <programlisting>
 postgresql://
 postgresql://localhost
@@ -1583,10 +1668,11 @@ postgresql://user:secret@localhost
 postgresql://other@localhost/otherdb?connect_timeout=10&amp;application_name=myapp
 postgresql://host1:123,host2:456/somedb?target_session_attrs=any&amp;application_name=myapp
 </programlisting>
-    <acronym>URI</acronym>的层次部分的组件可以作为参数给出。例如：
+    通常出现在<acronym>URI</acronym>的层次部分的值，也能够以命名参数的方式给出。例如：
 <programlisting>
 postgresql:///mydb?host=localhost&amp;port=5433
 </programlisting>
+    全部的命名参数必须匹配<xref linkend="libpq-paramkeywords"/>中列出的关键词，除了与JDBC连接<acronym>URI</acronym>兼容之外，<literal>ssl=true</literal>的实例转换到<literal>sslmode=require</literal>。
    </para>
 
 <!--==========================orignal english content==========================
@@ -1612,37 +1698,15 @@ postgresql://user@localhost:5433/mydb?options=-c%20synchronous_commit%3Doff
 
 <!--==========================orignal english content==========================
    <para>
-    Any connection parameters not corresponding to key words listed in <xref
-    linkend="libpq-paramkeywords"/> are ignored and a warning message about them
-    is sent to <filename>stderr</filename>.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    任何不对应<xref linkend="libpq-paramkeywords"/>中列出的关键词的连接参数将被忽略并且关于它们的警告消息会被发送到<filename>stderr</filename>。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    For improved compatibility with JDBC connection <acronym>URI</acronym>s,
-    instances of parameter <literal>ssl=true</literal> are translated into
-    <literal>sslmode=require</literal>.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    为了提高和 JDBC 连接<acronym>URI</acronym>的兼容性，参数<literal>ssl=true</literal>的实例会被翻译成<literal>sslmode=require</literal>。
-   </para>
-
-<!--==========================orignal english content==========================
-   <para>
-    The host part may be either host name or an IP address.  To specify an
-    IPv6 host address, enclose it in square brackets:
+    The host part may be either a host name or an IP address.  To specify an
+    IPv6 address, enclose it in square brackets:
 <synopsis>
 postgresql://[2001:db8::1234]/database
 </synopsis>
    </para>
 ____________________________________________________________________________-->
    <para>
-    主机部分可能是主机名或一个 IP 地址。要指定一个 IPv6 主机地址，将它封闭在方括号中：
+    主机部分可能是主机名或一个 IP 地址。要指定一个 IPv6 地址，将它封闭在方括号中：
 <synopsis>
 postgresql://[2001:db8::1234]/database
 </synopsis>
@@ -1650,15 +1714,15 @@ postgresql://[2001:db8::1234]/database
 
 <!--==========================orignal english content==========================
    <para>
-    The host component is interpreted as described for the parameter <xref
+    The host part is interpreted as described for the parameter <xref
     linkend="libpq-connect-host"/>.  In particular, a Unix-domain socket
     connection is chosen if the host part is either empty or looks like an
     absolute path name,
     otherwise a TCP/IP connection is initiated.  Note, however, that the
     slash is a reserved character in the hierarchical part of the URI.  So, to
     specify a non-standard Unix-domain socket directory, either omit the host
-    specification in the URI and specify the host as a parameter, or
-    percent-encode the path in the host component of the URI:
+    part of the URI and specify the host as a named parameter, or
+    percent-encode the path in the host part of the URI:
 <programlisting>
 postgresql:///dbname?host=/var/lib/postgresql
 postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
@@ -1668,7 +1732,8 @@ ____________________________________________________________________________-->
    <para>
     主机组件会被按照参数<xref linkend="libpq-connect-host"/>对应的描述来解释。
     特别地，如果主机部分是空或看起来像一个绝对路径名称，将使用一个 Unix 域套接字连接，否则将启动一个 TCP/IP 连接。
-    不过要注意，斜线是 URI 层次部分中的一个保留字符。因此，要指定一个非标准的 Unix 域套接字目录，要么忽略 URI 中的主机说明并且指定该主机为一个参数，要么在 URI 的主机部分用百分号编码路径：
+    不过要注意，斜线是 URI 层次部分中的一个保留字符。
+    因此，要指定一个非标准的 Unix 域套接字目录，要么忽略 URI 中的主机部分并且指定该主机为一个命名参数，要么在 URI 的主机部分用百分号编码路径：
 <programlisting>
 postgresql:///dbname?host=/var/lib/postgresql
 postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
@@ -1681,12 +1746,15 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
     port component, in a single URI.  A URI of the form
     <literal>postgresql://host1:port1,host2:port2,host3:port3/</literal>
     is equivalent to a connection string of the form
-    <literal>host=host1,host2,host3 port=port1,port2,port3</literal>.  Each
+    <literal>host=host1,host2,host3 port=port1,port2,port3</literal>.
+    As further described below, each
     host will be tried in turn until a connection is successfully established.
    </para>
 ____________________________________________________________________________-->
    <para>
-    可以在一个URI中指定多个主机，每一个都有一个可选的端口。一个形式为<literal>postgresql://host1:port1,host2:port2,host3:port3/</literal>的URI等效于<literal>host=host1,host2,host3 port=port1,port2,port3</literal>形式的连接字符串。每一个主机都将被尝试，直到成功地建立一个连接。
+    可以在一个URI中指定多个主机，每一个都有一个可选的端口。
+    一个形式为<literal>postgresql://host1:port1,host2:port2,host3:port3/</literal>的URI等效于<literal>host=host1,host2,host3 port=port1,port2,port3</literal>形式的连接字符串。
+    如下所述，每一个主机都将被尝试，直到成功地建立一个连接。
    </para>
    </sect3>
 
@@ -1700,8 +1768,8 @@ ____________________________________________________________________________-->
      <para>
        It is possible to specify multiple hosts to connect to, so that they are
        tried in the given order. In the Keyword/Value format, the <literal>host</literal>,
-       <literal>hostaddr</literal>, and <literal>port</literal> options accept a comma-separated
-       list of values. The same number of elements must be given in each
+       <literal>hostaddr</literal>, and <literal>port</literal> options accept comma-separated
+       lists of values. The same number of elements must be given in each
        option that is specified, such
        that e.g., the first <literal>hostaddr</literal> corresponds to the first host name,
        the second <literal>hostaddr</literal> corresponds to the second host name, and so
@@ -1710,13 +1778,16 @@ ____________________________________________________________________________-->
      </para>
 ____________________________________________________________________________-->
      <para>
-       可以指定多个要连接的主机，这样它们会按给定的顺序被尝试。在键/值格式中，<literal>host</literal>、<literal>hostaddr</literal>和<literal>port</literal>选项都接受逗号分隔的值列表。在指定的每一个选项中都必须给出相同数量的元素，这样第一个<literal>hostaddr</literal>对应于第一个主机名，第二个<literal>hostaddr</literal>对应于第二个主机名，以此类推。不过，如果仅指定一个<literal>port</literal>，它将被应用于所有的主机。
+       可以指定多个要连接的主机，这样它们会按给定的顺序被尝试。
+       在键/值格式中，<literal>host</literal>、<literal>hostaddr</literal>和<literal>port</literal>选项都接受逗号分隔的值列表。
+       在指定的每一个选项中都必须给出相同数量的元素，这样第一个<literal>hostaddr</literal>对应于第一个主机名，第二个<literal>hostaddr</literal>对应于第二个主机名，以此类推。
+       不过，如果仅指定一个<literal>port</literal>，它将被应用于所有的主机。
      </para>
 
 <!--==========================orignal english content==========================
      <para>
        In the connection URI format, you can list multiple <literal>host:port</literal> pairs
-       separated by commas, in the <literal>host</literal> component of the URI.
+       separated by commas in the <literal>host</literal> component of the URI.
      </para>
 ____________________________________________________________________________-->
      <para>
@@ -1782,7 +1853,10 @@ ____________________________________________________________________________-->
         communication; the value is the name of the directory in which the
         socket file is stored.  (On Unix, an absolute path name begins with a
         slash.  On Windows, paths starting with drive letters are also
-        recognized.)  The default behavior when <literal>host</literal> is not
+        recognized.)  If the host name starts with <literal>@</literal>, it is
+        taken as a Unix-domain socket in the abstract namespace (currently
+        supported on Linux and Windows).
+        The default behavior when <literal>host</literal> is not
         specified, or is empty, is to connect to a Unix-domain
         socket<indexterm><primary>Unix domain socket</primary></indexterm> in
         <filename>/tmp</filename> (or whatever socket directory was specified
@@ -2317,6 +2391,16 @@ ____________________________________________________________________________-->
         connection.<indexterm><primary>SSL</primary><secondary
         sortas="libpq">with libpq</secondary></indexterm>
        </para>
+
+       <para>
+        Note that if <acronym>GSSAPI</acronym> encryption is possible,
+        that will be used in preference to <acronym>SSL</acronym>
+        encryption, regardless of the value of <literal>sslmode</literal>.
+        To force use of <acronym>SSL</acronym> encryption in an
+        environment that has working <acronym>GSSAPI</acronym>
+        infrastructure (such as a Kerberos server), also
+        set <literal>gssencmode</literal> to <literal>disable</literal>.
+       </para>
       </listitem>
      </varlistentry>
 
@@ -2357,6 +2441,8 @@ ____________________________________________________________________________-->
         compression by default, and many operating system distributions
         disable it in prior versions as well, so setting this parameter to on
         will not have any effect if the server does not accept compression.
+        <productname>PostgreSQL</productname> 14 disables compression
+        completely in the backend.
        </para>
 
        <para>
@@ -2409,19 +2495,21 @@ ____________________________________________________________________________-->
        <para>
         Specifying this parameter with any non-empty value suppresses the
         <literal>Enter PEM pass phrase:</literal>
-        prompt that OpenSSL will emit by default when an encrypted client
-        certificate key is provided to <literal>libpq</literal>.
+        prompt that <productname>OpenSSL</productname> will emit by default
+        when an encrypted client certificate key is provided to
+        <literal>libpq</literal>.
        </para>
        <para>
-        If the key is not encrypted this parameter is ignored. The parameter has no
-        effect on keys specified by OpenSSL engines unless the engine uses the
-        OpenSSL password callback mechanism for prompts.
+        If the key is not encrypted this parameter is ignored. The parameter
+        has no effect on keys specified by <productname>OpenSSL</productname>
+        engines unless the engine uses the <productname>OpenSSL</productname>
+        password callback mechanism for prompts.
        </para>
        <para>
         There is no environment variable equivalent to this option, and no
         facility for looking it up in <filename>.pgpass</filename>. It can be
         used in a service file connection definition. Users with
-        more sophisticated uses should consider using openssl engines and
+        more sophisticated uses should consider using <productname>OpenSSL</productname> engines and
         tools like PKCS#11 or USB crypto offload devices.
        </para>
       </listitem>
@@ -2447,8 +2535,55 @@ ____________________________________________________________________________-->
         This parameter specifies the file name of the SSL certificate
         revocation list (CRL).  Certificates listed in this file, if it
         exists, will be rejected while attempting to authenticate the
-        server's certificate.  The default is
+        server's certificate.  If neither
+        <xref linkend='libpq-connect-sslcrl'/> nor
+        <xref linkend='libpq-connect-sslcrldir'/> is set, this setting is
+        taken as
         <filename>~/.postgresql/root.crl</filename>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="libpq-connect-sslcrldir" xreflabel="sslcrldir">
+      <term><literal>sslcrldir</literal></term>
+      <listitem>
+       <para>
+        This parameter specifies the directory name of the SSL certificate
+        revocation list (CRL).  Certificates listed in the files in this
+        directory, if it exists, will be rejected while attempting to
+        authenticate the server's certificate.
+       </para>
+
+       <para>
+        The directory needs to be prepared with the
+        <productname>OpenSSL</productname> command
+        <literal>openssl rehash</literal> or <literal>c_rehash</literal>.  See
+        its documentation for details.
+       </para>
+
+       <para>
+        Both <literal>sslcrl</literal> and <literal>sslcrldir</literal> can be
+        specified together.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="libpq-connect-sslsni" xreflabel="sslsni">
+      <term><literal>sslsni</literal><indexterm><primary>Server Name Indication</primary></indexterm></term>
+      <listitem>
+       <para>
+        If set to 1 (default), libpq sets the TLS extension <quote>Server Name
+        Indication</quote> (<acronym>SNI</acronym>) on SSL-enabled connections.
+        By setting this parameter to 0, this is turned off.
+       </para>
+
+       <para>
+        The Server Name Indication can be used by SSL-aware proxies to route
+        connections without having to decrypt the SSL stream.  (Note that this
+        requires a proxy that is aware of the PostgreSQL protocol handshake,
+        not just any SSL proxy.)  However, <acronym>SNI</acronym> makes the
+        destination host name appear in cleartext in the network traffic, so
+        it might be undesirable in some cases.
        </para>
       </listitem>
      </varlistentry>
@@ -2518,6 +2653,15 @@ ____________________________________________________________________________-->
         This must match the service name specified in the server
         configuration for Kerberos authentication to succeed. (See also
         <xref linkend="gssapi-auth"/>.)
+        The default value is normally <literal>postgres</literal>,
+        but that can be changed when
+        building <productname>PostgreSQL</productname> via
+        the <option>--with-krb-srvnam</option> option
+        of <application>configure</application>.
+        In most environments, this parameter never needs to be changed.
+        Some Kerberos implementations might require a different service name,
+        such as Microsoft Active Directory which requires the service name
+        to be in upper case (<literal>POSTGRES</literal>).
        </para>
       </listitem>
      </varlistentry>
@@ -2551,18 +2695,75 @@ ____________________________________________________________________________-->
       <term><literal>target_session_attrs</literal></term>
       <listitem>
        <para>
-        If this parameter is set to <literal>read-write</literal>, only a
-        connection in which read-write transactions are accepted by default
-        is considered acceptable.  The query
-        <literal>SHOW transaction_read_only</literal> will be sent upon any
-        successful connection; if it returns <literal>on</literal>, the connection
-        will be closed.  If multiple hosts were specified in the connection
-        string, any remaining servers will be tried just as if the connection
-        attempt had failed.  The default value of this parameter,
-        <literal>any</literal>, regards all connections as acceptable.
-      </para>
+        This option determines whether the session must have certain
+        properties to be acceptable.  It's typically used in combination
+        with multiple host names to select the first acceptable alternative
+        among several hosts.  There are six modes:
+
+        <variablelist>
+         <varlistentry>
+          <term><literal>any</literal> (default)</term>
+          <listitem>
+           <para>
+            any successful connection is acceptable
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>read-write</literal></term>
+          <listitem>
+           <para>
+            session must accept read-write transactions by default (that
+            is, the server must not be in hot standby mode and
+            the <varname>default_transaction_read_only</varname> parameter
+            must be <literal>off</literal>)
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>read-only</literal></term>
+          <listitem>
+           <para>
+            session must not accept read-write transactions by default (the
+            converse)
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>primary</literal></term>
+          <listitem>
+           <para>
+            server must not be in hot standby mode
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>standby</literal></term>
+          <listitem>
+           <para>
+            server must be in hot standby mode
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>prefer-standby</literal></term>
+          <listitem>
+           <para>
+            first try to find a standby server, but if none of the listed
+            hosts is a standby server, try again in <literal>any</literal>
+            mode
+           </para>
+          </listitem>
+         </varlistentry>
+        </variablelist>
+       </para>
       </listitem>
-    </varlistentry>
+     </varlistentry>
     </variablelist>
    </para>
 ____________________________________________________________________________-->
@@ -2576,6 +2777,7 @@ ____________________________________________________________________________-->
        <para>
         要连接的主机名。<indexterm><primary>host name</primary></indexterm>如果一个主机名看起来像一个绝对路径名称，则表示一个 Unix 域通信而不是 TCP/IP 通信，其值是存储套接字文件的目录名。
         （在Unix上, 绝对路径名称以斜杠开始。在Windows上，以驱动器符号开始的路径名称也可以被识别。） 
+        如果主机名以<literal>@</literal>开头，它被作为抽象命名空间中的Unix-域套接字(当前在Linux和Windows上支持)
         当<literal>host</literal>没有指定或者为空时的默认行为是连接到一个<filename>/tmp</filename>（或者<productname>PostgreSQL</productname>编译时指定的任何套接字目录）中的 Unix 域套接字<indexterm><primary>Unix 域套接字</primary></indexterm>。
         在Windows和没有 Unix 域套接字的机器上，默认是连接到<literal>localhost</literal>。
        </para>
@@ -2951,6 +3153,11 @@ ____________________________________________________________________________-->
         对于 Unix 域套接字通信，<literal>sslmode</literal>会被忽略。如果<productname>PostgreSQL</productname>被编译为不带 SSL 支持，使用选项<literal>require</literal>、<literal>verify-ca</literal>或<literal>verify-full</literal>将导致错误，而选项<literal>allow</literal>和<literal>prefer</literal>将会被接受但是<application>libpq</application>将不会真正尝试<acronym>SSL</acronym>连接。<indexterm><primary>SSL</primary><secondary
         sortas="libpq">with libpq</secondary></indexterm>
        </para>
+
+       <para>
+        注意如果<acronym>GSSAPI</acronym>加密是可能的，那么将优先使用<acronym>SSL</acronym>加密，而不考虑<literal>sslmode</literal>的值。
+        强制使用<acronym>SSL</acronym>加密，在具有工作的<acronym>GSSAPI</acronym>基础架构的环境中(例如Kerberos服务器)，还将<literal>gssencmode</literal>设置为<literal>disable</literal>。
+       </para>
       </listitem>
      </varlistentry>
 
@@ -2975,7 +3182,9 @@ ____________________________________________________________________________-->
        </para>
 
        <para>
-        现如今SSL压缩被认为是不安全的，因此已经不再推荐使用。<productname>OpenSSL</productname> 1.1.0默认禁用压缩，并且很多操作系统发行版在前面的版本中也将其禁用，因此如果服务器不接受压缩，将这个参数设置为on不会有任何效果。
+        现如今SSL压缩被认为是不安全的，因此已经不再推荐使用。
+        <productname>OpenSSL</productname> 1.1.0默认禁用压缩，并且很多操作系统发行版在前面的版本中也将其禁用，因此如果服务器不接受压缩，将这个参数设置为on不会有任何效果。
+        <productname>PostgreSQL</productname> 14 在后端完全禁用了压缩.
        </para>
 
        <para>
@@ -3009,14 +3218,16 @@ ____________________________________________________________________________-->
         此参数指定在<literal>sslkey</literal>中指定的密钥的密码，在交互式密码短语输入不实用时，允许客户端证书私钥以加密形式存储在磁盘上。
        </para>
        <para>
-        指定该参数为任何非空值，阻止<literal>Enter PEM pass phrase:</literal> 提示OpenSSL将默认发出，在向<literal>libpq</literal>提供加密的客户端证书密钥时。
+        指定该参数为任何非空值，阻止<literal>Enter PEM pass phrase:</literal> 提示<productname>OpenSSL</productname>将默认发出，在向<literal>libpq</literal>提供加密的客户端证书密钥时。
        </para>
        <para>
-        如果密钥未加密则忽略此参数。该参数对OpenSSL引擎指定的密钥没有影响，除非引擎使用OpenSSL密码回调机制进行提示。
+        如果密钥未加密则忽略此参数。
+        该参数对<productname>OpenSSL</productname>引擎指定的密钥没有影响，除非引擎使用<productname>OpenSSL</productname>密码回调机制进行提示。
        </para>
        <para>
         没有与此选项相等的环境变量，也没有在<filename>.pgpass</filename>中查找它的工具。
-        它可以在服务文件连接定义中使用。有更复杂用途的用户应该考虑使用openssl引擎和工具，例如PKCS#11或USB加密卸载设备。
+        它可以在服务文件连接定义中使用。
+        有更复杂用途的用户应该考虑使用<productname>OpenSSL</productname>引擎和工具，例如PKCS#11或USB加密卸载设备。
        </para>
       </listitem>
      </varlistentry>
@@ -3034,7 +3245,44 @@ ____________________________________________________________________________-->
       <term><literal>sslcrl</literal></term>
       <listitem>
        <para>
-        这个参数指定 SSL 证书撤销列表（CRL）的文件名。列在这个文件中的证书如果存在，在尝试认证该服务器证书时会被拒绝。默认值是<filename>~/.postgresql/root.crl</filename>。
+        这个参数指定 SSL 证书撤销列表（CRL）的文件名。
+        列在这个文件中的证书如果存在，在尝试认证该服务器证书时会被拒绝。
+        如果没有设置<xref linkend='libpq-connect-sslcrl'/> 和 <xref linkend='libpq-connect-sslcrldir'/> ，这个设置是<filename>~/.postgresql/root.crl</filename>。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="libpq-connect-sslcrldir" xreflabel="sslcrldir">
+      <term><literal>sslcrldir</literal></term>
+      <listitem>
+       <para>
+        这个参数指定SSL证书废除列表(CRL)的目录名。
+        该目录中的文件中列出的证书，如果它存在，在尝试验证服务器的证书时将被拒绝。
+       </para>
+
+       <para>
+        该目录需要<productname>OpenSSL</productname>命令<literal>openssl rehash</literal>或<literal>c_rehash</literal>来准备。
+        详细信息请参阅其文档。
+       </para>
+
+       <para>
+        <literal>sslcrl</literal> 和 <literal>sslcrldir</literal>可以被一起指定。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="libpq-connect-sslsni" xreflabel="sslsni">
+      <term><literal>sslsni</literal><indexterm><primary>Server Name Indication</primary></indexterm></term>
+      <listitem>
+       <para>
+        如果设置为1(默认值)，libpq 在SSL-enabled连接上设置 TLS 扩展<quote>Server Name Indication</quote>(<acronym>SNI</acronym>) 。
+        通过设置这个参数为0，该项将被关闭。
+       </para>
+
+       <para>
+        服务器名称指示可以被用于SSL感知代理来路由连接，而无需解密SSL流。
+        (注意这需要一个能够感知PostgreSQL协议握手的代理，而不是任何SSL代理。)
+        但是，<acronym>SNI</acronym> 使目标主机名以明文形式出现在网络流量中，因此在某些情况下可能不适合。
        </para>
       </listitem>
      </varlistentry>
@@ -3074,6 +3322,9 @@ ____________________________________________________________________________-->
       <listitem>
        <para>
         当用 GSSAPI 认证时，要使用的 Kerberos 服务名。为了让 Kerberos 认证成功，这必须匹配在服务器配置中指定的服务名（另见<xref linkend="gssapi-auth"/>）。
+        默认值通常是<literal>postgres</literal>，但可以通过<application>configure</application>的<option>--with-krb-srvnam</option>选项在构建<productname>PostgreSQL</productname>时更改。
+        在大多数环境中，这个参数不需要更改。
+        某些Kerberos实现可能需要不同的服务名称，例如Microsoft Active Directory需要服务名称使用大写(<literal>POSTGRES</literal>)。
        </para>
       </listitem>
      </varlistentry>
@@ -3101,10 +3352,68 @@ ____________________________________________________________________________-->
       <term><literal>target_session_attrs</literal></term>
       <listitem>
        <para>
-        如果这个参数被设置为<literal>read-write</literal>，只有默认接受读写事务的连接才是可接受的。在任何成功的连接上将发出查询<literal>SHOW transaction_read_only</literal>，如果它返回<literal>on</literal>则连接将被关闭。如果在连接字符串中指定了多个主机，只要连接尝试失败就会尝试剩余的服务器。这个参数的默认值<literal>any</literal>认为所有连接都可接受。
-      </para>
+        这个选项决定会话是否必须具有某些属性才能被接受。
+        它通常与多个主机名结合使用，以在多个主机中选择第一个可接受的选择项。
+        有六种模式:
+
+        <variablelist>
+         <varlistentry>
+          <term><literal>any</literal> (default)</term>
+          <listitem>
+           <para>
+            任何成功的连接是可接受的。
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>read-write</literal></term>
+          <listitem>
+           <para>
+            会话必须默认接受读-写事务（这是指，服务器必须不是热备模式，并且<varname>default_transaction_read_only</varname>参数必须是<literal>off</literal>）
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>read-only</literal></term>
+          <listitem>
+           <para>
+            会话必须默认不接受读-写事务 (相反的)
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>primary</literal></term>
+          <listitem>
+           <para>
+            服务器必须不是热备模式
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>standby</literal></term>
+          <listitem>
+           <para>
+            服务器必须是热备模式
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>prefer-standby</literal></term>
+          <listitem>
+           <para>
+            先尝试查找备用服务器，但是如果列出的服务器中没有备用服务器，再尝试以<literal>any</literal>模式。
+           </para>
+          </listitem>
+         </varlistentry>
+        </variablelist>
+       </para>
       </listitem>
-    </varlistentry>
+     </varlistentry>
     </variablelist>
    </para>
   </sect2>
@@ -3311,10 +3620,10 @@ char *PQport(const PGconn *conn);
 
      <listitem>
       <para>
-       Returns the debug <acronym>TTY</acronym> of the connection.
-       (This is obsolete, since the server no longer pays attention
-       to the <acronym>TTY</acronym> setting, but the function remains
-       for backward compatibility.)
+       This function no longer does anything, but it remains for backwards
+       compatibility.  The function always return an empty string, or
+       <symbol>NULL</symbol> if the <parameter>conn</parameter> argument is
+       <symbol>NULL</symbol>.
 
 <synopsis>
 char *PQtty(const PGconn *conn);
@@ -3462,7 +3771,8 @@ char *PQport(const PGconn *conn);
 
      <listitem>
       <para>
-       返回该连接的调试<acronym>TTY</acronym>（这已被废弃，因为服务器不再关心<acronym>TTY</acronym>设置，但这个函数保持了向后兼容）。
+       这个函数不再做任何事，但是它保持了向后兼容。
+       这个函数总是返回一个空字符串，或者<symbol>NULL</symbol>，如果<parameter>conn</parameter>为<symbol>NULL</symbol>。
 
 <synopsis>
 char *PQtty(const PGconn *conn);
@@ -3572,6 +3882,8 @@ const char *PQparameterStatus(const PGconn *conn, const char *paramName);
        <varname>server_encoding</varname>,
        <varname>client_encoding</varname>,
        <varname>application_name</varname>,
+       <varname>default_transaction_read_only</varname>,
+       <varname>in_hot_standby</varname>,
        <varname>is_superuser</varname>,
        <varname>session_authorization</varname>,
        <varname>DateStyle</varname>,
@@ -3584,26 +3896,16 @@ const char *PQparameterStatus(const PGconn *conn, const char *paramName);
        <varname>standard_conforming_strings</varname> was not reported by releases
        before 8.1;
        <varname>IntervalStyle</varname> was not reported by releases before 8.4;
-       <varname>application_name</varname> was not reported by releases before 9.0.)
+       <varname>application_name</varname> was not reported by releases before
+       9.0;
+       <varname>default_transaction_read_only</varname> and
+       <varname>in_hot_standby</varname> were not reported by releases before
+       14.)
        Note that
        <varname>server_version</varname>,
        <varname>server_encoding</varname> and
        <varname>integer_datetimes</varname>
        cannot change after startup.
-      </para>
-
-      <para>
-       Pre-3.0-protocol servers do not report parameter settings, but
-       <application>libpq</application> includes logic to obtain values for
-       <varname>server_version</varname> and <varname>client_encoding</varname> anyway.
-       Applications are encouraged to use <xref linkend="libpq-PQparameterStatus"/>
-       rather than <foreignphrase>ad hoc</foreignphrase> code to determine these values.
-       (Beware however that on a pre-3.0 connection, changing
-       <varname>client_encoding</varname> via <command>SET</command> after connection
-       startup will not be reflected by <xref linkend="libpq-PQparameterStatus"/>.)
-       For <varname>server_version</varname>, see also
-       <xref linkend="libpq-PQserverVersion"/>, which returns the information in a
-       numeric form that is much easier to compare against.
       </para>
 
       <para>
@@ -3632,15 +3934,12 @@ const char *PQparameterStatus(const PGconn *conn, const char *paramName);
 int PQprotocolVersion(const PGconn *conn);
 </synopsis>
        Applications might wish to use this function to determine whether certain
-       features are supported.  Currently, the possible values are 2 (2.0
-       protocol), 3 (3.0 protocol), or zero (connection bad).  The
-       protocol version will
+       features are supported.  Currently, the possible values are 3
+       (3.0 protocol), or zero (connection bad).  The protocol version will
        not change after connection startup is complete, but it could
-       theoretically change during a connection reset.  The 3.0 protocol
-       will normally be used when communicating with
-       <productname>PostgreSQL</productname> 7.4 or later servers; pre-7.4 servers
-       support only protocol 2.0.  (Protocol 1.0 is obsolete and not
-       supported by <application>libpq</application>.)
+       theoretically change during a connection reset.  The 3.0 protocol is
+       supported by <productname>PostgreSQL</productname> server versions 7.4
+       and above.
       </para>
      </listitem>
     </varlistentry>
@@ -3863,23 +4162,23 @@ const char *PQparameterStatus(const PGconn *conn, const char *paramName);
        <varname>server_encoding</varname>、
        <varname>client_encoding</varname>、
        <varname>application_name</varname>、
+       <varname>default_transaction_read_only</varname>,
+       <varname>in_hot_standby</varname>,
        <varname>is_superuser</varname>、
        <varname>session_authorization</varname>、
        <varname>DateStyle</varname>、
        <varname>IntervalStyle</varname>、
        <varname>TimeZone</varname>、
        <varname>integer_datetimes</varname>以及
-       <varname>standard_conforming_strings</varname>（
-       <varname>server_encoding</varname>、<varname>TimeZone</varname>以及<varname>integer_datetimes</varname>在 8.0 以前的发布中不被报告；<varname>standard_conforming_strings</varname>在 8.1 以前的发布中不被报告；<varname>IntervalStyle</varname>在 8.4 以前的发布中不被报告；<varname>application_name</varname>在 9.0 以前的发布中不被报告）。注意
-       <varname>server_version</varname>、
+       <varname>standard_conforming_strings</varname>。
+       （<varname>server_encoding</varname>、<varname>TimeZone</varname>以及<varname>integer_datetimes</varname>在 8.0 以前的发布中不被报告；
+       <varname>standard_conforming_strings</varname>在 8.1 以前的发布中不被报告；
+       <varname>IntervalStyle</varname>在 8.4 以前的发布中不被报告；
+       <varname>application_name</varname>在 9.0 以前的发布中不被报告；
+       <varname>default_transaction_read_only</varname> 和 <varname>in_hot_standby</varname> 再14以前的发布中不被报告）
+       注意 <varname>server_version</varname>、
        <varname>server_encoding</varname>以及
        <varname>integer_datetimes</varname>在启动之后无法改变。
-      </para>
-
-      <para>
-       3.0 之前协议的服务器不报告参数设置，但是<application>libpq</application>包括获得<varname>server_version</varname>以及<varname>client_encoding</varname>值的逻辑。
-       我们鼓励应用使用<xref linkend="libpq-PQparameterStatus"/>而不是<foreignphrase>ad hoc</foreignphrase>代码来确定这些值（不过注意在一个 3.0 之前的连接上，连接开始后通过<command>SET</command>改变<varname>client_encoding</varname>不会被<xref linkend="libpq-PQparameterStatus"/>反映）。
-       对于<varname>server_version</varname>（另见<xref linkend="libpq-PQserverVersion"/>），它以一种数字形式返回信息，这样更容易进行比较。
       </para>
 
       <para>
@@ -3901,7 +4200,9 @@ const char *PQparameterStatus(const PGconn *conn, const char *paramName);
 <synopsis>
 int PQprotocolVersion(const PGconn *conn);
 </synopsis>
-       应用可能希望用这个函数来确定某些特性是否被支持。当前，可能值是 2（2.0 协议）、3（3.0 协议）或零（连接损坏）。协议版本在连接启动完成后将不会改变，但是理论上在连接重置期间是可以改变的。当与<productname>PostgreSQL</productname> 7.4 或以后的服务器通信时通常使用 3.0 协议，7.4 之前的服务器只支持协议 2.0（协议 1.0 已被废弃并且不再被<application>libpq</application>支持）。
+       应用可能希望用这个函数来确定某些特性是否被支持。当前，可能值是3（3.0 协议）或零（连接损坏）。
+       协议版本在连接启动完成后将不会改变，但是理论上在连接重置期间是可以改变的。
+       3.0 协议被<productname>PostgreSQL</productname> 7.4 或以后的服务器版本所支持。
       </para>
      </listitem>
     </varlistentry>
@@ -4140,8 +4441,9 @@ void *PQsslStruct(const PGconn *conn, const char *struct_name);
       </para>
       <para>
        The struct(s) available depend on the SSL implementation in use.
-       For OpenSSL, there is one struct, available under the name "OpenSSL",
-       and it returns a pointer to the OpenSSL <literal>SSL</literal> struct.
+       For <productname>OpenSSL</productname>, there is one struct,
+       available under the name "OpenSSL", and it returns a pointer to the
+       <productname>OpenSSL</productname> <literal>SSL</literal> struct.
        To use this function, code along the following lines could be used:
 <programlisting><![CDATA[
 #include <libpq-fe.h>
@@ -4185,8 +4487,9 @@ void *PQgetssl(const PGconn *conn);
       <para>
        This function is equivalent to <literal>PQsslStruct(conn, "OpenSSL")</literal>. It should
        not be used in new applications, because the returned struct is
-       specific to OpenSSL and will not be available if another SSL
-       implementation is used. To check if a connection uses SSL, call
+       specific to <productname>OpenSSL</productname> and will not be
+       available if another <acronym>SSL</acronym> implementation is used.
+       To check if a connection uses SSL, call
        <xref linkend="libpq-PQsslInUse"/> instead, and for more details about the
        connection, use <xref linkend="libpq-PQsslAttribute"/>.
       </para>
@@ -4306,9 +4609,9 @@ void *PQsslStruct(const PGconn *conn, const char *struct_name);
 </synopsis>
       </para>
       <para>
-       可用的结构，这些结构取决于使用的 SSL 实现。对于 OpenSSL，有一个结构可用，
-       其名称为 "OpenSSL"。它返回一个指向该 OpenSSL <literal>SSL</literal> 结构
-       的指针。要使用这个函数，可以用下面的代码：
+       可用的结构，这些结构取决于使用的 SSL 实现。
+       对于<productname>OpenSSL</productname>，有一个结构可用，其名称为 "OpenSSL"。它返回一个指向该 <productname>OpenSSL</productname> <literal>SSL</literal> 结构的指针。
+       要使用这个函数，可以用下面的代码：
 <programlisting><![CDATA[
 #include <libpq-fe.h>
 #include <openssl/ssl.h>
@@ -4348,7 +4651,7 @@ void *PQgetssl(const PGconn *conn);
 
       <para>
        这个函数等效于<literal>PQsslStruct(conn, "OpenSSL")</literal>。
-       在新的应用中不应该使用它，因为被返回的结构是 OpenSSL 专用的，如果使用了另一种 SSL 实现就不再可用。
+       在新的应用中不应该使用它，因为被返回的结构是 <productname>OpenSSL</productname> 专用的，如果使用了另一种 <acronym>SSL</acronym> 实现就不再可用。
        要检查一个连接是否使用 SSL，应该调用<xref linkend="libpq-PQsslInUse"/>，而要得到有关连接的更多细节应该使用<xref linkend="libpq-PQsslAttribute"/>。
       </para>
      </listitem>
@@ -4484,8 +4787,7 @@ PGresult *PQexecParams(PGconn *conn,
         <xref linkend="libpq-PQexecParams"/> is like <xref linkend="libpq-PQexec"/>, but offers additional
         functionality: parameter values can be specified separately from the command
         string proper, and query results can be requested in either text or binary
-        format.  <xref linkend="libpq-PQexecParams"/> is supported only in protocol 3.0 and later
-        connections; it will fail when using protocol 2.0.
+        format.
        </para>
 
        <para>
@@ -4627,7 +4929,6 @@ PGresult *PQexecParams(PGconn *conn,
 
        <para>
         <xref linkend="libpq-PQexecParams"/>与<xref linkend="libpq-PQexec"/>相似，但是提供了额外的功能：参数值可以与命令字符串分开指定，并且可以以文本或二进制格式请求查询结果。
-        <xref linkend="libpq-PQexecParams"/>只在 3.0 协议及其后的连接中被支持，当使用 2.0 协议时它会失败。
        </para>
 
        <para>
@@ -4794,8 +5095,6 @@ PGresult *PQprepare(PGconn *conn,
         execution with <xref linkend="libpq-PQexecPrepared"/>.  This feature allows
         commands to be executed repeatedly without being parsed and
         planned each time;  see <xref linkend="sql-prepare"/> for details.
-        <xref linkend="libpq-PQprepare"/> is supported only in protocol 3.0 and later
-        connections; it will fail when using protocol 2.0.
        </para>
 
        <para>
@@ -4862,7 +5161,6 @@ PGresult *PQprepare(PGconn *conn,
        <para>
         <xref linkend="libpq-PQprepare"/>创建一个后面会由<xref linkend="libpq-PQexecPrepared"/>执行的预备语句。
         这个特性允许命令被反复执行而无需每次都进行解析和规划，详见<xref linkend="sql-prepare"/>。
-        <xref linkend="libpq-PQprepare"/>只在协议 3.0 及之后的连接中被支持，当使用协议 2.0 时它将失败。
        </para>
 
        <para>
@@ -4915,9 +5213,7 @@ PGresult *PQexecPrepared(PGconn *conn,
         This feature allows commands that will be used repeatedly to be
         parsed and planned just once, rather than each time they are
         executed.  The statement must have been prepared previously in
-        the current session.  <xref linkend="libpq-PQexecPrepared"/> is supported
-        only in protocol 3.0 and later connections; it will fail when
-        using protocol 2.0.
+        the current session.
        </para>
 
        <para>
@@ -4944,8 +5240,6 @@ PGresult *PQdescribePrepared(PGconn *conn, const char *stmtName);
        <para>
         <xref linkend="libpq-PQdescribePrepared"/> allows an application to obtain
         information about a previously prepared statement.
-        <xref linkend="libpq-PQdescribePrepared"/> is supported only in protocol 3.0
-        and later connections; it will fail when using protocol 2.0.
        </para>
 
        <para>
@@ -4982,8 +5276,6 @@ PGresult *PQdescribePortal(PGconn *conn, const char *portalName);
         (<application>libpq</application> does not provide any direct access to
         portals, but you can use this function to inspect the properties
         of a cursor created with a <command>DECLARE CURSOR</command> SQL command.)
-        <xref linkend="libpq-PQdescribePortal"/> is supported only in protocol 3.0
-        and later connections; it will fail when using protocol 2.0.
        </para>
 
        <para>
@@ -5022,8 +5314,8 @@ PGresult *PQexecPrepared(PGconn *conn,
 
        <para>
         <xref linkend="libpq-PQexecPrepared"/>像<xref linkend="libpq-PQexecParams"/>，但是要被执行的命令是用之前准备的语句的名字指定，而不是指定一个查询串。
-        这个特性允许将被重复使用的命令只被解析和规划一次，而不是在每次被执行时都被解析和规划。这个语句必须之前在当前会话中已经被准备好。
-        <xref linkend="libpq-PQexecPrepared"/>仅被协议 3.0 及之后的连接支持，当使用协议 2.0 时它会失败。
+        这个特性允许将被重复使用的命令只被解析和规划一次，而不是在每次被执行时都被解析和规划。
+        这个语句必须之前在当前会话中已经被准备好。
        </para>
 
        <para>
@@ -5044,7 +5336,7 @@ PGresult *PQdescribePrepared(PGconn *conn, const char *stmtName);
        </para>
 
        <para>
-        <xref linkend="libpq-PQdescribePrepared"/>允许一个应用获得有关一个之前预备好的语句的信息。<xref linkend="libpq-PQdescribePrepared"/>仅被协议 3.0 及之后的连接支持，当使用协议 2.0 时它会失败。
+        <xref linkend="libpq-PQdescribePrepared"/>允许一个应用获得有关一个之前预备好的语句的信息。
        </para>
 
        <para>
@@ -5069,7 +5361,6 @@ PGresult *PQdescribePortal(PGconn *conn, const char *portalName);
 
        <para>
         <xref linkend="libpq-PQdescribePortal"/>允许一个应用获得有关一个之前被创建的入口的信息（<application>libpq</application>不提供对入口任何直接的访问，但是你可以使用这个函数来观察一个通过<command>DECLARE CURSOR</command> SQL 命令创建的游标的属性）。
-        <xref linkend="libpq-PQdescribePortal"/>仅被协议 3.0 及之后的连接支持，当使用协议 2.0 时它会失败。
        </para>
 
        <para>
@@ -5201,6 +5492,32 @@ ExecStatusType PQresultStatus(const PGresult *res);
             from the current command.  This status occurs only when
             single-row mode has been selected for the query
             (see <xref linkend="libpq-single-row-mode"/>).
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry id="libpq-pgres-pipeline-sync">
+          <term><literal>PGRES_PIPELINE_SYNC</literal></term>
+          <listitem>
+           <para>
+            The <structname>PGresult</structname> represents a
+            synchronization point in pipeline mode, requested by
+            <xref linkend="libpq-PQpipelineSync"/>.
+            This status occurs only when pipeline mode has been selected.
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry id="libpq-pgres-pipeline-aborted">
+          <term><literal>PGRES_PIPELINE_ABORTED</literal></term>
+          <listitem>
+           <para>
+            The <structname>PGresult</structname> represents a pipeline that has
+            received an error from the server.  <function>PQgetResult</function>
+            must be called repeatedly, and each time it will return this status code
+            until the end of the current pipeline, at which point it will return
+            <literal>PGRES_PIPELINE_SYNC</literal> and normal processing can
+            resume.
            </para>
           </listitem>
          </varlistentry>
@@ -5444,7 +5761,7 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
           <listitem>
            <para>
             The text of a failed internally-generated command.  This could
-            be, for example, a SQL query issued by a PL/pgSQL function.
+            be, for example, an SQL query issued by a PL/pgSQL function.
            </para>
           </listitem>
          </varlistentry>
@@ -5571,8 +5888,6 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
        <para>
         Errors generated internally by <application>libpq</application> will
         have severity and primary message, but typically no other fields.
-        Errors returned by a pre-3.0-protocol server will include severity and
-        primary message, and sometimes a detail message, but no other fields.
        </para>
 
        <para>
@@ -5715,6 +6030,26 @@ ExecStatusType PQresultStatus(const PGresult *res);
           <listitem>
            <para>
             <structname>PGresult</structname>包含来自于当前命令的一个单一结果元组。这个状态只在查询选择了单一行模式时发生（见<xref linkend="libpq-single-row-mode"/>）。
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry id="libpq-pgres-pipeline-sync">
+          <term><literal>PGRES_PIPELINE_SYNC</literal></term>
+          <listitem>
+           <para>
+            <structname>PGresult</structname>表示管道模式中的同步点，由<xref linkend="libpq-PQpipelineSync"/>请求。
+            此状态仅在选择管道模式时发生。
+           </para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry id="libpq-pgres-pipeline-aborted">
+          <term><literal>PGRES_PIPELINE_ABORTED</literal></term>
+          <listitem>
+           <para>
+            <structname>PGresult</structname>表示从服务器接收到错误的管道。
+            <function>PQgetResult</function>必须被重复调用，并且每次它都会返回这个状态码，直到当前管道结束，此时它将返回<literal>PGRES_PIPELINE_SYNC</literal>，并且正常的处理可以继续。
            </para>
           </listitem>
          </varlistentry>
@@ -5983,7 +6318,7 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
        </para>
 
        <para>
-        <application>libpq</application>内部产生的错误将有严重和主要消息，但是通常没有其他域。3.0 协议之前的服务器返回的错误将包括严重和主要消息，并且有时候还有细节消息，但是没有其他域。
+        <application>libpq</application>内部产生的错误将有严重和主要消息，但是通常没有其他域。
        </para>
 
        <para>
@@ -6233,14 +6568,14 @@ Oid PQftable(const PGresult *res,
 <!--==========================orignal english content==========================
       <para>
        <literal>InvalidOid</literal> is returned if the column number is out of range,
-       or if the specified column is not a simple reference to a table column,
-       or when using pre-3.0 protocol.
+       or if the specified column is not a simple reference to a table column.
        You can query the system table <literal>pg_class</literal> to determine
        exactly which table is referenced.
       </para>
 ____________________________________________________________________________-->
       <para>
-       如果列号超出范围或者指定的列不是对一个表列的简单引用或者在使用 3.0 协议时，返回<literal>InvalidOid</literal>。你可以查询系统表<literal>pg_class</literal>来确定究竟是哪个表被引用。
+       如果列号超出范围或者指定的列不是对一个表列的简单引用时，返回<literal>InvalidOid</literal>。
+       你可以查询系统表<literal>pg_class</literal>来确定究竟是哪个表被引用。
       </para>
 
 <!--==========================orignal english content==========================
@@ -6286,12 +6621,11 @@ int PQftablecol(const PGresult *res,
 <!--==========================orignal english content==========================
       <para>
        Zero is returned if the column number is out of range, or if the
-       specified column is not a simple reference to a table column, or
-       when using pre-3.0 protocol.
+       specified column is not a simple reference to a table column.
       </para>
 ____________________________________________________________________________-->
       <para>
-       如果列号超出范围或者指定的列不是对一个表列的简单引用或者在使用 3.0 协议时，返回零。
+       如果列号超出范围或者指定的列不是对一个表列的简单引用时，返回零。
       </para>
      </listitem>
     </varlistentry>
@@ -6365,12 +6699,14 @@ Oid PQftype(const PGresult *res,
        You can query the system table <literal>pg_type</literal> to
        obtain the names and properties of the various data types. The
        <acronym>OID</acronym>s of the built-in data types are defined
-       in the file <filename>src/include/catalog/pg_type_d.h</filename>
-       in the source tree.
+       in the file <filename>catalog/pg_type_d.h</filename>
+       in the <productname>PostgreSQL</productname>
+       installation's <filename>include</filename> directory.
       </para>
 ____________________________________________________________________________-->
       <para>
-       你可以查询系统表<literal>pg_type</literal>来得到多个数据类型的名字和属性。内建数据类型的<acronym>OID</acronym>被定义在源代码树中的文件<filename>src/include/catalog/pg_type_d.h</filename>中。
+       你可以查询系统表<literal>pg_type</literal>来得到多个数据类型的名字和属性。
+       内建数据类型的<acronym>OID</acronym>被定义在<productname>PostgreSQL</productname>安装的<filename>include</filename>目录中的<filename>catalog/pg_type_d.h</filename>文件中。
       </para>
      </listitem>
     </varlistentry>
@@ -7644,6 +7980,11 @@ int PQsendQuery(PGconn *conn, const char *command);
        (on the same connection) until <xref linkend="libpq-PQgetResult"/>
        has returned a null pointer, indicating that the command is done.
       </para>
+
+      <para>
+       In pipeline mode, command strings containing more than one SQL command
+       are disallowed.
+      </para>
      </listitem>
     </varlistentry>
 
@@ -7669,8 +8010,8 @@ int PQsendQueryParams(PGconn *conn,
        query parameters can be specified separately from the query string.
        The function's parameters are handled identically to
        <xref linkend="libpq-PQexecParams"/>.  Like
-       <xref linkend="libpq-PQexecParams"/>, it will not work on 2.0-protocol
-       connections, and it allows only one command in the query string.
+       <xref linkend="libpq-PQexecParams"/>, it allows only one command in the
+       query string.
       </para>
      </listitem>
     </varlistentry>
@@ -7695,9 +8036,7 @@ int PQsendPrepare(PGconn *conn,
        After a successful call, call <xref linkend="libpq-PQgetResult"/> to
        determine whether the server successfully created the prepared
        statement.  The function's parameters are handled identically to
-       <xref linkend="libpq-PQprepare"/>.  Like
-       <xref linkend="libpq-PQprepare"/>, it will not work on 2.0-protocol
-       connections.
+       <xref linkend="libpq-PQprepare"/>.
       </para>
      </listitem>
     </varlistentry>
@@ -7723,9 +8062,7 @@ int PQsendQueryPrepared(PGconn *conn,
        the command to be executed is specified by naming a
        previously-prepared statement, instead of giving a query string.
        The function's parameters are handled identically to
-       <xref linkend="libpq-PQexecPrepared"/>.  Like
-       <xref linkend="libpq-PQexecPrepared"/>, it will not work on
-       2.0-protocol connections.
+       <xref linkend="libpq-PQexecPrepared"/>.
       </para>
      </listitem>
     </varlistentry>
@@ -7745,9 +8082,7 @@ int PQsendDescribePrepared(PGconn *conn, const char *stmtName);
        it returns 1 if it was able to dispatch the request, and 0 if not.
        After a successful call, call <xref linkend="libpq-PQgetResult"/> to
        obtain the results.  The function's parameters are handled
-       identically to <xref linkend="libpq-PQdescribePrepared"/>.  Like
-       <xref linkend="libpq-PQdescribePrepared"/>, it will not work on
-       2.0-protocol connections.
+       identically to <xref linkend="libpq-PQdescribePrepared"/>.
       </para>
      </listitem>
     </varlistentry>
@@ -7767,9 +8102,7 @@ int PQsendDescribePortal(PGconn *conn, const char *portalName);
        it returns 1 if it was able to dispatch the request, and 0 if not.
        After a successful call, call <xref linkend="libpq-PQgetResult"/> to
        obtain the results.  The function's parameters are handled
-       identically to <xref linkend="libpq-PQdescribePortal"/>.  Like
-       <xref linkend="libpq-PQdescribePortal"/>, it will not work on
-       2.0-protocol connections.
+       identically to <xref linkend="libpq-PQdescribePortal"/>.
       </para>
      </listitem>
     </varlistentry>
@@ -7784,8 +8117,9 @@ int PQsendDescribePortal(PGconn *conn, const char *portalName);
        <xref linkend="libpq-PQsendQueryParams"/>,
        <xref linkend="libpq-PQsendPrepare"/>,
        <xref linkend="libpq-PQsendQueryPrepared"/>,
-       <xref linkend="libpq-PQsendDescribePrepared"/>, or
-       <xref linkend="libpq-PQsendDescribePortal"/>
+       <xref linkend="libpq-PQsendDescribePrepared"/>,
+       <xref linkend="libpq-PQsendDescribePortal"/>, or
+       <xref linkend="libpq-PQpipelineSync"/>
        call, and returns it.
        A null pointer is returned when the command is complete and there
        will be no more results.
@@ -7807,6 +8141,19 @@ PGresult *PQgetResult(PGconn *conn);
        <xref linkend="libpq-PQgetResult"/> will block only if a command is
        active and the necessary response data has not yet been read by
        <xref linkend="libpq-PQconsumeInput"/>.
+      </para>
+
+      <para>
+       In pipeline mode, <function>PQgetResult</function> will return normally
+       unless an error occurs; for any subsequent query sent after the one
+       that caused the error until (and excluding) the next synchronization point,
+       a special result of type <literal>PGRES_PIPELINE_ABORTED</literal> will
+       be returned, and a null pointer will be returned after it.
+       When the pipeline synchronization point is reached, a result of type
+       <literal>PGRES_PIPELINE_SYNC</literal> will be returned.
+       The result of the next query after the synchronization point follows
+       immediately (that is, no null pointer is returned after
+       the synchronization point.)
       </para>
 
       <note>
@@ -7850,6 +8197,10 @@ int PQsendQuery(PGconn *conn, const char *command);
        在成功调用<xref linkend="libpq-PQsendQuery"/>后，调用<xref linkend="libpq-PQgetResult"/>一次或者多次来获取结果。
        在<xref linkend="libpq-PQsendQuery"/>返回一个空指针之前，都不能再次调用<xref linkend="libpq-PQgetResult"/>，返回的空指针指示该命令已经完成。
       </para>
+
+      <para>
+       在管道模式中，命令字符串中包含多余一条SQL命令是不允许的。
+      </para>
      </listitem>
     </varlistentry>
 
@@ -7871,7 +8222,7 @@ int PQsendQueryParams(PGconn *conn,
 </synopsis>
 
        这个函数等效于<xref linkend="libpq-PQsendQuery"/>，不过查询参数可以独立于查询字符串分开指定。该函数的参数处理和<xref linkend="libpq-PQexecParams"/>一样。
-       和<xref linkend="libpq-PQexecParams"/>类似，它不能在 2.0 协议的连接上工作，并且它只允许在查询字符串中有一条命令。
+       和<xref linkend="libpq-PQexecParams"/>类似，它只允许在查询字符串中有一条命令。
       </para>
      </listitem>
     </varlistentry>
@@ -7892,7 +8243,7 @@ int PQsendPrepare(PGconn *conn,
 
        这个函数是<xref linkend="libpq-PQprepare"/>的异步版本：如果它能发送这个请求，则返回 1；如果不能，则返回 0。
        在成功调用之后，调用<xref linkend="libpq-PQgetResult"/>判断服务器是否成功创建了预备语句。
-       这个函数的参数的处理和<xref linkend="libpq-PQprepare"/>一样。和<xref linkend="libpq-PQprepare"/>类似，它不能在 2.0 协议的连接上工作。
+       这个函数的参数的处理和<xref linkend="libpq-PQprepare"/>一样。
       </para>
      </listitem>
     </varlistentry>
@@ -7914,7 +8265,7 @@ int PQsendQueryPrepared(PGconn *conn,
 </synopsis>
 
        这个函数与<xref linkend="libpq-PQsendQueryParams"/>类似，但是要执行的命令是通过一个之前已经命名的预备语句指定， 而不是一个给出的查询字符串。
-	   该函数的参数处理和<xref linkend="libpq-PQexecPrepared"/>一样。和<xref linkend="libpq-PQexecPrepared"/>类似，它不能在 2.0 协议的连接上工作。
+	   该函数的参数处理和<xref linkend="libpq-PQexecPrepared"/>一样。
       </para>
      </listitem>
     </varlistentry>
@@ -7931,7 +8282,7 @@ int PQsendDescribePrepared(PGconn *conn, const char *stmtName);
 
        这个函数是<xref linkend="libpq-PQdescribePrepared"/>的一个异步版本：如果它能够发送请求，则返回 1；否则，返回 0。
        在一次成功的调用后，调用<xref linkend="libpq-PQgetResult"/>来得到结果。
-       该函数的参数处理和<xref linkend="libpq-PQdescribePrepared"/>一样。和<xref linkend="libpq-PQdescribePrepared"/>类似，它不能在 2.0 协议的连接上工作。
+       该函数的参数处理和<xref linkend="libpq-PQdescribePrepared"/>一样。
       </para>
      </listitem>
     </varlistentry>
@@ -7948,7 +8299,7 @@ int PQsendDescribePortal(PGconn *conn, const char *portalName);
 
        这个函数是<xref linkend="libpq-PQdescribePortal"/>的一个异步版本：如果它能够发送请求，则返回 1；否则，返回 0。
        在一次成功的调用后，调用<xref linkend="libpq-PQgetResult"/>来得到结果。
-       该函数的参数处理和<xref linkend="libpq-PQdescribePortal"/>一样。和<xref linkend="libpq-PQdescribePortal"/>类似，它不能在 2.0 协议的连接上工作。
+       该函数的参数处理和<xref linkend="libpq-PQdescribePortal"/>一样。
       </para>
      </listitem>
     </varlistentry>
@@ -7963,8 +8314,10 @@ int PQsendDescribePortal(PGconn *conn, const char *portalName);
        <xref linkend="libpq-PQsendQueryParams"/>,
        <xref linkend="libpq-PQsendPrepare"/>,
        <xref linkend="libpq-PQsendQueryPrepared"/>,
-       <xref linkend="libpq-PQsendDescribePrepared"/>, 或
-       <xref linkend="libpq-PQsendDescribePortal"/>调用的结果，并且返回它。当该命令完成并且没有更多结果时，将返回一个空指针。
+       <xref linkend="libpq-PQsendDescribePrepared"/>,
+       <xref linkend="libpq-PQsendDescribePortal"/>, 或
+       <xref linkend="libpq-PQpipelineSync"/>调用的结果，并且返回它。
+       当该命令完成并且没有更多结果时，将返回一个空指针。
 <synopsis>
 PGresult *PQgetResult(PGconn *conn);
 </synopsis>
@@ -7974,6 +8327,13 @@ PGresult *PQgetResult(PGconn *conn);
        <xref linkend="libpq-PQgetResult"/>必须被反复调用直到它返回一个空指针，空指针表示该命令完成（如果在没有命令活动时被调用，<xref linkend="libpq-PQgetResult"/>将立即返回一个空指针）。
        每一个来自<xref linkend="libpq-PQgetResult"/>的非空结果应该使用之前描述的同一个<structname>PGresult</structname>访问器处理。
        不要忘记在处理完之后释放<xref linkend="libpq-PQclear"/>的每一个结果对象。注意，只有一个命令是活动的并且<xref linkend="libpq-PQconsumeInput"/>还没有读取必要的响应数据时， <xref linkend="libpq-PQgetResult"/>将会阻塞。
+      </para>
+
+      <para>
+       在管道模式中，否则<function>PQgetResult</function>将正常返回，除非发生错误;
+       对于在导致错误的查询之后发送的任何后续查询，直到(不包括)下一个同步点，将返回一个<literal>PGRES_PIPELINE_ABORTED</literal>类型的特殊结果，并且在它后面返回一个空指针。
+       当到达管道同步点时，将返回<literal>PGRES_PIPELINE_SYNC</literal>类型的结果。
+       同步点之后的下一个查询的结果立即跟随(也就是说，在同步点之后没有空指针被返回。)
       </para>
 
       <note>
@@ -8345,6 +8705,892 @@ ____________________________________________________________________________-->
 
  </sect1>
 
+ <sect1 id="libpq-pipeline-mode">
+<!--==========================orignal english content==========================
+  <title>Pipeline Mode</title>
+____________________________________________________________________________-->
+  <title>管道模式</title>
+
+<!--==========================orignal english content==========================
+  <indexterm zone="libpq-pipeline-mode">
+   <primary>libpq</primary>
+   <secondary>pipeline mode</secondary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm zone="libpq-pipeline-mode">
+   <primary>libpq</primary>
+   <secondary>管道模式</secondary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <indexterm zone="libpq-pipeline-mode">
+   <primary>pipelining</primary>
+   <secondary>in libpq</secondary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm zone="libpq-pipeline-mode">
+   <primary>pipelining</primary>
+   <secondary>in libpq</secondary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <indexterm zone="libpq-pipeline-mode">
+   <primary>batch mode</primary>
+   <secondary>in libpq</secondary>
+  </indexterm>
+____________________________________________________________________________-->
+  <indexterm zone="libpq-pipeline-mode">
+   <primary>batch mode</primary>
+   <secondary>in libpq</secondary>
+  </indexterm>
+
+<!--==========================orignal english content==========================
+  <para>
+   <application>libpq</application> pipeline mode allows applications to
+   send a query without having to read the result of the previously
+   sent query.  Taking advantage of the pipeline mode, a client will wait
+   less for the server, since multiple queries/results can be
+   sent/received in a single network transaction.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   <application>libpq</application> 管道模式允许应用发送查询而无需读取先前发送查询的结果。
+   利用管道模式的优点，客户端将对服务器等待的更少，因为可以在单个网络事务中发送/接收多个查询/结果。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   While pipeline mode provides a significant performance boost, writing
+   clients using the pipeline mode is more complex because it involves
+   managing a queue of pending queries and finding which result
+   corresponds to which query in the queue.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   虽然管道模式提供了显著的性能提升，
+   使用管道模式写客户端会更加复杂，因为它涉及到管理一个挂起查询的队列，并查找队列中的哪个结果对应于哪个查询。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Pipeline mode also generally consumes more memory on both the client and server,
+   though careful and aggressive management of the send/receive queue can mitigate
+   this.  This applies whether or not the connection is in blocking or non-blocking
+   mode.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   管道模式通常也会在客户端和服务器上面消耗更多的内存，尽管仔细和积极地管理发送/接收队列可以减轻这种消耗。
+   这适用于连接是否处于阻塞或非阻塞模式。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   While the pipeline API was introduced in
+   <productname>PostgreSQL</productname> 14, it is a client-side feature
+   which doesn't require special server support and works on any server
+   that supports the v3 extended query protocol.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   虽然管道API在<productname>PostgreSQL</productname> 14中引入，
+   它是一个客户端侧的特性，不需要特殊的服务器支持，并且可以在支持v3扩展查询协议的任何服务器上工作。
+  </para>
+
+  <sect2 id="libpq-pipeline-using">
+<!--==========================orignal english content==========================
+   <title>Using Pipeline Mode</title>
+____________________________________________________________________________-->
+   <title>使用管道模式</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    To issue pipelines, the application must switch the connection
+    into pipeline mode,
+    which is done with <xref linkend="libpq-PQenterPipelineMode"/>.
+    <xref linkend="libpq-PQpipelineStatus"/> can be used
+    to test whether pipeline mode is active.
+    In pipeline mode, only <link linkend="libpq-async">asynchronous operations</link>
+    are permitted, command strings containing multiple SQL commands are
+    disallowed, and so is <literal>COPY</literal>.
+    Using synchronous command execution functions
+    such as <function>PQfn</function>,
+    <function>PQexec</function>,
+    <function>PQexecParams</function>,
+    <function>PQprepare</function>,
+    <function>PQexecPrepared</function>,
+    <function>PQdescribePrepared</function>,
+    <function>PQdescribePortal</function>,
+    is an error condition.
+    Once all dispatched commands have had their results processed, and
+    the end pipeline result has been consumed, the application may return
+    to non-pipelined mode with <xref linkend="libpq-PQexitPipelineMode"/>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    要发出管道，应用必须切换连接到管道模式，通过<xref linkend="libpq-PQenterPipelineMode"/>来完成。
+    <xref linkend="libpq-PQpipelineStatus"/>可用于测试管道模式是否活动。
+    在管道模式下，只允许<link linkend="libpq-async">asynchronous operations</link>，不允许包含多个SQL命令的命令字符串，也不允许<literal>COPY</literal>。
+    使用同步命令执行函数，例如：
+    <function>PQfn</function>,
+    <function>PQexec</function>,
+    <function>PQexecParams</function>,
+    <function>PQprepare</function>,
+    <function>PQexecPrepared</function>,
+    <function>PQdescribePrepared</function>,
+    <function>PQdescribePortal</function>，是一个错误条件。
+    当所有发送的命令都有了它们的结果处理，并且最终的管道结果已经被消耗，应用可以使用<xref linkend="libpq-PQexitPipelineMode"/>返回到非管道模式。
+   </para>
+
+   <note>
+<!--==========================orignal english content==========================
+    <para>
+     It is best to use pipeline mode with <application>libpq</application> in
+     <link linkend="libpq-PQsetnonblocking">non-blocking mode</link>. If used
+     in blocking mode it is possible for a client/server deadlock to occur.
+      <footnote>
+       <para>
+        The client will block trying to send queries to the server, but the
+        server will block trying to send results to the client from queries
+        it has already processed. This only occurs when the client sends
+        enough queries to fill both its output buffer and the server's receive
+        buffer before it switches to processing input from the server,
+        but it's hard to predict exactly when that will happen.
+       </para>
+      </footnote>
+    </para>
+____________________________________________________________________________-->
+    <para>
+     最好在<application>libpq</application>在<link linkend="libpq-PQsetnonblocking">non-blocking mode</link>的时候使用管道模式。
+     如果在阻塞模式下使用，它可能发生客户端/服务器死锁。
+      <footnote>
+       <para>
+        客户端将阻止尝试发送查询到服务器，但服务器将阻止从它已经处理的查询向客户端发送结果。
+        这只有当客户端在它切换到处理从服务器的输入之前发送足够的查询来填充其输出缓冲区和服务器的接收缓冲区，才会发生这种情况，但很难准确预测何时将发生。
+       </para>
+      </footnote>
+    </para>
+   </note>
+
+   <sect3 id="libpq-pipeline-sending">
+<!--==========================orignal english content==========================
+    <title>Issuing Queries</title>
+____________________________________________________________________________-->
+    <title>发出查询</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     After entering pipeline mode, the application dispatches requests using
+     <xref linkend="libpq-PQsendQuery"/>,
+     <xref linkend="libpq-PQsendQueryParams"/>,
+     or its prepared-query sibling
+     <xref linkend="libpq-PQsendQueryPrepared"/>.
+     These requests are queued on the client-side until flushed to the server;
+     this occurs when <xref linkend="libpq-PQpipelineSync"/> is used to
+     establish a synchronization point in the pipeline,
+     or when <xref linkend="libpq-PQflush"/> is called.
+     The functions <xref linkend="libpq-PQsendPrepare"/>,
+     <xref linkend="libpq-PQsendDescribePrepared"/>, and
+     <xref linkend="libpq-PQsendDescribePortal"/> also work in pipeline mode.
+     Result processing is described below.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     进入管道模式之后, 应用使用<xref linkend="libpq-PQsendQuery"/>,<xref linkend="libpq-PQsendQueryParams"/>,或它的准备-查询sibling <xref linkend="libpq-PQsendQueryPrepared"/>.
+     这些请求在客户端侧排队，直至刷新到服务器;
+     当<xref linkend="libpq-PQpipelineSync"/>用于在管道中建立同步点时，或者当调用<xref linkend="libpq-PQflush"/>时，这种情况就会发生。
+     函数<xref linkend="libpq-PQsendPrepare"/>、<xref linkend="libpq-PQsendDescribePrepared"/>、和<xref linkend="libpq-PQsendDescribePortal"/>也在管道模式下工作。
+     结果处理描述如下。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The server executes statements, and returns results, in the order the
+     client sends them.  The server will begin executing the commands in the
+     pipeline immediately, not waiting for the end of the pipeline.
+     Note that results are buffered on the server side; the server flushes
+     that buffer when a synchronization point is established with
+     <function>PQpipelineSync</function>, or when
+     <function>PQsendFlushRequest</function> is called.
+     If any statement encounters an error, the server aborts the current
+     transaction and does not execute any subsequent command in the queue
+     until the next synchronization point;
+     a <literal>PGRES_PIPELINE_ABORTED</literal> result is produced for
+     each such command.
+     (This remains true even if the commands in the pipeline would rollback
+     the transaction.)
+     Query processing resumes after the synchronization point.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     服务器执行语句，并返回结果，按客户端发送它们的顺序。
+     服务器将立即开始执行管道中的命令，不等待管道的结束。
+     注意，结果被缓冲在服务器端端;当使用<function>PQpipelineSync</function>建立同步点时，或者<function>PQsendFlushRequest</function>被调用时，服务器会刷新该缓冲区。
+     如果任何语句遇到错误，服务器将中止当前事务，并且不执行队列中的任何后续命令，直到下一个同步点;对于每一个这样的命令都会产生一个<literal>PGRES_PIPELINE_ABORTED</literal>结果。
+     (即使管道中的命令将回滚事务，依然如此。)
+     查询处理在同步点之后恢复。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     It's fine for one operation to depend on the results of a
+     prior one; for example, one query may define a table that the next
+     query in the same pipeline uses. Similarly, an application may
+     create a named prepared statement and execute it with later
+     statements in the same pipeline.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     一个操作依赖于前一个操作的结果是没问题的;
+     例如，一个查询可以定义一个同一管道中的下一个查询将用到的表。
+     类似地，应用可以创建一个命名的预处理语句，并在同一管道中与后续语句一起执行它。
+    </para>
+   </sect3>
+
+   <sect3 id="libpq-pipeline-results">
+<!--==========================orignal english content==========================
+    <title>Processing Results</title>
+____________________________________________________________________________-->
+    <title>处理结果</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     To process the result of one query in a pipeline, the application calls
+     <function>PQgetResult</function> repeatedly and handles each result
+     until <function>PQgetResult</function> returns null.
+     The result from the next query in the pipeline may then be retrieved using
+     <function>PQgetResult</function> again and the cycle repeated.
+     The application handles individual statement results as normal.
+     When the results of all the queries in the pipeline have been
+     returned, <function>PQgetResult</function> returns a result
+     containing the status value <literal>PGRES_PIPELINE_SYNC</literal>
+    </para>
+____________________________________________________________________________-->
+    <para>
+     为了在管道中处理一个查询的结果，应用重复调用<function>PQgetResult</function>并处理每个结果，直到<function>PQgetResult</function>返回空。
+     可以再次使用<function>PQgetResult</function>检索管道中下一个查询的结果，并且循环重复
+     应用像通常一样处理单个语句结果。
+     当管道中所有查询的结果都返回时，<function>PQgetResult</function>返回一个结果，其包含状态值<literal>PGRES_PIPELINE_SYNC</literal>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The client may choose to defer result processing until the complete
+     pipeline has been sent, or interleave that with sending further
+     queries in the pipeline; see <xref linkend="libpq-pipeline-interleave"/>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     客户端可以选择延迟结果处理，直到完整的管道被发送，或者与管道中发送的更多的查询交错在一起;参见<xref linkend="libpq-pipeline-interleave"/>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     To enter single-row mode, call <function>PQsetSingleRowMode</function>
+     before retrieving results with <function>PQgetResult</function>.
+     This mode selection is effective only for the query currently
+     being processed. For more information on the use of
+     <function>PQsetSingleRowMode</function>,
+     refer to <xref linkend="libpq-single-row-mode"/>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     要进入单行模式，在使用<function>PQgetResult</function>检索结果之前调用<function>PQsetSingleRowMode</function>。
+     此模式选择仅对当前处理的查询有效。
+     有关使用<function>PQsetSingleRowMode</function>的更多信息，请参阅<xref linkend="libpq-single-row-mode"/>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     <function>PQgetResult</function> behaves the same as for normal
+     asynchronous processing except that it may contain the new
+     <type>PGresult</type> types <literal>PGRES_PIPELINE_SYNC</literal>
+     and <literal>PGRES_PIPELINE_ABORTED</literal>.
+     <literal>PGRES_PIPELINE_SYNC</literal> is reported exactly once for each
+     <function>PQpipelineSync</function> at the corresponding point
+     in the pipeline.
+     <literal>PGRES_PIPELINE_ABORTED</literal> is emitted in place of a normal
+     query result for the first error and all subsequent results
+     until the next <literal>PGRES_PIPELINE_SYNC</literal>;
+     see <xref linkend="libpq-pipeline-errors"/>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <function>PQgetResult</function>行为与普通异步处理相同，除了它可能包含新的<type>PGresult</type>类型<literal>PGRES_PIPELINE_SYNC</literal> 和<literal>PGRES_PIPELINE_ABORTED</literal>。
+     对于每个在管道中相应的点的<function>PQpipelineSync</function>，<literal>PGRES_PIPELINE_SYNC</literal>确定报告一次。
+     <literal>PGRES_PIPELINE_ABORTED</literal>在第一个错误和所有后续结果的正常查询结果中发出，直到下一个<literal>PGRES_PIPELINE_SYNC</literal>;参见<xref linkend="libpq-pipeline-errors"/>。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     <function>PQisBusy</function>, <function>PQconsumeInput</function>, etc
+     operate as normal when processing pipeline results.  In particular,
+     a call to <function>PQisBusy</function> in the middle of a pipeline
+     returns 0 if the results for all the queries issued so far have been
+     consumed.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <function>PQisBusy</function>、<function>PQconsumeInput</function>、等正常操作，在处理管道结果时。
+     特别是，在管道中间调用<function>PQisBusy</function> 时，如果到目前为止发出的所有查询的结果都已被消耗，则返回0。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     <application>libpq</application> does not provide any information to the
+     application about the query currently being processed (except that
+     <function>PQgetResult</function> returns null to indicate that we start
+     returning the results of next query). The application must keep track
+     of the order in which it sent queries, to associate them with their
+     corresponding results.
+     Applications will typically use a state machine or a FIFO queue for this.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     <application>libpq</application>不向应用提供有关当前正在处理的查询的任何信息(除了<function>PQgetResult</function>返回空，以表示我们开始返回下一个查询的结果)。
+     应用必须保持跟踪它发送查询的顺序，以将它们与相应的结果相关联。
+     应用通常会为此使用状态机或FIFO队列。
+    </para>
+
+   </sect3>
+
+   <sect3 id="libpq-pipeline-errors">
+<!--==========================orignal english content==========================
+    <title>Error Handling</title>
+____________________________________________________________________________-->
+    <title>错误处理</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     From the client's perspective, after <function>PQresultStatus</function>
+     returns <literal>PGRES_FATAL_ERROR</literal>,
+     the pipeline is flagged as aborted.
+     <function>PQresultStatus</function> will report a
+     <literal>PGRES_PIPELINE_ABORTED</literal> result for each remaining queued
+     operation in an aborted pipeline. The result for
+     <function>PQpipelineSync</function> is reported as
+     <literal>PGRES_PIPELINE_SYNC</literal> to signal the end of the aborted pipeline
+     and resumption of normal result processing.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     从客户端的视角，在<function>PQresultStatus</function>返回<literal>PGRES_FATAL_ERROR</literal>之后，管道被标记为中止。
+     <function>PQresultStatus</function>将报告一个<literal>PGRES_PIPELINE_ABORTED</literal>结果，对中止的管道中的每一个剩余的排队操作。
+     <function>PQpipelineSync</function>的结果报告为<literal>PGRES_PIPELINE_SYNC</literal>，以表示中止管道的结束并恢复正常的结果处理。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The client <emphasis>must</emphasis> process results with
+     <function>PQgetResult</function> during error recovery.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在错误恢复时，客户端<emphasis>必须</emphasis> 使用 <function>PQgetResult</function>处理结果。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     If the pipeline used an implicit transaction, then operations that have
+     already executed are rolled back and operations that were queued to follow
+     the failed operation are skipped entirely. The same behavior holds if the
+     pipeline starts and commits a single explicit transaction (i.e. the first
+     statement is <literal>BEGIN</literal> and the last is
+     <literal>COMMIT</literal>) except that the session remains in an aborted
+     transaction state at the end of the pipeline. If a pipeline contains
+     <emphasis>multiple explicit transactions</emphasis>, all transactions that
+     committed prior to the error remain committed, the currently in-progress
+     transaction is aborted, and all subsequent operations are skipped completely,
+     including subsequent transactions.  If a pipeline synchronization point
+     occurs with an explicit transaction block in aborted state, the next pipeline
+     will become aborted immediately unless the next command puts the transaction
+     in normal mode with <command>ROLLBACK</command>.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     如果管道使用隐式事务，那么已经执行的操作将被回滚，而排队跟在失败操作的操作将被完全跳过。
+     同样的行为也会发生，如果管道开始并提交单个显式事务(也就是，第一个语句是<literal>BEGIN</literal> ，最后一个是<literal>COMMIT</literal>)，除非会话在管道结束时保持在中止事务状态。
+     如果管道包含<emphasis>multiple explicit transactions</emphasis>，所有错误之前提交的事务会继续提交，当前正在进行的事务被中止，所有后续操作被完全跳过，包括后续的事务。
+     如果管道同步点发生时显式事务块为中止状态，则下一个管道将立即中止，除非下一个命令使用<command>ROLLBACK</command>将事务置于正常模式。
+    </para>
+
+    <note>
+<!--==========================orignal english content==========================
+     <para>
+      The client must not assume that work is committed when it
+      <emphasis>sends</emphasis> a <literal>COMMIT</literal> &mdash; only when the
+      corresponding result is received to confirm the commit is complete.
+      Because errors arrive asynchronously, the application needs to be able to
+      restart from the last <emphasis>received</emphasis> committed change and
+      resend work done after that point if something goes wrong.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      客户端绝对不可以假设工作已经被提交，当它<emphasis>sends</emphasis>一个<literal>COMMIT</literal> &mdash;只有相应的结果被接收时，才能确认提交已完成。
+      因为错误是异步到达的，如果出现错误，应用需要能够从最后一个<emphasis>received</emphasis>到的提交的更改重新开始，并重新发送在该点之后完成的工作。
+     </para>
+    </note>
+   </sect3>
+
+   <sect3 id="libpq-pipeline-interleave">
+<!--==========================orignal english content==========================
+    <title>Interleaving Result Processing and Query Dispatch</title>
+____________________________________________________________________________-->
+    <title>交叉结果处理和查询分派</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     To avoid deadlocks on large pipelines the client should be structured
+     around a non-blocking event loop using operating system facilities
+     such as <function>select</function>, <function>poll</function>,
+     <function>WaitForMultipleObjectEx</function>, etc.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     为避免大型管道上的死锁，客户端将被围绕非阻塞事件循环构建，通过使用操作系统工具，如<function>select</function>, <function>poll</function>,     <function>WaitForMultipleObjectEx</function>等等，
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     The client application should generally maintain a queue of work
+     remaining to be dispatched and a queue of work that has been dispatched
+     but not yet had its results processed. When the socket is writable
+     it should dispatch more work. When the socket is readable it should
+     read results and process them, matching them up to the next entry in
+     its corresponding results queue.  Based on available memory, results from the
+     socket should be read frequently: there's no need to wait until the
+     pipeline end to read the results.  Pipelines should be scoped to logical
+     units of work, usually (but not necessarily) one transaction per pipeline.
+     There's no need to exit pipeline mode and re-enter it between pipelines,
+     or to wait for one pipeline to finish before sending the next.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     客户端应用通常应该维护一个尚未分派的工作队列和一个已分派但尚未处理结果的工作队列。
+     当套接字是可写时，它将可以分派更多的工作。
+     当套接字是可读时，它将读取结果并处理它们，将它们匹配到相应结果队列中的下一个条目。
+     基于可用内存，来自套接字的结果将被经常读取:这里不需要等到管道结束才读取结果。
+     管道将范围涵盖到工作的逻辑单元，通常(但不是必然)每个管道一个事务。
+     在管道之间，不需要退出管道模式再重新进入管道模式，也不需要等待一个管道结束后再发送下一个。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     An example using <function>select()</function> and a simple state
+     machine to track sent and received work is in
+     <filename>src/test/modules/libpq_pipeline/libpq_pipeline.c</filename>
+     in the PostgreSQL source distribution.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     一个使用<function>select()</function>和一个简单状态机来跟踪发送和接收工作的例子，在PostgreSQL源代码发行版的<filename>src/test/modules/libpq_pipeline/libpq_pipeline.c</filename>文件中。
+    </para>
+   </sect3>
+  </sect2>
+
+  <sect2 id="libpq-pipeline-functions">
+<!--==========================orignal english content==========================
+   <title>Functions Associated with Pipeline Mode</title>
+____________________________________________________________________________-->
+   <title>与管道模式关联的函数</title>
+
+   <variablelist>
+
+    <varlistentry id="libpq-PQpipelineStatus">
+<!--==========================orignal english content==========================
+     <term><function>PQpipelineStatus</function><indexterm><primary>PQpipelineStatus</primary></indexterm></term>
+____________________________________________________________________________-->
+     <term><function>PQpipelineStatus</function><indexterm><primary>PQpipelineStatus</primary></indexterm></term>
+
+     <listitem>
+<!--==========================orignal english content==========================
+      <para>
+      Returns the current pipeline mode status of the
+      <application>libpq</application> connection.
+<synopsis>
+PGpipelineStatus PQpipelineStatus(const PGconn *conn);
+</synopsis>
+      </para>
+____________________________________________________________________________-->
+      <para>
+      返回<application>libpq</application>连接的当前管道模式状态。
+<synopsis>
+PGpipelineStatus PQpipelineStatus(const PGconn *conn);
+</synopsis>
+      </para>
+
+<!--==========================orignal english content==========================
+      <para>
+       <function>PQpipelineStatus</function> can return one of the following values:
+
+       <variablelist>
+        <varlistentry>
+         <term>
+          <literal>PQ_PIPELINE_ON</literal>
+         </term>
+         <listitem>
+          <para>
+           The <application>libpq</application> connection is in
+           pipeline mode.
+          </para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term>
+          <literal>PQ_PIPELINE_OFF</literal>
+         </term>
+         <listitem>
+          <para>
+           The <application>libpq</application> connection is
+           <emphasis>not</emphasis> in pipeline mode.
+          </para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term>
+          <literal>PQ_PIPELINE_ABORTED</literal>
+         </term>
+         <listitem>
+          <para>
+           The <application>libpq</application> connection is in pipeline
+           mode and an error occurred while processing the current pipeline.
+           The aborted flag is cleared when <function>PQgetResult</function>
+           returns a result of type <literal>PGRES_PIPELINE_SYNC</literal>.
+          </para>
+         </listitem>
+        </varlistentry>
+
+       </variablelist>
+      </para>
+____________________________________________________________________________-->
+      <para>
+       <function>PQpipelineStatus</function> 可以返回下列值中的一个:
+
+       <variablelist>
+        <varlistentry>
+         <term>
+          <literal>PQ_PIPELINE_ON</literal>
+         </term>
+         <listitem>
+          <para>
+           <application>libpq</application> 连接处于管道模式。
+          </para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term>
+          <literal>PQ_PIPELINE_OFF</literal>
+         </term>
+         <listitem>
+          <para>
+           <application>libpq</application> 连接 <emphasis>不</emphasis> 是管道模式。
+          </para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term>
+          <literal>PQ_PIPELINE_ABORTED</literal>
+         </term>
+         <listitem>
+          <para>
+           <application>libpq</application>连接处于管道模式，并且在处理当前管道时发生了错误。
+           当<function>PQgetResult</function>返回<literal>PGRES_PIPELINE_SYNC</literal>类型的结果时，中止标志被清除。
+          </para>
+         </listitem>
+        </varlistentry>
+
+       </variablelist>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="libpq-PQenterPipelineMode">
+<!--==========================orignal english content==========================
+     <term><function>PQenterPipelineMode</function><indexterm><primary>PQenterPipelineMode</primary></indexterm></term>
+____________________________________________________________________________-->
+     <term><function>PQenterPipelineMode</function><indexterm><primary>PQenterPipelineMode</primary></indexterm></term>
+
+     <listitem>
+<!--==========================orignal english content==========================
+      <para>
+      Causes a connection to enter pipeline mode if it is currently idle or
+      already in pipeline mode.
+
+<synopsis>
+int PQenterPipelineMode(PGconn *conn);
+</synopsis>
+
+      </para>
+____________________________________________________________________________-->
+      <para>
+      造成连接进入管道模式，如果它当前空闲或已经是管道模式。
+
+<synopsis>
+int PQenterPipelineMode(PGconn *conn);
+</synopsis>
+
+      </para>
+<!--==========================orignal english content==========================
+      <para>
+       Returns 1 for success.
+       Returns 0 and has no effect if the connection is not currently
+       idle, i.e., it has a result ready, or it is waiting for more
+       input from the server, etc.
+       This function does not actually send anything to the server,
+       it just changes the <application>libpq</application> connection
+       state.
+      </para>
+____________________________________________________________________________-->
+      <para>
+       成功返回1.
+       如果连接当前不是空闲的，返回0并且无影响，也就是说，它已经有了一个结果，或者它正在等待服务器的更多输入，等等。
+       这个函数实际上不向服务器发送任何东西，它只是更改<application>libpq</application>连接状态。
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="libpq-PQexitPipelineMode">
+<!--==========================orignal english content==========================
+     <term><function>PQexitPipelineMode</function><indexterm><primary>PQexitPipelineMode</primary></indexterm></term>
+____________________________________________________________________________-->
+     <term><function>PQexitPipelineMode</function><indexterm><primary>PQexitPipelineMode</primary></indexterm></term>
+
+     <listitem>
+<!--==========================orignal english content==========================
+      <para>
+       Causes a connection to exit pipeline mode if it is currently in pipeline mode
+       with an empty queue and no pending results.
+<synopsis>
+int PQexitPipelineMode(PGconn *conn);
+</synopsis>
+      </para>
+____________________________________________________________________________-->
+      <para>
+       造成连接退出管道模式，如果连接当前以空队列处于管道模式，并且没有待处理的结果。
+<synopsis>
+int PQexitPipelineMode(PGconn *conn);
+</synopsis>
+      </para>
+<!--==========================orignal english content==========================
+      <para>
+       Returns 1 for success.  Returns 1 and takes no action if not in
+       pipeline mode. If the current statement isn't finished processing,
+       or <function>PQgetResult</function> has not been called to collect
+       results from all previously sent query, returns 0 (in which case,
+       use <xref linkend="libpq-PQerrorMessage"/> to get more information
+       about the failure).
+      </para>
+____________________________________________________________________________-->
+      <para>
+       成功则返回1。
+       如果不是管道模式，则返回1并且不采取操作。
+       如果当前语句没有完成处理，或者<function>PQgetResult</function>尚未被调用以收集所有先前发送查询的结果，则返回0(在这种情况下，使用<xref linkend="libpq-PQerrorMessage"/>以获取关于故障的更多信息)。
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="libpq-PQpipelineSync">
+<!--==========================orignal english content==========================
+     <term><function>PQpipelineSync</function><indexterm><primary>PQpipelineSync</primary></indexterm></term>
+____________________________________________________________________________-->
+     <term><function>PQpipelineSync</function><indexterm><primary>PQpipelineSync</primary></indexterm></term>
+
+     <listitem>
+<!--==========================orignal english content==========================
+      <para>
+       Marks a synchronization point in a pipeline by sending a
+       <link linkend="protocol-flow-ext-query">sync message</link>
+       and flushing the send buffer. This serves as
+       the delimiter of an implicit transaction and an error recovery
+       point; see <xref linkend="libpq-pipeline-errors"/>.
+
+<synopsis>
+int PQpipelineSync(PGconn *conn);
+</synopsis>
+      </para>
+____________________________________________________________________________-->
+      <para>
+       通过发送<link linkend="protocol-flow-ext-query">sync message</link>并刷新发送缓冲区的方式来标记管道中的同步点。
+       它用作隐式事务的定界符和错误恢复点；参见<xref linkend="libpq-pipeline-errors"/>。
+
+<synopsis>
+int PQpipelineSync(PGconn *conn);
+</synopsis>
+      </para>
+<!--==========================orignal english content==========================
+      <para>
+       Returns 1 for success. Returns 0 if the connection is not in
+       pipeline mode or sending a
+       <link linkend="protocol-flow-ext-query">sync message</link>
+       failed.
+      </para>
+____________________________________________________________________________-->
+      <para>
+       成功就返回1。
+       如果连接不是管道模式或者发送<link linkend="protocol-flow-ext-query">sync message</link>失败，则返回0。
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="libpq-PQsendFlushRequest">
+<!--==========================orignal english content==========================
+     <term><function>PQsendFlushRequest</function><indexterm><primary>PQsendFlushRequest</primary></indexterm></term>
+____________________________________________________________________________-->
+     <term><function>PQsendFlushRequest</function><indexterm><primary>PQsendFlushRequest</primary></indexterm></term>
+
+      <listitem>
+<!--==========================orignal english content==========================
+       <para>
+        Sends a request for the server to flush its output buffer.
+<synopsis>
+int PQsendFlushRequest(PGconn *conn);
+</synopsis>
+       </para>
+____________________________________________________________________________-->
+       <para>
+        发送一个请求到服务器以刷新它的输出缓冲区。
+<synopsis>
+int PQsendFlushRequest(PGconn *conn);
+</synopsis>
+       </para>
+
+<!--==========================orignal english content==========================
+       <para>
+        Returns 1 for success.  Returns 0 on any failure.
+       </para>
+____________________________________________________________________________-->
+       <para>
+        成功就返回1。
+        任何失败则返回0。
+       </para>
+<!--==========================orignal english content==========================
+       <para>
+        The server flushes its output buffer automatically as a result of
+        <function>PQpipelineSync</function> being called, or
+        on any request when not in pipeline mode; this function is useful
+        to cause the server to flush its output buffer in pipeline mode
+        without establishing a synchronization point.
+        Note that the request is not itself flushed to the server automatically;
+        use <function>PQflush</function> if necessary.
+       </para>
+____________________________________________________________________________-->
+       <para>
+        当<function>PQpipelineSync</function>被调用的结果，或者在非管道模式下的任何请求时，服务器自动刷新它的输出缓冲区;这个函数用于使得服务器在不建立同步点的情况下以管道模式刷新其输出缓冲区。
+        请注意，请求不是自身能自动刷新到服务器;如果需要时使用<function>PQflush</function>。
+       </para>
+      </listitem>
+     </varlistentry>
+   </variablelist>
+  </sect2>
+
+  <sect2 id="libpq-pipeline-tips">
+<!--==========================orignal english content==========================
+   <title>When to Use Pipeline Mode</title>
+____________________________________________________________________________-->
+   <title>何时使用管道模式</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    Much like asynchronous query mode, there is no meaningful performance
+    overhead when using pipeline mode. It increases client application complexity,
+    and extra caution is required to prevent client/server deadlocks, but
+    pipeline mode can offer considerable performance improvements, in exchange for
+    increased memory usage from leaving state around longer.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    非常像异步查询模式，在使用管道模式时没有明显的性能开销。
+    它增加了客户端应用的复杂性，并且需要特别注意以防止客户端/服务器死锁。
+    但是管道模式可以提供相当大的性能改进，以换取内存使用率的增加，从离开撞到到更久。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Pipeline mode is most useful when the server is distant, i.e., network latency
+    (<quote>ping time</quote>) is high, and also when many small operations
+    are being performed in rapid succession.  There is usually less benefit
+    in using pipelined commands when each query takes many multiples of the client/server
+    round-trip time to execute.  A 100-statement operation run on a server
+    300 ms round-trip-time away would take 30 seconds in network latency alone
+    without pipelining; with pipelining it may spend as little as 0.3 s waiting for
+    results from the server.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当服务器比较远，即网络延迟(<quote>ping time</quote>)高的时候，管道模式最有用，以及在许多小操作正在快速连续执行的时候。
+    当每个查询的执行时间是客户端/服务器往返时间的许多倍时，使用管道命令的优势通常会更少。
+    不用管道模式，在往返时间为300毫秒的服务器上运行一个100条语句的操作，仅网络延迟就需要30秒;使用管道，等待来自服务器的结果可能只消耗仅仅0.3秒。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Use pipelined commands when your application does lots of small
+    <literal>INSERT</literal>, <literal>UPDATE</literal> and
+    <literal>DELETE</literal> operations that can't easily be transformed
+    into operations on sets, or into a <literal>COPY</literal> operation.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当你的应用需要完成很多小的<literal>INSERT</literal>, <literal>UPDATE</literal> 和 <literal>DELETE</literal> 操作，并且不能方便的转换到集合操作或者 <literal>COPY</literal>操作时，用管道命令。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Pipeline mode is not useful when information from one operation is required by
+    the client to produce the next operation. In such cases, the client
+    would have to introduce a synchronization point and wait for a full client/server
+    round-trip to get the results it needs. However, it's often possible to
+    adjust the client design to exchange the required information server-side.
+    Read-modify-write cycles are especially good candidates; for example:
+<programlisting>
+BEGIN;
+SELECT x FROM mytable WHERE id = 42 FOR UPDATE;
+-&minus; result: x=2
+-&minus; client adds 1 to x:
+UPDATE mytable SET x = 3 WHERE id = 42;
+COMMIT;
+</programlisting>
+    could be much more efficiently done with:
+<programlisting>
+UPDATE mytable SET x = x + 1 WHERE id = 42;
+</programlisting>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当来自一个操作的信息需要客户端产生下一个操作时，管道模式是没有用的。
+    在这种情况下，客户机将不得不引入一个同步点，并等待完整的客户端/服务器往返以获取它需要的结果。
+    但是，通常可以调整客户端设计以交换服务器端所需的信息。
+    读-修改-写循环是非常好的选择;例如:
+<programlisting>
+BEGIN;
+SELECT x FROM mytable WHERE id = 42 FOR UPDATE;
+-- result: x=2
+-- client adds 1 to x:
+UPDATE mytable SET x = 3 WHERE id = 42;
+COMMIT;
+</programlisting>
+    could be much more efficiently done with:
+<programlisting>
+UPDATE mytable SET x = x + 1 WHERE id = 42;
+</programlisting>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Pipelining is less useful, and more complex, when a single pipeline contains
+    multiple transactions (see <xref linkend="libpq-pipeline-errors"/>).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当单个管道包含多个事务时，管道的作用更小，而且更复杂(参见<xref linkend="libpq-pipeline-errors"/>)。
+   </para>
+  </sect2>
+ </sect1>
+
  <sect1 id="libpq-single-row-mode">
 <!--==========================orignal english content==========================
   <title>Retrieving Query Results Row-by-Row</title>
@@ -8364,7 +9610,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
   <para>
-   Ordinarily, <application>libpq</application> collects a SQL command's
+   Ordinarily, <application>libpq</application> collects an SQL command's
    entire result and returns it to the application as a single
    <structname>PGresult</structname>.  This can be unworkable for commands
    that return a large number of rows.  For such cases, applications can use
@@ -8409,6 +9655,19 @@ ____________________________________________________________________________-->
    在最后一行之后或者紧接着该查询返回零行之后，一个状态为<literal>PGRES_TUPLES_OK</literal>的零行对象会被返回，这就是代表不会有更多行的信号（但是注意仍然有必要继续调用<xref linkend="libpq-PQgetResult"/>直到它返回空）。
    所有这些<structname>PGresult</structname>对象将包含相同的行描述数据（列名、类型等等），这些数据和通常一个查询的<structname>PGresult</structname>对象的相同。
    每一个对象都应该按常规用<xref linkend="libpq-PQclear"/>释放。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   When using pipeline mode, single-row mode needs to be activated for each
+   query in the pipeline before retrieving results for that query
+   with <function>PQgetResult</function>.
+   See <xref linkend="libpq-pipeline-mode"/> for more information.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   当使用管道模式时，在使用<function>PQgetResult</function>检索该查询的结果之前，管道中的每个查询需要被激活单行模式。
+   参见<xref linkend="libpq-pipeline-mode"/> 了解更多信息。
   </para>
 
 <!--==========================orignal english content==========================
@@ -8842,25 +10101,54 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    <function>PQfn</function> always returns a valid
-   <structname>PGresult</structname> pointer. The result status should be
+   <structname>PGresult</structname> pointer, with
+   status <literal>PGRES_COMMAND_OK</literal> for success
+   or <literal>PGRES_FATAL_ERROR</literal> if some problem was encountered.
+   The result status should be
    checked before the result is used.   The caller is responsible for
    freeing  the  <structname>PGresult</structname>  with
    <xref linkend="libpq-PQclear"/> when it is no longer needed.
   </para>
 ____________________________________________________________________________-->
   <para>
-   <function>PQfn</function>总是返回一个有效的<structname>PGresult</structname>指针。在使用结果之前应该检查结果状态。
+   <function>PQfn</function>总是返回一个有效的<structname>PGresult</structname>指针，包括状态<literal>PGRES_COMMAND_OK</literal> 表示成功或者<literal>PGRES_FATAL_ERROR</literal>在出现什么问题时。
+   在使用结果之前应该检查结果状态。
    当结果不再使用后，调用者有义务使用<xref linkend="libpq-PQclear"/>释放<structname>PGresult</structname>。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
-   Note that it is not possible to handle null arguments, null results,
-   nor set-valued results when using this interface.
+   To pass a NULL argument to the function, set
+   the <parameter>len</parameter> field of that parameter structure
+   to <literal>-1</literal>; the <parameter>isint</parameter>
+   and <parameter>u</parameter> fields are then irrelevant.
   </para>
 ____________________________________________________________________________-->
   <para>
-   注意我们没办法处理空参数、空结果，也没办法在使用这个接口时处理集值结果。
+   要传递NULL参数到函数，将参数结构的<parameter>len</parameter>字段设置为<literal>-1</literal>;<parameter>isint</parameter> 和 <parameter>u</parameter> 字段就不相关了。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   If the function returns NULL, <parameter>*result_len</parameter> is set
+   to <literal>-1</literal>, and <parameter>*result_buf</parameter> is not
+   modified.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   如果函数返回 NULL, <parameter>*result_len</parameter> 被设置为 <literal>-1</literal>, 并且 <parameter>*result_buf</parameter> 不调整。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Note that it is not possible to handle set-valued results when using
+   this interface.  Also, the function must be a plain function, not an
+   aggregate, window function, or procedure.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   注意在使用此接口时，不能够处理集-值结果。
+   此外，函数必须是一个普通函数，而不是聚合、窗口函数或过程。
   </para>
 
  </sect1>
@@ -9193,18 +10481,6 @@ ____________________________________________________________________________-->
    </variablelist>
   </para>
 
-  <note>
-<!--==========================orignal english content==========================
-   <para>
-    These additional data values are only available when using protocol
-    3.0.  When using protocol 2.0, all these functions will return 0.
-   </para>
-____________________________________________________________________________-->
-   <para>
-    这些额外的数据值只在使用协议 3.0 时可用。在使用协议 2.0 时，所有这些函数都返回 0。
-   </para>
-  </note>
-
   <sect2 id="libpq-copy-send">
 <!--==========================orignal english content==========================
    <title>Functions for Sending <command>COPY</command> Data</title>
@@ -9314,13 +10590,13 @@ int PQputCopyEnd(PGconn *conn,
        <parameter>errormsg</parameter> used as the error message.  (One should not
        assume that this exact error message will come back from the server,
        however, as the server might have already failed the
-       <command>COPY</command> for its own reasons.  Also note that the option
-       to force failure does not work when using pre-3.0-protocol
-       connections.)
+       <command>COPY</command> for its own reasons.)
       </para>
 ____________________________________________________________________________-->
       <para>
-       如果<parameter>errormsg</parameter>是<symbol>NULL</symbol>，则成功结束<literal>COPY_IN</literal>操作。如果<parameter>errormsg</parameter>不是<symbol>NULL</symbol>则<command>COPY</command>被强制失败，<parameter>errormsg</parameter>指向的字符串是错误消息（不过，我们不应假定这个准确的错误信息将会从服务器传回，因为服务器可能已经因为其自身原因导致<command>COPY</command>失败。还要注意的是在使用 3.0 协议之前的连接时，强制失败的选项是不能用的）。
+       如果<parameter>errormsg</parameter>是<symbol>NULL</symbol>，则成功结束<literal>COPY_IN</literal>操作。
+       如果<parameter>errormsg</parameter>不是<symbol>NULL</symbol>则<command>COPY</command>被强制失败，<parameter>errormsg</parameter>指向的字符串是错误消息。
+       （不过，我们不应假定这个准确的错误信息将会从服务器传回，因为服务器可能已经因为其自身原因导致<command>COPY</command>失败。）。
       </para>
 
 <!--==========================orignal english content==========================
@@ -10077,7 +11353,8 @@ ____________________________________________________________________________-->
     <listitem>
 <!--==========================orignal english content==========================
      <para>
-      Enables  tracing of the client/server communication to a debugging file stream.
+      Enables tracing of the client/server communication to a debugging file
+      stream.
 <synopsis>
 void PQtrace(PGconn *conn, FILE *stream);
 </synopsis>
@@ -10088,6 +11365,30 @@ ____________________________________________________________________________-->
 <synopsis>
 void PQtrace(PGconn *conn, FILE *stream);
 </synopsis>
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      Each line consists of: an optional timestamp, a direction indicator
+      (<literal>F</literal> for messages from client to server
+      or <literal>B</literal> for messages from server to client),
+      message length, message type, and message contents.
+      Non-message contents fields (timestamp, direction, length and message type)
+      are separated by a tab. Message contents are separated by a space.
+      Protocol strings are enclosed in double quotes, while strings used as data
+      values are enclosed in single quotes.  Non-printable chars are printed as
+      hexadecimal escapes.
+      Further message-type-specific detail can be found in
+      <xref linkend="protocol-message-formats"/>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      每行包括:一个可选的时间戳，一个方向指示器(<literal>F</literal>表示从客户端到服务器的消息或<literal>B</literal>表示从服务器到客户端的消息)，消息长度、消息类型、和消息内容。
+      非消息内容字段(时间戳、方向、长度和消息类型)由一个制表符分隔。
+      消息内容用空格分隔。
+      协议字符串用双引号括起来，而用作数据值的字符串用单引号括起来。
+      不可打印的字符被打印为十六进制转义。
+      更多消息-类型-特定的详情可以在<xref linkend="protocol-message-formats"/>中发现。
      </para>
 
      <note>
@@ -10105,6 +11406,50 @@ ____________________________________________________________________________-->
        在 Windows上，如果<application>libpq</application>库和应用使用了不同的标志编译，那么这个函数调用会导致应用崩溃，因为<literal>FILE</literal>指针的内部表达是不一样的。特别是多线程/单线程、发布/调试 以及静态/动态标志应该是库和所有使用库的应用都一致。
       </para>
      </note>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="libpq-PQsetTraceFlags">
+<!--==========================orignal english content==========================
+    <term><function>PQsetTraceFlags</function><indexterm><primary>PQsetTraceFlags</primary></indexterm></term>
+____________________________________________________________________________-->
+    <term><function>PQsetTraceFlags</function><indexterm><primary>PQsetTraceFlags</primary></indexterm></term>
+
+    <listitem>
+<!--==========================orignal english content==========================
+     <para>
+      Controls the tracing behavior of client/server communication.
+<synopsis>
+void PQsetTraceFlags(PGconn *conn, int flags);
+</synopsis>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      控制客户端/服务器通信的跟踪行为。
+<synopsis>
+void PQsetTraceFlags(PGconn *conn, int flags);
+</synopsis>
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+      <literal>flags</literal> contains flag bits describing the operating mode
+      of tracing.
+      If <literal>flags</literal> contains <literal>PQTRACE_SUPPRESS_TIMESTAMPS</literal>,
+      then the timestamp is not included when printing each message.
+      If <literal>flags</literal> contains <literal>PQTRACE_REGRESS_MODE</literal>,
+      then some fields are redacted when printing each message, such as object
+      OIDs, to make the output more convenient to use in testing frameworks.
+      This function must be called after calling <function>PQtrace</function>.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <literal>flags</literal>包含描述跟踪的操作模式的标志位。
+      如果<literal>flags</literal>包含<literal>PQTRACE_SUPPRESS_TIMESTAMPS</literal>，则在打印每条消息时不包括时间戳。
+      如果<literal>flags</literal>包含<literal>PQTRACE_REGRESS_MODE</literal>，那么在打印每个消息时将修改一些字段，例如对象OIDs，以使输出在测试框架中更方便地使用。
+      这个函数必须在调用<function>PQtrace</function>之后调用。
+     </para>
 
     </listitem>
    </varlistentry>
@@ -10988,9 +12333,9 @@ ____________________________________________________________________________-->
   <para>
    Each registered event handler is associated with two pieces of data,
    known to <application>libpq</application> only as opaque <literal>void *</literal>
-   pointers.  There is a <firstterm>passthrough</firstterm> pointer that is provided
+   pointers.  There is a <firstterm>pass-through</firstterm> pointer that is provided
    by the application when the event handler is registered with a
-   <structname>PGconn</structname>.  The passthrough pointer never changes for the
+   <structname>PGconn</structname>.  The pass-through pointer never changes for the
    life of the <structname>PGconn</structname> and all <structname>PGresult</structname>s
    generated from it; so if used, it must point to long-lived data.
    In addition there is an <firstterm>instance data</firstterm> pointer, which starts
@@ -11000,19 +12345,22 @@ ____________________________________________________________________________-->
    <xref linkend="libpq-PQsetInstanceData"/>,
    <xref linkend="libpq-PQresultInstanceData"/> and
    <function>PQsetResultInstanceData</function> functions.  Note that
-   unlike the passthrough pointer, instance data of a <structname>PGconn</structname>
+   unlike the pass-through pointer, instance data of a <structname>PGconn</structname>
    is not automatically inherited by <structname>PGresult</structname>s created from
-   it.  <application>libpq</application> does not know what passthrough
+   it.  <application>libpq</application> does not know what pass-through
    and instance data pointers point to (if anything) and will never attempt
    to free them &mdash; that is the responsibility of the event handler.
   </para>
 ____________________________________________________________________________-->
   <para>
-   每一个已注册的事件处理器与两部分数据相关，对于<application>libpq</application>它们只是透明的<literal>void *</literal>指针。当事件处理器被注册到一个<structname>PGconn</structname>时，会有一个应用提供的<firstterm>转移</firstterm>指针。该转移指针在<structname>PGconn</structname>及其产生的所有<structname>PGresult</structname>的生命期内都不会改变。因此，如果使用它，它必须指向长期存在的数据。此外，还有一个<firstterm>instance data</firstterm>指针，它在每一个<structname>PGconn</structname>和<structname>PGresult</structname>中都开始于<symbol>NULL</symbol>。这个指针可以使用
-   <xref linkend="libpq-PQinstanceData"/>,
-   <xref linkend="libpq-PQsetInstanceData"/>,
-   <xref linkend="libpq-PQresultInstanceData"/> 和
-   <function>PQsetResultInstanceData</function>函数操纵。注意和转移指针不同，一个<structname>PGconn</structname>的实例数据不会被从它创建的<structname>PGresult</structname>自动继承。<application>libpq</application>不知道转移和实例数据指针指向的是什么（如果有），并且将不会尝试释放它们 &mdash; 那是事件处理器的责任。
+   每一个已注册的事件处理器与两部分数据相关，对于<application>libpq</application>它们只是透明的<literal>void *</literal>指针。
+   当事件处理器被注册到一个<structname>PGconn</structname>时，会有一个应用提供的<firstterm>转移</firstterm>指针。
+   该转移指针在<structname>PGconn</structname>及其产生的所有<structname>PGresult</structname>的生命期内都不会改变。
+   因此，如果使用它，它必须指向长期存在的数据。
+   此外，还有一个<firstterm>instance data</firstterm>指针，它在每一个<structname>PGconn</structname>和<structname>PGresult</structname>中都开始于<symbol>NULL</symbol>。
+   这个指针可以使用   <xref linkend="libpq-PQinstanceData"/>,<xref linkend="libpq-PQsetInstanceData"/>,<xref linkend="libpq-PQresultInstanceData"/> 和 <function>PQsetResultInstanceData</function>函数操纵。
+   注意和转移指针不同，一个<structname>PGconn</structname>的实例数据不会被从它创建的<structname>PGresult</structname>自动继承。
+   <application>libpq</application>不知道转移和实例数据指针指向的是什么（如果有），并且将不会尝试释放它们 &mdash; 那是事件处理器的责任。
   </para>
 
   <sect2 id="libpq-events-types">
@@ -11651,8 +12999,8 @@ main(void)
 
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        /* PQerrorMessage's result includes a trailing newline */
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         PQfinish(conn);
         return 1;
     }
@@ -11778,7 +13126,7 @@ ____________________________________________________________________________-->
 /* 要求 libpq 事件的头文件（注意：包括 libpq-fe.h） */
 #include <libpq-events.h>
 
-/* instanceData */
+/* The instanceData */
 typedef struct
 {
     int n;
@@ -11798,8 +13146,8 @@ main(void)
 
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        /* PQerrorMessage's result includes a trailing newline */
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         PQfinish(conn);
         return 1;
     }
@@ -12150,6 +13498,26 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       <indexterm>
+       <primary><envar>PGSSLCRLDIR</envar></primary>
+      </indexterm>
+      <envar>PGSSLCRLDIR</envar> behaves the same as the <xref
+      linkend="libpq-connect-sslcrldir"/> connection parameter.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
+       <primary><envar>PGSSLSNI</envar></primary>
+      </indexterm>
+      <envar>PGSSLSNI</envar>  behaves the same as the <xref
+      linkend="libpq-connect-sslsni"/> connection parameter.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
        <primary><envar>PGREQUIREPEER</envar></primary>
       </indexterm>
       <envar>PGREQUIREPEER</envar> behaves the same as the <xref
@@ -12173,7 +13541,7 @@ ____________________________________________________________________________-->
        <primary><envar>PGSSLMAXPROTOCOLVERSION</envar></primary>
       </indexterm>
       <envar>PGSSLMAXPROTOCOLVERSION</envar> behaves the same as the <xref
-      linkend="libpq-connect-ssl-min-protocol-version"/> connection parameter.
+      linkend="libpq-connect-ssl-max-protocol-version"/> connection parameter.
      </para>
     </listitem>
 
@@ -12418,6 +13786,24 @@ ____________________________________________________________________________-->
     <listitem>
      <para>
       <indexterm>
+       <primary><envar>PGSSLCRLDIR</envar></primary>
+      </indexterm>
+      <envar>PGSSLCRLDIR</envar> 的行为和<xref linkend="libpq-connect-sslcrldir"/> 连接参数相同。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
+       <primary><envar>PGSSLSNI</envar></primary>
+      </indexterm>
+      <envar>PGSSLSNI</envar>  的行为和 <xref linkend="libpq-connect-sslsni"/> 连接参数相同。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
        <primary><envar>PGREQUIREPEER</envar></primary>
       </indexterm>
       <envar>PGREQUIREPEER</envar>的行为和<xref linkend="libpq-connect-requirepeer"/>连接参数相同。
@@ -12438,7 +13824,7 @@ ____________________________________________________________________________-->
       <indexterm>
        <primary><envar>PGSSLMAXPROTOCOLVERSION</envar></primary>
       </indexterm>
-      <envar>PGSSLMAXPROTOCOLVERSION</envar> 行为和 <xref linkend="libpq-connect-ssl-min-protocol-version"/> 连接参数相同。
+      <envar>PGSSLMAXPROTOCOLVERSION</envar> 行为和 <xref linkend="libpq-connect-ssl-max-protocol-version"/> 连接参数相同。
      </para>
     </listitem>
 
@@ -12700,7 +14086,7 @@ ____________________________________________________________________________-->
    the <literal>host</literal> parameter
    matches <application>libpq</application>'s default socket directory path.
    In a standby server, a database field of <literal>replication</literal>
-   matches streaming replication connections made to the master server.
+   matches streaming replication connections made to the primary server.
    The database field is of limited usefulness otherwise, because users have
    the same password for all databases in the same cluster.
   </para>
@@ -12764,36 +14150,48 @@ ____________________________________________________________________________-->
   <para>
    The connection service file allows libpq connection parameters to be
    associated with a single service name. That service name can then be
-   specified by a libpq connection, and the associated settings will be
+   specified in a libpq connection string, and the associated settings will be
    used. This allows connection parameters to be modified without requiring
-   a recompile of the libpq application. The service name can also be
+   a recompile of the libpq-using application. The service name can also be
    specified using the <envar>PGSERVICE</envar> environment variable.
   </para>
 ____________________________________________________________________________-->
   <para>
-   连接服务文件允许 libpq 连接参数与一个单一服务名称关联。那个服务名称可以被一个 libpq 连接指定，与其相关的设置将被使用。这允许在不重新编译 libpq 应用的前提下修改连接参数。服务名称也可以被使用<envar>PGSERVICE</envar>环境变量来指定。
+   连接服务文件允许 libpq 连接参数与一个单一服务名称关联。
+   那个服务名称可以在一个 libpq 连接字符串里面指定，与其相关的设置将被使用。
+   这允许在不重新编译 libpq-using 应用的前提下修改连接参数。
+   服务名称也可以被使用<envar>PGSERVICE</envar>环境变量来指定。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
-   The connection service file can be a per-user service file
-   at <filename>~/.pg_service.conf</filename> or the location
-   specified by the environment variable <envar>PGSERVICEFILE</envar>,
-   or it can be a system-wide file
-   at <filename>`pg_config -&minus;sysconfdir`/pg_service.conf</filename> or in the directory
-   specified by the environment variable
-   <envar>PGSYSCONFDIR</envar>.  If service definitions with the same
-   name exist in the user and the system file, the user file takes
-   precedence.
+   Service names can be defined in either a per-user service file or a
+   system-wide file.  If the same service name exists in both the user
+   and the system file, the user file takes precedence.
+   By default, the per-user service file is located
+   at <filename>~/.pg_service.conf</filename>; this can be overridden by
+   setting the environment variable <envar>PGSERVICEFILE</envar>.
+   The system-wide file is named <filename>pg_service.conf</filename>.
+   By default it is sought in the <filename>etc</filename> directory
+   of the <productname>PostgreSQL</productname> installation
+   (use <literal>pg_config --sysconfdir</literal> to identify this
+   directory precisely).  Another directory, but not a different file
+   name, can be specified by setting the environment variable
+   <envar>PGSYSCONFDIR</envar>.
   </para>
 ____________________________________________________________________________-->
   <para>
-   连接服务文件可以是每个用户都有一个的服务文件，它位于<filename>~/.pg_service.conf</filename>或者环境变量<envar>PGSERVICEFILE</envar>指定的位置。它也可以是一个系统范围的文件，位于<filename>`pg_config --sysconfdir`/pg_service.conf</filename>的或者环境变量<envar>PGSYSCONFDIR</envar>指定的目录。如果相同名称的服务定义存在于用户和系统文件中，用户文件将优先考虑。
+   服务名称可以在每个用户的服务文件中被定义，或系统范围的文件中定义。
+   如果用户文件和系统文件中存在相同的服务名称，则用户文件优先。
+   默认情况下，每个用户的服务文件位于<filename>~/.pg_service.conf</filename>;这可以通过设置环境变量<envar>PGSERVICEFILE</envar>来覆盖。
+   系统范围的文件命名为<filename>pg_service.conf</filename>。
+   默认情况下，在<productname>PostgreSQL</productname>安装的<filename>etc</filename>目录中查找(使用<literal>pg_config --sysconfdir</literal>精确标识该目录)。
+   可以通过设置环境变量<envar>PGSYSCONFDIR</envar>来指定另一个目录，但不是不同的文件名。
   </para>
 
 <!--==========================orignal english content==========================
   <para>
-   The file uses an <quote>INI file</quote> format where the section
+   Either service file uses an <quote>INI file</quote> format where the section
    name is the service name and the parameters are connection
    parameters; see <xref linkend="libpq-paramkeywords"/> for a list.  For
    example:
@@ -12804,12 +14202,14 @@ host=somehost
 port=5433
 user=admin
 </programlisting>
-   An example file is provided at
+   An example file is provided in
+   the <productname>PostgreSQL</productname> installation at
    <filename>share/pg_service.conf.sample</filename>.
   </para>
 ____________________________________________________________________________-->
   <para>
-   该文件使用一种<quote>INI 文件</quote>格式，其中小节名是服务名并且参数是连接参数。列表见<xref linkend="libpq-paramkeywords"/>。例如：
+   或者服务文件使用一种<quote>INI 文件</quote>格式，其中小节名是服务名并且参数是连接参数。
+   列表见<xref linkend="libpq-paramkeywords"/>。例如：
 <programlisting>
 # comment
 [mydb]
@@ -12817,7 +14217,27 @@ host=somehost
 port=5433
 user=admin
 </programlisting>
-   <filename>share/pg_service.conf.sample</filename>中提供了一个例子文件。
+   在<productname>PostgreSQL</productname>安装的<filename>share/pg_service.conf.sample</filename>中提供了一个例子文件。
+  </para>
+
+<!--==========================orignal english content==========================
+  <para>
+   Connection parameters obtained from a service file are combined with
+   parameters obtained from other sources.  A service file setting
+   overrides the corresponding environment variable, and in turn can be
+   overridden by a value given directly in the connection string.
+   For example, using the above service file, a connection string
+   <literal>service=mydb port=5434</literal> will use
+   host <literal>somehost</literal>, port <literal>5434</literal>,
+   user <literal>admin</literal>, and other parameters as set by
+   environment variables or built-in defaults.
+  </para>
+____________________________________________________________________________-->
+  <para>
+   从服务文件中获取的连接参数与从其他来源获取的参数相结合。
+   服务文件设置覆盖相应的环境变量，然后反过来可以由连接字符串中直接给出的值覆盖。
+   例如，使用上面的服务文件，连接字符串<literal>service=mydb port=5434</literal>将使用主机<literal>somehost</literal>，端口<literal>5434</literal>，
+   用户<literal>admin</literal>，以及由环境变量或内置默认所设置的其他参数。
   </para>
  </sect1>
 
@@ -12860,8 +14280,9 @@ ____________________________________________________________________________-->
    <literal>ldap://</literal> will be recognized as an LDAP URL and an
    LDAP query will be performed. The result must be a list of
    <literal>keyword = value</literal> pairs which will be used to set
-   connection options.  The URL must conform to RFC 1959 and be of the
-   form
+   connection options.  The URL must conform to
+   <ulink url="https://tools.ietf.org/html/rfc1959">RFC 1959</ulink>
+   and be of the form
 <synopsis>
 ldap://[<replaceable>hostname</replaceable>[:<replaceable>port</replaceable>]]/<replaceable>search_base</replaceable>?<replaceable>attribute</replaceable>?<replaceable>search_scope</replaceable>?<replaceable>filter</replaceable>
 </synopsis>
@@ -12871,7 +14292,10 @@ ldap://[<replaceable>hostname</replaceable>[:<replaceable>port</replaceable>]]/<
   </para>
 ____________________________________________________________________________-->
   <para>
-   LDAP 连接参数查找使用连接服务文件<filename>pg_service.conf</filename>（见<xref linkend="libpq-pgservice"/>）。<filename>pg_service.conf</filename>中一个以<literal>ldap://</literal>开始的行将被识别为一个 LDAP URL 并且将执行一个 LDAP 查询。结果必须是一个<literal>keyword = value</literal>对列表，它将被用来设置连接选项。URL 必须遵循 RFC 1959 并且是形式
+   LDAP 连接参数查找使用连接服务文件<filename>pg_service.conf</filename>（见<xref linkend="libpq-pgservice"/>）。
+   <filename>pg_service.conf</filename>中一个以<literal>ldap://</literal>开始的行将被识别为一个 LDAP URL 并且将执行一个 LDAP 查询。
+   结果必须是一个<literal>keyword = value</literal>对列表，它将被用来设置连接选项。
+   URL 必须遵循 <ulink url="https://tools.ietf.org/html/rfc1959">RFC 1959</ulink> 并且是形式
 <synopsis>
 ldap://[<replaceable>hostname</replaceable>[:<replaceable>port</replaceable>]]/<replaceable>search_base</replaceable>?<replaceable>attribute</replaceable>?<replaceable>search_scope</replaceable>?<replaceable>filter</replaceable>
 </synopsis>
@@ -13200,22 +14624,24 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
   <para>
    The key may be
-   stored in cleartext or encrypted with a passphrase using any algorithm supported
-   by OpenSSL, like AES-128. If the key is stored encrypted, then the passphrase
-   may be provided in the <xref linkend="libpq-connect-sslpassword"/> connection
-   option. If an encrypted key is supplied and the <literal>sslpassword</literal>
-   option is absent or blank, a password will be prompted for interactively by
-   OpenSSL with a <literal>Enter PEM pass phrase:</literal>
-   prompt if a TTY is available. Applications can override the client certificate
-   prompt and the handling of the <literal>sslpassword</literal> parameter by supplying
-   their own key password callback; see
+   stored in cleartext or encrypted with a passphrase using any algorithm
+   supported by <productname>OpenSSL</productname>, like AES-128. If the key
+   is stored encrypted, then the passphrase may be provided in the
+   <xref linkend="libpq-connect-sslpassword"/> connection option. If an
+   encrypted key is supplied and the <literal>sslpassword</literal> option
+   is absent or blank, a password will be prompted for interactively by
+   <productname>OpenSSL</productname> with a
+   <literal>Enter PEM pass phrase:</literal> prompt if a TTY is available.
+   Applications can override the client certificate prompt and the handling
+   of the <literal>sslpassword</literal> parameter by supplying their own
+   key password callback; see
    <xref linkend="libpq-pqsetsslkeypasshook-openssl"/>.
   </para>
 ____________________________________________________________________________-->
   <para>
-   密钥可以以明文存储，也可以使用OpenSSL支持的任何算法(例如AES-128)使用密码进行加密。
+   密钥可以以明文存储，也可以使用<productname>OpenSSL</productname>支持的任何算法(例如AES-128)使用密码进行加密。
    如果密钥是加密存储的，那么可以在<xref linkend="libpq-connect-sslpassword"/>连接选项中提供密码。
-   如果提供了加密密钥，而且<literal>sslpassword</literal>选项不存在或为空，如果TTY可用，那么OpenSSL将交互式地以<literal>Enter PEM pass phrase:</literal>提示输入密码。
+   如果提供了加密密钥，而且<literal>sslpassword</literal>选项不存在或为空，如果TTY可用，那么<productname>OpenSSL</productname>将交互式地以<literal>Enter PEM pass phrase:</literal>提示输入密码。
    应用程序可以越过客户端证书提示和<literal>sslpassword</literal>参数的处理，通过提供它们自己的密钥密码回调;参见<xref linkend="libpq-pqsetsslkeypasshook-openssl"/>。
   </para>
 
@@ -13255,7 +14681,7 @@ ____________________________________________________________________________-->
     </varlistentry>
 
     <varlistentry>
-     <term>Man in the middle (<acronym>MITM</acronym>)</term>
+     <term>Man-in-the-middle (<acronym>MITM</acronym>)</term>
      <listitem>
       <para>If a third party can modify the data while passing between the
        client and server, it can pretend to be the server and therefore see and
@@ -13663,7 +15089,7 @@ void PQinitOpenSSL(int do_ssl, int do_crypto);
 
       <para>
        When <parameter>do_ssl</parameter> is non-zero, <application>libpq</application>
-       will initialize the <application>OpenSSL</application> library before first
+       will initialize the <productname>OpenSSL</productname> library before first
        opening a database connection.  When <parameter>do_crypto</parameter> is
        non-zero, the <literal>libcrypto</literal> library will be initialized.  By
        default (if <xref linkend="libpq-PQinitOpenSSL"/> is not called), both libraries
@@ -13672,7 +15098,7 @@ void PQinitOpenSSL(int do_ssl, int do_crypto);
       </para>
 
       <para>
-       If your application uses and initializes either <application>OpenSSL</application>
+       If your application uses and initializes either <productname>OpenSSL</productname>
        or its underlying <literal>libcrypto</literal> library, you <emphasis>must</emphasis>
        call this function with zeroes for the appropriate parameter(s)
        before first opening a database connection.  Also be sure that you
@@ -13694,7 +15120,7 @@ void PQinitSSL(int do_ssl);
        This function is equivalent to
        <literal>PQinitOpenSSL(do_ssl, do_ssl)</literal>.
        It is sufficient for applications that initialize both or neither
-       of <application>OpenSSL</application> and <literal>libcrypto</literal>.
+       of <productname>OpenSSL</productname> and <literal>libcrypto</literal>.
       </para>
 
       <para>
@@ -13723,11 +15149,15 @@ void PQinitOpenSSL(int do_ssl, int do_crypto);
       </para>
 
       <para>
-       当<parameter>do_ssl</parameter>是非零时，<application>libpq</application>将在第一次打开数据库连接前初始化<application>OpenSSL</application>库。当<parameter>do_crypto</parameter>是非零时，<literal>libcrypto</literal>库将被初始化。默认情况下（如果没有调用<xref linkend="libpq-PQinitOpenSSL"/>），两个库都会被初始化。当 SSL 支持没有被编译时，这个函数也存在但是什么也不做。
+       当<parameter>do_ssl</parameter>是非零时，<application>libpq</application>将在第一次打开数据库连接前初始化<productname>OpenSSL</productname>库。
+       当<parameter>do_crypto</parameter>是非零时，<literal>libcrypto</literal>库将被初始化。
+       默认情况下（如果没有调用<xref linkend="libpq-PQinitOpenSSL"/>），两个库都会被初始化。
+       当 SSL 支持没有被编译时，这个函数也存在但是什么也不做。
       </para>
 
       <para>
-       如果你的应用使用并且初始化<application>OpenSSL</application>或者它的底层<literal>libcrypto</literal>库，你<emphasis>必须</emphasis>在第一次打开数据库连接前以合适的非零参数调用这个函数。同时要确保在打开一个数据库连接前已经完成了初始化。
+       如果你的应用使用并且初始化<productname>OpenSSL</productname>或者它的底层<literal>libcrypto</literal>库，你<emphasis>必须</emphasis>在第一次打开数据库连接前以合适的非零参数调用这个函数。
+       同时要确保在打开一个数据库连接前已经完成了初始化。
       </para>
      </listitem>
     </varlistentry>
@@ -13743,7 +15173,8 @@ void PQinitSSL(int do_ssl);
       </para>
 
       <para>
-       这个函数等效于<literal>PQinitOpenSSL(do_ssl, do_ssl)</literal>。这对于要么初始化<application>OpenSSL</application>以及<literal>libcrypto</literal>要么都不初始化的应用足够用了。
+       这个函数等效于<literal>PQinitOpenSSL(do_ssl, do_ssl)</literal>。
+       这对于要么初始化<productname>OpenSSL</productname>以及<literal>libcrypto</literal>要么都不初始化的应用足够用了。
       </para>
 
       <para>
@@ -14216,8 +15647,7 @@ main(int argc, char **argv)
     /* Check to see that the backend connection was successfully made */
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         exit_nicely(conn);
     }
 
@@ -14352,8 +15782,7 @@ main(int argc, char **argv)
     /* 检查看后端连接是否成功建立 */
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         exit_nicely(conn);
     }
 
@@ -14524,8 +15953,7 @@ main(int argc, char **argv)
     /* Check to see that the backend connection was successfully made */
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         exit_nicely(conn);
     }
 
@@ -14681,8 +16109,7 @@ main(int argc, char **argv)
     /* 检查后端连接是否成功建立 */
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         exit_nicely(conn);
     }
 
@@ -14910,8 +16337,7 @@ main(int argc, char **argv)
     /* Check to see that the backend connection was successfully made */
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         exit_nicely(conn);
     }
 
@@ -15140,8 +16566,7 @@ main(int argc, char **argv)
     /* 检查看后端连接是否成功被建立 */
     if (PQstatus(conn) != CONNECTION_OK)
     {
-        fprintf(stderr, "Connection to database failed: %s",
-                PQerrorMessage(conn));
+        fprintf(stderr, "%s", PQerrorMessage(conn));
         exit_nicely(conn);
     }
 

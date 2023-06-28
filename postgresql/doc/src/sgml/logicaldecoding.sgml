@@ -44,18 +44,15 @@ ____________________________________________________________________________-->
    by <command>INSERT</command> and the new row version created
    by <command>UPDATE</command>.  Availability of old row versions for
    <command>UPDATE</command> and <command>DELETE</command> depends on
-   the configured replica identity (see <xref linkend="sql-createtable-replica-identity"/>).
+   the configured replica identity (see <xref linkend="sql-altertable-replica-identity"/>).
   </para>
 ____________________________________________________________________________-->
   <para>
-   流式传输这些更改的格式由使用的输出插件决定。PostgreSQL 发布中包括了
-   一个例子插件。可以编写额外的插件来扩展可用的格式选择，而无需修改任何
-   核心代码。每一个输出插件都能访问每一个由
-   <command>INSERT</command>产生的新行以及每一个由
-   <command>UPDATE</command>创建的新行版本。
-   <command>UPDATE</command>和<command>DELETE</command>
-   的旧行版本的可用性取决于配置的复制标识（见
-   <xref linkend="sql-createtable-replica-identity"/>）。
+   流式传输这些更改的格式由使用的输出插件决定。
+   PostgreSQL 发布中包括了一个例子插件。
+   可以编写额外的插件来扩展可用的格式选择，而无需修改任何核心代码。
+   每一个输出插件都能访问每一个由<command>INSERT</command>产生的新行以及每一个由 <command>UPDATE</command>创建的新行版本。
+   <command>UPDATE</command>和<command>DELETE</command> 的旧行版本的可用性取决于配置的复制标识（见 <xref linkend="sql-altertable-replica-identity"/>）。
   </para>
 
 <!--==========================orignal english content==========================
@@ -112,7 +109,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <programlisting>
 postgres=# -&minus; Create a slot named 'regression_slot' using the output plugin 'test_decoding'
-postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
+postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding', false, true);
     slot_name    |    lsn
 -&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-
  regression_slot | 0/16B1970
@@ -202,7 +199,7 @@ postgres=# SELECT pg_drop_replication_slot('regression_slot');
 ____________________________________________________________________________-->
 <programlisting>
 postgres=# -- 使用输出插件'test_decoding'创建一个名为'regression_slot'的槽
-postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
+postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding', false, true);
     slot_name    |    lsn
 -----------------+-----------
  regression_slot | 0/16B1970
@@ -329,7 +326,105 @@ COMMIT 693
 <keycombo action="simul"><keycap>Control</keycap><keycap>C</keycap></keycombo>
 $ pg_recvlogical -d postgres --slot=test --drop-slot
 </programlisting>
-  </sect1>
+
+<!--==========================orignal english content==========================
+  <para>
+  The following example shows SQL interface that can be used to decode prepared
+  transactions. Before you use two-phase commit commands, you must set
+  <varname>max_prepared_transactions</varname> to at least 1. You must also have
+  set the two-phase parameter as 'true' while creating the slot using
+  <function>pg_create_logical_replication_slot</function>
+  Note that we will stream the entire transaction after the commit if it
+  is not already decoded.
+  </para>
+____________________________________________________________________________-->
+  <para>
+  下面的示例展示了可用于解码准备好的事务的SQL接口。
+  在使用两阶段提交命令之前，你必须将<varname>max_prepared_transactions</varname>设置到至少为1。
+  在使用<function>pg_create_logical_replication_slot</function>创建槽时，还必须将两阶段参数设置为'true'。
+  如果尚未解码，注意我们将在提交后流处理整个事务。
+  </para>
+<!--==========================orignal english content==========================
+<programlisting>
+postgres=# BEGIN;
+postgres=*# INSERT INTO data(data) VALUES('5');
+postgres=*# PREPARE TRANSACTION 'test_prepared1';
+
+postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                          data                           
+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ 0/1689DC0 | 529 | BEGIN 529
+ 0/1689DC0 | 529 | table public.data: INSERT: id[integer]:3 data[text]:'5'
+ 0/1689FC0 | 529 | PREPARE TRANSACTION 'test_prepared1', txid 529
+(3 rows)
+
+postgres=# COMMIT PREPARED 'test_prepared1';
+postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                    data                    
+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ 0/168A060 | 529 | COMMIT PREPARED 'test_prepared1', txid 529
+(4 row)
+
+postgres=#-&minus; you can also rollback a prepared transaction
+postgres=# BEGIN;
+postgres=*# INSERT INTO data(data) VALUES('6');
+postgres=*# PREPARE TRANSACTION 'test_prepared2';
+postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                          data                           
+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ 0/168A180 | 530 | BEGIN 530
+ 0/168A1E8 | 530 | table public.data: INSERT: id[integer]:4 data[text]:'6'
+ 0/168A430 | 530 | PREPARE TRANSACTION 'test_prepared2', txid 530
+(3 rows)
+
+postgres=# ROLLBACK PREPARED 'test_prepared2';
+postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                     data                     
+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ 0/168A4B8 | 530 | ROLLBACK PREPARED 'test_prepared2', txid 530
+(1 row)
+</programlisting>
+____________________________________________________________________________-->
+<programlisting>
+postgres=# BEGIN;
+postgres=*# INSERT INTO data(data) VALUES('5');
+postgres=*# PREPARE TRANSACTION 'test_prepared1';
+
+postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                          data                           
+-----------+-----+---------------------------------------------------------
+ 0/1689DC0 | 529 | BEGIN 529
+ 0/1689DC0 | 529 | table public.data: INSERT: id[integer]:3 data[text]:'5'
+ 0/1689FC0 | 529 | PREPARE TRANSACTION 'test_prepared1', txid 529
+(3 rows)
+
+postgres=# COMMIT PREPARED 'test_prepared1';
+postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                    data                    
+-----------+-----+--------------------------------------------
+ 0/168A060 | 529 | COMMIT PREPARED 'test_prepared1', txid 529
+(4 row)
+
+postgres=#-- you can also rollback a prepared transaction
+postgres=# BEGIN;
+postgres=*# INSERT INTO data(data) VALUES('6');
+postgres=*# PREPARE TRANSACTION 'test_prepared2';
+postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                          data                           
+-----------+-----+---------------------------------------------------------
+ 0/168A180 | 530 | BEGIN 530
+ 0/168A1E8 | 530 | table public.data: INSERT: id[integer]:4 data[text]:'6'
+ 0/168A430 | 530 | PREPARE TRANSACTION 'test_prepared2', txid 530
+(3 rows)
+
+postgres=# ROLLBACK PREPARED 'test_prepared2';
+postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+    lsn    | xid |                     data                     
+-----------+-----+----------------------------------------------
+ 0/168A4B8 | 530 | ROLLBACK PREPARED 'test_prepared2', txid 530
+(1 row)
+</programlisting>
+</sect1>
 
   <sect1 id="logicaldecoding-explanation">
 <!--==========================orignal english content==========================
@@ -671,13 +766,16 @@ ____________________________________________________________________________-->
     <structname>pg_stat_replication</structname></link>
     view provide information about the current state of replication slots and
     streaming replication connections respectively. These views apply to both physical and
-    logical replication.
+    logical replication. The
+    <link linkend="monitoring-pg-stat-replication-slots-view">
+    <structname>pg_stat_replication_slots</structname></link>
+    view provides statistics information about the logical replication slots.
    </para>
 ____________________________________________________________________________-->
    <para>
-    <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link>
-    视图和<link linkend="monitoring-pg-stat-replication-view"><structname>pg_stat_replication</structname></link>
-    视图分别提供了有关复制槽和流复制连接的当前状态的信息。这些视图适用于物理和逻辑复制。
+    <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link> 视图和<link linkend="monitoring-pg-stat-replication-view"><structname>pg_stat_replication</structname></link> 视图分别提供了有关复制槽和流复制连接的当前状态的信息。
+    这些视图适用于物理和逻辑复制。
+    <link linkend="monitoring-pg-stat-replication-slots-view"> <structname>pg_stat_replication_slots</structname></link> 视图提供了关于逻辑复制槽的统计信息。
    </para>
   </sect1>
 
@@ -735,6 +833,19 @@ typedef struct OutputPluginCallbacks
     LogicalDecodeMessageCB message_cb;
     LogicalDecodeFilterByOriginCB filter_by_origin_cb;
     LogicalDecodeShutdownCB shutdown_cb;
+    LogicalDecodeFilterPrepareCB filter_prepare_cb;
+    LogicalDecodeBeginPrepareCB begin_prepare_cb;
+    LogicalDecodePrepareCB prepare_cb;
+    LogicalDecodeCommitPreparedCB commit_prepared_cb;
+    LogicalDecodeRollbackPreparedCB rollback_prepared_cb;
+    LogicalDecodeStreamStartCB stream_start_cb;
+    LogicalDecodeStreamStopCB stream_stop_cb;
+    LogicalDecodeStreamAbortCB stream_abort_cb;
+    LogicalDecodeStreamPrepareCB stream_prepare_cb;
+    LogicalDecodeStreamCommitCB stream_commit_cb;
+    LogicalDecodeStreamChangeCB stream_change_cb;
+    LogicalDecodeStreamMessageCB stream_message_cb;
+    LogicalDecodeStreamTruncateCB stream_truncate_cb;
 } OutputPluginCallbacks;
 
 typedef void (*LogicalOutputPluginInit) (struct OutputPluginCallbacks *cb);
@@ -765,6 +876,19 @@ typedef struct OutputPluginCallbacks
     LogicalDecodeMessageCB message_cb;
     LogicalDecodeFilterByOriginCB filter_by_origin_cb;
     LogicalDecodeShutdownCB shutdown_cb;
+    LogicalDecodeFilterPrepareCB filter_prepare_cb;
+    LogicalDecodeBeginPrepareCB begin_prepare_cb;
+    LogicalDecodePrepareCB prepare_cb;
+    LogicalDecodeCommitPreparedCB commit_prepared_cb;
+    LogicalDecodeRollbackPreparedCB rollback_prepared_cb;
+    LogicalDecodeStreamStartCB stream_start_cb;
+    LogicalDecodeStreamStopCB stream_stop_cb;
+    LogicalDecodeStreamAbortCB stream_abort_cb;
+    LogicalDecodeStreamPrepareCB stream_prepare_cb;
+    LogicalDecodeStreamCommitCB stream_commit_cb;
+    LogicalDecodeStreamChangeCB stream_change_cb;
+    LogicalDecodeStreamMessageCB stream_message_cb;
+    LogicalDecodeStreamTruncateCB stream_truncate_cb;
 } OutputPluginCallbacks;
 
 typedef void (*LogicalOutputPluginInit) (struct OutputPluginCallbacks *cb);
@@ -773,6 +897,37 @@ typedef void (*LogicalOutputPluginInit) (struct OutputPluginCallbacks *cb);
      以及<function>commit_cb</function>是必需的，而
      <function>startup_cb</function>、<function>filter_by_origin_cb</function>、<function>truncate_cb</function>
      和<function>shutdown_cb</function>是可选的。如果没有设置<function>truncate_cb</function>但是要对一个<command>TRUNCATE</command>进行编码，则该动作将被忽略。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+     An output plugin may also define functions to support streaming of large,
+     in-progress transactions. The <function>stream_start_cb</function>,
+     <function>stream_stop_cb</function>, <function>stream_abort_cb</function>,
+     <function>stream_commit_cb</function>, <function>stream_change_cb</function>,
+     and <function>stream_prepare_cb</function>
+     are required, while <function>stream_message_cb</function> and
+     <function>stream_truncate_cb</function> are optional.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     输出插件也可以定义支持大的、在处理事务的流的函数。
+     <function>stream_start_cb</function>、<function>stream_stop_cb</function>、<function>stream_abort_cb</function>、<function>stream_commit_cb</function>、<function>stream_change_cb</function>、 和 <function>stream_prepare_cb</function>是需要的， <function>stream_message_cb</function> 和 <function>stream_truncate_cb</function> 是可选的。
+    </para>
+
+<!--==========================orignal english content==========================
+    <para>
+    An output plugin may also define functions to support two-phase commits,
+    which allows actions to be decoded on the <command>PREPARE TRANSACTION</command>.
+    The <function>begin_prepare_cb</function>, <function>prepare_cb</function>,
+    <function>stream_prepare_cb</function>,
+    <function>commit_prepared_cb</function> and <function>rollback_prepared_cb</function>
+    callbacks are required, while <function>filter_prepare_cb</function> is optional.
+    </para>
+____________________________________________________________________________-->
+    <para>
+    输出插件还可以定义支持两阶段提交的函数，允许活动在<command>PREPARE TRANSACTION</command>上被解码。
+    <function>begin_prepare_cb</function>, <function>prepare_cb</function>、<function>stream_prepare_cb</function>、<function>commit_prepared_cb</function> 和 <function>rollback_prepared_cb</function>回调是需要的，<function>filter_prepare_cb</function> 是可选的。
     </para>
    </sect2>
 
@@ -794,9 +949,12 @@ ____________________________________________________________________________-->
 ALTER TABLE user_catalog_table SET (user_catalog_table = true);
 CREATE TABLE another_catalog_table(data text) WITH (user_catalog_table = true);
 </programlisting>
-     Any actions leading to transaction ID assignment are prohibited. That, among others,
-     includes writing to tables, performing DDL changes, and
-     calling <literal>pg_current_xact_id()</literal>.
+     Note that access to user catalog tables or regular system catalog tables
+     in the output plugins has to be done via the <literal>systable_*</literal>
+     scan APIs only. Access via the <literal>heap_*</literal> scan APIs will
+     error out. Additionally, any actions leading to transaction ID assignment
+     are prohibited. That, among others, includes writing to tables, performing
+     DDL changes, and calling <literal>pg_current_xact_id()</literal>.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -807,8 +965,11 @@ ____________________________________________________________________________-->
 ALTER TABLE user_catalog_table SET (user_catalog_table = true);
 CREATE TABLE another_catalog_table(data text) WITH (user_catalog_table = true);
 </programlisting>
-     标记为用户提供的系统表，就允许对关系的只读访问。任何导致事务 ID 分配的动作
-     都被禁止。其中包括写表、执行 DDL 更改以及调用<literal>pg_current_xact_id()</literal>。
+     注意要访问输出插件中的用户目录表或常规系统目录表，只能通过<literal>systable_*</literal> 扫描 APIs完成。
+     通过<literal>heap_*</literal> 扫描 APIs访问将出错
+     此外标记为用户提供的系统表，就允许对关系的只读访问。
+     任何导致事务 ID 分配的动作都被禁止。
+     其中包括写表、执行 DDL 更改以及调用<literal>pg_current_xact_id()</literal>。
     </para>
    </sect2>
 
@@ -871,14 +1032,29 @@ ____________________________________________________________________________-->
      never get
      decoded. Successful savepoints are
      folded into the transaction containing them in the order they were
-     executed within that transaction.
+     executed within that transaction. A transaction that is prepared for
+     a two-phase commit using <command>PREPARE TRANSACTION</command> will
+     also be decoded if the output plugin callbacks needed for decoding
+     them are provided. It is possible that the current prepared transaction
+     which is being decoded is aborted concurrently via a
+     <command>ROLLBACK PREPARED</command> command. In that case, the logical
+     decoding of this transaction will be aborted too. All the changes of such
+     a transaction are skipped once the abort is detected and the
+     <function>prepare_cb</function> callback is invoked. Thus even in case of
+     a concurrent abort, enough information is provided to the output plugin
+     for it to properly deal with <command>ROLLBACK PREPARED</command> once
+     that is decoded.
     </para>
 ____________________________________________________________________________-->
     <para>
-     并发事务以提交顺序被解码，并且只有属于特定事务的更改会在
-     <literal>begin</literal>和<literal>commit</literal>回调之间被解码。被显式
-     或隐式回滚的事务不会被解码。成功的检查点被折叠到包含它们的事务中，并且
-     保持它们在该事务中被执行的顺序。
+     并发事务以提交顺序被解码，并且只有属于特定事务的更改会在 <literal>begin</literal>和<literal>commit</literal>回调之间被解码。
+	 被显式或隐式回滚的事务不会被解码。
+	 成功的检查点被折叠到包含它们的事务中，并且保持它们在该事务中被执行的顺序。
+     如果提供了解码它们所需要的输出插件回调，那么使用<command>PREPARE TRANSACTION</command>为两阶段提交准备的事务也将被解码。
+     有可能通过<command>ROLLBACK PREPARED</command>命令并发地中止正在解码的当前准备好的事务。
+     在这种情况下，该事务的逻辑解码也将被中止。
+     一旦检测到中止并且调用<function>prepare_cb</function>回调，就会跳过此事务的所有更改。
+     因此即使在并发中止的情况下，也会向输出插件提供足够的信息，以便一旦解码后它可以正确应对<command>ROLLBACK PREPARED</command>。
     </para>
 
     <note>
@@ -1079,7 +1255,13 @@ ____________________________________________________________________________-->
       an <command>INSERT</command>, <command>UPDATE</command>,
       or <command>DELETE</command>. Even if the original command modified
       several rows at once the callback will be called individually for each
-      row.
+      row. The <function>change_cb</function> callback may access system or
+      user catalog tables to aid in the process of outputting the row
+      modification details. In case of decoding a prepared (but yet
+      uncommitted) transaction or decoding of an uncommitted transaction, this
+      change callback might also error out due to simultaneous rollback of
+      this very same transaction. In that case, the logical decoding of this
+      aborted transaction is stopped gracefully.
 <programlisting>
 typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
                                        ReorderBufferTXN *txn,
@@ -1096,11 +1278,11 @@ typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
      </para>
 ____________________________________________________________________________-->
      <para>
-      对于一个事务中的每一个行修改，都将调用必须提供的
-      <function>change_cb</function>回调，这种修改可能是一个
-      <command>INSERT</command>、<command>UPDATE</command>或者
-      <command>DELETE</command>。即使原始命令一次修改了多行，该回调也会
-      为其中的每一行调用一次。
+      对于一个事务中的每一个行修改，都将调用必须提供的<function>change_cb</function>回调，这种修改可能是一个<command>INSERT</command>、<command>UPDATE</command>或者<command>DELETE</command>。
+      即使原始命令一次修改了多行，该回调也会为其中的每一行调用一次。
+      <function>change_cb</function>回调可以访问系统或用户目录表，以帮助输出行修改细节的过程。
+      在解码一个准备好的(但仍未提交)事务或解码一个未提交的事务的情况下，这个更改回调也可能由于同时回滚这一相同事务而出错。
+      在这种情况下，对这个中止事务的逻辑解码被优雅的停止。
 <programlisting>
 typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
                                        ReorderBufferTXN *txn,
@@ -1249,7 +1431,12 @@ typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
       non-transactional and the XID was not assigned yet in the transaction
       which logged the message. The <parameter>lsn</parameter> has WAL
       location of the message. The <parameter>transactional</parameter> says
-      if the message was sent as transactional or not.
+      if the message was sent as transactional or not. Similar to the change
+      callback, in case of decoding a prepared (but yet uncommitted)
+      transaction or decoding of an uncommitted transaction, this message
+      callback might also error out due to simultaneous rollback of
+      this very same transaction. In that case, the logical decoding of this
+      aborted transaction is stopped gracefully.
       The <parameter>prefix</parameter> is arbitrary null-terminated prefix
       which can be used for identifying interesting messages for the current
       plugin. And finally the <parameter>message</parameter> parameter holds
@@ -1267,7 +1454,14 @@ typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
                                         Size message_size,
                                         const char *message);
 </programlisting>
-      <parameter>txn</parameter>参数包含关于该事务的元信息，如被提交的时间戳和 XID。不过要注意，当消息是非事务性的并且记录该消息的事务中还没有被分配 XID 时，这个参数可以为 NULL。<parameter>lsn</parameter>是该消息的 WAL 位置。<parameter>transactional</parameter>说明该消息是否为事务性的。<parameter>prefix</parameter>是一个任意的空终结的前缀，它当前插件被用来标识感兴趣的消息。最后的<parameter>message</parameter>参数保存着大小为<parameter>message_size</parameter>的消息。
+      <parameter>txn</parameter>参数包含关于该事务的元信息，如被提交的时间戳和 XID。
+      不过要注意，当消息是非事务性的并且记录该消息的事务中还没有被分配 XID 时，这个参数可以为 NULL。
+      <parameter>lsn</parameter>是该消息的 WAL 位置。
+      <parameter>transactional</parameter>说明该消息是否为事务性的。
+      类似于变更回调，在解码一个准备好的(但仍未提交)事务或解码一个未提交的事务的情况下，此消息回调也可能由于同时回滚这一相同事务而出错。
+      在这种情况下，这个中止事务的逻辑解码被优雅的停止。
+      <parameter>prefix</parameter>是一个任意的空终结的前缀，它当前插件被用来标识感兴趣的消息。
+      最后的<parameter>message</parameter>参数保存着大小为<parameter>message_size</parameter>的消息。
      </para>
 <!--==========================orignal english content==========================
      <para>
@@ -1280,6 +1474,436 @@ ____________________________________________________________________________-->
       应该格外小心确保输出插件用于标识感兴趣消息的前缀是唯一的。建议使用扩展或者输出插件本身的名称。
      </para>
     </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-filter-prepare">
+<!--==========================orignal english content==========================
+     <title>Prepare Filter Callback</title>
+____________________________________________________________________________-->
+     <title>准备过滤器回调</title>
+
+<!--==========================orignal english content==========================
+     <para>
+       The optional <function>filter_prepare_cb</function> callback
+       is called to determine whether data that is part of the current
+       two-phase commit transaction should be considered for decoding
+       at this prepare stage or later as a regular one-phase transaction at
+       <command>COMMIT PREPARED</command> time. To signal that
+       decoding should be skipped, return <literal>true</literal>;
+       <literal>false</literal> otherwise. When the callback is not
+       defined, <literal>false</literal> is assumed (i.e. no filtering, all
+       transactions using two-phase commit are decoded in two phases as well).
+<programlisting>
+typedef bool (*LogicalDecodeFilterPrepareCB) (struct LogicalDecodingContext *ctx,
+                                              TransactionId xid,
+                                              const char *gid);
+</programlisting>
+       The <parameter>ctx</parameter> parameter has the same contents as for
+       the other callbacks. The parameters <parameter>xid</parameter>
+       and <parameter>gid</parameter> provide two different ways to identify
+       the transaction.  The later <command>COMMIT PREPARED</command> or
+       <command>ROLLBACK PREPARED</command> carries both identifiers,
+       providing an output plugin the choice of what to use.
+     </para>
+____________________________________________________________________________-->
+     <para>
+       可选的<function>filter_prepare_cb</function>回调被调用，以决定作为当前两阶段提交事务一部分的数据是否考虑在这个准备阶段进行解码，还是以后在<command>COMMIT PREPARED</command>时作为常规的一阶段事务。
+       要表示要跳过解码，返回<literal>true</literal>;否则是<literal>false</literal>。
+       如果回调没有被定义，则假定<literal>false</literal>(也就是说，没有过滤，所有使用两阶段提交的事务也在两个阶段进行解码)。
+<programlisting>
+typedef bool (*LogicalDecodeFilterPrepareCB) (struct LogicalDecodingContext *ctx,
+                                              TransactionId xid,
+                                              const char *gid);
+</programlisting>
+       <parameter>ctx</parameter>参数与其他回调具有相同的内容。
+       参数<parameter>xid</parameter>和<parameter>gid</parameter>提供了两种不同的方式以标识事务。
+       后面的<command>COMMIT PREPARED</command>或<command>ROLLBACK PREPARED</command>携带这两个标识符，提供了输出插件可用的选项。
+     </para>
+
+<!--==========================orignal english content==========================
+     <para>
+       The callback may be invoked multiple times per transaction to decode
+       and must provide the same static answer for a given pair of
+       <parameter>xid</parameter> and <parameter>gid</parameter> every time
+       it is called.
+     </para>
+____________________________________________________________________________-->
+     <para>
+       每个事务可以多次调用回调来解码，并且在每次它被调用时，必须为给定的<parameter>xid</parameter> 和 <parameter>gid</parameter>对提供相同的静态答案。
+     </para>
+     </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-begin-prepare">
+<!--==========================orignal english content==========================
+     <title>Transaction Begin Prepare Callback</title>
+____________________________________________________________________________-->
+     <title>事务开始准备回调</title>
+
+<!--==========================orignal english content==========================
+     <para>
+      The required <function>begin_prepare_cb</function> callback is called
+      whenever the start of a prepared transaction has been decoded. The
+      <parameter>gid</parameter> field, which is part of the
+      <parameter>txn</parameter> parameter, can be used in this callback to
+      check if the plugin has already received this <command>PREPARE</command>
+      in which case it can either error out or skip the remaining changes of 
+      the transaction.
+<programlisting>
+typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
+                                             ReorderBufferTXN *txn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      所需要的<function>begin_prepare_cb</function>回调在准备好的事务开始被解码时被调用。
+      <parameter>gid</parameter>字段，是<parameter>txn</parameter> 参数的一部分，可以在这个回调中使用，以检查插件是否已经接收到这个<command>PREPARE</command>，在这种情况下，它可以出错或跳过事务的剩余更改。
+<programlisting>
+typedef void (*LogicalDecodeBeginPrepareCB) (struct LogicalDecodingContext *ctx,
+                                             ReorderBufferTXN *txn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-prepare">
+<!--==========================orignal english content==========================
+     <title>Transaction Prepare Callback</title>
+____________________________________________________________________________-->
+     <title>事务准备回调</title>
+
+<!--==========================orignal english content==========================
+     <para>
+      The required <function>prepare_cb</function> callback is called whenever
+      a transaction which is prepared for two-phase commit has been
+      decoded. The <function>change_cb</function> callback for all modified
+      rows will have been called before this, if there have been any modified
+      rows. The <parameter>gid</parameter> field, which is part of the
+      <parameter>txn</parameter> parameter, can be used in this callback.
+<programlisting>
+typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
+                                        ReorderBufferTXN *txn,
+                                        XLogRecPtr prepare_lsn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      所需的<function>prepare_cb</function>回调被调用，当为两阶段提交准备的事务被解码的时候。
+      如果有任何修改的行，那么所有修改行的<function>change_cb</function>回调将在这之前被调用。
+      <parameter>gid</parameter>字段，是<parameter>txn</parameter>参数的一部分，可以在这个回调中使用。
+<programlisting>
+typedef void (*LogicalDecodePrepareCB) (struct LogicalDecodingContext *ctx,
+                                        ReorderBufferTXN *txn,
+                                        XLogRecPtr prepare_lsn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-commit-prepared">
+<!--==========================orignal english content==========================
+     <title>Transaction Commit Prepared Callback</title>
+____________________________________________________________________________-->
+     <title>事务提交准备回调</title>
+
+<!--==========================orignal english content==========================
+     <para>
+      The required <function>commit_prepared_cb</function> callback is called
+      whenever a transaction <command>COMMIT PREPARED</command> has been decoded.
+      The <parameter>gid</parameter> field, which is part of the
+      <parameter>txn</parameter> parameter, can be used in this callback.
+<programlisting>
+typedef void (*LogicalDecodeCommitPreparedCB) (struct LogicalDecodingContext *ctx,
+                                               ReorderBufferTXN *txn,
+                                               XLogRecPtr commit_lsn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      所需要的<function>commit_prepared_cb</function>回调被调用，当事务<command>COMMIT PREPARED</command>被解码时。
+      <parameter>gid</parameter>字段，是<parameter>txn</parameter> 参数的一部分，可以在这个回调中使用。
+<programlisting>
+typedef void (*LogicalDecodeCommitPreparedCB) (struct LogicalDecodingContext *ctx,
+                                               ReorderBufferTXN *txn,
+                                               XLogRecPtr commit_lsn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-rollback-prepared">
+<!--==========================orignal english content==========================
+     <title>Transaction Rollback Prepared Callback</title>
+____________________________________________________________________________-->
+     <title>事务回滚准备回滚</title>
+
+<!--==========================orignal english content==========================
+     <para>
+      The required <function>rollback_prepared_cb</function> callback is called
+      whenever a transaction <command>ROLLBACK PREPARED</command> has been
+      decoded. The <parameter>gid</parameter> field, which is part of the
+      <parameter>txn</parameter> parameter, can be used in this callback. The
+      parameters <parameter>prepare_end_lsn</parameter> and
+      <parameter>prepare_time</parameter> can be used to check if the plugin
+      has received this <command>PREPARE TRANSACTION</command> in which case
+      it can apply the rollback, otherwise, it can skip the rollback operation. The
+      <parameter>gid</parameter> alone is not sufficient because the downstream
+      node can have a prepared transaction with same identifier.
+<programlisting>
+typedef void (*LogicalDecodeRollbackPreparedCB) (struct LogicalDecodingContext *ctx,
+                                                 ReorderBufferTXN *txn,
+                                                 XLogRecPtr prepare_end_lsn,
+                                                 TimestampTz prepare_time);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      所需要的<function>rollback_prepared_cb</function>回调被调用，当事务<command>ROLLBACK PREPARED</command>被解码时。
+      <parameter>gid</parameter>字段，是<parameter>txn</parameter>参数的一部分，可以在这个回调中使用。
+      参数<parameter>prepare_end_lsn</parameter> 和 <parameter>prepare_time</parameter>可用于检查插件是否已经收到这个<command>PREPARE TRANSACTION</command>，在这种情况下，它可以应用回滚，否则，它可以跳过回滚操作。
+      单独的<parameter>gid</parameter>是不够的，因为下游节点可以有一个具有相同标识符的准备事务。
+<programlisting>
+typedef void (*LogicalDecodeRollbackPreparedCB) (struct LogicalDecodingContext *ctx,
+                                                 ReorderBufferTXN *txn,
+                                                 XLogRecPtr prepare_end_lsn,
+                                                 TimestampTz prepare_time);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-start">
+<!--==========================orignal english content==========================
+     <title>Stream Start Callback</title>
+____________________________________________________________________________-->
+     <title>流开始回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_start_cb</function> callback is called when opening
+      a block of streamed changes from an in-progress transaction.
+<programlisting>
+typedef void (*LogicalDecodeStreamStartCB) (struct LogicalDecodingContext *ctx,
+                                            ReorderBufferTXN *txn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_start_cb</function>回调被调用，在打开一个正在进行的事务中的流更改的块的时候。
+<programlisting>
+typedef void (*LogicalDecodeStreamStartCB) (struct LogicalDecodingContext *ctx,
+                                            ReorderBufferTXN *txn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-stop">
+<!--==========================orignal english content==========================
+     <title>Stream Stop Callback</title>
+____________________________________________________________________________-->
+     <title>流停止回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_stop_cb</function> callback is called when closing
+      a block of streamed changes from an in-progress transaction.
+<programlisting>
+typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
+                                           ReorderBufferTXN *txn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_stop_cb</function>回调被调用，在关闭正在进行的事务中的流更改的块时。
+<programlisting>
+typedef void (*LogicalDecodeStreamStopCB) (struct LogicalDecodingContext *ctx,
+                                           ReorderBufferTXN *txn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-abort">
+<!--==========================orignal english content==========================
+     <title>Stream Abort Callback</title>
+____________________________________________________________________________-->
+     <title>流中止回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_abort_cb</function> callback is called to abort
+      a previously streamed transaction.
+<programlisting>
+typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
+                                            ReorderBufferTXN *txn,
+                                            XLogRecPtr abort_lsn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_abort_cb</function> 被调用，以中止先前的流事务。
+<programlisting>
+typedef void (*LogicalDecodeStreamAbortCB) (struct LogicalDecodingContext *ctx,
+                                            ReorderBufferTXN *txn,
+                                            XLogRecPtr abort_lsn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-prepare">
+<!--==========================orignal english content==========================
+     <title>Stream Prepare Callback</title>
+____________________________________________________________________________-->
+     <title>流准备回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_prepare_cb</function> callback is called to prepare
+      a previously streamed transaction as part of a two-phase commit.
+<programlisting>
+typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
+                                              ReorderBufferTXN *txn,
+                                              XLogRecPtr prepare_lsn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_prepare_cb</function> 回调被调用，以准备一个先前的流事务，作为两阶段提交的一部分。
+<programlisting>
+typedef void (*LogicalDecodeStreamPrepareCB) (struct LogicalDecodingContext *ctx,
+                                              ReorderBufferTXN *txn,
+                                              XLogRecPtr prepare_lsn);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-commit">
+<!--==========================orignal english content==========================
+     <title>Stream Commit Callback</title>
+____________________________________________________________________________-->
+     <title>流提交回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_commit_cb</function> callback is called to commit
+      a previously streamed transaction.
+<programlisting>
+typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
+                                             ReorderBufferTXN *txn,
+                                             XLogRecPtr commit_lsn);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_commit_cb</function> 回调被调用，以提交一个先前的流事务。
+<programlisting>
+typedef void (*LogicalDecodeStreamCommitCB) (struct LogicalDecodingContext *ctx,
+                                             ReorderBufferTXN *txn,
+                                             XLogRecPtr commit_lsn);
+</programlisting>
+     </para>
+    </sect3>
+    
+    <sect3 id="logicaldecoding-output-plugin-stream-change">
+<!--==========================orignal english content==========================
+     <title>Stream Change Callback</title>
+____________________________________________________________________________-->
+     <title>流更改回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_change_cb</function> callback is called when sending
+      a change in a block of streamed changes (demarcated by
+      <function>stream_start_cb</function> and <function>stream_stop_cb</function> calls).
+      The actual changes are not displayed as the transaction can abort at a later
+      point in time and we don't decode changes for aborted transactions.
+<programlisting>
+typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
+                                             ReorderBufferTXN *txn,
+                                             Relation relation,
+                                             ReorderBufferChange *change);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_change_cb</function>回调被调用，在发送流更改块中的更改时(由<function>stream_start_cb</function> 和 <function>stream_stop_cb</function>调用划分)。
+      实际的更改不会显示，因为事务可以在稍后的点及时中止，并且我们不会解码已中止的事务的更改。
+<programlisting>
+typedef void (*LogicalDecodeStreamChangeCB) (struct LogicalDecodingContext *ctx,
+                                             ReorderBufferTXN *txn,
+                                             Relation relation,
+                                             ReorderBufferChange *change);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-message">
+<!--==========================orignal english content==========================
+     <title>Stream Message Callback</title>
+____________________________________________________________________________-->
+     <title>流消息回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_message_cb</function> callback is called when sending
+      a generic message in a block of streamed changes (demarcated by
+      <function>stream_start_cb</function> and <function>stream_stop_cb</function> calls).
+      The message contents for transactional messages are not displayed as the transaction
+      can abort at a later point in time and we don't decode changes for aborted
+      transactions.
+<programlisting>
+typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx,
+                                              ReorderBufferTXN *txn,
+                                              XLogRecPtr message_lsn,
+                                              bool transactional,
+                                              const char *prefix,
+                                              Size message_size,
+                                              const char *message);
+</programlisting>
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_message_cb</function>回调被调用，在流更改块中发送通用消息时(由<function>stream_start_cb</function> 和 <function>stream_stop_cb</function>调用划分)。
+      事务性消息的消息内容不会显示，因为事务可以在稍后的点及时中止，而且我们不会解码已中止事务的更改。
+<programlisting>
+typedef void (*LogicalDecodeStreamMessageCB) (struct LogicalDecodingContext *ctx,
+                                              ReorderBufferTXN *txn,
+                                              XLogRecPtr message_lsn,
+                                              bool transactional,
+                                              const char *prefix,
+                                              Size message_size,
+                                              const char *message);
+</programlisting>
+     </para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-stream-truncate">
+<!--==========================orignal english content==========================
+     <title>Stream Truncate Callback</title>
+____________________________________________________________________________-->
+     <title>流截断回调</title>
+<!--==========================orignal english content==========================
+     <para>
+      The <function>stream_truncate_cb</function> callback is called for a
+      <command>TRUNCATE</command> command in a block of streamed changes
+      (demarcated by <function>stream_start_cb</function> and
+      <function>stream_stop_cb</function> calls).
+<programlisting>
+typedef void (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
+                                               ReorderBufferTXN *txn,
+                                               int nrelations,
+                                               Relation relations[],
+                                               ReorderBufferChange *change);
+</programlisting>
+      The parameters are analogous to the <function>stream_change_cb</function>
+      callback.  However, because <command>TRUNCATE</command> actions on
+      tables connected by foreign keys need to be executed together, this
+      callback receives an array of relations instead of just a single one.
+      See the description of the <xref linkend="sql-truncate"/> statement for
+      details.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      <function>stream_truncate_cb</function>回调被调用，用于在流更改的块中的 <command>TRUNCATE</command>命令(由<function>stream_start_cb</function> 和 <function>stream_stop_cb</function>调用划分)。
+<programlisting>
+typedef void (*LogicalDecodeStreamTruncateCB) (struct LogicalDecodingContext *ctx,
+                                               ReorderBufferTXN *txn,
+                                               int nrelations,
+                                               Relation relations[],
+                                               ReorderBufferChange *change);
+</programlisting>
+      此参数与<function>stream_change_cb</function>回调相似。
+      但是，因为对由外键连接的表的<command>TRUNCATE</command>操作需要一起执行，因此该回调接收一个关系数组，而不仅是单个关系。
+      详细信息请参见<xref linkend="sql-truncate"/>语句的描述。
+     </para>
+    </sect3>
+
    </sect2>
 
    <sect2 id="logicaldecoding-output-plugin-output">
@@ -1365,47 +1989,452 @@ ____________________________________________________________________________-->
    <title>Synchronous Replication Support for Logical Decoding</title>
 ____________________________________________________________________________-->
    <title>逻辑解码的同步复制支持</title>
+   <sect2>
+<!--==========================orignal english content==========================
+    <title>Overview</title>
+____________________________________________________________________________-->
+    <title>概述</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     Logical decoding can be used to build
+     <link linkend="synchronous-replication">synchronous
+     replication</link> solutions with the same user interface as synchronous
+     replication for <link linkend="streaming-replication">streaming
+     replication</link>.  To do this, the streaming replication interface
+     (see <xref linkend="logicaldecoding-walsender"/>) must be used to stream out
+     data. Clients have to send <literal>Standby status update (F)</literal>
+     (see <xref linkend="protocol-replication"/>) messages, just like streaming
+     replication clients do.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     逻辑解码可以被用来构建    <link linkend="synchronous-replication">同步复制</link>方案，该方案具有和<link linkend="streaming-replication">流复制</link>的同步复制相同的用户接口。
+     要这样做，流复制接口（见<xref linkend="logicaldecoding-walsender"/>）必须被用来流式传出数据。
+     正如流复制客户端所作的一样，逻辑解码的客户端必须发出 <literal>后备机状态更新 (F)</literal>（见<xref linkend="protocol-replication"/>）消息。
+    </para>
+
+    <note>
+<!--==========================orignal english content==========================
+     <para>
+      A synchronous replica receiving changes via logical decoding will work in
+      the scope of a single database. Since, in contrast to
+      that, <parameter>synchronous_standby_names</parameter> currently is
+      server wide, this means this technique will not work properly if more
+      than one database is actively used.
+     </para>
+____________________________________________________________________________-->
+     <para>
+      一个通过逻辑解码接收更改的同步复制机将工作在一个单一数据库的范围内。
+      因为与之相反，<parameter>synchronous_standby_names</parameter> 当前是服务器范围的，这意味着如果有多于一个数据库被活跃地使用，这种技术将无法正常工作。
+     </para>
+    </note>
+   </sect2>
+
+   <sect2 id="logicaldecoding-synchronous-caveats">
+<!--==========================orignal english content==========================
+    <title>Caveats</title>
+____________________________________________________________________________-->
+    <title>警告</title>
+
+<!--==========================orignal english content==========================
+    <para>
+     In synchronous replication setup, a deadlock can happen, if the transaction
+     has locked [user] catalog tables exclusively. See
+     <xref linkend="logicaldecoding-capabilities"/> for information on user
+     catalog tables. This is because logical decoding of transactions can lock
+     catalog tables to access them. To avoid this users must refrain from taking
+     an exclusive lock on [user] catalog tables. This can happen in the following
+     ways:
+
+     <itemizedlist>
+      <listitem>
+       <para>
+        Issuing an explicit <command>LOCK</command> on <structname>pg_class</structname>
+        in a transaction.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        Perform <command>CLUSTER</command> on <structname>pg_class</structname> in
+        a transaction.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <command>PREPARE TRANSACTION</command> after <command>LOCK</command> command
+        on <structname>pg_class</structname> and allow logical decoding of two-phase
+        transactions.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        <command>PREPARE TRANSACTION</command> after <command>CLUSTER</command>
+        command on <structname>pg_trigger</structname> and allow logical decoding of
+        two-phase transactions. This will lead to deadlock only when published table
+        have a trigger.
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        Executing <command>TRUNCATE</command> on [user] catalog table in a
+        transaction.
+       </para>
+      </listitem>
+     </itemizedlist>
+
+     Note that these commands that can cause deadlock apply to not only explicitly
+     indicated system catalog tables above but also to any other [user] catalog
+     table.
+    </para>
+____________________________________________________________________________-->
+    <para>
+     在同步复制设置中，死锁可能发生，如果事务排它地锁定了[user]目录表的话。
+     有关用户目录表的信息，参见<xref linkend="logicaldecoding-capabilities"/>。
+     这是因为事务的逻辑解码可以锁定目录表以便访问它们。
+     为了避免这种情况，用户必须避免对[user]目录表执行排它锁。
+     这可以通过以下方式发生:
+
+     <itemizedlist>
+      <listitem>
+       <para>
+        在事务中，在<structname>pg_class</structname>上发出显式<command>LOCK</command>。
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        在事务中，在<structname>pg_class</structname>上执行 <command>CLUSTER</command>。
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        在<structname>pg_class</structname>上<command>LOCK</command>命令之后的<command>PREPARE TRANSACTION</command>，并且允许对两阶段事务的逻辑解码。
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        在<structname>pg_trigger</structname>上的<command>CLUSTER</command>命令之后的<command>PREPARE TRANSACTION</command>，并且允许对两阶段事务的逻辑解码。
+        只有在发布的表有触发器时，这将会导致死锁。
+       </para>
+      </listitem>
+
+      <listitem>
+       <para>
+        在事务中，在[user]目录表上执行<command>TRUNCATE</command>。
+       </para>
+      </listitem>
+     </itemizedlist>
+
+     注意，这些可能导致死锁的命令，不仅适用于上面显式标示的系统目录表，而且还适用于任何其他[user]目录表。
+    </para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="logicaldecoding-streaming">
+<!--==========================orignal english content==========================
+   <title>Streaming of Large Transactions for Logical Decoding</title>
+____________________________________________________________________________-->
+   <title>用于逻辑解码的大事务的流</title>
 
 <!--==========================orignal english content==========================
    <para>
-    Logical decoding can be used to build
-    <link linkend="synchronous-replication">synchronous
-    replication</link> solutions with the same user interface as synchronous
-    replication for <link linkend="streaming-replication">streaming
-    replication</link>.  To do this, the streaming replication interface
-    (see <xref linkend="logicaldecoding-walsender"/>) must be used to stream out
-    data. Clients have to send <literal>Standby status update (F)</literal>
-    (see <xref linkend="protocol-replication"/>) messages, just like streaming
-    replication clients do.
+    The basic output plugin callbacks (e.g., <function>begin_cb</function>,
+    <function>change_cb</function>, <function>commit_cb</function> and
+    <function>message_cb</function>) are only invoked when the transaction
+    actually commits. The changes are still decoded from the transaction
+    log, but are only passed to the output plugin at commit (and discarded
+    if the transaction aborts).
    </para>
 ____________________________________________________________________________-->
    <para>
-    逻辑解码可以被用来构建
-    <link linkend="synchronous-replication">同步复制</link>方案，该方案
-    具有和<link linkend="streaming-replication">流复制</link>的同步复制
-    相同的用户接口。要这样做，流复制接口（见
-    <xref linkend="logicaldecoding-walsender"/>）必须被用来流式传出数据。
-    正如流复制客户端所作的一样，逻辑解码的客户端必须发出
-    <literal>后备机状态更新 (F)</literal>
-    （见<xref linkend="protocol-replication"/>）消息。
+    基本输出插件回调(例如，<function>begin_cb</function>,<function>change_cb</function>, <function>commit_cb</function> 和 <function>message_cb</function>)只在事务实际提交时调用。
+    更改仍然从事务日志中解码，但只在提交时传递给输出插件(如果事务中止，则丢弃)。
    </para>
 
-   <note>
 <!--==========================orignal english content==========================
-    <para>
-     A synchronous replica receiving changes via logical decoding will work in
-     the scope of a single database. Since, in contrast to
-     that, <parameter>synchronous_standby_names</parameter> currently is
-     server wide, this means this technique will not work properly if more
-     than one database is actively used.
-     </para>
+   <para>
+    This means that while the decoding happens incrementally, and may spill
+    to disk to keep memory usage under control, all the decoded changes have
+    to be transmitted when the transaction finally commits (or more precisely,
+    when the commit is decoded from the transaction log). Depending on the
+    size of the transaction and network bandwidth, the transfer time may
+    significantly increase the apply lag.
+   </para>
 ____________________________________________________________________________-->
-    <para>
-     一个通过逻辑解码接收更改的同步复制机将工作在一个单一数据库的范围内。
-     因为与之相反，<parameter>synchronous_standby_names</parameter>
-     当前是服务器范围的，这意味着如果有多于一个数据库被活跃地使用，这种技术将
-     无法正常工作。
-     </para>
-   </note>
+   <para>
+    这意味着虽然解码是增量进行的，并且可能溢出到磁盘以保持内存使用是可控的，
+    当事务最终提交时(或者更准确地说，当提交已从事务日志中解码时)，必须传送所有已解码的更改。
+    根据事务的大小和网络带宽，传输时间可能会显著增加应用时间间隔。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    To reduce the apply lag caused by large transactions, an output plugin
+    may provide additional callback to support incremental streaming of
+    in-progress transactions. There are multiple required streaming callbacks
+    (<function>stream_start_cb</function>, <function>stream_stop_cb</function>,
+    <function>stream_abort_cb</function>, <function>stream_commit_cb</function>
+    and <function>stream_change_cb</function>) and two optional callbacks
+    (<function>stream_message_cb</function> and <function>stream_truncate_cb</function>).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    为了减少由大型事务引起的应用时间间隔，输出插件可以提供额外的回调，以支持正在进行的事务的增量流。
+    这里有多个必需的流回调(<function>stream_start_cb</function>, <function>stream_stop_cb</function>,<function>stream_abort_cb</function>, <function>stream_commit_cb</function>和<function>stream_change_cb</function>)和两个可选回调(<function>stream_message_cb</function>和<function>stream_truncate_cb</function>)。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    When streaming an in-progress transaction, the changes (and messages) are
+    streamed in blocks demarcated by <function>stream_start_cb</function>
+    and <function>stream_stop_cb</function> callbacks. Once all the decoded
+    changes are transmitted, the transaction can be committed using the
+    the <function>stream_commit_cb</function> callback
+    (or possibly aborted using the <function>stream_abort_cb</function> callback).
+    If two-phase commits are supported, the transaction can be prepared using the
+    <function>stream_prepare_cb</function> callback,
+    <command>COMMIT PREPARED</command> using the
+    <function>commit_prepared_cb</function> callback or aborted using the
+    <function>rollback_prepared_cb</function>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当流式处理正在进行的事务时，更改(和消息)以<function>stream_start_cb</function>和<function>stream_stop_cb</function>回调划分的块进行流式处理。
+    一旦所有解码的更改被传送，可以使用<function>stream_commit_cb</function>回调提交事务(或可能的中止，使用<function>stream_abort_cb</function>回调)。
+    如果支持两阶段提交，可以使用<function>stream_prepare_cb</function>回调来准备事务，<command>COMMIT PREPARED</command> 使用<function>commit_prepared_cb</function>回调或使用<function>rollback_prepared_cb</function>中止。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    One example sequence of streaming callback calls for one transaction may
+    look like this:
+<programlisting>
+stream_start_cb(...);   &lt;-&minus; start of first block of changes
+  stream_change_cb(...);
+  stream_change_cb(...);
+  stream_message_cb(...);
+  stream_change_cb(...);
+  ...
+  stream_change_cb(...);
+stream_stop_cb(...);    &lt;-&minus; end of first block of changes
+
+stream_start_cb(...);   &lt;-&minus; start of second block of changes
+  stream_change_cb(...);
+  stream_change_cb(...);
+  stream_change_cb(...);
+  ...
+  stream_message_cb(...);
+  stream_change_cb(...);
+stream_stop_cb(...);    &lt;-&minus; end of second block of changes
+
+stream_commit_cb(...);  &lt;-&minus; commit of the streamed transaction
+</programlisting>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    对一个事务的流式回调调用的一个示例序列可能看起来像这样：
+<programlisting>
+stream_start_cb(...);   &lt;-- start of first block of changes
+  stream_change_cb(...);
+  stream_change_cb(...);
+  stream_message_cb(...);
+  stream_change_cb(...);
+  ...
+  stream_change_cb(...);
+stream_stop_cb(...);    &lt;-- end of first block of changes
+
+stream_start_cb(...);   &lt;-- start of second block of changes
+  stream_change_cb(...);
+  stream_change_cb(...);
+  stream_change_cb(...);
+  ...
+  stream_message_cb(...);
+  stream_change_cb(...);
+stream_stop_cb(...);    &lt;-- end of second block of changes
+
+stream_commit_cb(...);  &lt;-- commit of the streamed transaction
+</programlisting>
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The actual sequence of callback calls may be more complicated, of course.
+    There may be blocks for multiple streamed transactions, some of the
+    transactions may get aborted, etc.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当然，回调调用的实际顺序可能更复杂。
+    可能会有多个流事务的块，一些事务也许会被中止，等等。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Similar to spill-to-disk behavior, streaming is triggered when the total
+    amount of changes decoded from the WAL (for all in-progress transactions)
+    exceeds the limit defined by <varname>logical_decoding_work_mem</varname> setting.
+    At that point, the largest top-level transaction (measured by the amount of memory
+    currently used for decoded changes) is selected and streamed.  However, in
+    some cases we still have to spill to disk even if streaming is enabled
+    because we exceed the memory threshold but still have not decoded the
+    complete tuple e.g., only decoded toast table insert but not the main table
+    insert.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    与溢出到磁盘的行为类似，流会被触发，当从WAL(对于所有正在进行的事务)解码的更改总数超过<varname>logical_decoding_work_mem</varname>设置定义的限制时。
+    此时，最大的顶级事务(通过当前用于解码更改的内存量来衡量)会被选择并流式处理。
+    然而，在某些情况下，即使启用了流，我们仍然必须溢出到磁盘，因为我们超过了内存阈值，但仍然没有解码完整的元组，例如，只解码toast表插入，但没有主表插入。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Even when streaming large transactions, the changes are still applied in
+    commit order, preserving the same guarantees as the non-streaming mode.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    即使在流式处理大型事务时，更改仍然按照提交顺序应用，保留了与非流式模式相同的保证。
+   </para>
+
+  </sect1>
+
+  <sect1 id="logicaldecoding-two-phase-commits">
+<!--==========================orignal english content==========================
+   <title>Two-phase Commit Support for Logical Decoding</title>
+____________________________________________________________________________-->
+   <title>对逻辑解码的两阶段提交支持</title>
+
+<!--==========================orignal english content==========================
+   <para>
+    With the basic output plugin callbacks (eg., <function>begin_cb</function>,
+    <function>change_cb</function>, <function>commit_cb</function> and
+    <function>message_cb</function>) two-phase commit commands like
+    <command>PREPARE TRANSACTION</command>, <command>COMMIT PREPARED</command>
+    and <command>ROLLBACK PREPARED</command> are not decoded. While the
+    <command>PREPARE TRANSACTION</command> is ignored,
+    <command>COMMIT PREPARED</command> is decoded as a <command>COMMIT</command>
+    and <command>ROLLBACK PREPARED</command> is decoded as a
+    <command>ROLLBACK</command>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    使用基本输出插件回调(例如;<function>begin_cb</function>,<function>change_cb</function>, <function>commit_cb</function> 和 <function>message_cb</function>)两阶段提交命令，像<command>PREPARE TRANSACTION</command>, <command>COMMIT PREPARED</command> 和 <command>ROLLBACK PREPARED</command>不被解码。
+    当<command>PREPARE TRANSACTION</command>被忽略时，<command>COMMIT PREPARED</command>被解码为<command>COMMIT</command>， 并且<command>ROLLBACK PREPARED</command>被解码为<command>ROLLBACK</command>。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    To support the streaming of two-phase commands, an output plugin needs to
+    provide additional callbacks. There are multiple two-phase commit callbacks
+    that are required, (<function>begin_prepare_cb</function>,
+    <function>prepare_cb</function>, <function>commit_prepared_cb</function>,
+    <function>rollback_prepared_cb</function> and
+    <function>stream_prepare_cb</function>) and an optional callback
+    (<function>filter_prepare_cb</function>).
+   </para>
+____________________________________________________________________________-->
+   <para>
+    为了支持两阶段命令的流，输出插件需要提供附加的回调。
+    有多个需要的两阶段提交回调，(<function>begin_prepare_cb</function>,<function>prepare_cb</function>, <function>commit_prepared_cb</function>,<function>rollback_prepared_cb</function> 和 <function>stream_prepare_cb</function>)以及一个可选的回调(<function>filter_prepare_cb</function>)。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    If the output plugin callbacks for decoding two-phase commit commands are
+    provided, then on <command>PREPARE TRANSACTION</command>, the changes of
+    that transaction are decoded, passed to the output plugin, and the
+    <function>prepare_cb</function> callback is invoked. This differs from the
+    basic decoding setup where changes are only passed to the output plugin
+    when a transaction is committed. The start of a prepared transaction is
+    indicated by the <function>begin_prepare_cb</function> callback.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    如果提供了解码两阶段提交命令的输出插件回调，那么在<command>PREPARE TRANSACTION</command>上，该事务的更改被解码，传递给输出插件，并调用<function>prepare_cb</function>回调。
+    这与只有在提交事务时才将更改传递给输出插件的基本解码设置不同。
+    准备好的事务的开始由<function>begin_prepare_cb</function>回调指示。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    When a prepared transaction is rolled back using the
+    <command>ROLLBACK PREPARED</command>, then the
+    <function>rollback_prepared_cb</function> callback is invoked and when the
+    prepared transaction is committed using <command>COMMIT PREPARED</command>,
+    then the <function>commit_prepared_cb</function> callback is invoked.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    当使用<command>ROLLBACK PREPARED</command>回滚一个准备好的事务时，则调用<function>rollback_prepared_cb</function>回调，当准备好的事务使用<command>COMMIT PREPARED</command>提交时，则调用<function>commit_prepared_cb</function>回调。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    Optionally the output plugin can define filtering rules via
+    <function>filter_prepare_cb</function> to decode only specific transaction
+    in two phases.  This can be achieved by pattern matching on the
+    <parameter>gid</parameter> or via lookups using the
+    <parameter>xid</parameter>.
+   </para>
+____________________________________________________________________________-->
+   <para>
+    可选的，输出插件还可以通过<function>filter_prepare_cb</function>定义过滤规则，以在两个阶段中只解码特定的事务。
+    这可以通过在<parameter>gid</parameter>上进行模式匹配或通过使用<parameter>xid</parameter>查找来实现。
+   </para>
+
+<!--==========================orignal english content==========================
+   <para>
+    The users that want to decode prepared transactions need to be careful about
+    below mentioned points:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       If the prepared transaction has locked [user] catalog tables exclusively
+       then decoding prepare can block till the main transaction is committed.
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       The logical replication solution that builds distributed two phase commit
+       using this feature can deadlock if the prepared transaction has locked
+       [user] catalog tables exclusively. To avoid this users must refrain from
+       having locks on catalog tables (e.g. explicit <command>LOCK</command> command)
+       in such transactions.
+       See <xref linkend="logicaldecoding-synchronous-caveats"/> for the details.
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+____________________________________________________________________________-->
+   <para>
+    想要解码准备好的事务的用户，需要注意以下提到的几点:
+
+    <itemizedlist>
+     <listitem>
+      <para>
+       如果准备的事务排它地锁定了[user]目录表，那么解码准备可以阻塞，直到主事务被提交。
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       用此特性构建分布式两阶段提交的逻辑复制解决方案可能会死锁，如果准备好的事务排它地锁定了[user]目录表的话。
+       为了避免这种情况，用户必须避免在这样的事务中在编目表上加锁(例如显式的<command>LOCK</command>命令)。
+       详请参阅<xref linkend="logicaldecoding-synchronous-caveats"/>。
+      </para>
+     </listitem>
+    </itemizedlist>
+   </para>
+
   </sect1>
  </chapter>
