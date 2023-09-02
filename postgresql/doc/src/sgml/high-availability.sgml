@@ -71,9 +71,9 @@ ____________________________________________________________________________-->
   Some solutions deal with synchronization by allowing only one
   server to modify the data.  Servers that can modify data are
   called read/write, <firstterm>master</firstterm> or <firstterm>primary</firstterm> servers.
-  Servers that track changes in the master are called <firstterm>standby</firstterm>
+  Servers that track changes in the primary are called <firstterm>standby</firstterm>
   or <firstterm>secondary</firstterm> servers. A standby server that cannot be connected
-  to until it is promoted to a master server is called a <firstterm>warm
+  to until it is promoted to a primary server is called a <firstterm>warm
   standby</firstterm> server, and one that can accept connections and serves read-only
   queries is called a <firstterm>hot standby</firstterm> server.
  </para>
@@ -196,7 +196,7 @@ ____________________________________________________________________________-->
      system residing on another computer.  The only restriction is that
      the mirroring must be done in a way that ensures the standby server
      has a consistent copy of the file system &mdash; specifically, writes
-     to the standby must be done in the same order as those on the master.
+     to the standby must be done in the same order as those on the primary.
      <productname>DRBD</productname> is a popular file system replication solution
      for Linux.
     </para>
@@ -230,7 +230,7 @@ ____________________________________________________________________________-->
      stream of write-ahead log (<acronym>WAL</acronym>)
      records.  If the main server fails, the standby contains
      almost all of the data of the main server, and can be quickly
-     made the new master database server.  This can be synchronous or
+     made the new primary database server.  This can be synchronous or
      asynchronous and can only be done for the entire database server.
     </para>
 ____________________________________________________________________________-->
@@ -262,10 +262,10 @@ ____________________________________________________________________________-->
      Logical replication allows a database server to send a stream of data
      modifications to another server.  <productname>PostgreSQL</productname>
      logical replication constructs a stream of logical data modifications
-     from the WAL.  Logical replication allows the data changes from
-     individual tables to be replicated.  Logical replication doesn't require
-     a particular server to be designated as a master or a replica but allows
-     data to flow in multiple directions.  For more information on logical
+     from the WAL.  Logical replication allows replication of data changes on
+     a per-table basis.  In addition, a server that is publishing its own
+     changes can also subscribe to changes from another server, allowing data
+     to flow in multiple directions.  For more information on logical
      replication, see <xref linkend="logical-replication"/>.  Through the
      logical decoding interface (<xref linkend="logicaldecoding"/>),
      third-party extensions can also provide similar functionality.
@@ -279,18 +279,20 @@ ____________________________________________________________________________-->
 
   <varlistentry>
 <!--==========================orignal english content==========================
-   <term>Trigger-Based Master-Standby Replication</term>
+   <term>Trigger-Based Primary-Standby Replication</term>
 ____________________________________________________________________________-->
    <term>基于触发器的主-备复制</term>
    <listitem>
 
 <!--==========================orignal english content==========================
     <para>
-     A master-standby replication setup sends all data modification
-     queries to the master server.  The master server asynchronously
-     sends data changes to the standby server.  The standby can answer
-     read-only queries while the master server is running.  The
-     standby server is ideal for data warehouse queries.
+     A trigger-based replication setup typically funnels data modification
+     queries to a designated primary server. Operating on a per-table basis,
+     the primary server sends data changes (typically) asynchronously to the
+     standby servers.  Standby servers can answer queries while the primary is
+     running, and may allow some local data changes or write activity.  This
+     form of replication is often used for offloading large analytical or data
+     warehouse queries.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -300,10 +302,10 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
     <para>
-     <productname>Slony-I</productname> is an example of this type of replication, with per-table
-     granularity, and support for multiple standby servers.  Because it
-     updates the standby server asynchronously (in batches), there is
-     possible data loss during fail over.
+     <productname>Slony-I</productname> is an example of this type of
+     replication, with per-table granularity, and support for multiple standby
+     servers.  Because it updates the standby server asynchronously (in
+     batches), there is possible data loss during fail over.
     </para>
 ____________________________________________________________________________-->
     <para>
@@ -339,14 +341,10 @@ ____________________________________________________________________________-->
      <function>random()</function>, <function>CURRENT_TIMESTAMP</function>, and
      sequences can have different values on different servers.
      This is because each server operates independently, and because
-     SQL queries are broadcast (and not actual modified rows).  If
+     SQL queries are broadcast rather than actual data changes.  If
      this is unacceptable, either the middleware or the application
-     must query such values from a single server and then use those
-     values in write queries.  Another option is to use this replication
-     option with a traditional master-standby setup, i.e., data modification
-     queries are sent only to the master and are propagated to the
-     standby servers via master-standby replication, not by the replication
-     middleware.  Care must also be taken that all
+     must determine such values from a single source and then use those
+     values in write queries.  Care must also be taken that all
      transactions either commit or abort on all servers, perhaps
      using two-phase commit (<xref linkend="sql-prepare-transaction"/>
      and <xref linkend="sql-commit-prepared"/>).
@@ -405,7 +403,7 @@ ____________________________________________________________________________-->
      to reduce the communication overhead.  Synchronous multimaster
      replication is best for mostly read workloads, though its big
      advantage is that any server can accept write requests &mdash;
-     there is no need to partition workloads between master and
+     there is no need to partition workloads between primary and
      standby servers, and because the data changes are sent from one
      server to another, there is no problem with non-deterministic
      functions like <function>random()</function>.
@@ -465,7 +463,7 @@ ____________________________________________________________________________-->
      <entry>File System Repl.</entry>
      <entry>Write-Ahead Log Shipping</entry>
      <entry>Logical Repl.</entry>
-     <entry>Trigger-Based Repl.</entry>
+     <entry>Trigger-&zwsp;Based Repl.</entry>
      <entry>SQL Repl. Middle-ware</entry>
      <entry>Async. MM Repl.</entry>
      <entry>Sync. MM Repl.</entry>
@@ -563,7 +561,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
     <row>
-     <entry>Allows multiple master servers</entry>
+     <entry>Allows multiple primary servers</entry>
      <entry align="center"></entry>
      <entry align="center"></entry>
      <entry align="center"></entry>
@@ -588,7 +586,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
     <row>
-     <entry>No master server overhead</entry>
+     <entry>No overhead on primary</entry>
      <entry align="center">&bull;</entry>
      <entry align="center"></entry>
      <entry align="center">&bull;</entry>
@@ -638,7 +636,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
     <row>
-     <entry>Master failure will never lose data</entry>
+     <entry>Primary failure will never lose data</entry>
      <entry align="center">&bull;</entry>
      <entry align="center">&bull;</entry>
      <entry align="center">with sync on</entry>
@@ -765,7 +763,7 @@ ____________________________________________________________________________-->
      partitioned by offices, e.g., London and Paris, with a server
      in each office.  If queries combining London and Paris data
      are necessary, an application can query both servers, or
-     master/standby replication can be used to keep a read-only copy
+     primary/standby replication can be used to keep a read-only copy
      of the other office's data on each server.
     </para>
 ____________________________________________________________________________-->
@@ -1023,6 +1021,15 @@ ____________________________________________________________________________-->
 ____________________________________________________________________________-->
    <title>后备服务器操作</title>
 
+<!--==========================orignal english content==========================
+   <para>
+    A server enters standby mode if a
+    <anchor id="file-standby-signal" xreflabel="standby.signal"/>
+    <filename>standby.signal</filename>
+    <indexterm><primary><filename>standby.signal</filename></primary></indexterm>
+    file exists in the data directory when the server is started.
+   </para>
+____________________________________________________________________________-->
    <para>
     服务器启动时，数据目录中存在<anchor id="file-standby-signal" xreflabel="standby.signal"/>
     <filename>standby.signal</filename>
@@ -1031,13 +1038,13 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     In standby mode, the server continuously applies WAL received from the
-    master server. The standby server can read WAL from a WAL archive
-    (see <xref linkend="guc-restore-command"/>) or directly from the master
+    primary server. The standby server can read WAL from a WAL archive
+    (see <xref linkend="guc-restore-command"/>) or directly from the primary
     over a TCP connection (streaming replication). The standby server will
     also attempt to restore any WAL found in the standby cluster's
     <filename>pg_wal</filename> directory. That typically happens after a server
     restart, when the standby replays again WAL that was streamed from the
-    master before the restart, but you can also manually copy files to
+    primary before the restart, but you can also manually copy files to
     <filename>pg_wal</filename> at any time to have them replayed.
    </para>
 ____________________________________________________________________________-->
@@ -1072,7 +1079,7 @@ ____________________________________________________________________________-->
     <function>pg_promote()</function> is called, or a trigger file is found
     (<varname>promote_trigger_file</varname>). Before failover,
     any WAL immediately available in the archive or in <filename>pg_wal</filename> will be
-    restored, but no attempt is made to connect to the master.
+    restored, but no attempt is made to connect to the primary.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1083,7 +1090,7 @@ ____________________________________________________________________________-->
 
   <sect2 id="preparing-primary-for-standby">
 <!--==========================orignal english content==========================
-   <title>Preparing the Master for Standby Servers</title>
+   <title>Preparing the Primary for Standby Servers</title>
 ____________________________________________________________________________-->
    <title>为后备服务器准备主控机</title>
 
@@ -1092,9 +1099,9 @@ ____________________________________________________________________________-->
     Set up continuous archiving on the primary to an archive directory
     accessible from the standby, as described
     in <xref linkend="continuous-archiving"/>. The archive location should be
-    accessible from the standby even when the master is down, i.e., it should
+    accessible from the standby even when the primary is down, i.e., it should
     reside on the standby server itself or another trusted server, not on
-    the master server.
+    the primary server.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1139,7 +1146,8 @@ ____________________________________________________________________________-->
    <para>
     To set up the standby server, restore the base backup taken from primary
     server (see <xref linkend="backup-pitr-recovery"/>). Create a file
-    <filename>standby.signal</filename> in the standby's cluster data
+    <link linkend="file-standby-signal"><filename>standby.signal</filename></link><indexterm><primary>standby.signal</primary></indexterm>
+    in the standby's cluster data
     directory. Set <xref linkend="guc-restore-command"/> to a simple command to copy files from
     the WAL archive. If you plan to have multiple standby servers for high
     availability purposes, make sure that <varname>recovery_target_timeline</varname> is set to
@@ -1155,11 +1163,9 @@ ____________________________________________________________________________-->
    <note>
 <!--==========================orignal english content==========================
      <para>
-     Do not use pg_standby or similar tools with the built-in standby mode
-     described here. <xref linkend="guc-restore-command"/> should return immediately
+     <xref linkend="guc-restore-command"/> should return immediately
      if the file does not exist; the server will retry the command again if
-     necessary. See <xref linkend="log-shipping-alternative"/>
-     for using tools like pg_standby.
+     necessary.
     </para>
 ____________________________________________________________________________-->
      <para>
@@ -1478,7 +1484,7 @@ ____________________________________________________________________________-->
      <link linkend="monitoring-pg-stat-replication-view"><structname>
      pg_stat_replication</structname></link> view. Large differences between
      <function>pg_current_wal_lsn</function> and the view's <literal>sent_lsn</literal> field
-     might indicate that the master server is under heavy load, while
+     might indicate that the primary server is under heavy load, while
      differences between <literal>sent_lsn</literal> and
      <function>pg_last_wal_receive_lsn</function> on the standby might indicate
      network delay, or that the standby is under heavy load.
@@ -1523,9 +1529,9 @@ ____________________________________________________________________________-->
    </indexterm>
 <!--==========================orignal english content==========================
    <para>
-    Replication slots provide an automated way to ensure that the master does
+    Replication slots provide an automated way to ensure that the primary does
     not remove WAL segments until they have been received by all standbys,
-    and that the master does not remove rows which could cause a
+    and that the primary does not remove rows which could cause a
     <link linkend="hot-standby-conflict">recovery conflict</link> even when the
     standby is disconnected.
    </para>
@@ -1681,7 +1687,7 @@ ____________________________________________________________________________-->
    <para>
     The cascading replication feature allows a standby server to accept replication
     connections and stream WAL records to other standbys, acting as a relay.
-    This can be used to reduce the number of direct connections to the master
+    This can be used to reduce the number of direct connections to the primary
     and also to minimize inter-site bandwidth overheads.
    </para>
 ____________________________________________________________________________-->
@@ -1692,12 +1698,11 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     A standby acting as both a receiver and a sender is known as a cascading
-    standby.  Standbys that are more directly connected to the master are known
+    standby.  Standbys that are more directly connected to the primary are known
     as upstream servers, while those standby servers further away are downstream
     servers.  Cascading replication does not place limits on the number or
     arrangement of downstream servers, though each standby connects to only
-    one upstream server which eventually links to a single master/primary
-    server.
+    one upstream server which eventually links to a single primary server.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -1707,7 +1712,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     A cascading standby sends not only WAL records received from the
-    master but also those restored from the archive. So even if the replication
+    primary but also those restored from the archive. So even if the replication
     connection in some upstream connection is terminated, streaming replication
     continues downstream for as long as new WAL records are available.
    </para>
@@ -1738,8 +1743,8 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    If an upstream standby server is promoted to become new master, downstream
-    servers will continue to stream from the new master if
+    If an upstream standby server is promoted to become the new primary, downstream
+    servers will continue to stream from the new primary if
     <varname>recovery_target_timeline</varname> is set to <literal>'latest'</literal> (the default).
    </para>
 ____________________________________________________________________________-->
@@ -1828,7 +1833,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    Read only transactions and transaction rollbacks need not wait for
+    Read-only transactions and transaction rollbacks need not wait for
     replies from standby servers. Subtransaction commits do not wait for
     responses from standby servers, only top-level commits. Long
     running actions such as data loading or index building do not wait
@@ -1871,7 +1876,7 @@ ____________________________________________________________________________-->
     a non-empty value.  <varname>synchronous_commit</varname> must also be set to
     <literal>on</literal>, but since this is the default value, typically no change is
     required.  (See <xref linkend="runtime-config-wal-settings"/> and
-    <xref linkend="runtime-config-replication-master"/>.)
+    <xref linkend="runtime-config-replication-primary"/>.)
     This configuration will cause each commit to wait for
     confirmation that the standby has written the commit record to durable
     storage.
@@ -1901,8 +1906,8 @@ ____________________________________________________________________________-->
     confirmation that the commit record has been received. These parameters
     allow the administrator to specify which standby servers should be
     synchronous standbys. Note that the configuration of synchronous
-    replication is mainly on the master. Named standbys must be directly
-    connected to the master; the master knows nothing about downstream
+    replication is mainly on the primary. Named standbys must be directly
+    connected to the primary; the primary knows nothing about downstream
     standby servers using cascaded replication.
    </para>
 ____________________________________________________________________________-->
@@ -2876,9 +2881,12 @@ ____________________________________________________________________________-->
    </para>
 
 <!--==========================orignal english content==========================
-   <para>
-    Users will be able to tell whether their session is read-only by
-    issuing <command>SHOW transaction_read_only</command>.  In addition, a set of
+     <para>
+    Users can determine whether hot standby is currently active for their
+    session by issuing <command>SHOW in_hot_standby</command>.
+    (In server versions before 14, the <varname>in_hot_standby</varname>
+    parameter did not exist; a workable substitute method for older servers
+    is <command>SHOW transaction_read_only</command>.)  In addition, a set of
     functions (<xref linkend="functions-recovery-info-table"/>) allow users to
     access information about the standby server. These allow you to write
     programs that are aware of the current state of the database. These
@@ -3110,7 +3118,7 @@ ____________________________________________________________________________-->
     cleanup of old row versions when there are no transactions that need to
     see them to ensure correct visibility of data according to MVCC rules.
     However, this rule can only be applied for transactions executing on the
-    master.  So it is possible that cleanup on the master will remove row
+    primary.  So it is possible that cleanup on the primary will remove row
     versions that are still visible to a transaction on the standby.
    </para>
 ____________________________________________________________________________-->
@@ -3207,6 +3215,13 @@ ____________________________________________________________________________-->
    <para>
     查询取消的数量和原因可以使用后备服务器上的<structname>pg_stat_database_conflicts</structname>系统视图查看。<structname>pg_stat_database</structname>系统视图也包含汇总信息。
    </para>
+<!--==========================orignal english content==========================
+   <para>
+    Users can control whether a log message is produced when WAL replay is waiting
+    longer than <varname>deadlock_timeout</varname> for conflicts. This
+    is controlled by the <xref linkend="guc-log-recovery-conflict-waits"/> parameter.
+   </para>
+____________________________________________________________________________-->
    <para>
     当 WAL 重放由于冲突而需要比<varname>deadlock_timeout</varname>更长时间时，用户可以控制是否打印日志消息。由参数 <xref linkend="guc-log-recovery-conflict-waits"/> 控制。
    </para>
@@ -3221,7 +3236,8 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
    <para>
     If <varname>hot_standby</varname> is <literal>on</literal> in <filename>postgresql.conf</filename>
-    (the default value) and there is a <filename>standby.signal</filename>
+    (the default value) and there is a
+    <link linkend="file-standby-signal"><filename>standby.signal</filename></link><indexterm><primary>standby.signal</primary><secondary>for hot standby</secondary></indexterm>
     file present, the server will run in Hot Standby mode.
     However, it may take some time for Hot Standby connections to be allowed,
     because the server will not accept connections until it has completed
@@ -3237,7 +3253,7 @@ LOG:  entering standby mode
 ... then some time later ...
 
 LOG:  consistent recovery state reached
-LOG:  database system is ready to accept read only connections
+LOG:  database system is ready to accept read-only connections
 </programlisting>
 
     Consistency information is recorded once per checkpoint on the primary.
@@ -3297,18 +3313,14 @@ LOG:  database system is ready to accept read only connections
 
 <!--==========================orignal english content==========================
    <para>
-    The setting of some parameters on the standby will need reconfiguration
-    if they have been changed on the primary. For these parameters,
-    the value on the standby must
-    be equal to or greater than the value on the primary.
-    Therefore, if you want to increase these values, you should do so on all
-    standby servers first, before applying the changes to the primary server.
-    Conversely, if you want to decrease these values, you should do so on the
-    primary server first, before applying the changes to all standby servers.
-    If these parameters
-    are not set high enough then the standby will refuse to start.
-    Higher values can then be supplied and the server
-    restarted to begin recovery again.  These parameters are:
+    The settings of some parameters determine the size of shared memory for
+    tracking transaction IDs, locks, and prepared transactions.  These shared
+    memory structures must be no smaller on a standby than on the primary in
+    order to ensure that the standby does not run out of shared memory during
+    recovery.  For example, if the primary had used a prepared transaction but
+    the standby had not allocated any shared memory for tracking prepared
+    transactions, then recovery could not continue until the standby's
+    configuration is changed.  The parameters affected are:
 
       <itemizedlist>
        <listitem>
@@ -3337,6 +3349,18 @@ LOG:  database system is ready to accept read only connections
         </para>
        </listitem>
       </itemizedlist>
+
+    The easiest way to ensure this does not become a problem is to have these
+    parameters set on the standbys to values equal to or greater than on the
+    primary.  Therefore, if you want to increase these values, you should do
+    so on all standby servers first, before applying the changes to the
+    primary server.  Conversely, if you want to decrease these values, you
+    should do so on the primary server first, before applying the changes to
+    all standby servers.  Keep in mind that when a standby is promoted, it
+    becomes the new reference for the required parameter settings for the
+    standbys that follow it.  Therefore, to avoid this becoming a problem
+    during a switchover or failover, it is recommended to keep these settings
+    the same on all standby servers.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -3371,6 +3395,26 @@ ____________________________________________________________________________-->
     确保这不是问题的可靠方法是使备用数据库上的这些参数的值等于或大于主数据库上的值。因此，如果您想增加这些值，您应该先更改备用服务器上的设置，然后再更改主服务器上的设置。相反，如果要减小这些值，则应先更改主服务器上的设置，然后再更改备用服务器上的设置。请记住，当一个备用数据库被提升时，它会成为后续备用数据库所需参数设置的新基准。因此，最好在所有备用服务器上保持这些设置相同，这样在切换/故障转移期间就不会出现问题。
    </para>
 
+<!--==========================orignal english content==========================
+   <para>
+    The WAL tracks changes to these parameters on the
+    primary.  If a hot standby processes WAL that indicates that the current
+    value on the primary is higher than its own value, it will log a warning
+    and pause recovery, for example:
+<screen>
+WARNING:  hot standby is not possible because of insufficient parameter settings
+DETAIL:  max_connections = 80 is a lower setting than on the primary server, where its value was 100.
+LOG:  recovery has paused
+DETAIL:  If recovery is unpaused, the server will shut down.
+HINT:  You can then restart the server after making the necessary configuration changes.
+</screen>
+    At that point, the settings on the standby need to be updated and the
+    instance restarted before recovery can continue.  If the standby is not a
+    hot standby, then when it encounters the incompatible parameter change, it
+    will shut down immediately without pausing, since there is then no value
+    in keeping it up.
+   </para>
+____________________________________________________________________________-->
    <para>
    WAL 跟踪主节点上这些参数的变化。如果热备处理一个 WAL，表明主节点当前值大于备用数据库上的值，它将记录一个警告并中止恢复。例如:
 <screen>
@@ -3598,10 +3642,10 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
    <para>
-    Currently, temporary table creation is not allowed during read only
+    Currently, temporary table creation is not allowed during read-only
     transactions, so in some cases existing scripts will not run correctly.
     This restriction might be relaxed in a later release. This is
-    both a SQL Standard compliance issue and a technical issue.
+    both an SQL Standard compliance issue and a technical issue.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -3754,7 +3798,7 @@ ____________________________________________________________________________-->
     <para>
      Full knowledge of running transactions is required before snapshots
      can be taken. Transactions that use large numbers of subtransactions
-     (currently greater than 64) will delay the start of read only
+     (currently greater than 64) will delay the start of read-only
      connections until the completion of the longest running write transaction.
      If this situation occurs, explanatory messages will be sent to the server log.
     </para>
@@ -3762,7 +3806,7 @@ ____________________________________________________________________________-->
    <listitem>
     <para>
      Valid starting points for standby queries are generated at each
-     checkpoint on the master. If the standby is shut down while the master
+     checkpoint on the primary. If the standby is shut down while the primary
      is in a shutdown state, it might not be possible to re-enter Hot Standby
      until the primary is started up, so that it generates further starting
      points in the WAL logs.  This situation isn't a problem in the most

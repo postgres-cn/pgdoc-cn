@@ -482,7 +482,7 @@ ____________________________________________________________________________-->
       <term>AuthenticationSSPI</term>
       <listitem>
        <para>
-        The frontend must now initiate a SSPI negotiation. The frontend
+        The frontend must now initiate an SSPI negotiation. The frontend
         will send a GSSResponse with the first part of the SSPI
         data stream in response to this. If further messages are needed,
         the server will respond with AuthenticationGSSContinue.
@@ -2055,7 +2055,11 @@ ____________________________________________________________________________-->
     <varname>standard_conforming_strings</varname> was not reported by releases
     before 8.1;
     <varname>IntervalStyle</varname> was not reported by releases before 8.4;
-    <varname>application_name</varname> was not reported by releases before 9.0.)
+    <varname>application_name</varname> was not reported by releases before
+    9.0;
+    <varname>default_transaction_read_only</varname> and
+    <varname>in_hot_standby</varname> were not reported by releases before
+    14.)
     Note that
     <varname>server_version</varname>,
     <varname>server_encoding</varname> and
@@ -2320,6 +2324,10 @@ ____________________________________________________________________________-->
     <acronym>SSL</acronym>-encrypted.  To continue after
     <literal>N</literal>, send the usual StartupMessage and proceed without
     encryption.
+    (Alternatively, it is permissible to issue a GSSENCRequest message
+    after an <literal>N</literal> response to try to
+    use <acronym>GSSAPI</acronym> encryption instead
+    of <acronym>SSL</acronym>.)
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -2342,6 +2350,21 @@ ____________________________________________________________________________-->
    <para>
     前端应该也准备处理一个来自服务器的给SSLRequest的ErrorMessage响应。这种情况只在服务器早于<productname>PostgreSQL</productname>的<acronym>SSL</acronym>支持的情况下才会出现（这种服务器现在非常古老，并且可能不再存在了）。在这种情况下，连接必需关闭，但是前端可以选择打开一个新的连接然后不使用<acronym>SSL</acronym>进行连接。
    </para>
+<!--==========================orignal english content==========================
+   <para>
+    When <acronym>SSL</acronym> encryption can be performed, the server
+    is expected to send only the single <literal>S</literal> byte and then
+    wait for the frontend to initiate an <acronym>SSL</acronym> handshake.
+    If additional bytes are available to read at this point, it likely
+    means that a man-in-the-middle is attempting to perform a
+    buffer-stuffing attack
+    (<ulink url="https://www.postgresql.org/support/security/CVE-2021-23222/">CVE-2021-23222</ulink>).
+    Frontends should be coded either to read exactly one byte from the
+    socket before turning the socket over to their SSL library, or to
+    treat it as a protocol violation if they find they have read additional
+    bytes.
+   </para>
+____________________________________________________________________________-->
    <para>
        当可以执行 <acronym>SSL</acronym> 加密时，服务器预计仅发送单个 <literal>S</literal> 字节，然后等待前端启动 <acronym>SSL</acronym> 握手。如果此时有其他可读取的字节，则很可能意味着中间人正在尝试执行缓冲区填充攻击（<ulink url="https://www.postgresql.org/support/security/CVE-2021-23222/">CVE-2021-23222</ulink>）。前端应该编写代码，要么从套接字中恰好读取一个字节，然后将套接字交给他们的 SSL 库，要么在发现他们已经读取到额外的字节时将其视为协议违规。
    </para>
@@ -2400,27 +2423,22 @@ ____________________________________________________________________________-->
     is willing or unwilling to perform <acronym>GSSAPI</acronym> encryption,
     respectively.  The frontend might close the connection at this point
     if it is dissatisfied with the response.  To continue after
-    <literal>G</literal>, using the GSSAPI C bindings as discussed in RFC2744
+    <literal>G</literal>, using the GSSAPI C bindings as discussed in
+    <ulink url="https://tools.ietf.org/html/rfc2744">RFC 2744</ulink>
     or equivalent, perform a <acronym>GSSAPI</acronym> initialization by
     calling <function>gss_init_sec_context()</function> in a loop and sending
     the result to the server, starting with an empty input and then with each
     result from the server, until it returns no output.  When sending the
     results of <function>gss_init_sec_context()</function> to the server,
     prepend the length of the message as a four byte integer in network byte
-    order.  If this is successful, then use <function>gss_wrap()</function> to
-    encrypt the usual StartupMessage and all subsequent data, prepending the
-    length of the result from <function>gss_wrap()</function> as a four byte
-    integer in network byte order to the actual encrypted payload.  Note that
-    the server will only accept encrypted packets from the client which are less
-    than 16kB; <function>gss_wrap_size_limit()</function> should be used by the
-    client to determine the size of the unencrypted message which will fit
-    within this limit and larger messages should be broken up into multiple
-    <function>gss_wrap()</function> calls.  Typical segments are 8kB of
-    unencrypted data, resulting in encrypted packets of slightly larger than 8kB
-    but well within the 16kB maximum.  The server can be expected to not send
-    encrypted packets of larger than 16kB to the client.  To continue after
+    order.
+    To continue after
     <literal>N</literal>, send the usual StartupMessage and proceed without
     encryption.
+    (Alternatively, it is permissible to issue an SSLRequest message
+    after an <literal>N</literal> response to try to
+    use <acronym>SSL</acronym> encryption instead
+    of <acronym>GSSAPI</acronym>.)
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -2442,9 +2460,7 @@ ____________________________________________________________________________-->
     support to <productname>PostgreSQL</productname>.  In this case the
     connection must be closed, but the frontend might choose to open a fresh
     connection and proceed without requesting <acronym>GSSAPI</acronym>
-    encryption.  Given the length limits specified above, the ErrorMessage can
-    not be confused with a proper response from the server with an appropriate
-    length.
+    encryption.
    </para>
 ____________________________________________________________________________-->
    <para>
@@ -2453,6 +2469,21 @@ ____________________________________________________________________________-->
     在这种情况下连接必须关闭，但前端可能会选择打开新的连接，并在不请求 <acronym>GSSAPI</acronym>加密的情况下继续。
     </para>
 
+<!--==========================orignal english content==========================
+    <para>
+    When <acronym>GSSAPI</acronym> encryption can be performed, the server
+    is expected to send only the single <literal>G</literal> byte and then
+    wait for the frontend to initiate a <acronym>GSSAPI</acronym> handshake.
+    If additional bytes are available to read at this point, it likely
+    means that a man-in-the-middle is attempting to perform a
+    buffer-stuffing attack
+    (<ulink url="https://www.postgresql.org/support/security/CVE-2021-23222/">CVE-2021-23222</ulink>).
+    Frontends should be coded either to read exactly one byte from the
+    socket before turning the socket over to their GSSAPI library, or to
+    treat it as a protocol violation if they find they have read additional
+    bytes.
+   </para>
+____________________________________________________________________________-->
     <para>
     当<acronym>GSSAPI</acronym>加密可用时，服务器预计只发送单个<literal>G</literal>字节，然后等待前端启动一个<acronym>GSSAPI</acronym>握手。此时如果有其他可读取的字节，则很可能表明中间人正在尝试执行缓冲填充攻击（<ulink url="https://www.postgresql.org/support/security/CVE-2021-23222/">CVE-2021-23222</ulink>）。 前端应编写代码，从套接字中读取确切的一个字节，然后将套接字转移到他们的GSSAPI库中，否则如果发现已经读取了其他字节，则视为协议违规。
    </para>
@@ -2467,6 +2498,23 @@ ____________________________________________________________________________-->
     初始 GSSENCRequest也可用于正在打开的连接中发送CancelRequest消息。
    </para>
 
+<!--==========================orignal english content==========================
+   <para>
+    Once <acronym>GSSAPI</acronym> encryption has been successfully
+    established, use <function>gss_wrap()</function> to
+    encrypt the usual StartupMessage and all subsequent data, prepending the
+    length of the result from <function>gss_wrap()</function> as a four byte
+    integer in network byte order to the actual encrypted payload.  Note that
+    the server will only accept encrypted packets from the client which are less
+    than 16kB; <function>gss_wrap_size_limit()</function> should be used by the
+    client to determine the size of the unencrypted message which will fit
+    within this limit and larger messages should be broken up into multiple
+    <function>gss_wrap()</function> calls.  Typical segments are 8kB of
+    unencrypted data, resulting in encrypted packets of slightly larger than 8kB
+    but well within the 16kB maximum.  The server can be expected to not send
+    encrypted packets of larger than 16kB to the client.
+   </para>
+____________________________________________________________________________-->
    <para>
        一旦成功建立了<acronym>GSSAPI</acronym>加密连接，使用<function>gss_wrap()</function>将加密常规的StartupMessage和所有后续的数据，在实际的加密负荷前添加从<function>gss_wrap()</function>传输回来的结果的长度，用网络字节顺序表示为四个字节的整数。请注意，服务器只接受来自客户端的小于16kB的加密包。 客户端应该使用<function>gss_wrap_size_limit()</function>确定符合此限制的未加密消息的大小，而较大的消息应分成多个<function>gss_wrap()</function>调用。 典型的片段是8kB的未加密数据，导致略大于8kB但明显小于16kB的加密数据包。 可以预计服务器不会向客户端发送大于16KB的加密数据包。
    </para>
@@ -2543,7 +2591,7 @@ ____________________________________________________________________________-->
 <para>
   One or more server-challenge and client-response message will follow. Each
   server-challenge is sent in an AuthenticationSASLContinue message, followed
-  by a response from client in an SASLResponse message. The particulars of
+  by a response from client in a SASLResponse message. The particulars of
   the messages are mechanism specific.
 </para>
 ____________________________________________________________________________-->
@@ -2591,7 +2639,8 @@ ____________________________________________________________________________-->
    The implemented SASL mechanisms at the moment
    are <literal>SCRAM-SHA-256</literal> and its variant with channel
    binding <literal>SCRAM-SHA-256-PLUS</literal>. They are described in
-   detail in RFC 7677 and RFC 5802.
+   detail in <ulink url="https://tools.ietf.org/html/rfc7677">RFC 7677</ulink>
+   and <ulink url="https://tools.ietf.org/html/rfc5802">RFC 5802</ulink>.
   </para>
 ____________________________________________________________________________-->
   <para>
@@ -2860,7 +2909,7 @@ The commands accepted in replication mode are:
       <listitem>
       <para>
        Current timeline ID. Also useful to check that the standby is
-       consistent with the master.
+       consistent with the primary.
       </para>
       </listitem>
       </varlistentry>
@@ -2925,7 +2974,9 @@ The commands accepted in replication mode are:
      <para>
       Requests the server to send over the timeline history file for timeline
       <replaceable class="parameter">tli</replaceable>.  Server replies with a
-      result set of a single row, containing two fields:
+      result set of a single row, containing two fields.  While the fields
+      are labeled as <type>text</type>, they effectively return raw bytes,
+      with no encoding conversion:
      </para>
 
      <para>
@@ -2943,7 +2994,7 @@ The commands accepted in replication mode are:
 
       <varlistentry>
       <term>
-       <literal>content</literal> (<type>bytea</type>)
+       <literal>content</literal> (<type>text</type>)
       </term>
       <listitem>
       <para>
@@ -3111,8 +3162,8 @@ The commands accepted in replication mode are:
       the history of the server, the server will stream all the WAL on that
       timeline starting from the requested start point up to the point where
       the server switched to another timeline. If the client requests
-      streaming at exactly the end of an old timeline, the server responds
-      immediately with CommandComplete without entering COPY mode.
+      streaming at exactly the end of an old timeline, the server skips COPY
+      mode entirely.
      </para>
 
      <para>
@@ -3684,7 +3735,7 @@ The commands accepted in replication mode are:
      </para>
      <para>
       When the backup is started, the server will first send two
-      ordinary result sets, followed by one or more CopyResponse
+      ordinary result sets, followed by one or more CopyOutResponse
       results.
      </para>
      <para>
@@ -3727,15 +3778,15 @@ The commands accepted in replication mode are:
       </variablelist>
      </para>
      <para>
-      After the second regular result set, one or more CopyResponse results
+      After the second regular result set, one or more CopyOutResponse results
       will be sent, one for the main data directory and one for each additional tablespace other
       than <literal>pg_default</literal> and <literal>pg_global</literal>. The data in
-      the CopyResponse results will be a tar format (following the
+      the CopyOutResponse results will be a tar format (following the
       <quote>ustar interchange format</quote> specified in the POSIX 1003.1-2008
       standard) dump of the tablespace contents, except that the two trailing
       blocks of zeroes specified in the standard are omitted.
       After the tar data is complete, and if a backup manifest was requested,
-      another CopyResponse result is sent, containing the manifest data for the
+      another CopyOutResponse result is sent, containing the manifest data for the
       current base backup. In any case, a final ordinary result set will be
       sent, containing the WAL end position of the backup, in the same format as
       the start position.
@@ -4675,9 +4726,11 @@ ____________________________________________________________________________-->
      </term>
      <listitem>
       <para>
-       Protocol version. Currently only version <literal>1</literal> is
-       supported.
-      </para>
+       Protocol version. Currently versions <literal>1</literal> and
+       <literal>2</literal> are supported. The version <literal>2</literal>
+       is supported only for server version 14 and above, and it allows
+       streaming of large in-progress transactions.
+     </para>
      </listitem>
     </varlistentry>
 
@@ -4789,7 +4842,10 @@ ____________________________________________________________________________-->
   <para>
    The logical replication protocol sends individual transactions one by one.
    This means that all messages between a pair of Begin and Commit messages
-   belong to the same transaction.
+   belong to the same transaction. It also sends changes of large in-progress
+   transactions between a pair of Stream Start and Stream Stop messages. The
+   last stream of such a transaction contains Stream Commit or Stream Abort
+   message.
   </para>
 ____________________________________________________________________________-->
   <para>
@@ -5568,7 +5624,7 @@ AuthenticationGSSContinue (B)
 </varlistentry>
 <varlistentry>
 <term>
-        Int32(8)
+        Int32
 </term>
 <listitem>
 <para>
@@ -5578,11 +5634,21 @@ AuthenticationGSSContinue (B)
 </varlistentry>
 <varlistentry>
 <term>
-        Int32(9)
+        Int32(8)
 </term>
 <listitem>
 <para>
-                Specifies that SSPI authentication is required.
+                Specifies that this message contains GSSAPI or SSPI data.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                GSSAPI or SSPI authentication data.
 </para>
 </listitem>
 </varlistentry>
@@ -5670,17 +5736,17 @@ AuthenticationSSPI (B)
 </term>
 <listitem>
 <para>
-                Specifies that this message contains GSSAPI or SSPI data.
+                Length of message contents in bytes, including self.
 </para>
 </listitem>
 </varlistentry>
 <varlistentry>
 <term>
-        Byte<replaceable>n</replaceable>
+        Int32(9)
 </term>
 <listitem>
 <para>
-                GSSAPI or SSPI authentication data.
+                Specifies that SSPI authentication is required.
 </para>
 </listitem>
 </varlistentry>
@@ -8593,10 +8659,46 @@ ____________________________________________________________________________-->
 </varlistentry>
 
 <varlistentry>
+<!--==========================orignal english content==========================
+<term>
+GSSENCRequest (F)
+</term>
+____________________________________________________________________________-->
 <term>
 GSSENCRequest (F)
 </term>
 <listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Int32(8)
+</term>
+<listitem>
+<para>
+                Length of message contents in bytes, including self.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32(80877104)
+</term>
+<listitem>
+<para>
+                The <acronym>GSSAPI</acronym> Encryption request code.  The value is chosen to contain
+                <literal>1234</literal> in the most significant 16 bits, and <literal>5680</literal> in the
+                least significant 16 bits.  (To avoid confusion, this code
+                must not be the same as any protocol version number.)
+</para>
+</listitem>
+</varlistentry>
+</variablelist>
+
+</para>
+____________________________________________________________________________-->
 <para>
 
 <variablelist>
@@ -11080,7 +11182,7 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <para>
         Internal query: the text of a failed internally-generated command.
-        This could be, for example, a SQL query issued by a PL/pgSQL function.
+        This could be, for example, an SQL query issued by a PL/pgSQL function.
 </para>
 ____________________________________________________________________________-->
 <para>
@@ -11458,10 +11560,97 @@ ____________________________________________________________________________-->
 </varlistentry>
 
 <varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Message
+</term>
+____________________________________________________________________________-->
 <term>
 Message
 </term>
 <listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('M')
+</term>
+<listitem>
+<para>
+                Identifies the message as a logical decoding message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Xid of the transaction (only present for streamed transactions).
+                This field is available since protocol version 2.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                Flags; Either 0 for no flags or 1 if the logical decoding
+                message is transactional.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The LSN of the logical decoding message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        String
+</term>
+<listitem>
+<para>
+                The prefix of the logical decoding message.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Length of the content.
+</para>
+</listitem>
+</varlistentry>
+
+<varlistentry>
+<term>
+        Byte<replaceable>n</replaceable>
+</term>
+<listitem>
+<para>
+                The content of the logical decoding message.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
 <para>
 
 <variablelist>
@@ -12570,8 +12759,8 @@ Delete
 </term>
 <listitem>
 <para>
-                Identifies the following TupleData message as a old tuple.
-                This field is present if the table in which the delete has
+                Identifies the following TupleData message as an old tuple.
+                This field is present if the table in which the delete
                 happened has REPLICA IDENTITY set to FULL.
 </para>
 </listitem>
@@ -12808,7 +12997,8 @@ ____________________________________________________________________________-->
 <!--==========================orignal english content==========================
 <para>
 
-The following message parts are shared by the above messages.
+The following messages (Stream Start, Stream Stop, Stream Commit, and
+Stream Abort) are available since protocol version 2.
 
 </para>
 ____________________________________________________________________________-->
@@ -12820,10 +13010,54 @@ ____________________________________________________________________________-->
 <variablelist>
 
 <varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Stream Start
+</term>
+____________________________________________________________________________-->
 <term>
 Stream Start
 </term>
 <listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('S')
+</term>
+<listitem>
+<para>
+                Identifies the message as a stream start message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Xid of the transaction.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                A value of 1 indicates this is the first stream segment for
+                this XID, 0 for any other stream segment.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
 <para>
 
 <variablelist>
@@ -12864,10 +13098,33 @@ Stream Start
 </varlistentry>
 
 <varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Stream Stop
+</term>
+____________________________________________________________________________-->
 <term>
 Stream Stop
 </term>
 <listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('E')
+</term>
+<listitem>
+<para>
+                Identifies the message as a stream stop message.
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
 <para>
 
 <variablelist>
@@ -12888,10 +13145,84 @@ Stream Stop
 </varlistentry>
 
 <varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Stream Commit
+</term>
+____________________________________________________________________________-->
 <term>
 Stream Commit
 </term>
 <listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('c')
+</term>
+<listitem>
+<para>
+                Identifies the message as a stream commit message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Xid of the transaction.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int8
+</term>
+<listitem>
+<para>
+                Flags; currently unused (must be 0).
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The LSN of the commit.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                The end LSN of the transaction.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int64
+</term>
+<listitem>
+<para>
+                Commit timestamp of the transaction. The value is in number
+                of microseconds since PostgreSQL epoch (2000-01-01).
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
 <para>
 
 <variablelist>
@@ -12962,10 +13293,54 @@ Stream Commit
 </varlistentry>
 
 <varlistentry>
+<!--==========================orignal english content==========================
+<term>
+Stream Abort
+</term>
+____________________________________________________________________________-->
 <term>
 Stream Abort
 </term>
 <listitem>
+<!--==========================orignal english content==========================
+<para>
+
+<variablelist>
+<varlistentry>
+<term>
+        Byte1('A')
+</term>
+<listitem>
+<para>
+                Identifies the message as a stream abort message.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Xid of the transaction.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>
+        Int32
+</term>
+<listitem>
+<para>
+                Xid of the subtransaction (will be same as xid of the transaction for top-level
+                transactions).
+</para>
+</listitem>
+</varlistentry>
+
+</variablelist>
+</para>
+____________________________________________________________________________-->
 <para>
 
 <variablelist>
@@ -13007,6 +13382,13 @@ Stream Abort
 
 </variablelist>
 
+<!--==========================orignal english content==========================
+<para>
+
+The following message parts are shared by the above messages.
+
+</para>
+____________________________________________________________________________-->
 <para>
 下面的消息部分由上面的消息共享。
 
@@ -13079,7 +13461,7 @@ TupleData
 </listitem>
 </varlistentry>
 </variablelist>
-        或者
+        Or
 <variablelist>
 <varlistentry>
 <term>
@@ -13087,7 +13469,7 @@ TupleData
 </term>
 <listitem>
 <para>
-                标识这个数据为二进制格式的值。
+                Identifies the data as binary formatted value.
 </para>
 </listitem>
 </varlistentry>
@@ -13107,8 +13489,8 @@ TupleData
 </term>
 <listitem>
 <para>
-                The value of the column, in text format.  (A future release
-                might support additional formats.)
+                The value of the column, either in binary or in text format.
+                (As specified in the preceding format byte).
                 <replaceable>n</replaceable> is the above length.
 
 </para>

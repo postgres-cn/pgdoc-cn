@@ -117,7 +117,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
  <para>
-  RFC 7159 specifies that JSON strings should be encoded in UTF8.
+  <acronym>RFC</acronym> 7159 specifies that JSON strings should be encoded in UTF8.
   It is therefore not possible for the JSON
   types to conform rigidly to the JSON specification unless the database
   encoding is UTF8. Attempts to directly include characters that
@@ -134,7 +134,7 @@ ____________________________________________________________________________-->
 
 <!--==========================orignal english content==========================
  <para>
-  RFC 7159 permits JSON strings to contain Unicode escape sequences
+  <acronym>RFC</acronym> 7159 permits JSON strings to contain Unicode escape sequences
   denoted by <literal>\u<replaceable>XXXX</replaceable></literal>.  In the input
   function for the <type>json</type> type, Unicode escapes are allowed
   regardless of the database encoding, and are checked only for syntactic
@@ -1153,18 +1153,120 @@ ____________________________________________________________________________-->
  </sect2>
 
  <sect2 id="jsonb-subscripting">
+<!--==========================orignal english content==========================
+  <title><type>jsonb</type> Subscripting</title>
+____________________________________________________________________________-->
   <title><type>jsonb</type> 下标</title>
+<!--==========================orignal english content==========================
+  <para>
+   The <type>jsonb</type> data type supports array-style subscripting expressions
+   to extract and modify elements. Nested values can be indicated by chaining
+   subscripting expressions, following the same rules as the <literal>path</literal>
+   argument in the <literal>jsonb_set</literal> function. If a <type>jsonb</type>
+   value is an array, numeric subscripts start at zero, and negative integers count
+   backwards from the last element of the array. Slice expressions are not supported.
+   The result of a subscripting expression is always of the jsonb data type.
+  </para>
+____________________________________________________________________________-->
   <para>
    <type>jsonb</type> 数据类型支持用于检索和修改元素的数组样式索引。 嵌套值与 <literal>jsonb_set</literal> 函数中<literal>path</literal>参数规则相同，可以被链式下标表达式指定。如果<type>jsonb</type>
    类型的值是一个数组，数值下标从零开始，负整数从数组的最后的元素倒数。 不支持切片表达式。下标表达式的结果始终是 jsonb 数据类型。
   </para>
 
+<!--==========================orignal english content==========================
+  <para>
+   <command>UPDATE</command> statements may use subscripting in the
+   <literal>SET</literal> clause to modify <type>jsonb</type> values. Subscript
+   paths must be traversable for all affected values insofar as they exist. For
+   instance, the path <literal>val['a']['b']['c']</literal> can be traversed all
+   the way to <literal>c</literal> if every <literal>val</literal>,
+   <literal>val['a']</literal>, and <literal>val['a']['b']</literal> is an
+   object. If any <literal>val['a']</literal> or <literal>val['a']['b']</literal>
+   is not defined, it will be created as an empty object and filled as
+   necessary. However, if any <literal>val</literal> itself or one of the
+   intermediary values is defined as a non-object such as a string, number, or
+   <literal>jsonb</literal> <literal>null</literal>, traversal cannot proceed so
+   an error is raised and the transaction aborted.
+  </para>
+____________________________________________________________________________-->
   <para>
    <command>UPDATE</command> 语句或许在
    <literal>SET</literal> 子句中使用下标来修改 <type>jsonb</type> 值。下标路径必须对它存在范围内的所有受影响的值都是可遍历的。 例如，<literal>val</literal>,<literal>val['a']</literal>,和 <literal>val['a']['b']</literal>如果每个路径都是一个对象，  则<literal>val['a']['b']['c']</literal>路径可以一直被遍历访问到 <literal>c</literal>， 如果 <literal>val['a']</literal> 或者 <literal>val['a']['b']</literal>
    中任何一个没有定义， 将创建为空对象并根据需要进行填充。 但是， 如果 <literal>val</literal> 本身或者其中任何一个中间值被定义为非对象， 例如 字符串， 数字，或者<literal>jsonb</literal> <literal>null</literal>等，将无法访问并发生错误，事务将中止。
   </para>
 
+<!--==========================orignal english content==========================
+  <para>
+   An example of subscripting syntax:
+
+<programlisting>
+
+-&minus; Extract object value by key
+SELECT ('{"a": 1}'::jsonb)['a'];
+
+-&minus; Extract nested object value by key path
+SELECT ('{"a": {"b": {"c": 1}}}'::jsonb)['a']['b']['c'];
+
+-&minus; Extract array element by index
+SELECT ('[1, "2", null]'::jsonb)[1];
+
+-&minus; Update object value by key. Note the quotes around '1': the assigned
+-&minus; value must be of the jsonb type as well
+UPDATE table_name SET jsonb_field['key'] = '1';
+
+-&minus; This will raise an error if any record's jsonb_field['a']['b'] is something
+-&minus; other than an object. For example, the value {"a": 1} has a numeric value
+-&minus; of the key 'a'.
+UPDATE table_name SET jsonb_field['a']['b']['c'] = '1';
+
+-&minus; Filter records using a WHERE clause with subscripting. Since the result of
+-&minus; subscripting is jsonb, the value we compare it against must also be jsonb.
+-&minus; The double quotes make "value" also a valid jsonb string.
+SELECT * FROM table_name WHERE jsonb_field['key'] = '"value"';
+</programlisting>
+
+   <type>jsonb</type> assignment via subscripting handles a few edge cases
+   differently from <literal>jsonb_set</literal>. When a source <type>jsonb</type>
+   value is <literal>NULL</literal>, assignment via subscripting will proceed
+   as if it was an empty JSON value of the type (object or array) implied by the
+   subscript key:
+
+<programlisting>
+-&minus; Where jsonb_field was NULL, it is now {"a": 1}
+UPDATE table_name SET jsonb_field['a'] = '1';
+
+-&minus; Where jsonb_field was NULL, it is now [1]
+UPDATE table_name SET jsonb_field[0] = '1';
+</programlisting>
+
+   If an index is specified for an array containing too few elements,
+   <literal>NULL</literal> elements will be appended until the index is reachable
+   and the value can be set.
+
+<programlisting>
+-&minus; Where jsonb_field was [], it is now [null, null, 2];
+-&minus; where jsonb_field was [0], it is now [0, null, 2]
+UPDATE table_name SET jsonb_field[2] = '2';
+</programlisting>
+
+   A <type>jsonb</type> value will accept assignments to nonexistent subscript
+   paths as long as the last existing element to be traversed is an object or
+   array, as implied by the corresponding subscript (the element indicated by
+   the last subscript in the path is not traversed and may be anything). Nested
+   array and object structures will be created, and in the former case
+   <literal>null</literal>-padded, as specified by the subscript path until the
+   assigned value can be placed.
+
+<programlisting>
+-&minus; Where jsonb_field was {}, it is now {'a': [{'b': 1}]}
+UPDATE table_name SET jsonb_field['a'][0]['b'] = '1';
+
+-&minus; Where jsonb_field was [], it is now [null, {'a': 1}]
+UPDATE table_name SET jsonb_field[1]['a'] = '1';
+</programlisting>
+
+  </para>
+____________________________________________________________________________-->
   <para>
    下标语法的例子:
 
