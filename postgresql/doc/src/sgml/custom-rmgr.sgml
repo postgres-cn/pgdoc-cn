@@ -1,0 +1,187 @@
+<!-- doc/src/sgml/custom-rmgr.sgml -->
+
+<chapter id="custom-rmgr">
+<!-- pgdoc-cn_start sig_en=2d79e43600d15181d32bbd40c524c7d6 sig_cn_org=6a2e248de16c15a45a5af5a5eb19dfc5 source=15.7 
+ <title>Custom WAL Resource Managers</title>
+________________________________________________________-->
+ <title>自定义WAL资源管理器</title>
+<!-- pgdoc-cn_end sig_en=2d79e43600d15181d32bbd40c524c7d6 -->
+
+<!-- pgdoc-cn_start sig_en=c38dccbcb8476073a83ee2abb72354c6 sig_cn_org=66be25378e7a3840240d5b8d560656ef source=15.7 
+ <para>
+  This chapter explains the interface between the core
+  <productname>PostgreSQL</productname> system and custom WAL resource
+  managers, which enable extensions to integrate directly with the <link
+  linkend="wal"><acronym>WAL</acronym></link>.
+ </para>
+________________________________________________________-->
+ <para>
+  本章介绍了核心<productname>PostgreSQL</productname>系统与自定义WAL资源管理器之间的接口，
+  这使得扩展可以直接与<link linkend="wal"><acronym>WAL</acronym></link>集成。
+</para>
+<!-- pgdoc-cn_end sig_en=c38dccbcb8476073a83ee2abb72354c6 -->
+<!-- pgdoc-cn_start sig_en=fbd2478dcff144fb2a978105823d5e90 sig_cn_org=e8eb3b51acd56e14edf700af89e94ea9 source=15.7 
+ <para>
+  An extension, especially a <link linkend="tableam">Table Access
+  Method</link> or <link linkend="indexam">Index Access Method</link>, may
+  need to use WAL for recovery, replication, and/or <link
+  linkend="logicaldecoding">Logical Decoding</link>. Custom resource managers
+  are a more flexible alternative to <link linkend="generic-wal">Generic
+  WAL</link> (which does not support logical decoding), but more complex for
+  an extension to implement.
+ </para>
+________________________________________________________-->
+ <para>
+  一个扩展，特别是一个<link linkend="tableam">表访问方法</link>或<link linkend="indexam">索引访问方法</link>，
+  可能需要使用WAL进行恢复、复制和/或<link linkend="logicaldecoding">逻辑解码</link>。
+  自定义资源管理器是一个更灵活的替代方案，用于<link linkend="generic-wal">通用WAL</link>
+  （不支持逻辑解码），但对于扩展来说更复杂。
+</para>
+<!-- pgdoc-cn_end sig_en=fbd2478dcff144fb2a978105823d5e90 -->
+<!-- pgdoc-cn_start sig_en=11f8d0781332236a997134d5812d50b1 sig_cn_org=bd5ee487cbad2600391c30fc813ffc17 source=15.7 
+ <para>
+  To create a new custom WAL resource manager, first define an
+  <structname>RmgrData</structname> structure with implementations for the
+  resource manager methods. Refer to
+  <filename>src/backend/access/transam/README</filename> and
+  <filename>src/include/access/xlog_internal.h</filename> in the
+  <productname>PostgreSQL</productname> source.
+<programlisting>
+/*
+ * Method table for resource managers.
+ *
+ * This struct must be kept in sync with the PG_RMGR definition in
+ * rmgr.c.
+ *
+ * rm_identify must return a name for the record based on xl_info (without
+ * reference to the rmid). For example, XLOG_BTREE_VACUUM would be named
+ * "VACUUM". rm_desc can then be called to obtain additional detail for the
+ * record, if available (e.g. the last block).
+ *
+ * rm_mask takes as input a page modified by the resource manager and masks
+ * out bits that shouldn't be flagged by wal_consistency_checking.
+ *
+ * RmgrTable[] is indexed by RmgrId values (see rmgrlist.h). If rm_name is
+ * NULL, the corresponding RmgrTable entry is considered invalid.
+ */
+typedef struct RmgrData
+{
+    const char *rm_name;
+    void        (*rm_redo) (XLogReaderState *record);
+    void        (*rm_desc) (StringInfo buf, XLogReaderState *record);
+    const char *(*rm_identify) (uint8 info);
+    void        (*rm_startup) (void);
+    void        (*rm_cleanup) (void);
+    void        (*rm_mask) (char *pagedata, BlockNumber blkno);
+    void        (*rm_decode) (struct LogicalDecodingContext *ctx,
+                              struct XLogRecordBuffer *buf);
+} RmgrData;
+</programlisting>
+ </para>
+________________________________________________________-->
+ <para>
+  要创建一个新的自定义WAL资源管理器，首先定义一个<structname>RmgrData</structname>结构，其中包含资源管理器方法的实现。
+  参考<filename>src/backend/access/transam/README</filename>和<filename>src/include/access/xlog_internal.h</filename>中的<productname>PostgreSQL</productname>源代码。
+<programlisting>
+/*
+ * 用于资源管理器的方法表。
+ *
+ * 此结构必须与rmgr.c中的PG_RMGR定义保持同步。
+ *
+ * rm_identify必须根据xl_info（而不是rmid）返回记录的名称。例如，XLOG_BTREE_VACUUM将被命名为“VACUUM”。
+ * 如果可用，rm_desc可以被调用以获取记录的其他详细信息（例如，最后一个块）。
+ *
+ * rm_mask以资源管理器修改的页面作为输入，并屏蔽掉不应被wal_consistency_checking标记的位。
+ *
+ * RmgrTable[]由RmgrId值（参见rmgrlist.h）索引。如果rm_name为NULL，则相应的RmgrTable条目被视为无效。
+ */
+typedef struct RmgrData
+{
+    const char *rm_name;
+    void        (*rm_redo) (XLogReaderState *record);
+    void        (*rm_desc) (StringInfo buf, XLogReaderState *record);
+    const char *(*rm_identify) (uint8 info);
+    void        (*rm_startup) (void);
+    void        (*rm_cleanup) (void);
+    void        (*rm_mask) (char *pagedata, BlockNumber blkno);
+    void        (*rm_decode) (struct LogicalDecodingContext *ctx,
+                              struct XLogRecordBuffer *buf);
+} RmgrData;
+</programlisting>
+</para>
+<!-- pgdoc-cn_end sig_en=11f8d0781332236a997134d5812d50b1 -->
+<!-- pgdoc-cn_start sig_en=8817c6fa53827a20dbdd83ab7e2e3ee2 sig_cn_org=77721a60a00a92b2de2c07473f32fc56 source=15.7 
+ <para>
+  Then, register your new resource
+  manager.
+
+<programlisting>
+/*
+ * Register a new custom WAL resource manager.
+ *
+ * Resource manager IDs must be globally unique across all extensions. Refer
+ * to https://wiki.postgresql.org/wiki/CustomWALResourceManagers to reserve a
+ * unique RmgrId for your extension, to avoid conflicts with other extension
+ * developers. During development, use RM_EXPERIMENTAL_ID to avoid needlessly
+ * reserving a new ID.
+ */
+extern void RegisterCustomRmgr(RmgrId rmid, RmgrData *rmgr);
+</programlisting>
+  <function>RegisterCustomRmgr</function> must be called from the
+  extension module's <link linkend="xfunc-c-dynload">_PG_init</link> function.
+  While developing a new extension, use <literal>RM_EXPERIMENTAL_ID</literal>
+  for <parameter>rmid</parameter>. When you are ready to release the extension
+  to users, reserve a new resource manager ID at the <ulink
+  url="https://wiki.postgresql.org/wiki/CustomWALResourceManagers">Custom WAL
+  Resource Manager</ulink> page.
+ </para>
+________________________________________________________-->
+ <para>
+  然后，注册您的新资源管理器。
+
+<programlisting>
+/*
+ * 注册一个新的自定义WAL资源管理器。
+ *
+ * 资源管理器ID必须在所有扩展中全局唯一。请参考https://wiki.postgresql.org/wiki/CustomWALResourceManagers
+ * 为您的扩展保留一个唯一的RmgrId，以避免与其他扩展开发人员发生冲突。在开发过程中，使用RM_EXPERIMENTAL_ID
+ * 避免不必要地保留新ID。
+ */
+extern void RegisterCustomRmgr(RmgrId rmid, RmgrData *rmgr);
+</programlisting>
+  必须从扩展模块的<link linkend="xfunc-c-dynload">_PG_init</link>函数中调用
+  <function>RegisterCustomRmgr</function>。在开发新扩展时，对于<parameter>rmid</parameter>，
+  使用<literal>RM_EXPERIMENTAL_ID</literal>。当您准备将扩展发布给用户时，在
+  <ulink url="https://wiki.postgresql.org/wiki/CustomWALResourceManagers">Custom WAL
+  Resource Manager</ulink>页面上保留一个新的资源管理器ID。
+</para>
+<!-- pgdoc-cn_end sig_en=8817c6fa53827a20dbdd83ab7e2e3ee2 -->
+
+<!-- pgdoc-cn_start sig_en=41f7a2a048310e159536f7be84daf68b sig_cn_org=3325a903b12b2925120da1c71f06755a source=15.7 
+ <para>
+  Place the extension module implementing the custom resource manager in <xref
+  linkend="guc-shared-preload-libraries"/> so that it will be loaded early
+  during <productname>PostgreSQL</productname> startup.
+ </para>
+________________________________________________________-->
+ <para>
+  将实现自定义资源管理器的扩展模块放置在<xref linkend="guc-shared-preload-libraries"/>中，
+  这样它将在<productname>PostgreSQL</productname>启动期间早期加载。
+</para>
+<!-- pgdoc-cn_end sig_en=41f7a2a048310e159536f7be84daf68b -->
+ <note>
+<!-- pgdoc-cn_start sig_en=484d387e13375c6751b5d041a647a836 sig_cn_org=98e3a270f97858b825d599bfb39cb043 source=15.7 
+   <para>
+    The extension must remain in shared_preload_libraries as long as any
+    custom WAL records may exist in the system. Otherwise
+    <productname>PostgreSQL</productname> will not be able to apply or decode
+    the custom WAL records, which may prevent the server from starting.
+   </para>
+________________________________________________________-->
+   <para>
+    扩展必须保留在shared_preload_libraries中，只要系统中可能存在任何自定义WAL记录。
+    否则，<productname>PostgreSQL</productname>将无法应用或解码自定义WAL记录，这可能会阻止服务器启动。
+</para>
+<!-- pgdoc-cn_end sig_en=484d387e13375c6751b5d041a647a836 -->
+ </note>
+</chapter>
