@@ -1,0 +1,2769 @@
+<!-- doc/src/sgml/xindex.sgml -->
+
+<sect1 id="xindex">
+<!-- pgdoc-cn_start sig_en=dfe0b02697d3d3a5e0df6a01954b63f4 sig_cn_org=None source=14.1 
+ <title>Interfacing Extensions to Indexes</title>
+________________________________________________________-->
+ <title>索引的接口扩展</title>
+<!-- pgdoc-cn_end sig_en=dfe0b02697d3d3a5e0df6a01954b63f4 -->
+
+<!-- pgdoc-cn_start sig_en=6b88dffd6956256883584f2e8ac48be2 sig_cn_org=None source=14.1 
+ <indexterm zone="xindex">
+  <primary>index</primary>
+  <secondary>for user-defined data type</secondary>
+ </indexterm>
+________________________________________________________-->
+ <indexterm zone="xindex">
+  <primary>index</primary>
+  <secondary>for user-defined data type</secondary>
+ </indexterm>
+<!-- pgdoc-cn_end sig_en=6b88dffd6956256883584f2e8ac48be2 -->
+
+<!-- pgdoc-cn_start sig_en=fec04a59e47f3bcaf5f40a2076ff94f6 sig_cn_org=None source=14.1 
+  <para>
+   The procedures described thus far let you define new types, new
+   functions, and new operators. However, we cannot yet define an
+   index on a column of a new data type.  To do this, we must define an
+   <firstterm>operator class</firstterm> for the new data type.  Later in this
+   section, we will illustrate this concept in an example: a new
+   operator class for the B-tree index method that stores and sorts
+   complex numbers in ascending absolute value order.
+  </para>
+________________________________________________________-->
+  <para>
+   迄今为止已经描述的过程让我们能够定义新的类型、新的函数以及新的操作符。但是，我们还不能在一种新数据类型的列上定义索引。要做这件事情，我们必须为新数据类型定义一个<firstterm>操作符类</firstterm>。在这一小节稍后的部分，我们将用一个例子阐述这部份内容：一个用于 B-树索引方法的操作符类，它以绝对值的升序存储和排序复数。
+  </para>
+<!-- pgdoc-cn_end sig_en=fec04a59e47f3bcaf5f40a2076ff94f6 -->
+
+<!-- pgdoc-cn_start sig_en=a54a246281d0b4cdeed94e816c22dcc1 sig_cn_org=None source=14.1 
+  <para>
+   Operator classes can be grouped into <firstterm>operator families</firstterm>
+   to show the relationships between semantically compatible classes.
+   When only a single data type is involved, an operator class is sufficient,
+   so we'll focus on that case first and then return to operator families.
+  </para>
+________________________________________________________-->
+  <para>
+   操作符类可以被分组成<firstterm>操作符族</firstterm>来体现语义兼容的类之间的联系。当只涉及到一种单一数据类型时，一个操作符类就足矣。因此我们将先把重点放在这种情况上，然后再回到操作符族。
+  </para>
+<!-- pgdoc-cn_end sig_en=a54a246281d0b4cdeed94e816c22dcc1 -->
+
+ <sect2 id="xindex-opclass">
+<!-- pgdoc-cn_start sig_en=4885f6ae325cbd3d05914f2e30320713 sig_cn_org=None source=14.1 
+  <title>Index Methods and Operator Classes</title>
+________________________________________________________-->
+  <title>索引方法和操作符类</title>
+<!-- pgdoc-cn_end sig_en=4885f6ae325cbd3d05914f2e30320713 -->
+
+<!-- pgdoc-cn_start sig_en=ed7f3693954fec6fa36e7c57a7739b2a sig_cn_org=None source=14.1 
+  <para>
+   The <classname>pg_am</classname> table contains one row for every
+   index method (internally known as access method).  Support for
+   regular access to tables is built into
+   <productname>PostgreSQL</productname>, but all index methods are
+   described in <classname>pg_am</classname>.  It is possible to add a
+   new index access method by writing the necessary code and
+   then creating an entry in <classname>pg_am</classname> &mdash; but that is
+   beyond the scope of this chapter (see <xref linkend="indexam"/>).
+  </para>
+________________________________________________________-->
+  <para>
+   <classname>pg_am</classname>表为每一种索引方法都包含一行（内部被称为访问方法）。<productname>PostgreSQL</productname>中内建了对表常规访问的支持，但是所有的索引方法则是在<classname>pg_am</classname>中描述。可以通过编写必要的代码并且在<classname>pg_am</classname>中创建一项来增加一种新的索引访问方法 &mdash; 但这超出了本章的范围（见<xref linkend="indexam"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=ed7f3693954fec6fa36e7c57a7739b2a -->
+
+<!-- pgdoc-cn_start sig_en=ae0e198c11c1256423f4ee413c5a6ce9 sig_cn_org=None source=14.1 
+  <para>
+   The routines for an index method do not directly know anything
+   about the data types that the index method will operate on.
+   Instead, an <firstterm>operator
+   class</firstterm><indexterm><primary>operator class</primary></indexterm>
+   identifies the set of operations that the index method needs to use
+   to work with a particular data type.  Operator classes are so
+   called because one thing they specify is the set of
+   <literal>WHERE</literal>-clause operators that can be used with an index
+   (i.e., can be converted into an index-scan qualification).  An
+   operator class can also specify some <firstterm>support
+   function</firstterm> that are needed by the internal operations of the
+   index method, but do not directly correspond to any
+   <literal>WHERE</literal>-clause operator that can be used with the index.
+  </para>
+________________________________________________________-->
+  <para>
+   一个索引方法的例程并不直接了解它将要操作的数据类型。而是由一个<firstterm>操作符类</firstterm><indexterm><primary>操作符类</primary></indexterm>标识索引方法用来操作一种特定数据类型的一组操作。之所以被称为操作符类是因为它们指定的一件事情就是可以被用于一个索引的<literal>WHERE</literal>子句操作符集合（即，能被转换成一个索引扫描条件）。一个操作符类也能指定一些索引方法内部操作所需的<firstterm>支持函数</firstterm>，这些过程不能直接对应于能用于索引的任何<literal>WHERE</literal>子句操作符。
+  </para>
+<!-- pgdoc-cn_end sig_en=ae0e198c11c1256423f4ee413c5a6ce9 -->
+
+<!-- pgdoc-cn_start sig_en=85132d7d463f3bd710c09ebfcac1f39b sig_cn_org=None source=14.1 
+  <para>
+   It is possible to define multiple operator classes for the same
+   data type and index method.  By doing this, multiple
+   sets of indexing semantics can be defined for a single data type.
+   For example, a B-tree index requires a sort ordering to be defined
+   for each data type it works on.
+   It might be useful for a complex-number data type
+   to have one B-tree operator class that sorts the data by complex
+   absolute value, another that sorts by real part, and so on.
+   Typically, one of the operator classes will be deemed most commonly
+   useful and will be marked as the default operator class for that
+   data type and index method.
+  </para>
+________________________________________________________-->
+  <para>
+   可以为相同的数据类型和索引方法定义多个操作符类。通过这种方式，可以为一种数据类型定义多个索引语义集合。例如，一个B-树索引要求在它要操作的每一种数据类型上都定义一个排序顺序。对一种复数数据类型来说，拥有一个可以根据复数绝对值排序的 B-树操作符类和另一个可以根据实数部分排序的操作符类可能会有用。典型地，其中一个操作符类将被认为是最常用的并且将被标记为那种数据类型和索引方法的默认操作符类。
+  </para>
+<!-- pgdoc-cn_end sig_en=85132d7d463f3bd710c09ebfcac1f39b -->
+
+<!-- pgdoc-cn_start sig_en=1fd10dcedb50831025ce7537acaddfe9 sig_cn_org=None source=14.1 
+  <para>
+   The same operator class name
+   can be used for several different index methods (for example, both B-tree
+   and hash index methods have operator classes named
+   <literal>int4_ops</literal>), but each such class is an independent
+   entity and must be defined separately.
+  </para>
+________________________________________________________-->
+  <para>
+   相同的操作符类名称可以被用于多个不同的索引方法（例如，B-树和哈希索引方法都有名为<literal>int4_ops</literal>的操作符类）。但是每一个这样的类都是一个独立实体并且必须被单独定义。
+  </para>
+<!-- pgdoc-cn_end sig_en=1fd10dcedb50831025ce7537acaddfe9 -->
+ </sect2>
+
+ <sect2 id="xindex-strategies">
+<!-- pgdoc-cn_start sig_en=0e837d3c4df1f28288c52c592a11dae1 sig_cn_org=None source=14.1 
+  <title>Index Method Strategies</title>
+________________________________________________________-->
+  <title>索引方法策略</title>
+<!-- pgdoc-cn_end sig_en=0e837d3c4df1f28288c52c592a11dae1 -->
+
+<!-- pgdoc-cn_start sig_en=118318620f707da4caf4fa5e94c483d4 sig_cn_org=None source=14.1 
+  <para>
+   The operators associated with an operator class are identified by
+   <quote>strategy numbers</quote>, which serve to identify the semantics of
+   each operator within the context of its operator class.
+   For example, B-trees impose a strict ordering on keys, lesser to greater,
+   and so operators like <quote>less than</quote> and <quote>greater than or equal
+   to</quote> are interesting with respect to a B-tree.
+   Because
+   <productname>PostgreSQL</productname> allows the user to define operators,
+   <productname>PostgreSQL</productname> cannot look at the name of an operator
+   (e.g., <literal>&lt;</literal> or <literal>&gt;=</literal>) and tell what kind of
+   comparison it is.  Instead, the index method defines a set of
+   <quote>strategies</quote>, which can be thought of as generalized operators.
+   Each operator class specifies which actual operator corresponds to each
+   strategy for a particular data type and interpretation of the index
+   semantics.
+  </para>
+________________________________________________________-->
+  <para>
+   与一个操作符类关联的操作符通过<quote>策略号</quote>标识，它被用来标识每个操作符在其操作符类中的语义。例如，B-树在键上施行了一种严格的顺序（较小到较大），因此<quote>小于</quote>和<quote>大于等于</quote>这样的操作符就是 B-树所感兴趣的。因为<productname>PostgreSQL</productname>允许用户定义操作符，<productname>PostgreSQL</productname>不能看着一个操作符（如<literal>&lt;</literal>和<literal>&gt;=</literal>）的名字并且说出它是哪一种比较。取而代之的是，索引方法定义了一个<quote>策略</quote>集合，它们可以被看成是广义的操作符。每一个操作符类会说明对于一种特定的数据类型究竟是哪个实际的操作符对应于每一种策略以及该索引语义的解释。
+  </para>
+<!-- pgdoc-cn_end sig_en=118318620f707da4caf4fa5e94c483d4 -->
+
+<!-- pgdoc-cn_start sig_en=70fa7c370e9276759f4148ecd1e3a241 sig_cn_org=None source=14.1 
+  <para>
+   The B-tree index method defines five strategies, shown in <xref
+   linkend="xindex-btree-strat-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   B-树索引方法定义了五种策略，如<xref linkend="xindex-btree-strat-table"/>所示。
+  </para>
+<!-- pgdoc-cn_end sig_en=70fa7c370e9276759f4148ecd1e3a241 -->
+
+   <table tocentry="1" id="xindex-btree-strat-table">
+<!-- pgdoc-cn_start sig_en=82b8ee649ba2469ffc45898ec6f8556a sig_cn_org=None source=14.1 
+    <title>B-Tree Strategies</title>
+________________________________________________________-->
+    <title>B-树策略</title>
+<!-- pgdoc-cn_end sig_en=82b8ee649ba2469ffc45898ec6f8556a -->
+    <tgroup cols="2">
+     <thead>
+<!-- pgdoc-cn_start sig_en=bb89fdbf9c7ac25a29bf590fecde9689 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Operation</entry>
+       <entry>Strategy Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>操作</entry>
+       <entry>策略号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bb89fdbf9c7ac25a29bf590fecde9689 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=36aac2cf430b263be1fd1b1ff2d280f7 sig_cn_org=None source=14.1 
+      <row>
+       <entry>less than</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>小于</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=36aac2cf430b263be1fd1b1ff2d280f7 -->
+<!-- pgdoc-cn_start sig_en=9b94dac098cf826bc2a5ad82189cd737 sig_cn_org=None source=14.1 
+      <row>
+       <entry>less than or equal</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>小于等于</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=9b94dac098cf826bc2a5ad82189cd737 -->
+<!-- pgdoc-cn_start sig_en=01e4b3fe686e55d27cab9d162140db06 sig_cn_org=None source=14.1 
+      <row>
+       <entry>equal</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>等于</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=01e4b3fe686e55d27cab9d162140db06 -->
+<!-- pgdoc-cn_start sig_en=0e94a2a4d108702bff810a773a5650ce sig_cn_org=None source=14.1 
+      <row>
+       <entry>greater than or equal</entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>大于等于</entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=0e94a2a4d108702bff810a773a5650ce -->
+<!-- pgdoc-cn_start sig_en=762e91b343282392cbed9f6d82cfbe49 sig_cn_org=None source=14.1 
+      <row>
+       <entry>greater than</entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>大于</entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=762e91b343282392cbed9f6d82cfbe49 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=397a727958b5709fdf1666c38d14afca sig_cn_org=None source=14.1 
+  <para>
+   Hash indexes support only equality comparisons, and so they use only one
+   strategy, shown in <xref linkend="xindex-hash-strat-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   哈希索引只支持等值比较，因此它们只使用一种策略，如<xref linkend="xindex-hash-strat-table"/>所示。
+  </para>
+<!-- pgdoc-cn_end sig_en=397a727958b5709fdf1666c38d14afca -->
+
+   <table tocentry="1" id="xindex-hash-strat-table">
+<!-- pgdoc-cn_start sig_en=7a7c2b56ff5c3c1b1b79a78206cfdba0 sig_cn_org=None source=14.1 
+    <title>Hash Strategies</title>
+________________________________________________________-->
+    <title>哈希策略</title>
+<!-- pgdoc-cn_end sig_en=7a7c2b56ff5c3c1b1b79a78206cfdba0 -->
+    <tgroup cols="2">
+     <thead>
+<!-- pgdoc-cn_start sig_en=bb89fdbf9c7ac25a29bf590fecde9689 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Operation</entry>
+       <entry>Strategy Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>操作</entry>
+       <entry>策略号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bb89fdbf9c7ac25a29bf590fecde9689 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=8bad0a04b99f847206c46b51d77663c2 sig_cn_org=None source=14.1 
+      <row>
+       <entry>equal</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>等于</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=8bad0a04b99f847206c46b51d77663c2 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=7004de19f0f2290bedfca06f11bbf9b0 sig_cn_org=None source=14.1 
+  <para>
+   GiST indexes are more flexible: they do not have a fixed set of
+   strategies at all.  Instead, the <quote>consistency</quote> support routine
+   of each particular GiST operator class interprets the strategy numbers
+   however it likes.  As an example, several of the built-in GiST index
+   operator classes index two-dimensional geometric objects, providing
+   the <quote>R-tree</quote> strategies shown in
+   <xref linkend="xindex-rtree-strat-table"/>.  Four of these are true
+   two-dimensional tests (overlaps, same, contains, contained by);
+   four of them consider only the X direction; and the other four
+   provide the same tests in the Y direction.
+  </para>
+________________________________________________________-->
+  <para>
+   GiST 索引更加灵活：它们根本没有一个固定的策略集合。取而代之的是，每一个特定 GiST 操作符类的<quote>consistency</quote>支持例程会负责解释策略号。例如，一些内建的 GiST 索引操作符类索引二维几何对象，它们提供<xref linkend="xindex-rtree-strat-table"/>中所示的<quote>R-树</quote>策略。其中四个是真正的二维测试（重叠、相同、包含、被包含），其中四个只考虑 X 方向，其他四个提供 Y 方向上的相同测试。
+  </para>
+<!-- pgdoc-cn_end sig_en=7004de19f0f2290bedfca06f11bbf9b0 -->
+
+   <table tocentry="1" id="xindex-rtree-strat-table">
+<!-- pgdoc-cn_start sig_en=19c027e867fe4602b53b0e33be4f2ff8 sig_cn_org=None source=14.1 
+    <title>GiST Two-Dimensional <quote>R-tree</quote> Strategies</title>
+________________________________________________________-->
+    <title>GiST 二维<quote>R-树</quote> 策略</title>
+<!-- pgdoc-cn_end sig_en=19c027e867fe4602b53b0e33be4f2ff8 -->
+    <tgroup cols="2">
+     <thead>
+<!-- pgdoc-cn_start sig_en=bb89fdbf9c7ac25a29bf590fecde9689 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Operation</entry>
+       <entry>Strategy Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>操作</entry>
+       <entry>策略号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bb89fdbf9c7ac25a29bf590fecde9689 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=32e85b53f15fd6ebf10954106b356f09 sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly left of</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>左参数严格地位于右参数的左边</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=32e85b53f15fd6ebf10954106b356f09 -->
+<!-- pgdoc-cn_start sig_en=e24f4488bb31e5d14e80cb06051e1a4d sig_cn_org=None source=14.1 
+      <row>
+       <entry>does not extend to right of</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>左参数不会延伸到右参数的右边</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=e24f4488bb31e5d14e80cb06051e1a4d -->
+<!-- pgdoc-cn_start sig_en=fd0f79dc9d431bc91ea42162644db896 sig_cn_org=None source=14.1 
+      <row>
+       <entry>overlaps</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>重叠</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=fd0f79dc9d431bc91ea42162644db896 -->
+<!-- pgdoc-cn_start sig_en=19a2217c42e22967435c9f9425a73da8 sig_cn_org=None source=14.1 
+      <row>
+       <entry>does not extend to left of</entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>左参数不会延伸到右参数的左边</entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=19a2217c42e22967435c9f9425a73da8 -->
+<!-- pgdoc-cn_start sig_en=4f1c824c24d8d1f1adbe553ea740bf7f sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly right of</entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>左参数严格地位于右参数的右边</entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=4f1c824c24d8d1f1adbe553ea740bf7f -->
+<!-- pgdoc-cn_start sig_en=26d8816327a11f7c692c0c8a59b13c56 sig_cn_org=None source=14.1 
+      <row>
+       <entry>same</entry>
+       <entry>6</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>相同</entry>
+       <entry>6</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=26d8816327a11f7c692c0c8a59b13c56 -->
+<!-- pgdoc-cn_start sig_en=92267c5a703bb41db9100d58db6ac4ec sig_cn_org=None source=14.1 
+      <row>
+       <entry>contains</entry>
+       <entry>7</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>包含</entry>
+       <entry>7</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=92267c5a703bb41db9100d58db6ac4ec -->
+<!-- pgdoc-cn_start sig_en=1927ba6f2296c6176b2b95591f1f8106 sig_cn_org=None source=14.1 
+      <row>
+       <entry>contained by</entry>
+       <entry>8</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>被包含</entry>
+       <entry>8</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=1927ba6f2296c6176b2b95591f1f8106 -->
+<!-- pgdoc-cn_start sig_en=03391622a3ce480c3c0532ac5800c435 sig_cn_org=None source=14.1 
+      <row>
+       <entry>does not extend above</entry>
+       <entry>9</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>不会延伸到高于</entry>
+       <entry>9</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=03391622a3ce480c3c0532ac5800c435 -->
+<!-- pgdoc-cn_start sig_en=e7054eb6193455755741a0452d648eac sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly below</entry>
+       <entry>10</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>严格低于</entry>
+       <entry>10</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=e7054eb6193455755741a0452d648eac -->
+<!-- pgdoc-cn_start sig_en=c5934d483c70fcf770040f6834de2ab9 sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly above</entry>
+       <entry>11</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>严格高于</entry>
+       <entry>11</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=c5934d483c70fcf770040f6834de2ab9 -->
+<!-- pgdoc-cn_start sig_en=18e04c8b92d39693d396ecf7f68e9430 sig_cn_org=None source=14.1 
+      <row>
+       <entry>does not extend below</entry>
+       <entry>12</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>不会延伸到低于</entry>
+       <entry>12</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=18e04c8b92d39693d396ecf7f68e9430 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=d489569e24dfe40ed91b37dc369a291b sig_cn_org=None source=14.1 
+  <para>
+   SP-GiST indexes are similar to GiST indexes in flexibility: they don't have
+   a fixed set of strategies. Instead the support routines of each operator
+   class interpret the strategy numbers according to the operator class's
+   definition. As an example, the strategy numbers used by the built-in
+   operator classes for points are shown in <xref
+   linkend="xindex-spgist-point-strat-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   SP-GiST 索引在灵活性上与索引相似：它们没有一个固定的策略集合。取而代之的是，每一个操作符类的支持例程负责根据该操作符类的定义解释策略号。例如，被内建操作符类用于点的策略号如<xref linkend="xindex-spgist-point-strat-table"/>中所示。
+  </para>
+<!-- pgdoc-cn_end sig_en=d489569e24dfe40ed91b37dc369a291b -->
+
+   <table tocentry="1" id="xindex-spgist-point-strat-table">
+<!-- pgdoc-cn_start sig_en=3d498c5178713f369ae7efd65946c17a sig_cn_org=None source=14.1 
+    <title>SP-GiST Point Strategies</title>
+________________________________________________________-->
+    <title>SP-GiST 点策略</title>
+<!-- pgdoc-cn_end sig_en=3d498c5178713f369ae7efd65946c17a -->
+    <tgroup cols="2">
+     <thead>
+<!-- pgdoc-cn_start sig_en=bb89fdbf9c7ac25a29bf590fecde9689 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Operation</entry>
+       <entry>Strategy Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>操作</entry>
+       <entry>策略号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bb89fdbf9c7ac25a29bf590fecde9689 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=32e85b53f15fd6ebf10954106b356f09 sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly left of</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>左参数严格地位于右参数的左边</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=32e85b53f15fd6ebf10954106b356f09 -->
+<!-- pgdoc-cn_start sig_en=4f1c824c24d8d1f1adbe553ea740bf7f sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly right of</entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>左参数严格地位于右参数的右边</entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=4f1c824c24d8d1f1adbe553ea740bf7f -->
+<!-- pgdoc-cn_start sig_en=26d8816327a11f7c692c0c8a59b13c56 sig_cn_org=None source=14.1 
+      <row>
+       <entry>same</entry>
+       <entry>6</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>相同</entry>
+       <entry>6</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=26d8816327a11f7c692c0c8a59b13c56 -->
+<!-- pgdoc-cn_start sig_en=1927ba6f2296c6176b2b95591f1f8106 sig_cn_org=None source=14.1 
+      <row>
+       <entry>contained by</entry>
+       <entry>8</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>被包含</entry>
+       <entry>8</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=1927ba6f2296c6176b2b95591f1f8106 -->
+<!-- pgdoc-cn_start sig_en=e7054eb6193455755741a0452d648eac sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly below</entry>
+       <entry>10</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>严格低于</entry>
+       <entry>10</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=e7054eb6193455755741a0452d648eac -->
+<!-- pgdoc-cn_start sig_en=c5934d483c70fcf770040f6834de2ab9 sig_cn_org=None source=14.1 
+      <row>
+       <entry>strictly above</entry>
+       <entry>11</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>严格高于</entry>
+       <entry>11</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=c5934d483c70fcf770040f6834de2ab9 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=a0a263b318a0d833f1ec1740eb5263b9 sig_cn_org=None source=14.1 
+  <para>
+   GIN indexes are similar to GiST and SP-GiST indexes, in that they don't
+   have a fixed set of strategies either. Instead the support routines of
+   each operator class interpret the strategy numbers according to the
+   operator class's definition. As an example, the strategy numbers used by
+   the built-in operator class for arrays are shown in
+   <xref linkend="xindex-gin-array-strat-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   GIN 索引与 GiST 和 SP-GiST 索引类似，它们也没有一个固定的策略集合。取而代之的是，每一个操作符类的支持例程负责根据该操作符类的定义解释策略号。例如，被内建操作符类用于数组的策略号如<xref linkend="xindex-gin-array-strat-table"/>所示。
+  </para>
+<!-- pgdoc-cn_end sig_en=a0a263b318a0d833f1ec1740eb5263b9 -->
+
+   <table tocentry="1" id="xindex-gin-array-strat-table">
+<!-- pgdoc-cn_start sig_en=e2f39f585351bf905686a79181d40aed sig_cn_org=None source=14.1 
+    <title>GIN Array Strategies</title>
+________________________________________________________-->
+    <title>GIN 数组策略</title>
+<!-- pgdoc-cn_end sig_en=e2f39f585351bf905686a79181d40aed -->
+    <tgroup cols="2">
+     <thead>
+<!-- pgdoc-cn_start sig_en=bb89fdbf9c7ac25a29bf590fecde9689 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Operation</entry>
+       <entry>Strategy Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>操作</entry>
+       <entry>策略号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bb89fdbf9c7ac25a29bf590fecde9689 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=32bf1cd894d8bbcacc0dfbef9cb26455 sig_cn_org=None source=14.1 
+      <row>
+       <entry>overlap</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>重叠</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=32bf1cd894d8bbcacc0dfbef9cb26455 -->
+<!-- pgdoc-cn_start sig_en=f6a7079223450adfbddd6612ab9d2d3f sig_cn_org=None source=14.1 
+      <row>
+       <entry>contains</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>包含</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f6a7079223450adfbddd6612ab9d2d3f -->
+<!-- pgdoc-cn_start sig_en=83ad330f6de6372341f42f953fd92fd7 sig_cn_org=None source=14.1 
+      <row>
+       <entry>is contained by</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>被包含</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=83ad330f6de6372341f42f953fd92fd7 -->
+<!-- pgdoc-cn_start sig_en=05fa7ed4bbf382edc47d68868150ef02 sig_cn_org=None source=14.1 
+      <row>
+       <entry>equal</entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>等于</entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=05fa7ed4bbf382edc47d68868150ef02 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=44947670d6aff3546cbabe9b16f59029 sig_cn_org=None source=14.1 
+  <para>
+   BRIN indexes are similar to GiST, SP-GiST and GIN indexes in that they
+   don't have a fixed set of strategies either.  Instead the support routines
+   of each operator class interpret the strategy numbers according to the
+   operator class's definition. As an example, the strategy numbers used by
+   the built-in <literal>Minmax</literal> operator classes are shown in
+   <xref linkend="xindex-brin-minmax-strat-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   在没有固定的策略集合这一点上，BRIN 索引和 GiST、SP-GiST 和 GIN 索引是类似的。每一个操作符类的支持函数会根据操作符类的定义解释策略编号。例如，<xref linkend="xindex-brin-minmax-strat-table"/>中展示了内建的<literal>Minmax</literal>操作符类所使用的策略编号。  </para>
+<!-- pgdoc-cn_end sig_en=44947670d6aff3546cbabe9b16f59029 -->
+
+   <table tocentry="1" id="xindex-brin-minmax-strat-table">
+<!-- pgdoc-cn_start sig_en=cde283210c40d83ab4c529de46856848 sig_cn_org=None source=14.1 
+    <title>BRIN Minmax Strategies</title>
+________________________________________________________-->
+    <title>BRIN 最小最大策略</title>
+<!-- pgdoc-cn_end sig_en=cde283210c40d83ab4c529de46856848 -->
+    <tgroup cols="2">
+     <thead>
+<!-- pgdoc-cn_start sig_en=bb89fdbf9c7ac25a29bf590fecde9689 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Operation</entry>
+       <entry>Strategy Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>操作</entry>
+       <entry>策略号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bb89fdbf9c7ac25a29bf590fecde9689 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=36aac2cf430b263be1fd1b1ff2d280f7 sig_cn_org=None source=14.1 
+      <row>
+       <entry>less than</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>小于</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=36aac2cf430b263be1fd1b1ff2d280f7 -->
+<!-- pgdoc-cn_start sig_en=9b94dac098cf826bc2a5ad82189cd737 sig_cn_org=None source=14.1 
+      <row>
+       <entry>less than or equal</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>小于等于</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=9b94dac098cf826bc2a5ad82189cd737 -->
+<!-- pgdoc-cn_start sig_en=01e4b3fe686e55d27cab9d162140db06 sig_cn_org=None source=14.1 
+      <row>
+       <entry>equal</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>等于</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=01e4b3fe686e55d27cab9d162140db06 -->
+<!-- pgdoc-cn_start sig_en=0e94a2a4d108702bff810a773a5650ce sig_cn_org=None source=14.1 
+      <row>
+       <entry>greater than or equal</entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>大于等于</entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=0e94a2a4d108702bff810a773a5650ce -->
+<!-- pgdoc-cn_start sig_en=762e91b343282392cbed9f6d82cfbe49 sig_cn_org=None source=14.1 
+      <row>
+       <entry>greater than</entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>大于</entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=762e91b343282392cbed9f6d82cfbe49 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=10b5ab2b805238d10ece3720044bf00b sig_cn_org=None source=14.1 
+  <para>
+   Notice that all the operators listed above return Boolean values.  In
+   practice, all operators defined as index method search operators must
+   return type <type>boolean</type>, since they must appear at the top
+   level of a <literal>WHERE</literal> clause to be used with an index.
+   (Some index access methods also support <firstterm>ordering operators</firstterm>,
+   which typically don't return Boolean values; that feature is discussed
+   in <xref linkend="xindex-ordering-ops"/>.)
+  </para>
+________________________________________________________-->
+  <para>
+   注意上文列出的所有操作符都返回布尔值。实际上，所有作为索引方法搜索操作符定义的操作符必须返回类型<type>boolean</type>，因为它们必须出现在一个<literal>WHERE</literal>子句的顶层来与一个索引一起使用（某些索引访问方法还支持<firstterm>排序操作符</firstterm>，它们通常不返回布尔值，这种特性在<xref linkend="xindex-ordering-ops"/>中讨论）。
+  </para>
+<!-- pgdoc-cn_end sig_en=10b5ab2b805238d10ece3720044bf00b -->
+ </sect2>
+
+ <sect2 id="xindex-support">
+<!-- pgdoc-cn_start sig_en=3ede2d0074128461a89d0bc504543d75 sig_cn_org=None source=14.1 
+  <title>Index Method Support Routines</title>
+________________________________________________________-->
+  <title>索引方法支持例程</title>
+<!-- pgdoc-cn_end sig_en=3ede2d0074128461a89d0bc504543d75 -->
+
+<!-- pgdoc-cn_start sig_en=aef83bab2e5acef4fff441a62e0454e5 sig_cn_org=None source=14.1 
+  <para>
+   Strategies aren't usually enough information for the system to figure
+   out how to use an index.  In practice, the index methods require
+   additional support routines in order to work. For example, the B-tree
+   index method must be able to compare two keys and determine whether one
+   is greater than, equal to, or less than the other.  Similarly, the
+   hash index method must be able to compute hash codes for key values.
+   These operations do not correspond to operators used in qualifications in
+   SQL commands;  they are administrative routines used by
+   the index methods, internally.
+  </para>
+________________________________________________________-->
+  <para>
+   对于系统来说只有策略信息通常不足以断定如何使用一种索引。实际上，为了能工作，索引方法还要求额外的支持例程。例如，B-树索引方法必须能比较两个键并且决定其中一个是否大于、等于或小于另一个。类似地，哈希索引方法必须能够为键值计算哈希码。这些操作并不对应在 SQL 命令的条件中使用的操作符。它们是索引方法在内部使用的管理例程。
+  </para>
+<!-- pgdoc-cn_end sig_en=aef83bab2e5acef4fff441a62e0454e5 -->
+
+<!-- pgdoc-cn_start sig_en=0cb3f4140c4cbc850d477df9e271f9a5 sig_cn_org=None source=14.1 
+  <para>
+   Just as with strategies, the operator class identifies which specific
+   functions should play each of these roles for a given data type and
+   semantic interpretation.  The index method defines the set
+   of functions it needs, and the operator class identifies the correct
+   functions to use by assigning them to the <quote>support function numbers</quote>
+   specified by the index method.
+  </para>
+________________________________________________________-->
+  <para>
+   与策略一样，操作符类会标识哪些函数应该为一种给定的数据类型扮演这些角色以及相应的语义解释。索引方法定义它需要的函数集合，而操作符类则会通过为函数分配由索引方法说明的<quote>支持函数号</quote>来标识正确的函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=0cb3f4140c4cbc850d477df9e271f9a5 -->
+
+<!-- pgdoc-cn_start sig_en=e10c74c20ca7245b0cf2b9ca71c97ba7 sig_cn_org=None source=14.1 
+  <para>
+   Additionally, some opclasses allow users to specify parameters which
+   control their behavior.  Each builtin index access method has an optional
+   <function>options</function> support function, which defines a set of
+   opclass-specific parameters.
+  </para>
+________________________________________________________-->
+  <para>
+   此外，一些 opclass 允许用户指定控制其行为的参数。每个内置索引访问方法都有一个可选的
+   <function>options</function>支持函数，它定义了一组特定于 opclass 的参数。
+  </para>
+<!-- pgdoc-cn_end sig_en=e10c74c20ca7245b0cf2b9ca71c97ba7 -->
+
+<!-- pgdoc-cn_start sig_en=83e2a2e7de81f453729e4c04d2523bc1 sig_cn_org=None source=14.1 
+  <para>
+   B-trees require a comparison support function,
+   and allow four additional support functions to be
+   supplied at the operator class author's option, as shown in <xref
+   linkend="xindex-btree-support-table"/>.
+   The requirements for these support functions are explained further in
+   <xref linkend="btree-support-funcs"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="xindex-btree-support-table"/>所示， B-树要求一个比较支持函数，并且允许在操作符类作者的选项中提供四个额外的支持函数。这些支持函数的要求在<xref linkend="btree-support-funcs"/>中会进一步解释。
+  </para>
+<!-- pgdoc-cn_end sig_en=83e2a2e7de81f453729e4c04d2523bc1 -->
+
+   <table tocentry="1" id="xindex-btree-support-table">
+<!-- pgdoc-cn_start sig_en=41b235984593727b61d0481466af5373 sig_cn_org=None source=14.1 
+    <title>B-Tree Support Functions</title>
+________________________________________________________-->
+    <title>B-树支持函数</title>
+<!-- pgdoc-cn_end sig_en=41b235984593727b61d0481466af5373 -->
+    <tgroup cols="2">
+     <colspec colname="col1" colwidth="3*"/>
+     <colspec colname="col2" colwidth="1*"/>
+     <thead>
+<!-- pgdoc-cn_start sig_en=5e44bfde06c9b35b94aba79b68e869e1 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Function</entry>
+       <entry>Support Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>函数</entry>
+       <entry>支持号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5e44bfde06c9b35b94aba79b68e869e1 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=83e9d995f134d9e941dd2d9a51401598 sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+        Compare two keys and return an integer less than zero, zero, or
+        greater than zero, indicating whether the first key is less than,
+        equal to, or greater than the second
+       </entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+        比较两个键并且返回一个小于零、等于零或大于零的整数，它表示第一个键小于、等于或者大于第二个键。
+       </entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=83e9d995f134d9e941dd2d9a51401598 -->
+<!-- pgdoc-cn_start sig_en=6eaeeb70cc074669dd38df219ecad90a sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+        Return the addresses of C-callable sort support function(s)
+        (optional)
+       </entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+        返回C可调用的排序支持函数的地址（可选）。
+       </entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=6eaeeb70cc074669dd38df219ecad90a -->
+<!-- pgdoc-cn_start sig_en=91bfe2e3bf6a8e5cd8feb333be6ed79f sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+        Compare a test value to a base value plus/minus an offset, and return
+        true or false according to the comparison result (optional)
+       </entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+        将一个测试值与一个基础值加上/减去一个偏移量的结果进行比较，根据比较的结果返回真或假（可选）
+       </entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=91bfe2e3bf6a8e5cd8feb333be6ed79f -->
+<!-- pgdoc-cn_start sig_en=af05dc31e133b6cac93982c171db3147 sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+        Determine if it is safe for indexes that use the operator
+        class to apply the btree deduplication optimization (optional)
+       </entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+        确定使用运算符类应用 btree 重复数据删除优化的索引是否安全（可选）
+       </entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=af05dc31e133b6cac93982c171db3147 -->
+<!-- pgdoc-cn_start sig_en=05b0b8819305d44efadc5ab17b64e3d8 sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+        Define options that are specific to this operator class
+        (optional)
+       </entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+        定义特定于此运算符类的选项（可选）
+       </entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=05b0b8819305d44efadc5ab17b64e3d8 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=addf4ab82530de39766507cee5ed1dc6 sig_cn_org=None source=14.1 
+  <para>
+   Hash indexes require one support function, and allow two additional ones to
+   be supplied at the operator class author's option, as shown in <xref
+   linkend="xindex-hash-support-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="xindex-hash-support-table"/>所示，哈希索引要求一个支持函数，并且允许在操作符类作者的选项中提供两个额外的支持函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=addf4ab82530de39766507cee5ed1dc6 -->
+
+   <table tocentry="1" id="xindex-hash-support-table">
+<!-- pgdoc-cn_start sig_en=9b0063395978bbe7d8d1efeaa231489c sig_cn_org=None source=14.1 
+    <title>Hash Support Functions</title>
+________________________________________________________-->
+    <title>哈希支持函数</title>
+<!-- pgdoc-cn_end sig_en=9b0063395978bbe7d8d1efeaa231489c -->
+    <tgroup cols="2">
+     <colspec colname="col1" colwidth="3*"/>
+     <colspec colname="col2" colwidth="1*"/>
+     <thead>
+<!-- pgdoc-cn_start sig_en=5e44bfde06c9b35b94aba79b68e869e1 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Function</entry>
+       <entry>Support Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>函数</entry>
+       <entry>支持号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5e44bfde06c9b35b94aba79b68e869e1 -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=210818afecf1c600f57384da0e677e89 sig_cn_org=None source=14.1 
+      <row>
+       <entry>Compute the 32-bit hash value for a key</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>为一个键计算32位哈希值</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=210818afecf1c600f57384da0e677e89 -->
+<!-- pgdoc-cn_start sig_en=92fafd9c9235059394b7339556893758 sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+         Compute the 64-bit hash value for a key given a 64-bit salt; if
+         the salt is 0, the low 32 bits of the result must match the value
+         that would have been computed by function 1
+         (optional)
+       </entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+         给定一个64-位salt，计算一个键的64位哈希值。如果salt为0，结果的低32位必须匹配会由函数1计算出来的值（可选）
+       </entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=92fafd9c9235059394b7339556893758 -->
+<!-- pgdoc-cn_start sig_en=8e41feae315d31847ae4a3645731e55c sig_cn_org=None source=14.1 
+      <row>
+       <entry>
+        Define options that are specific to this operator class
+        (optional)
+       </entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>
+        定义特定于此运算符类的选项（可选）
+       </entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=8e41feae315d31847ae4a3645731e55c -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=f9b0b5c6c739188c435fef4791212b42 sig_cn_org=None source=14.1 
+  <para>
+   GiST indexes have eleven support functions, six of which are optional,
+   as shown in <xref linkend="xindex-gist-support-table"/>.
+   (For more information see <xref linkend="gist"/>.)
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="xindex-gist-support-table"/>所示，GiST 索引有11个支持函数，其中6个是可选的（详见<xref linkend="gist"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=f9b0b5c6c739188c435fef4791212b42 -->
+
+   <table tocentry="1" id="xindex-gist-support-table">
+<!-- pgdoc-cn_start sig_en=4a1f8f1848934aa081b67e312af61727 sig_cn_org=None source=14.1 
+    <title>GiST Support Functions</title>
+________________________________________________________-->
+    <title>GiST 支持函数</title>
+<!-- pgdoc-cn_end sig_en=4a1f8f1848934aa081b67e312af61727 -->
+    <tgroup cols="3">
+     <colspec colname="col1" colwidth="2*"/>
+     <colspec colname="col2" colwidth="3*"/>
+     <colspec colname="col3" colwidth="1*"/>
+     <thead>
+<!-- pgdoc-cn_start sig_en=d281c5017a7cbd1baee0d6a05c47ba3d sig_cn_org=None source=14.1 
+      <row>
+       <entry>Function</entry>
+       <entry>Description</entry>
+       <entry>Support Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>函数</entry>
+       <entry>描述</entry>
+       <entry>支持号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=d281c5017a7cbd1baee0d6a05c47ba3d -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=1bc37860049b88bb23a84de327e222bf sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>consistent</function></entry>
+       <entry>determine whether key satisfies the
+        query qualifier</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>consistent</function></entry>
+       <entry>判断键是否满足查询修饰语</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=1bc37860049b88bb23a84de327e222bf -->
+<!-- pgdoc-cn_start sig_en=873e117013a9092fa2181812280153a4 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>union</function></entry>
+       <entry>compute union of a set of keys</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>union</function></entry>
+       <entry>计算一个键集合的联合</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=873e117013a9092fa2181812280153a4 -->
+<!-- pgdoc-cn_start sig_en=485c5d66548e735f8bb24e75db1f148f sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>compress</function></entry>
+       <entry>compute a compressed representation of a key or value
+        to be indexed (optional)</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>compress</function></entry>
+       <entry>计算一个要被索引的键或值的压缩表达 (可选)</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=485c5d66548e735f8bb24e75db1f148f -->
+<!-- pgdoc-cn_start sig_en=eb35135bb325b4d0152d643e3833e290 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>decompress</function></entry>
+       <entry>compute a decompressed representation of a
+        compressed key (optional)</entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>decompress</function></entry>
+       <entry>计算一个压缩键的解压表达 (可选)</entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=eb35135bb325b4d0152d643e3833e290 -->
+<!-- pgdoc-cn_start sig_en=756cbd2793a450838fc605c5d6a36588 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>penalty</function></entry>
+       <entry>compute penalty for inserting new key into subtree
+       with given subtree's key</entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>penalty</function></entry>
+       <entry>计算把新键插入到带有给定子树键的子树中带来的罚值</entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=756cbd2793a450838fc605c5d6a36588 -->
+<!-- pgdoc-cn_start sig_en=eba765bc907967c4260a9a7790197488 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>picksplit</function></entry>
+       <entry>determine which entries of a page are to be moved
+       to the new page and compute the union keys for resulting pages</entry>
+       <entry>6</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>picksplit</function></entry>
+       <entry>判断一个页面中的哪些项要被移动到新页面中并且计算结果页面的联合键</entry>
+       <entry>6</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=eba765bc907967c4260a9a7790197488 -->
+<!-- pgdoc-cn_start sig_en=a2a5dc0d435b1fefdff81b4f2ef746ac sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>same</function></entry>
+       <entry>compare two keys and return true if they are equal</entry>
+       <entry>7</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>same</function></entry>
+       <entry>比较两个键并且在它们相等时返回真</entry>
+       <entry>7</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=a2a5dc0d435b1fefdff81b4f2ef746ac -->
+<!-- pgdoc-cn_start sig_en=5c2ddb96eb7c915ffabca9ab126e7e02 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>distance</function></entry>
+       <entry>determine distance from key to query value (optional)</entry>
+       <entry>8</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>distance</function></entry>
+       <entry>判断键到查询值的距离（可选）</entry>
+       <entry>8</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5c2ddb96eb7c915ffabca9ab126e7e02 -->
+<!-- pgdoc-cn_start sig_en=456d6cbd43fe64776ffc7dbb0d57cdbc sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>fetch</function></entry>
+       <entry>compute original representation of a compressed key for
+       index-only scans (optional)</entry>
+       <entry>9</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>fetch</function></entry>
+       <entry>为只用索引扫描计算一个压缩键的原始表达（可选）</entry>
+       <entry>9</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=456d6cbd43fe64776ffc7dbb0d57cdbc -->
+<!-- pgdoc-cn_start sig_en=f145759c9b4e8e39461f01383fbbfba8 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>options</function></entry>
+       <entry>define options that are specific to this operator class
+        (optional)</entry>
+       <entry>10</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>options</function></entry>
+       <entry>定义特定于此运算符类的选项
+        （可选）</entry>
+       <entry>10</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f145759c9b4e8e39461f01383fbbfba8 -->
+<!-- pgdoc-cn_start sig_en=ca283e6608cd643964b3725448a4603c sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>sortsupport</function></entry>
+       <entry>provide a sort comparator to be used in fast index builds
+        (optional)</entry>
+       <entry>11</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>sortsupport</function></entry>
+       <entry>提供一个用于快速索引构建的排序比较器
+        （可选）</entry>
+       <entry>11</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=ca283e6608cd643964b3725448a4603c -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=88b6aeab1fca7fd0f44a8eb1948f3105 sig_cn_org=None source=14.1 
+  <para>
+   SP-GiST indexes have six support functions, one of which is optional, as
+   shown in <xref linkend="xindex-spgist-support-table"/>.
+   (For more information see <xref linkend="spgist"/>.)
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="xindex-spgist-support-table"/>所示，SP-GiST 索引有六个支持函数,其中一个是可选的（详见<xref linkend="spgist"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=88b6aeab1fca7fd0f44a8eb1948f3105 -->
+
+   <table tocentry="1" id="xindex-spgist-support-table">
+<!-- pgdoc-cn_start sig_en=d1786bd49fbb5116df7650cc1a6bc227 sig_cn_org=None source=14.1 
+    <title>SP-GiST Support Functions</title>
+________________________________________________________-->
+    <title>SP-GiST 支持函数</title>
+<!-- pgdoc-cn_end sig_en=d1786bd49fbb5116df7650cc1a6bc227 -->
+    <tgroup cols="3">
+     <colspec colname="col1" colwidth="2*"/>
+     <colspec colname="col2" colwidth="3*"/>
+     <colspec colname="col3" colwidth="1*"/>
+     <thead>
+<!-- pgdoc-cn_start sig_en=d281c5017a7cbd1baee0d6a05c47ba3d sig_cn_org=None source=14.1 
+      <row>
+       <entry>Function</entry>
+       <entry>Description</entry>
+       <entry>Support Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>函数</entry>
+       <entry>描述</entry>
+       <entry>支持号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=d281c5017a7cbd1baee0d6a05c47ba3d -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=75b8567ca46d8c22a70f971fc6eacfbf sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>config</function></entry>
+       <entry>provide basic information about the operator class</entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>config</function></entry>
+       <entry>提供有关该操作符类的基本信息</entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=75b8567ca46d8c22a70f971fc6eacfbf -->
+<!-- pgdoc-cn_start sig_en=1e8b22a2386f5c0f1abb0a0aa188fd07 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>choose</function></entry>
+       <entry>determine how to insert a new value into an inner tuple</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>choose</function></entry>
+       <entry>判断如何把一个新值插入到一个内元组中</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=1e8b22a2386f5c0f1abb0a0aa188fd07 -->
+<!-- pgdoc-cn_start sig_en=6140514233278c83e2e68eef23094e29 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>picksplit</function></entry>
+       <entry>determine how to partition a set of values</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>picksplit</function></entry>
+       <entry>判断如何划分一组值</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=6140514233278c83e2e68eef23094e29 -->
+<!-- pgdoc-cn_start sig_en=ff68a1b9489672e757ff90665bca5818 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>inner_consistent</function></entry>
+       <entry>determine which sub-partitions need to be searched for a
+        query</entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>inner_consistent</function></entry>
+       <entry>判断对于一个查询需要搜索哪一个子划分</entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=ff68a1b9489672e757ff90665bca5818 -->
+<!-- pgdoc-cn_start sig_en=3c02da952784d67d5704ce0e728d43e0 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>leaf_consistent</function></entry>
+       <entry>determine whether key satisfies the
+        query qualifier</entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>leaf_consistent</function></entry>
+       <entry>判断键是否满足查询修饰语</entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=3c02da952784d67d5704ce0e728d43e0 -->
+<!-- pgdoc-cn_start sig_en=a7ecdd77c5ac6abe1f1159351b6e4bd4 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>options</function></entry>
+       <entry>define options that are specific to this operator class
+        (optional)</entry>
+       <entry>6</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>options</function></entry>
+       <entry>定义特定于此运算符类的选项
+       （可选）</entry>
+       <entry>6</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=a7ecdd77c5ac6abe1f1159351b6e4bd4 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=50bf0ce81008433f57f05e8f82b9fe56 sig_cn_org=None source=14.1 
+  <para>
+   GIN indexes have seven support functions, four of which are optional,
+   as shown in <xref linkend="xindex-gin-support-table"/>.
+   (For more information see <xref linkend="gin"/>.)
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="xindex-gin-support-table"/>所示，GIN 索引有七个支持函数，其中四个是可选的（详见<xref linkend="gin"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=50bf0ce81008433f57f05e8f82b9fe56 -->
+
+   <table tocentry="1" id="xindex-gin-support-table">
+<!-- pgdoc-cn_start sig_en=ce457f68263eddcb1e012f7e3fbe07c2 sig_cn_org=None source=14.1 
+    <title>GIN Support Functions</title>
+________________________________________________________-->
+    <title>GIN 支持函数</title>
+<!-- pgdoc-cn_end sig_en=ce457f68263eddcb1e012f7e3fbe07c2 -->
+    <tgroup cols="3">
+     <colspec colname="col1" colwidth="2*"/>
+     <colspec colname="col2" colwidth="3*"/>
+     <colspec colname="col3" colwidth="1*"/>
+     <thead>
+<!-- pgdoc-cn_start sig_en=d281c5017a7cbd1baee0d6a05c47ba3d sig_cn_org=None source=14.1 
+      <row>
+       <entry>Function</entry>
+       <entry>Description</entry>
+       <entry>Support Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>函数</entry>
+       <entry>描述</entry>
+       <entry>支持号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=d281c5017a7cbd1baee0d6a05c47ba3d -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=fbc3827598bb99169542e28d007fa541 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>compare</function></entry>
+       <entry>
+        compare two keys and return an integer less than zero, zero,
+        or greater than zero, indicating whether the first key is less than,
+        equal to, or greater than the second
+       </entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>compare</function></entry>
+       <entry>
+        比较两个键并且返回一个小于零、等于零或大于零的整数，它表示第一个键小于、等于或者大于第二个键
+       </entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=fbc3827598bb99169542e28d007fa541 -->
+<!-- pgdoc-cn_start sig_en=c9a8548755d10c5d9da14bcc6f7128da sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>extractValue</function></entry>
+       <entry>extract keys from a value to be indexed</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>extractValue</function></entry>
+       <entry>从一个要被索引的值中抽取键</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=c9a8548755d10c5d9da14bcc6f7128da -->
+<!-- pgdoc-cn_start sig_en=070f1f8431d863b0b0b7ceff6fb41a19 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>extractQuery</function></entry>
+       <entry>extract keys from a query condition</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>extractQuery</function></entry>
+       <entry>从一个查询条件中抽取键</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=070f1f8431d863b0b0b7ceff6fb41a19 -->
+<!-- pgdoc-cn_start sig_en=5e9661193a9e767d34cbd5531454291c sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>consistent</function></entry>
+       <entry>
+        determine whether value matches query condition (Boolean variant)
+        (optional if support function 6 is present)
+       </entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>consistent</function></entry>
+       <entry>
+        判断值是否匹配查询条件（布尔变体）（如果支持函数 6 存在则是可选的）
+       </entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5e9661193a9e767d34cbd5531454291c -->
+<!-- pgdoc-cn_start sig_en=2672484433fc041f628e8eb4806238fb sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>comparePartial</function></entry>
+       <entry>
+        compare partial key from
+        query and key from index, and return an integer less than zero, zero,
+        or greater than zero, indicating whether GIN should ignore this index
+        entry, treat the entry as a match, or stop the index scan (optional)
+       </entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>comparePartial</function></entry>
+       <entry>
+        比较来自查询的部分键和来自索引的键，并且返回一个小于零、等于零或大于零的整数，表示 GIN 是否应该忽略该索引项、把该项当做一个匹配或者停止索引扫描（可选）
+       </entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=2672484433fc041f628e8eb4806238fb -->
+<!-- pgdoc-cn_start sig_en=64b442d017949b7786d8726cbe65f436 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>triConsistent</function></entry>
+       <entry>
+        determine whether value matches query condition (ternary variant)
+        (optional if support function 4 is present)
+       </entry>
+       <entry>6</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>triConsistent</function></entry>
+       <entry>
+        判断值是否匹配查询条件（三元变体）（如果支持函数 4 存在则是可选的）
+       </entry>
+       <entry>6</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=64b442d017949b7786d8726cbe65f436 -->
+<!-- pgdoc-cn_start sig_en=757b7315407c276dcdc14619dc97fa37 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>options</function></entry>
+       <entry>
+        define options that are specific to this operator class
+        (optional)
+       </entry>
+       <entry>7</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>options</function></entry>
+       <entry>
+        定义特定于此运算符类的选项（可选）
+       </entry>
+       <entry>7</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=757b7315407c276dcdc14619dc97fa37 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=506c46ebfffadbc4becc2a04a85127a7 sig_cn_org=None source=14.1 
+  <para>
+   BRIN indexes have five basic support functions, one of which is optional,
+   as shown in <xref linkend="xindex-brin-support-table"/>.  Some versions of
+   the basic functions require additional support functions to be provided.
+   (For more information see <xref linkend="brin-extensibility"/>.)
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="xindex-brin-support-table"/>中所示，BRIN 索引具有五个基本的支持函数，其中一个可选。
+   某些版本的基本功能需要提供额外的支持函数（更多信息请见<xref linkend="brin-extensibility"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=506c46ebfffadbc4becc2a04a85127a7 -->
+
+   <table tocentry="1" id="xindex-brin-support-table">
+<!-- pgdoc-cn_start sig_en=796f781a1275f91ed321f28fb3608580 sig_cn_org=None source=14.1 
+    <title>BRIN Support Functions</title>
+________________________________________________________-->
+    <title>BRIN 支持函数</title>
+<!-- pgdoc-cn_end sig_en=796f781a1275f91ed321f28fb3608580 -->
+    <tgroup cols="3">
+     <colspec colname="col1" colwidth="2*"/>
+     <colspec colname="col2" colwidth="3*"/>
+     <colspec colname="col3" colwidth="1*"/>
+     <thead>
+<!-- pgdoc-cn_start sig_en=d281c5017a7cbd1baee0d6a05c47ba3d sig_cn_org=None source=14.1 
+      <row>
+       <entry>Function</entry>
+       <entry>Description</entry>
+       <entry>Support Number</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry>函数</entry>
+       <entry>描述</entry>
+       <entry>支持号</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=d281c5017a7cbd1baee0d6a05c47ba3d -->
+     </thead>
+     <tbody>
+<!-- pgdoc-cn_start sig_en=5a3d9d2fcad2d1c9b3aa947d3e4c1501 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>opcInfo</function></entry>
+       <entry>
+        return internal information describing the indexed columns'
+        summary data
+       </entry>
+       <entry>1</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>opcInfo</function></entry>
+       <entry>
+        返回描述被索引列的摘要数据的内部信息
+       </entry>
+       <entry>1</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5a3d9d2fcad2d1c9b3aa947d3e4c1501 -->
+<!-- pgdoc-cn_start sig_en=bf65f7d2abccade6652a804ba6123de6 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>add_value</function></entry>
+       <entry>add a new value to an existing summary index tuple</entry>
+       <entry>2</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>add_value</function></entry>
+       <entry>向一个现有的摘要索引元组增加一个新值</entry>
+       <entry>2</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=bf65f7d2abccade6652a804ba6123de6 -->
+<!-- pgdoc-cn_start sig_en=5249322054f24026afb1878485be252a sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>consistent</function></entry>
+       <entry>determine whether value matches query condition</entry>
+       <entry>3</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>consistent</function></entry>
+       <entry>判断值是否匹配查询条件</entry>
+       <entry>3</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5249322054f24026afb1878485be252a -->
+<!-- pgdoc-cn_start sig_en=1a088591122eee45592014c875da4216 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>union</function></entry>
+       <entry>
+        compute union of two summary tuples
+       </entry>
+       <entry>4</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>union</function></entry>
+       <entry>
+        计算两个摘要元组的联合
+       </entry>
+       <entry>4</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=1a088591122eee45592014c875da4216 -->
+<!-- pgdoc-cn_start sig_en=3c21cbe47d5b75e10cb476b5d97ee759 sig_cn_org=None source=14.1 
+      <row>
+       <entry><function>options</function></entry>
+       <entry>
+        define options that are specific to this operator class
+        (optional)
+       </entry>
+       <entry>5</entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry><function>options</function></entry>
+       <entry>
+        定义特定于此运算符类的选项（可选）
+       </entry>
+       <entry>5</entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=3c21cbe47d5b75e10cb476b5d97ee759 -->
+     </tbody>
+    </tgroup>
+   </table>
+
+<!-- pgdoc-cn_start sig_en=0c7af2ee00e9c0133bd211b0445a64f3 sig_cn_org=None source=14.1 
+  <para>
+   Unlike search operators, support functions return whichever data
+   type the particular index method expects; for example in the case
+   of the comparison function for B-trees, a signed integer.  The number
+   and types of the arguments to each support function are likewise
+   dependent on the index method.  For B-tree and hash the comparison and
+   hashing support functions take the same input data types as do the
+   operators included in the operator class, but this is not the case for
+   most GiST, SP-GiST, GIN, and BRIN support functions.
+  </para>
+________________________________________________________-->
+  <para>
+   和搜索操作符不同，支持函数返回特定索引方法所期望的数据类型，例如在 B 树的比较函数中是一个有符号整数。每个支持函数的参数数量和类型也取决于索引方法。对于 B 树和哈希，比较和哈希支持函数和包括在操作符类中的操作符接收一样的输入数据类型，但是大部分 GiST、SP-GiST、GIN 和 BRIN 支持函数则不是这样。
+  </para>
+<!-- pgdoc-cn_end sig_en=0c7af2ee00e9c0133bd211b0445a64f3 -->
+ </sect2>
+
+ <sect2 id="xindex-example">
+<!-- pgdoc-cn_start sig_en=a35864e3511673e4d546a52e3881b952 sig_cn_org=None source=14.1 
+  <title>An Example</title>
+________________________________________________________-->
+  <title>一个例子</title>
+<!-- pgdoc-cn_end sig_en=a35864e3511673e4d546a52e3881b952 -->
+
+<!-- pgdoc-cn_start sig_en=04fd2df047479135cd1225ddff9a0d47 sig_cn_org=None source=14.1 
+  <para>
+   Now that we have seen the ideas, here is the promised example of
+   creating a new operator class.
+   (You can find a working copy of this example in
+   <filename>src/tutorial/complex.c</filename> and
+   <filename>src/tutorial/complex.sql</filename> in the source
+   distribution.)
+   The operator class encapsulates
+   operators that sort complex numbers in absolute value order, so we
+   choose the name <literal>complex_abs_ops</literal>.  First, we need
+   a set of operators.  The procedure for defining operators was
+   discussed in <xref linkend="xoper"/>.  For an operator class on
+   B-trees, the operators we require are:
+
+   <itemizedlist spacing="compact">
+    <listitem><simpara>absolute-value less-than (strategy 1)</simpara></listitem>
+    <listitem><simpara>absolute-value less-than-or-equal (strategy 2)</simpara></listitem>
+    <listitem><simpara>absolute-value equal (strategy 3)</simpara></listitem>
+    <listitem><simpara>absolute-value greater-than-or-equal (strategy 4)</simpara></listitem>
+    <listitem><simpara>absolute-value greater-than (strategy 5)</simpara></listitem>
+   </itemizedlist>
+  </para>
+________________________________________________________-->
+  <para>
+   现在我们已经看过了基本思想，这里是创建一个新操作符类的例子（可以在源代码的<filename>src/tutorial/complex.c</filename>和<filename>src/tutorial/complex.sql</filename>中找到这个例子）。该操作符类封装了以绝对值顺序排序复数的操作符，因此我们为它取名为<literal>complex_abs_ops</literal>。首先，我们需要一个操作符集合。定义操作符的过程已经在<xref linkend="xoper"/>中讨论过。对于一个 B-树上的操作符类，我们需要的操作符有：
+
+   <itemizedlist spacing="compact">
+    <listitem><simpara>绝对值小于（策略 1）</simpara></listitem>
+    <listitem><simpara>绝对值小于等于（策略 2）</simpara></listitem>
+    <listitem><simpara>绝对值等于（策略 3）</simpara></listitem>
+    <listitem><simpara>绝对值大于等于（策略 4）</simpara></listitem>
+    <listitem><simpara>绝对值大于（策略 5）</simpara></listitem>
+   </itemizedlist>
+  </para>
+<!-- pgdoc-cn_end sig_en=04fd2df047479135cd1225ddff9a0d47 -->
+
+<!-- pgdoc-cn_start sig_en=d90f123f806e7ab0f13d7df8cb32f4d3 sig_cn_org=None source=14.1 
+  <para>
+   The least error-prone way to define a related set of comparison operators
+   is to write the B-tree comparison support function first, and then write the
+   other functions as one-line wrappers around the support function.  This
+   reduces the odds of getting inconsistent results for corner cases.
+   Following this approach, we first write:
+
+<programlisting><![CDATA[
+#define Mag(c)  ((c)->x*(c)->x + (c)->y*(c)->y)
+
+static int
+complex_abs_cmp_internal(Complex *a, Complex *b)
+{
+    double      amag = Mag(a),
+                bmag = Mag(b);
+
+    if (amag < bmag)
+        return -1;
+    if (amag > bmag)
+        return 1;
+    return 0;
+}
+]]>
+</programlisting>
+
+   Now the less-than function looks like:
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_abs_lt);
+
+Datum
+complex_abs_lt(PG_FUNCTION_ARGS)
+{
+    Complex    *a = (Complex *) PG_GETARG_POINTER(0);
+    Complex    *b = (Complex *) PG_GETARG_POINTER(1);
+
+    PG_RETURN_BOOL(complex_abs_cmp_internal(a, b) < 0);
+}
+]]>
+</programlisting>
+
+   The other four functions differ only in how they compare the internal
+   function's result to zero.
+  </para>
+________________________________________________________-->
+  <para>
+   定义一个比较操作符的相关集合最不容易出错的方式是，先编写 B-树比较支持函数，然后编写该支持函数的包装器函数。这降低了极端情况下得到不一致结果的几率。遵照这种方法，我们首先编写：
+
+<programlisting><![CDATA[
+#define Mag(c)  ((c)->x*(c)->x + (c)->y*(c)->y)
+
+static int
+complex_abs_cmp_internal(Complex *a, Complex *b)
+{
+    double      amag = Mag(a),
+                bmag = Mag(b);
+
+    if (amag < bmag)
+        return -1;
+    if (amag > bmag)
+        return 1;
+    return 0;
+}
+]]>
+</programlisting>
+
+   现在小于函数看起来像这样：
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_abs_lt);
+
+Datum
+complex_abs_lt(PG_FUNCTION_ARGS)
+{
+    Complex    *a = (Complex *) PG_GETARG_POINTER(0);
+    Complex    *b = (Complex *) PG_GETARG_POINTER(1);
+
+    PG_RETURN_BOOL(complex_abs_cmp_internal(a, b) < 0);
+}
+]]>
+</programlisting>
+
+   其他四个函数的区别只在于它们如何比较内部函数的结果与 0。
+  </para>
+<!-- pgdoc-cn_end sig_en=d90f123f806e7ab0f13d7df8cb32f4d3 -->
+
+<!-- pgdoc-cn_start sig_en=c825ba7e01fb5d2e206b1e5d054cd107 sig_cn_org=None source=14.1 
+  <para>
+   Next we declare the functions and the operators based on the functions
+   to SQL:
+
+<programlisting>
+CREATE FUNCTION complex_abs_lt(complex, complex) RETURNS bool
+    AS '<replaceable>filename</replaceable>', 'complex_abs_lt'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE OPERATOR &lt; (
+   leftarg = complex, rightarg = complex, procedure = complex_abs_lt,
+   commutator = &gt; , negator = &gt;= ,
+   restrict = scalarltsel, join = scalarltjoinsel
+);
+</programlisting>
+   It is important to specify the correct commutator and negator operators,
+   as well as suitable restriction and join selectivity
+   functions, otherwise the optimizer will be unable to make effective
+   use of the index.
+  </para>
+________________________________________________________-->
+  <para>
+   接下来我们基于这些函数声明 SQL 的函数和操作符：
+
+<programlisting>
+CREATE FUNCTION complex_abs_lt(complex, complex) RETURNS bool
+    AS '<replaceable>filename</replaceable>', 'complex_abs_lt'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE OPERATOR &lt; (
+   leftarg = complex, rightarg = complex, procedure = complex_abs_lt,
+   commutator = &gt; , negator = &gt;= ,
+   restrict = scalarltsel, join = scalarltjoinsel
+);
+</programlisting>
+   指定正确的交换子和求反器操作符很重要，合适的限制和连接选择度函数也是一样，否则优化器将无法有效地利用索引。
+  </para>
+<!-- pgdoc-cn_end sig_en=c825ba7e01fb5d2e206b1e5d054cd107 -->
+
+<!-- pgdoc-cn_start sig_en=44cf24f5cd2b5cff2be639ba4d5b5536 sig_cn_org=None source=14.1 
+  <para>
+   Other things worth noting are happening here:
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     There can only be one operator named, say, <literal>=</literal>
+     and taking type <type>complex</type> for both operands.  In this
+     case we don't have any other operator <literal>=</literal> for
+     <type>complex</type>, but if we were building a practical data
+     type we'd probably want <literal>=</literal> to be the ordinary
+     equality operation for complex numbers (and not the equality of
+     the absolute values).  In that case, we'd need to use some other
+     operator name for <function>complex_abs_eq</function>.
+    </para>
+   </listitem>
+
+   <listitem>
+    <para>
+     Although <productname>PostgreSQL</productname> can cope with
+     functions having the same SQL name as long as they have different
+     argument data types, C can only cope with one global function
+     having a given name.  So we shouldn't name the C function
+     something simple like <filename>abs_eq</filename>.  Usually it's
+     a good practice to include the data type name in the C function
+     name, so as not to conflict with functions for other data types.
+    </para>
+   </listitem>
+
+   <listitem>
+    <para>
+     We could have made the SQL name
+     of the function <filename>abs_eq</filename>, relying on
+     <productname>PostgreSQL</productname> to distinguish it by
+     argument data types from any other SQL function of the same name.
+     To keep the example simple, we make the function have the same
+     names at the C level and SQL level.
+    </para>
+   </listitem>
+  </itemizedlist>
+  </para>
+________________________________________________________-->
+  <para>
+   其他值得注意的事情：
+
+  <itemizedlist>
+   <listitem>
+    <para>
+     只能有一个操作符被命名为<literal>=</literal>且两个操作数都为类型<type>complex</type>。在这种要求下，我们对于<type>complex</type>没有任何其他操作符<literal>=</literal>。但是如果我们是在构建一种实际的数据类型，我们可能想让<literal>=</literal>成为复数的普通等值操作（不是绝对值的相等）。这样，我们需要为<function>complex_abs_eq</function>使用某种其他的操作符名称。
+    </para>
+   </listitem>
+
+   <listitem>
+    <para>
+     尽管<productname>PostgreSQL</productname>能够处理具有相同 SQL 名称的函数（只要它们具有不同的参数数据类型），但 C 只能处理具有给定名称一个全局函数。因此，我们不能简单地把 C 函数命名为<filename>abs_eq</filename>之类的东西。通常，在 C 函数名中包括数据类型的名称是一种好习惯，这样就不会与其他数据类型的函数发生冲突。
+    </para>
+   </listitem>
+
+   <listitem>
+    <para>
+     我们可以让函数也具有<filename>abs_eq</filename>这样的 SQL 名称，而依靠<productname>PostgreSQL</productname>通过参数数据类型来区分它和其他同名 SQL 函数。为了保持例子的简洁，我们这里让 C 级别和 SQL 级别的函数具有相同的名称。
+    </para>
+   </listitem>
+  </itemizedlist>
+  </para>
+<!-- pgdoc-cn_end sig_en=44cf24f5cd2b5cff2be639ba4d5b5536 -->
+
+<!-- pgdoc-cn_start sig_en=fdf1d8c3a0fcf9bdd7da0c008e09d6b7 sig_cn_org=None source=14.1 
+  <para>
+   The next step is the registration of the support routine required
+   by B-trees.  The example C code that implements this is in the same
+   file that contains the operator functions.  This is how we declare
+   the function:
+
+<programlisting>
+CREATE FUNCTION complex_abs_cmp(complex, complex)
+    RETURNS integer
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C IMMUTABLE STRICT;
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   下一步是注册 B-树所要求的支持例程。实现支持例程的 C 代码例子在包含操作符函数的同一文件中。我们这样来声明该函数：
+
+<programlisting>
+CREATE FUNCTION complex_abs_cmp(complex, complex)
+    RETURNS integer
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C IMMUTABLE STRICT;
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=fdf1d8c3a0fcf9bdd7da0c008e09d6b7 -->
+
+<!-- pgdoc-cn_start sig_en=47e03c58d6640c8510d10318315e0d88 sig_cn_org=None source=14.1 
+  <para>
+   Now that we have the required operators and support routine,
+   we can finally create the operator class:
+
+<programlisting><![CDATA[
+CREATE OPERATOR CLASS complex_abs_ops
+    DEFAULT FOR TYPE complex USING btree AS
+        OPERATOR        1       < ,
+        OPERATOR        2       <= ,
+        OPERATOR        3       = ,
+        OPERATOR        4       >= ,
+        OPERATOR        5       > ,
+        FUNCTION        1       complex_abs_cmp(complex, complex);
+]]>
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   现在我们已经有了所需的操作符和支持例程，就可以最终创建操作符类：
+
+<programlisting><![CDATA[
+CREATE OPERATOR CLASS complex_abs_ops
+    DEFAULT FOR TYPE complex USING btree AS
+        OPERATOR        1       < ,
+        OPERATOR        2       <= ,
+        OPERATOR        3       = ,
+        OPERATOR        4       >= ,
+        OPERATOR        5       > ,
+        FUNCTION        1       complex_abs_cmp(complex, complex);
+]]>
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=47e03c58d6640c8510d10318315e0d88 -->
+
+<!-- pgdoc-cn_start sig_en=d143fe4c69da6ace03b5573299368c32 sig_cn_org=None source=14.1 
+  <para>
+   And we're done!  It should now be possible to create
+   and use B-tree indexes on <type>complex</type> columns.
+  </para>
+________________________________________________________-->
+  <para>
+   做好了！现在应该可以在<type>complex</type>列上创建并且使用 B-树索引了。
+  </para>
+<!-- pgdoc-cn_end sig_en=d143fe4c69da6ace03b5573299368c32 -->
+
+<!-- pgdoc-cn_start sig_en=1b62f177e34e04370230dfbd2a755530 sig_cn_org=None source=14.1 
+  <para>
+   We could have written the operator entries more verbosely, as in:
+<programlisting>
+        OPERATOR        1       &lt; (complex, complex) ,
+</programlisting>
+   but there is no need to do so when the operators take the same data type
+   we are defining the operator class for.
+  </para>
+________________________________________________________-->
+  <para>
+   我们可以把操作符项写得更繁琐，像这样：
+<programlisting>
+        OPERATOR        1       &lt; (complex, complex) ,
+</programlisting>
+   但是当操作符操作的数据类型和正在定义的操作符类所服务的数据类型相同时可以不用这么做。
+  </para>
+<!-- pgdoc-cn_end sig_en=1b62f177e34e04370230dfbd2a755530 -->
+
+<!-- pgdoc-cn_start sig_en=2fea9eb1d2d5040c01c152e819787adf sig_cn_org=None source=14.1 
+  <para>
+   The above example assumes that you want to make this new operator class the
+   default B-tree operator class for the <type>complex</type> data type.
+   If you don't, just leave out the word <literal>DEFAULT</literal>.
+  </para>
+________________________________________________________-->
+  <para>
+   上述例子假定这个新操作符类是<type>complex</type>数据类型的默认 B-树操作符类。如果不是这样，只需要省去关键词<literal>DEFAULT</literal>。
+  </para>
+<!-- pgdoc-cn_end sig_en=2fea9eb1d2d5040c01c152e819787adf -->
+ </sect2>
+
+ <sect2 id="xindex-opfamily">
+<!-- pgdoc-cn_start sig_en=d4091ac1692fe193061bb0dfedc30da9 sig_cn_org=None source=14.1 
+  <title>Operator Classes and Operator Families</title>
+________________________________________________________-->
+  <title>操作符类和操作符族</title>
+<!-- pgdoc-cn_end sig_en=d4091ac1692fe193061bb0dfedc30da9 -->
+
+<!-- pgdoc-cn_start sig_en=eec3fa1599d04007be5b7a9eb7a9e4a5 sig_cn_org=None source=14.1 
+  <para>
+   So far we have implicitly assumed that an operator class deals with
+   only one data type.  While there certainly can be only one data type in
+   a particular index column, it is often useful to index operations that
+   compare an indexed column to a value of a different data type.  Also,
+   if there is use for a cross-data-type operator in connection with an
+   operator class, it is often the case that the other data type has a
+   related operator class of its own.  It is helpful to make the connections
+   between related classes explicit, because this can aid the planner in
+   optimizing SQL queries (particularly for B-tree operator classes, since
+   the planner contains a great deal of knowledge about how to work with them).
+  </para>
+________________________________________________________-->
+  <para>
+   到目前为止，我们暗地里假设一个操作符类只处理一种数据类型。虽然在一个特定的索引列中必定只有一种数据类型，但是把被索引列与一种不同数据类型的值比较的索引操作通常也很有用。还有，如果与一种操作符类相关的扩数据类型操作符有用，通常情况是其他数据类型也有其自身相关的操作符类。在相关的类之间建立起明确的联系会很有用，因为这可以帮助规划器进行 SQL 查询优化（尤其是对于 B-树操作符类，因为规划器包含了大量有关如何使用它们的知识）。
+  </para>
+<!-- pgdoc-cn_end sig_en=eec3fa1599d04007be5b7a9eb7a9e4a5 -->
+
+<!-- pgdoc-cn_start sig_en=30393d3ccab7512c618ee0dee786d0ce sig_cn_org=None source=14.1 
+  <para>
+   To handle these needs, <productname>PostgreSQL</productname>
+   uses the concept of an <firstterm>operator
+   family</firstterm><indexterm><primary>operator family</primary></indexterm>.
+   An operator family contains one or more operator classes, and can also
+   contain indexable operators and corresponding support functions that
+   belong to the family as a whole but not to any single class within the
+   family.  We say that such operators and functions are <quote>loose</quote>
+   within the family, as opposed to being bound into a specific class.
+   Typically each operator class contains single-data-type operators
+   while cross-data-type operators are loose in the family.
+  </para>
+________________________________________________________-->
+  <para>
+   为了处理这些需求，<productname>PostgreSQL</productname>使用了<firstterm>操作符族</firstterm>的概念<indexterm><primary>operator family</primary></indexterm>。一个操作符族包含一个或者多个操作符类，并且也能包含属于该族整体而不属于该族中任何单一类的可索引操作符和相应的支持函数。我们说这样的操作符和函数是<quote>松散地</quote>存在于该族中，而不是被绑定在一个特定的类中。通常每个操作符类包含单一数据类型的操作符，而跨数据类型操作符则松散地存在于操作符族中。
+  </para>
+<!-- pgdoc-cn_end sig_en=30393d3ccab7512c618ee0dee786d0ce -->
+
+<!-- pgdoc-cn_start sig_en=2134e0e13b32cc02354d4f39008058d1 sig_cn_org=None source=14.1 
+  <para>
+   All the operators and functions in an operator family must have compatible
+   semantics, where the compatibility requirements are set by the index
+   method.  You might therefore wonder why bother to single out particular
+   subsets of the family as operator classes; and indeed for many purposes
+   the class divisions are irrelevant and the family is the only interesting
+   grouping.  The reason for defining operator classes is that they specify
+   how much of the family is needed to support any particular index.
+   If there is an index using an operator class, then that operator class
+   cannot be dropped without dropping the index &mdash; but other parts of
+   the operator family, namely other operator classes and loose operators,
+   could be dropped.  Thus, an operator class should be specified to contain
+   the minimum set of operators and functions that are reasonably needed
+   to work with an index on a specific data type, and then related but
+   non-essential operators can be added as loose members of the operator
+   family.
+  </para>
+________________________________________________________-->
+  <para>
+   一个操作符族中的所有操作符和函数必须具有兼容的语义，其中的兼容性要求由索引方法设定。你可能因此而奇怪为什么要这么麻烦地把族的特定子集单另出来成为操作符类，并且实际上（由于很多原因）这种划分与操作符之间没有什么直接的关联，只有操作符族才是实际的分组。定义操作符类的原因是，它们指定了特定索引对操作符族的依赖程度。如果一个索引使用着一个操作符类，那么不删除该索引是不能删除该操作符类的 &mdash; 但是操作符族的其他部分（即其他操作符类和松散的操作符）可以被删除。因此，一个操作符类应该包含一个索引在特定数据类型上正常工作所需要的最小操作符和函数集合，而相关但不关键的操作符可以作为操作符族的松散成员被加入。
+  </para>
+<!-- pgdoc-cn_end sig_en=2134e0e13b32cc02354d4f39008058d1 -->
+
+<!-- pgdoc-cn_start sig_en=9031c1af5a3e11414e61ef9f32c3844b sig_cn_org=None source=14.1 
+  <para>
+   As an example, <productname>PostgreSQL</productname> has a built-in
+   B-tree operator family <literal>integer_ops</literal>, which includes operator
+   classes <literal>int8_ops</literal>, <literal>int4_ops</literal>, and
+   <literal>int2_ops</literal> for indexes on <type>bigint</type> (<type>int8</type>),
+   <type>integer</type> (<type>int4</type>), and <type>smallint</type> (<type>int2</type>)
+   columns respectively.  The family also contains cross-data-type comparison
+   operators allowing any two of these types to be compared, so that an index
+   on one of these types can be searched using a comparison value of another
+   type.  The family could be duplicated by these definitions:
+
+<programlisting><![CDATA[
+CREATE OPERATOR FAMILY integer_ops USING btree;
+
+CREATE OPERATOR CLASS int8_ops
+DEFAULT FOR TYPE int8 USING btree FAMILY integer_ops AS
+  -&minus; standard int8 comparisons
+  OPERATOR 1 < ,
+  OPERATOR 2 <= ,
+  OPERATOR 3 = ,
+  OPERATOR 4 >= ,
+  OPERATOR 5 > ,
+  FUNCTION 1 btint8cmp(int8, int8) ,
+  FUNCTION 2 btint8sortsupport(internal) ,
+  FUNCTION 3 in_range(int8, int8, int8, boolean, boolean) ,
+  FUNCTION 4 btequalimage(oid) ;
+
+CREATE OPERATOR CLASS int4_ops
+DEFAULT FOR TYPE int4 USING btree FAMILY integer_ops AS
+  -&minus; standard int4 comparisons
+  OPERATOR 1 < ,
+  OPERATOR 2 <= ,
+  OPERATOR 3 = ,
+  OPERATOR 4 >= ,
+  OPERATOR 5 > ,
+  FUNCTION 1 btint4cmp(int4, int4) ,
+  FUNCTION 2 btint4sortsupport(internal) ,
+  FUNCTION 3 in_range(int4, int4, int4, boolean, boolean) ,
+  FUNCTION 4 btequalimage(oid) ;
+
+CREATE OPERATOR CLASS int2_ops
+DEFAULT FOR TYPE int2 USING btree FAMILY integer_ops AS
+  -&minus; standard int2 comparisons
+  OPERATOR 1 < ,
+  OPERATOR 2 <= ,
+  OPERATOR 3 = ,
+  OPERATOR 4 >= ,
+  OPERATOR 5 > ,
+  FUNCTION 1 btint2cmp(int2, int2) ,
+  FUNCTION 2 btint2sortsupport(internal) ,
+  FUNCTION 3 in_range(int2, int2, int2, boolean, boolean) ,
+  FUNCTION 4 btequalimage(oid) ;
+
+ALTER OPERATOR FAMILY integer_ops USING btree ADD
+  -&minus; cross-type comparisons int8 vs int2
+  OPERATOR 1 < (int8, int2) ,
+  OPERATOR 2 <= (int8, int2) ,
+  OPERATOR 3 = (int8, int2) ,
+  OPERATOR 4 >= (int8, int2) ,
+  OPERATOR 5 > (int8, int2) ,
+  FUNCTION 1 btint82cmp(int8, int2) ,
+
+  -&minus; cross-type comparisons int8 vs int4
+  OPERATOR 1 < (int8, int4) ,
+  OPERATOR 2 <= (int8, int4) ,
+  OPERATOR 3 = (int8, int4) ,
+  OPERATOR 4 >= (int8, int4) ,
+  OPERATOR 5 > (int8, int4) ,
+  FUNCTION 1 btint84cmp(int8, int4) ,
+
+  -&minus; cross-type comparisons int4 vs int2
+  OPERATOR 1 < (int4, int2) ,
+  OPERATOR 2 <= (int4, int2) ,
+  OPERATOR 3 = (int4, int2) ,
+  OPERATOR 4 >= (int4, int2) ,
+  OPERATOR 5 > (int4, int2) ,
+  FUNCTION 1 btint42cmp(int4, int2) ,
+
+  -&minus; cross-type comparisons int4 vs int8
+  OPERATOR 1 < (int4, int8) ,
+  OPERATOR 2 <= (int4, int8) ,
+  OPERATOR 3 = (int4, int8) ,
+  OPERATOR 4 >= (int4, int8) ,
+  OPERATOR 5 > (int4, int8) ,
+  FUNCTION 1 btint48cmp(int4, int8) ,
+
+  -&minus; cross-type comparisons int2 vs int8
+  OPERATOR 1 < (int2, int8) ,
+  OPERATOR 2 <= (int2, int8) ,
+  OPERATOR 3 = (int2, int8) ,
+  OPERATOR 4 >= (int2, int8) ,
+  OPERATOR 5 > (int2, int8) ,
+  FUNCTION 1 btint28cmp(int2, int8) ,
+
+  -&minus; cross-type comparisons int2 vs int4
+  OPERATOR 1 < (int2, int4) ,
+  OPERATOR 2 <= (int2, int4) ,
+  OPERATOR 3 = (int2, int4) ,
+  OPERATOR 4 >= (int2, int4) ,
+  OPERATOR 5 > (int2, int4) ,
+  FUNCTION 1 btint24cmp(int2, int4) ,
+
+  -&minus; cross-type in_range functions
+  FUNCTION 3 in_range(int4, int4, int8, boolean, boolean) ,
+  FUNCTION 3 in_range(int4, int4, int2, boolean, boolean) ,
+  FUNCTION 3 in_range(int2, int2, int8, boolean, boolean) ,
+  FUNCTION 3 in_range(int2, int2, int4, boolean, boolean) ;
+]]>
+</programlisting>
+
+   Notice that this definition <quote>overloads</quote> the operator strategy and
+   support function numbers: each number occurs multiple times within the
+   family.  This is allowed so long as each instance of a
+   particular number has distinct input data types.  The instances that have
+   both input types equal to an operator class's input type are the
+   primary operators and support functions for that operator class,
+   and in most cases should be declared as part of the operator class rather
+   than as loose members of the family.
+  </para>
+________________________________________________________-->
+  <para>
+   例如，<productname>PostgreSQL</productname>有一个内建的 B-树操作符族<literal>integer_ops</literal>，它包括分别用于类型<type>bigint</type> (<type>int8</type>)、<type>integer</type> (<type>int4</type>)和<type>smallint</type> (<type>int2</type>)列上索引的操作符类<literal>int8_ops</literal>、<literal>int4_ops</literal>以及<literal>int2_ops</literal>。这个族也包含跨数据类型比较操作符，它们允许对这些类型中的任意两种进行比较，这样可以通过一种类型的比较值来搜索另一种类型之上的索引。这个族可以用这些定义来重现：
+
+<programlisting><![CDATA[
+CREATE OPERATOR FAMILY integer_ops USING btree;
+
+CREATE OPERATOR CLASS int8_ops
+DEFAULT FOR TYPE int8 USING btree FAMILY integer_ops AS
+  -- 标准 int8 比较
+  OPERATOR 1 < ,
+  OPERATOR 2 <= ,
+  OPERATOR 3 = ,
+  OPERATOR 4 >= ,
+  OPERATOR 5 > ,
+  FUNCTION 1 btint8cmp(int8, int8) ,
+  FUNCTION 2 btint8sortsupport(internal) ,
+  FUNCTION 3 in_range(int8, int8, int8, boolean, boolean) ,
+  FUNCTION 4 btequalimage(oid) ;
+
+CREATE OPERATOR CLASS int4_ops
+DEFAULT FOR TYPE int4 USING btree FAMILY integer_ops AS
+  -- 标准 int4 比较
+  OPERATOR 1 < ,
+  OPERATOR 2 <= ,
+  OPERATOR 3 = ,
+  OPERATOR 4 >= ,
+  OPERATOR 5 > ,
+  FUNCTION 1 btint4cmp(int4, int4) ,
+  FUNCTION 2 btint4sortsupport(internal) ,
+  FUNCTION 3 in_range(int4, int4, int4, boolean, boolean) ,
+  FUNCTION 4 btequalimage(oid) ;
+
+CREATE OPERATOR CLASS int2_ops
+DEFAULT FOR TYPE int2 USING btree FAMILY integer_ops AS
+  -- 标准 int2 比较
+  OPERATOR 1 < ,
+  OPERATOR 2 <= ,
+  OPERATOR 3 = ,
+  OPERATOR 4 >= ,
+  OPERATOR 5 > ,
+  FUNCTION 1 btint2cmp(int2, int2) ,
+  FUNCTION 2 btint2sortsupport(internal) ,
+  FUNCTION 3 in_range(int2, int2, int2, boolean, boolean) ,
+  FUNCTION 4 btequalimage(oid) ;
+
+ALTER OPERATOR FAMILY integer_ops USING btree ADD
+  -- 跨类型比较 int8 vs int2
+  OPERATOR 1 < (int8, int2) ,
+  OPERATOR 2 <= (int8, int2) ,
+  OPERATOR 3 = (int8, int2) ,
+  OPERATOR 4 >= (int8, int2) ,
+  OPERATOR 5 > (int8, int2) ,
+  FUNCTION 1 btint82cmp(int8, int2) ,
+
+  -- 跨类型比较 int8 vs int4
+  OPERATOR 1 < (int8, int4) ,
+  OPERATOR 2 <= (int8, int4) ,
+  OPERATOR 3 = (int8, int4) ,
+  OPERATOR 4 >= (int8, int4) ,
+  OPERATOR 5 > (int8, int4) ,
+  FUNCTION 1 btint84cmp(int8, int4) ,
+
+  -- 跨类型比较 int4 vs int2
+  OPERATOR 1 < (int4, int2) ,
+  OPERATOR 2 <= (int4, int2) ,
+  OPERATOR 3 = (int4, int2) ,
+  OPERATOR 4 >= (int4, int2) ,
+  OPERATOR 5 > (int4, int2) ,
+  FUNCTION 1 btint42cmp(int4, int2) ,
+
+  -- 跨类型比较 int4 vs int8
+  OPERATOR 1 < (int4, int8) ,
+  OPERATOR 2 <= (int4, int8) ,
+  OPERATOR 3 = (int4, int8) ,
+  OPERATOR 4 >= (int4, int8) ,
+  OPERATOR 5 > (int4, int8) ,
+  FUNCTION 1 btint48cmp(int4, int8) ,
+
+  -- 跨类型比较 int2 vs int8
+  OPERATOR 1 < (int2, int8) ,
+  OPERATOR 2 <= (int2, int8) ,
+  OPERATOR 3 = (int2, int8) ,
+  OPERATOR 4 >= (int2, int8) ,
+  OPERATOR 5 > (int2, int8) ,
+  FUNCTION 1 btint28cmp(int2, int8) ,
+
+  -- 跨类型比较 int2 vs int4
+  OPERATOR 1 < (int2, int4) ,
+  OPERATOR 2 <= (int2, int4) ,
+  OPERATOR 3 = (int2, int4) ,
+  OPERATOR 4 >= (int2, int4) ,
+  OPERATOR 5 > (int2, int4) ,
+  FUNCTION 1 btint24cmp(int2, int4) ,
+
+  -- 跨类型的in_range函数
+  FUNCTION 3 in_range(int4, int4, int8, boolean, boolean) ,
+  FUNCTION 3 in_range(int4, int4, int2, boolean, boolean) ,
+  FUNCTION 3 in_range(int2, int2, int8, boolean, boolean) ,
+  FUNCTION 3 in_range(int2, int2, int4, boolean, boolean) ;
+]]>
+</programlisting>
+
+   注意这种定义<quote>重载</quote>了操作符策略和支持函数号：每一个编号在该族中出现多次。只要一个特定编号的每一个实例都有可区分的输入数据类型，就允许这样做。输入类型等于操作符类输入类型的实例是该操作符类的主要操作符和支持函数，并且在大部分情况下应该被声明为该操作符类的一部分而不是作为操作符族的松散成员存在。
+  </para>
+<!-- pgdoc-cn_end sig_en=9031c1af5a3e11414e61ef9f32c3844b -->
+
+<!-- pgdoc-cn_start sig_en=76c40771e8a73d8c1b5413131fa4bf29 sig_cn_org=None source=14.1 
+  <para>
+   In a B-tree operator family, all the operators in the family must sort
+   compatibly, as is specified in detail in <xref linkend="btree-behavior"/>.
+   For each
+   operator in the family there must be a support function having the same
+   two input data types as the operator.  It is recommended that a family be
+   complete, i.e., for each combination of data types, all operators are
+   included.  Each operator class should include just the non-cross-type
+   operators and support function for its data type.
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="btree-behavior"/>中的细节所述，在一个 B-树操作符族中，所有该族中的操作符必须以兼容的方式排序。对该族中的每一个操作符都必须有一个与该操作符具有相同的两个输入数据类型的支持函数。我们推荐让操作符族保持完整，即对每一种数据类型的组合都应该包括所有的操作符。每个操作符类只应该包括非跨类型操作符和用于其数据类型的支持函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=76c40771e8a73d8c1b5413131fa4bf29 -->
+
+<!-- pgdoc-cn_start sig_en=3919939f02dbc5c81196ffc76f7ee8f6 sig_cn_org=None source=14.1 
+  <para>
+   To build a multiple-data-type hash operator family, compatible hash
+   support functions must be created for each data type supported by the
+   family.  Here compatibility means that the functions are guaranteed to
+   return the same hash code for any two values that are considered equal
+   by the family's equality operators, even when the values are of different
+   types.  This is usually difficult to accomplish when the types have
+   different physical representations, but it can be done in some cases.
+   Furthermore, casting a value from one data type represented in the operator
+   family to another data type also represented in the operator family via
+   an implicit or binary coercion cast must not change the computed hash value.
+   Notice that there is only one support function per data type, not one
+   per equality operator.  It is recommended that a family be complete, i.e.,
+   provide an equality operator for each combination of data types.
+   Each operator class should include just the non-cross-type equality
+   operator and the support function for its data type.
+  </para>
+________________________________________________________-->
+  <para>
+   为了构建一个多数据类型的哈希操作符族，必须为该族支持的每一种数据类型创建相兼容的哈希支持函数。这里的兼容性是指这些函数对于任意两个被该族中等值操作符认为相等的值会保证返回相同的哈希码，即便这些值具有不同的类型时也是如此。当这些类型具有不同的物理表示时，这通常难以实现，但是在某些情况下是可以做到的。此外，将该操作符族中一种数据类型的值通过隐式或者二进制强制造型转换成该族中另一种数据类型时，不应该改变所计算出的哈希值。注意每种数据类型只有一个支持函数，而不是每个等值操作符一个。我们推荐让操作符族保持完整，即对每一种数据类型的组合提供一个等值操作符。每个操作符类只应该包括非跨类型等值操作符和用于其数据类型的支持函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=3919939f02dbc5c81196ffc76f7ee8f6 -->
+
+<!-- pgdoc-cn_start sig_en=7efd8e6d783d4a49c7e5b5a2d1395bd6 sig_cn_org=None source=14.1 
+  <para>
+   GiST, SP-GiST, and GIN indexes do not have any explicit notion of
+   cross-data-type operations.  The set of operators supported is just
+   whatever the primary support functions for a given operator class can
+   handle.
+  </para>
+________________________________________________________-->
+  <para>
+   GiST、SP-GiST 和 GIN 索引没有任何明显的跨数据类型操作的概念。它们所支持的操作符集合就是一个给定操作符类能够处理的主要支持函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=7efd8e6d783d4a49c7e5b5a2d1395bd6 -->
+
+<!-- pgdoc-cn_start sig_en=5d2a31ad78219d38e1bbfcf0b06d8036 sig_cn_org=None source=14.1 
+  <para>
+   In BRIN, the requirements depends on the framework that provides the
+   operator classes.  For operator classes based on <literal>minmax</literal>,
+   the behavior required is the same as for B-tree operator families:
+   all the operators in the family must sort compatibly, and casts must
+   not change the associated sort ordering.
+  </para>
+________________________________________________________-->
+  <para>
+   在 BRIN 中，需求取决于提供操作符类的框架。对于基于<literal>minmax</literal>的操作符类，必要的行为和 B-树操作符族相同：族中的所有操作符必须以兼容的方式排序，并且转换不能改变相关的排序顺序。
+  </para>
+<!-- pgdoc-cn_end sig_en=5d2a31ad78219d38e1bbfcf0b06d8036 -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=9a85f15a1a7bffbdcdf9dd41a8c5abe6 sig_cn_org=None source=14.1 
+   <para>
+    Prior to <productname>PostgreSQL</productname> 8.3, there was no concept
+    of operator families, and so any cross-data-type operators intended to be
+    used with an index had to be bound directly into the index's operator
+    class.  While this approach still works, it is deprecated because it
+    makes an index's dependencies too broad, and because the planner can
+    handle cross-data-type comparisons more effectively when both data types
+    have operators in the same operator family.
+   </para>
+________________________________________________________-->
+   <para>
+    在<productname>PostgreSQL</productname> 8.3 之前，没有操作符族的概念，并且因此要在索引中使用的任何跨数据类型操作符必须被直接绑定到该索引的操作符类中。虽然这种方法仍然有效，但是已被废弃，因为它会让索引的依赖过于广泛，还因为当两种数据类型都在同一操作符族中有操作符时规划器可以更有效地处理跨数据类型比较。
+   </para>
+<!-- pgdoc-cn_end sig_en=9a85f15a1a7bffbdcdf9dd41a8c5abe6 -->
+  </note>
+ </sect2>
+
+ <sect2 id="xindex-opclass-dependencies">
+<!-- pgdoc-cn_start sig_en=8490777da301c1e452b7bd1096649dbd sig_cn_org=None source=14.1 
+  <title>System Dependencies on Operator Classes</title>
+________________________________________________________-->
+  <title>操作符类上的系统依赖</title>
+<!-- pgdoc-cn_end sig_en=8490777da301c1e452b7bd1096649dbd -->
+
+<!-- pgdoc-cn_start sig_en=f81ffb63110ce0c7ac65723b410b43ae sig_cn_org=None source=14.1 
+   <indexterm>
+    <primary>ordering operator</primary>
+   </indexterm>
+________________________________________________________-->
+   <indexterm>
+    <primary>ordering operator</primary>
+   </indexterm>
+<!-- pgdoc-cn_end sig_en=f81ffb63110ce0c7ac65723b410b43ae -->
+
+<!-- pgdoc-cn_start sig_en=38e23ea6a1b14725cbd1cb8b2092ca03 sig_cn_org=None source=14.1 
+  <para>
+   <productname>PostgreSQL</productname> uses operator classes to infer the
+   properties of operators in more ways than just whether they can be used
+   with indexes.  Therefore, you might want to create operator classes
+   even if you have no intention of indexing any columns of your data type.
+  </para>
+________________________________________________________-->
+  <para>
+   <productname>PostgreSQL</productname>使用操作符类来以更多方式推断操作符的属性，而不仅仅是它们是否能被用于索引。因此，即便不准备对你的数据类型的列建立索引，也可能想要创建操作符类。
+  </para>
+<!-- pgdoc-cn_end sig_en=38e23ea6a1b14725cbd1cb8b2092ca03 -->
+
+<!-- pgdoc-cn_start sig_en=54ae02c6133b96c576d658e1b3322b69 sig_cn_org=None source=14.1 
+  <para>
+   In particular, there are SQL features such as <literal>ORDER BY</literal> and
+   <literal>DISTINCT</literal> that require comparison and sorting of values.
+   To implement these features on a user-defined data type,
+   <productname>PostgreSQL</productname> looks for the default B-tree operator
+   class for the data type.  The <quote>equals</quote> member of this operator
+   class defines the system's notion of equality of values for
+   <literal>GROUP BY</literal> and <literal>DISTINCT</literal>, and the sort ordering
+   imposed by the operator class defines the default <literal>ORDER BY</literal>
+   ordering.
+  </para>
+________________________________________________________-->
+  <para>
+   特别地，<literal>ORDER BY</literal>和<literal>DISTINCT</literal>等 SQL 特性要求对值的比较和排序。为了在用户定义的数据类型上实现这些特性，<productname>PostgreSQL</productname>会为数据类型查找默认 B-树操作符类。这个操作符类的<quote>equals</quote>成员定义了用于<literal>GROUP BY</literal>和<literal>DISTINCT</literal>的值的等值概念，而该操作符类施加的排序顺序定义了默认的<literal>ORDER BY</literal>顺序。
+  </para>
+<!-- pgdoc-cn_end sig_en=54ae02c6133b96c576d658e1b3322b69 -->
+
+<!-- pgdoc-cn_start sig_en=9e859d8ea4e9af852c1661e7ae744fa9 sig_cn_org=None source=14.1 
+  <para>
+   If there is no default B-tree operator class for a data type, the system
+   will look for a default hash operator class.  But since that kind of
+   operator class only provides equality, it is only able to support grouping
+   not sorting.
+  </para>
+________________________________________________________-->
+  <para>
+   如果一种数据类型没有默认的 B-树操作符类，系统将查找默认的哈希操作符类。但由于这类操作符类只提供等值，所以它只能支持分组而不能支持排序。
+  </para>
+<!-- pgdoc-cn_end sig_en=9e859d8ea4e9af852c1661e7ae744fa9 -->
+
+<!-- pgdoc-cn_start sig_en=720d8c39d5f0428d63dbd139fd58a5d3 sig_cn_org=None source=14.1 
+  <para>
+   When there is no default operator class for a data type, you will get
+   errors like <quote>could not identify an ordering operator</quote> if you
+   try to use these SQL features with the data type.
+  </para>
+________________________________________________________-->
+  <para>
+   在一种数据类型没有默认操作符类时，如果尝试对该数据类型使用这些 SQL 特性，你将得到类似<quote>could not identify an ordering operator</quote>（无法标识排序操作符）的错误。
+  </para>
+<!-- pgdoc-cn_end sig_en=720d8c39d5f0428d63dbd139fd58a5d3 -->
+
+   <note>
+<!-- pgdoc-cn_start sig_en=2edcc94802fb8d5517b770e6d01a53dc sig_cn_org=None source=14.1 
+    <para>
+     In <productname>PostgreSQL</productname> versions before 7.4,
+     sorting and grouping operations would implicitly use operators named
+     <literal>=</literal>, <literal>&lt;</literal>, and <literal>&gt;</literal>.  The new
+     behavior of relying on default operator classes avoids having to make
+     any assumption about the behavior of operators with particular names.
+    </para>
+________________________________________________________-->
+    <para>
+     在版本 7.4 以前的<productname>PostgreSQL</productname>中，排序和分组操作将隐式地使用名为<literal>=</literal>、<literal>&lt;</literal>以及<literal>&gt;</literal>的操作符。新的依赖于默认操作符类的行为避免了对具有特定名字的操作符行为作出任何假设。
+    </para>
+<!-- pgdoc-cn_end sig_en=2edcc94802fb8d5517b770e6d01a53dc -->
+   </note>
+
+<!-- pgdoc-cn_start sig_en=ca8a2817089504cd5151466c2d8f9764 sig_cn_org=None source=14.1 
+  <para>
+   Sorting by a non-default B-tree operator class is possible by specifying
+   the class's less-than operator in a <literal>USING</literal> option,
+   for example
+<programlisting>
+SELECT * FROM mytable ORDER BY somecol USING ~&lt;~;
+</programlisting>
+   Alternatively, specifying the class's greater-than operator
+   in <literal>USING</literal> selects a descending-order sort.
+  </para>
+________________________________________________________-->
+  <para>
+   通过在一个<literal>USING</literal>选项中指定一个非默认B-树操作符类的小于操作符，可以使用该操作符进行排序，例如
+<programlisting>
+SELECT * FROM mytable ORDER BY somecol USING ~&lt;~;
+</programlisting>
+   或者，在<literal>USING</literal>中指定该操作符类的大于操作符可以选择升序的排序。
+  </para>
+<!-- pgdoc-cn_end sig_en=ca8a2817089504cd5151466c2d8f9764 -->
+
+<!-- pgdoc-cn_start sig_en=64c7cc33a804bc162b5ce35766e90e3f sig_cn_org=None source=14.1 
+  <para>
+   Comparison of arrays of a user-defined type also relies on the semantics
+   defined by the type's default B-tree operator class.  If there is no
+   default B-tree operator class, but there is a default hash operator class,
+   then array equality is supported, but not ordering comparisons.
+  </para>
+________________________________________________________-->
+  <para>
+   用户定义类型的数组的比较还依赖于该类型的默认B-树操作符类所定义的语义。如果没有默认的B-树操作符类，但有一个默认的哈希操作符类，则支持数组的相等比较，但不支持顺序的比较。
+  </para>
+<!-- pgdoc-cn_end sig_en=64c7cc33a804bc162b5ce35766e90e3f -->
+
+<!-- pgdoc-cn_start sig_en=473102c00e7bd983c8ec2117b6925dfc sig_cn_org=None source=14.1 
+  <para>
+   Another SQL feature that requires even more data-type-specific knowledge
+   is the <literal>RANGE</literal> <replaceable>offset</replaceable>
+   <literal>PRECEDING</literal>/<literal>FOLLOWING</literal> framing option
+   for window functions (see <xref linkend="syntax-window-functions"/>).
+   For a query such as
+<programlisting>
+SELECT sum(x) OVER (ORDER BY x RANGE BETWEEN 5 PRECEDING AND 10 FOLLOWING)
+  FROM mytable;
+</programlisting>
+   it is not sufficient to know how to order by <literal>x</literal>;
+   the database must also understand how to <quote>subtract 5</quote> or
+   <quote>add 10</quote> to the current row's value of <literal>x</literal>
+   to identify the bounds of the current window frame.  Comparing the
+   resulting bounds to other rows' values of <literal>x</literal> is
+   possible using the comparison operators provided by the B-tree operator
+   class that defines the <literal>ORDER BY</literal> ordering &mdash; but
+   addition and subtraction operators are not part of the operator class, so
+   which ones should be used?  Hard-wiring that choice would be undesirable,
+   because different sort orders (different B-tree operator classes) might
+   need different behavior.  Therefore, a B-tree operator class can specify
+   an <firstterm>in_range</firstterm> support function that encapsulates the
+   addition and subtraction behaviors that make sense for its sort order.
+   It can even provide more than one in_range support function, in case
+   there is more than one data type that makes sense to use as the offset
+   in <literal>RANGE</literal> clauses.
+   If the B-tree operator class associated with the window's <literal>ORDER
+   BY</literal> clause does not have a matching in_range support function,
+   the <literal>RANGE</literal> <replaceable>offset</replaceable>
+   <literal>PRECEDING</literal>/<literal>FOLLOWING</literal>
+   option is not supported.
+  </para>
+________________________________________________________-->
+  <para>
+   另一种要求更多数据类型相关知识的SQL特性是窗口函数（见<xref linkend="syntax-window-functions"/>）的<literal>RANGE</literal> <replaceable>offset</replaceable> <literal>PRECEDING</literal>/<literal>FOLLOWING</literal>帧选项。对于这样的一个查询
+<programlisting>
+SELECT sum(x) OVER (ORDER BY x RANGE BETWEEN 5 PRECEDING AND 10 FOLLOWING)
+  FROM mytable;
+</programlisting>
+   不足以了解如何用<literal>x</literal>进行排序，数据库还必须理解如何对当前行的<literal>x</literal>值<quote>减5</quote>或者<quote>加10</quote>以标识当前窗口帧的边界。把得到的边界与其他行的<literal>x</literal>值用B-树操作符类提供的比较操作符（定义了<literal>ORDER BY</literal>顺序）进行比较是可能的 &mdash; 但是加和减操作符并不是该操作符类的一部分，因此应该用哪些操作符呢？硬编码的选择是不切实际的，因为不同的排序顺序（不同的B-树操作符）可能需要不同的行为。因此，一个B-树操作符类可以指定一个<firstterm>in_range</firstterm>支持函数，它封装有对排序顺序有意义的加和减行为。如果有多种数据类型可以用作<literal>RANGE</literal>子句中的偏移量，甚至可以提供多个in_range支持函数。如果与窗口的<literal>ORDER BY</literal>子句关联的B-树操作符类没有一个匹配的in_range支持函数，则不支持<literal>RANGE</literal> <replaceable>offset</replaceable> <literal>PRECEDING</literal>/<literal>FOLLOWING</literal>选项。
+  </para>
+<!-- pgdoc-cn_end sig_en=473102c00e7bd983c8ec2117b6925dfc -->
+
+<!-- pgdoc-cn_start sig_en=b0f5cf6259024583bb9ba2c030a60525 sig_cn_org=None source=14.1 
+  <para>
+   Another important point is that an equality operator that
+   appears in a hash operator family is a candidate for hash joins,
+   hash aggregation, and related optimizations.  The hash operator family
+   is essential here since it identifies the hash function(s) to use.
+  </para>
+________________________________________________________-->
+  <para>
+   另一个要点是，出现在一个哈希操作符族中的操作符是哈希连接、哈希聚集和相关优化的候选。这些情况下哈希操作符族就是至关重要的，因为它标识了要使用的哈希函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=b0f5cf6259024583bb9ba2c030a60525 -->
+ </sect2>
+
+ <sect2 id="xindex-ordering-ops">
+<!-- pgdoc-cn_start sig_en=1d5f2e3a288c8cee3595587c7ee53418 sig_cn_org=None source=14.1 
+  <title>Ordering Operators</title>
+________________________________________________________-->
+  <title>排序操作符</title>
+<!-- pgdoc-cn_end sig_en=1d5f2e3a288c8cee3595587c7ee53418 -->
+
+<!-- pgdoc-cn_start sig_en=e6e35ded8299b6d4704764cbc3da9824 sig_cn_org=None source=14.1 
+  <para>
+   Some index access methods (currently, only GiST and SP-GiST) support the concept of
+   <firstterm>ordering operators</firstterm>.  What we have been discussing so far
+   are <firstterm>search operators</firstterm>.  A search operator is one for which
+   the index can be searched to find all rows satisfying
+   <literal>WHERE</literal>
+   <replaceable>indexed_column</replaceable>
+   <replaceable>operator</replaceable>
+   <replaceable>constant</replaceable>.
+   Note that nothing is promised about the order in which the matching rows
+   will be returned.  In contrast, an ordering operator does not restrict the
+   set of rows that can be returned, but instead determines their order.
+   An ordering operator is one for which the index can be scanned to return
+   rows in the order represented by
+   <literal>ORDER BY</literal>
+   <replaceable>indexed_column</replaceable>
+   <replaceable>operator</replaceable>
+   <replaceable>constant</replaceable>.
+   The reason for defining ordering operators that way is that it supports
+   nearest-neighbor searches, if the operator is one that measures distance.
+   For example, a query like
+<programlisting><![CDATA[
+SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
+]]>
+</programlisting>
+   finds the ten places closest to a given target point.  A GiST index
+   on the location column can do this efficiently because
+   <literal>&lt;-&gt;</literal> is an ordering operator.
+  </para>
+________________________________________________________-->
+  <para>
+   有些索引访问方法（当前只有 GiST和SP-GiST）支持<firstterm>排序操作符</firstterm>的概念。到目前为止我们所讨论的都是<firstterm>搜索操作符</firstterm>。搜索索引时，会用搜索操作符来寻找所有满足
+   <literal>WHERE</literal>
+   <replaceable>indexed_column</replaceable>
+   <replaceable>operator</replaceable>
+   <replaceable>constant</replaceable>
+   的行。注意被返回的匹配行的顺序是没有任何保证的。相反，一个排序操作符并不限制能被返回的行集合，而是决定它们的顺序。扫描索引时，会使用排序操作符来以
+   <literal>ORDER BY</literal>
+   <replaceable>indexed_column</replaceable>
+   <replaceable>operator</replaceable>
+   <replaceable>constant</replaceable>
+   所表示的顺序返回行。这样定义排序操作符的原因是，如果该操作符能度量距离，它就能支持最近邻搜索。例如，这样的一个查询
+<programlisting><![CDATA[
+SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
+]]>
+</programlisting>
+   寻找离一个给定目标点最近的十个位置。位置列上的 GiST 索引可以有效地完成这个查询，因为<literal>&lt;-&gt;</literal>是一个排序操作符。
+  </para>
+<!-- pgdoc-cn_end sig_en=e6e35ded8299b6d4704764cbc3da9824 -->
+
+<!-- pgdoc-cn_start sig_en=d0fe2cdbd7363f17c0a0704d4a9333db sig_cn_org=None source=14.1 
+  <para>
+   While search operators have to return Boolean results, ordering operators
+   usually return some other type, such as float or numeric for distances.
+   This type is normally not the same as the data type being indexed.
+   To avoid hard-wiring assumptions about the behavior of different data
+   types, the definition of an ordering operator is required to name
+   a B-tree operator family that specifies the sort ordering of the result
+   data type.  As was stated in the previous section, B-tree operator families
+   define <productname>PostgreSQL</productname>'s notion of ordering, so
+   this is a natural representation.  Since the point <literal>&lt;-&gt;</literal>
+   operator returns <type>float8</type>, it could be specified in an operator
+   class creation command like this:
+<programlisting><![CDATA[
+OPERATOR 15    <-> (point, point) FOR ORDER BY float_ops
+]]>
+</programlisting>
+   where <literal>float_ops</literal> is the built-in operator family that includes
+   operations on <type>float8</type>.  This declaration states that the index
+   is able to return rows in order of increasing values of the
+   <literal>&lt;-&gt;</literal> operator.
+  </para>
+________________________________________________________-->
+  <para>
+   搜索操作符必须返回布尔结果，排序操作符通常返回某种其他类型，例如浮点、数字或者距离。这种类型通常不同于被索引的数据类型。为了避免硬编码有关不同数据类型行为的假设，需要定义一个排序操作符来提名一个 B-树操作符族指定结果数据类型的排序顺序。正如我们在前一节介绍的，B-树操作符族定义了<productname>PostgreSQL</productname>的顺序概念，因此这是一种自然的表达。由于点<literal>&lt;-&gt;</literal>操作符返回<type>float8</type>，可以在一个操作符类创建命令中这样指定它：
+<programlisting><![CDATA[
+OPERATOR 15    <-> (point, point) FOR ORDER BY float_ops
+]]>
+</programlisting>
+   其中<literal>float_ops</literal>是包括<type>float8</type>上操作的内建操作符族。这种声明说明该索引能够以<literal>&lt;-&gt;</literal>操作符的递增值顺序返回行。
+  </para>
+<!-- pgdoc-cn_end sig_en=d0fe2cdbd7363f17c0a0704d4a9333db -->
+ </sect2>
+
+ <sect2 id="xindex-opclass-features">
+<!-- pgdoc-cn_start sig_en=0ff6e6d2631a58b1d0c9be1b366a2e87 sig_cn_org=None source=14.1 
+  <title>Special Features of Operator Classes</title>
+________________________________________________________-->
+  <title>操作符类的特性</title>
+<!-- pgdoc-cn_end sig_en=0ff6e6d2631a58b1d0c9be1b366a2e87 -->
+
+<!-- pgdoc-cn_start sig_en=07bda2bbc586b84a78846519d4af760e sig_cn_org=None source=14.1 
+  <para>
+   There are two special features of operator classes that we have
+   not discussed yet, mainly because they are not useful
+   with the most commonly used index methods.
+  </para>
+________________________________________________________-->
+  <para>
+   有两个操作符类的特性我们还没有讨论，主要是因为它们对于最常用的索引方法不太有用。
+  </para>
+<!-- pgdoc-cn_end sig_en=07bda2bbc586b84a78846519d4af760e -->
+
+<!-- pgdoc-cn_start sig_en=f5deb3b075beb0deda5d4a0818463901 sig_cn_org=None source=14.1 
+  <para>
+   Normally, declaring an operator as a member of an operator class
+   (or family) means that the index method can retrieve exactly the set of rows
+   that satisfy a <literal>WHERE</literal> condition using the operator.  For example:
+<programlisting>
+SELECT * FROM table WHERE integer_column &lt; 4;
+</programlisting>
+   can be satisfied exactly by a B-tree index on the integer column.
+   But there are cases where an index is useful as an inexact guide to
+   the matching rows.  For example, if a GiST index stores only bounding boxes
+   for geometric objects, then it cannot exactly satisfy a <literal>WHERE</literal>
+   condition that tests overlap between nonrectangular objects such as
+   polygons.  Yet we could use the index to find objects whose bounding
+   box overlaps the bounding box of the target object, and then do the
+   exact overlap test only on the objects found by the index.  If this
+   scenario applies, the index is said to be <quote>lossy</quote> for the
+   operator.  Lossy index searches are implemented by having the index
+   method return a <firstterm>recheck</firstterm> flag when a row might or might
+   not really satisfy the query condition.  The core system will then
+   test the original query condition on the retrieved row to see whether
+   it should be returned as a valid match.  This approach works if
+   the index is guaranteed to return all the required rows, plus perhaps
+   some additional rows, which can be eliminated by performing the original
+   operator invocation.  The index methods that support lossy searches
+   (currently, GiST, SP-GiST and GIN) allow the support functions of individual
+   operator classes to set the recheck flag, and so this is essentially an
+   operator-class feature.
+  </para>
+________________________________________________________-->
+  <para>
+   通常，把一个操作符声明为一个操作符类（或操作符族）的成员意味着该索引方法能够使用该操作符准确地检索满足<literal>WHERE</literal>条件的行集。例如：
+<programlisting>
+SELECT * FROM table WHERE integer_column &lt; 4;
+</programlisting>
+   恰好可以被该整数列上一个 B-树索引满足。但是也有情况下索引只是作为匹配行的非精确向导。例如，如果一个 GiST 索引只存储几何对象的边界框，那么它无法精确地满足测试非矩形对象（如多边形）之间相交的<literal>WHERE</literal>条件。但是我们可以使用该索引来寻找边界框与目标对象的边界框相交的对象，并且只在通过该索引找到的对象上做精确的相交测试。如果适用于这种场景，该索引被称为对该操作符是<quote>有损的</quote>。有损索引搜索通过在一行可能满足或者不满足该查询条件时返回一个<firstterm>recheck</firstterm>标志来实现。核心系统将接着在检索到的行上测试原始查询条件来看它是否应该被作为一个合法匹配返回。如果索引被保证能返回所有所需的行外加一些额外的行，这种方法就能有效，因为那些额外的行可以通过执行原始的操作符调用来消除。支持有损搜索的索引方法（当前有 GiST、SP-GiST 和 GIN）允许个别操作符类的支持函数设置 recheck 标志，因此这也是一种操作符类的重要特性。
+  </para>
+<!-- pgdoc-cn_end sig_en=f5deb3b075beb0deda5d4a0818463901 -->
+
+<!-- pgdoc-cn_start sig_en=922106bf71939fff63f8d268a1d4e206 sig_cn_org=None source=14.1 
+  <para>
+   Consider again the situation where we are storing in the index only
+   the bounding box of a complex object such as a polygon.  In this
+   case there's not much value in storing the whole polygon in the index
+   entry &mdash; we might as well store just a simpler object of type
+   <type>box</type>.  This situation is expressed by the <literal>STORAGE</literal>
+   option in <command>CREATE OPERATOR CLASS</command>: we'd write something like:
+
+<programlisting>
+CREATE OPERATOR CLASS polygon_ops
+    DEFAULT FOR TYPE polygon USING gist AS
+        ...
+        STORAGE box;
+</programlisting>
+
+   At present, only the GiST, SP-GiST, GIN and BRIN index methods support a
+   <literal>STORAGE</literal> type that's different from the column data type.
+   The GiST <function>compress</function> and <function>decompress</function> support
+   routines must deal with data-type conversion when <literal>STORAGE</literal>
+   is used.  SP-GiST likewise requires a <function>compress</function>
+   support function to convert to the storage type, when that is different;
+   if an SP-GiST opclass also supports retrieving data, the reverse
+   conversion must be handled by the <function>consistent</function> function.
+   In GIN, the <literal>STORAGE</literal> type identifies the type of
+   the <quote>key</quote> values, which normally is different from the type
+   of the indexed column &mdash; for example, an operator class for
+   integer-array columns might have keys that are just integers.  The
+   GIN <function>extractValue</function> and <function>extractQuery</function> support
+   routines are responsible for extracting keys from indexed values.
+   BRIN is similar to GIN: the <literal>STORAGE</literal> type identifies the
+   type of the stored summary values, and operator classes' support
+   procedures are responsible for interpreting the summary values
+   correctly.
+  </para>
+________________________________________________________-->
+  <para>
+   再次考虑在索引中只存储复杂对象（如多边形）的边界框的情况。在这种情况下，把整个多边形存储在索引项中没有很大价值 &mdash; 我们也可以只存储一个更简单的<type>box</type>类型对象。这种情况通过<command>CREATE OPERATOR CLASS</command>中的<literal>STORAGE</literal>选项表示：
+
+<programlisting>
+CREATE OPERATOR CLASS polygon_ops
+    DEFAULT FOR TYPE polygon USING gist AS
+        ...
+        STORAGE box;
+</programlisting>
+
+   当前，只有 GiST、SP-GiST、GIN 和 BRIN 索引方法支持不同于列数据类型的<literal>STORAGE</literal>类型。在使用<literal>STORAGE</literal>时，GiST 的支持例程<function>compress</function>和<function>decompress</function>必须处理数据类型转换。SP-GiST 同样需要 <function>compress</function> 支持函数来转换为存储类型（当存储类型不同时）； 如果 SP-GiST opclass 也支持检索数据，则反向转换必须由 <function>consistant</function> 函数处理。在 GIN 中，<literal>STORAGE</literal>类型标识<quote>key</quote>值的类型，它通常不同于被索引列的类型 &mdash; 例如，一个用于整数数组列的操作符类可能具有整数键值。GIN 的支持例程<function>extractValue</function>和<function>extractQuery</function>负责从被索引值中抽取键。BRIN 类似于 GIN：<literal>STORAGE</literal>类型标识被存储的摘要值的类型，而操作符类的支持过程负责正确解释摘要值。
+  </para>
+<!-- pgdoc-cn_end sig_en=922106bf71939fff63f8d268a1d4e206 -->
+ </sect2>
+
+</sect1>

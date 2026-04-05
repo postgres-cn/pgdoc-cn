@@ -1,0 +1,947 @@
+<!--
+doc/src/sgml/ref/pg_receivewal.sgml
+PostgreSQL documentation
+-->
+
+<refentry id="app-pgreceivewal">
+<!-- pgdoc-cn_start sig_en=54537040e99569b86d4a8b60867bda8c sig_cn_org=None source=14.1 
+ <indexterm zone="app-pgreceivewal">
+  <primary>pg_receivewal</primary>
+ </indexterm>
+________________________________________________________-->
+ <indexterm zone="app-pgreceivewal">
+  <primary>pg_receivewal</primary>
+ </indexterm>
+<!-- pgdoc-cn_end sig_en=54537040e99569b86d4a8b60867bda8c -->
+
+ <refmeta>
+  <refentrytitle><application>pg_receivewal</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Application</refmiscinfo>
+ </refmeta>
+
+<!-- pgdoc-cn_start sig_en=97c6d7066720237bedae3addd20d1954 sig_cn_org=None source=14.1 
+ <refnamediv>
+  <refname>pg_receivewal</refname>
+  <refpurpose>stream write-ahead logs from a <productname>PostgreSQL</productname> server</refpurpose>
+ </refnamediv>
+________________________________________________________-->
+ <refnamediv>
+  <refname>pg_receivewal</refname>
+  <refpurpose>以流的方式从一个<productname>PostgreSQL</productname>服务器得到预写式日志</refpurpose>
+ </refnamediv>
+<!-- pgdoc-cn_end sig_en=97c6d7066720237bedae3addd20d1954 -->
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_receivewal</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=59d6e86f3a60db4f1e08d0d6e639924e sig_cn_org=None source=14.1 
+  <title>Description</title>
+________________________________________________________-->
+  <title>描述</title>
+<!-- pgdoc-cn_end sig_en=59d6e86f3a60db4f1e08d0d6e639924e -->
+<!-- pgdoc-cn_start sig_en=7eb0d240db0491a8ef8a52719b75068a sig_cn_org=None source=14.1 
+  <para>
+   <application>pg_receivewal</application> is used to stream the write-ahead log
+   from a running <productname>PostgreSQL</productname> cluster. The write-ahead
+   log is streamed using the streaming replication protocol, and is written
+   to a local directory of files. This directory can be used as the archive
+   location for doing a restore using point-in-time recovery (see
+   <xref linkend="continuous-archiving"/>).
+  </para>
+________________________________________________________-->
+  <para>
+   <application>pg_receivewal</application>被用来从一个运行着的<productname>PostgreSQL</productname>集簇以流的方式得到预写式日志。预写式日志会被使用流复制协议以流的方式传送，并且被写入到文件的一个本地目录。这个目录可以被用作归档位置来做一次使用时间点恢复的恢复（见<xref linkend="continuous-archiving"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=7eb0d240db0491a8ef8a52719b75068a -->
+
+<!-- pgdoc-cn_start sig_en=00d296f515b5ad29fc6cccc50a2b27fa sig_cn_org=4d51399a706b1ebd9ece83215f122e5d source=15.7 
+  <para>
+   <application>pg_receivewal</application> streams the write-ahead
+   log in real time as it's being generated on the server, and does not wait
+   for segments to complete like <xref linkend="guc-archive-command"/> and
+   <xref linkend="guc-archive-library"/> do.
+   For this reason, it is not necessary to set
+   <xref linkend="guc-archive-timeout"/> when using
+    <application>pg_receivewal</application>.
+  </para>
+________________________________________________________-->
+  <para>
+   <application>pg_receivewal</application>实时流式传输服务器上生成的预写式日志，不像<xref linkend="guc-archive-command"/>和<xref linkend="guc-archive-library"/>那样等待段完成。
+   因此，在使用<application>pg_receivewal</application>时，不需要设置<xref linkend="guc-archive-timeout"/>。
+</para>
+<!-- pgdoc-cn_end sig_en=00d296f515b5ad29fc6cccc50a2b27fa -->
+
+<!-- pgdoc-cn_start sig_en=57e7b8a2cee99c4fd094eb3c8099654a sig_cn_org=None source=14.1 
+  <para>
+   Unlike the WAL receiver of a PostgreSQL standby server, <application>pg_receivewal</application>
+   by default flushes WAL data only when a WAL file is closed.
+   The option <option>-&minus;synchronous</option> must be specified to flush WAL data
+   in real time. Since <application>pg_receivewal</application> does not
+   apply WAL, you should not allow it to become a synchronous standby when
+   <xref linkend="guc-synchronous-commit"/> equals
+   <literal>remote_apply</literal>. If it does, it will appear to be a
+   standby that never catches up, and will cause transaction commits to
+   block. To avoid this, you should either configure an appropriate value
+   for <xref linkend="guc-synchronous-standby-names"/>, or specify
+   <varname>application_name</varname> for
+   <application>pg_receivewal</application> that does not match it, or
+   change the value of <varname>synchronous_commit</varname> to
+   something other than <literal>remote_apply</literal>.
+  </para>
+________________________________________________________-->
+  <para>
+   与 PostgreSQL 后备服务器上的 WAL 接收进程不同，<application>pg_receivewal</application>默认只在一个 WAL 文件被关闭时才刷入 WAL 数据。要实时刷入 WAL 数据，必须指定选项<option>--synchronous</option>。
+   由于<application>pg_receivewal</application>不应用于WAL，当<xref linkend="guc-synchronous-commit"/> 等于 <literal>remote_apply</literal>时，你将不允许它成为同步备用。
+   如果发生这样的情况，它将成为一个永远不能拉起的备用数据库，并且会导致事务提交阻塞。
+   为了避免这种情况，你应该为<xref linkend="guc-synchronous-standby-names"/>配置一个适当的值，或规定为<application>pg_receivewal</application> 的<varname>application_name</varname> 与它不匹配，或将<varname>synchronous_commit</varname>的值更改为<literal>remote_apply</literal>以外的内容。
+  </para>
+<!-- pgdoc-cn_end sig_en=57e7b8a2cee99c4fd094eb3c8099654a -->
+
+<!-- pgdoc-cn_start sig_en=7c06127837eff36aeaf28e0385f5f0e7 sig_cn_org=None source=14.1 
+  <para>
+   The write-ahead log is streamed over a regular
+   <productname>PostgreSQL</productname> connection and uses the replication
+   protocol. The connection must be made with a user having
+   <literal>REPLICATION</literal> permissions (see
+   <xref linkend="role-attributes"/>) or a superuser, and
+   <filename>pg_hba.conf</filename> must permit the replication connection.
+   The server must also be configured with
+   <xref linkend="guc-max-wal-senders"/> set high enough to leave at least
+   one session available for the stream.
+  </para>
+________________________________________________________-->
+  <para>
+   预写式日志在一个常规<productname>PostgreSQL</productname>连接上被以流式传送，并且使用复制协议。连接必须由一个具有<literal>REPLICATION</literal>权限（见<xref linkend="role-attributes"/>）的用户或者一个超级用户建立，并且<filename>pg_hba.conf</filename>必须允许复制连接。服务器也必须被配置一个足够高的<xref linkend="guc-max-wal-senders"/>来至少留出一个可用会话给流。
+  </para>
+<!-- pgdoc-cn_end sig_en=7c06127837eff36aeaf28e0385f5f0e7 -->
+
+<!-- pgdoc-cn_start sig_en=eeb905d7e36ef27524397f0d923062ea sig_cn_org=83549c7f881106b1a9cd9fef96d713ec source=15.7 
+  <para>
+   The starting point of the write-ahead log streaming is calculated when
+   <application>pg_receivewal</application> starts:
+   <orderedlist>
+    <listitem>
+     <para>
+      First, scan the directory where the WAL segment files are written and
+      find the newest completed segment file, using as the starting point the
+      beginning of the next WAL segment file.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      If a starting point cannot be calculated with the previous method,
+      and if a replication slot is used, an extra
+      <command>READ_REPLICATION_SLOT</command> command is issued to retrieve
+      the slot's <literal>restart_lsn</literal> to use as the starting point.
+      This option is only available when streaming write-ahead logs from
+      <productname>PostgreSQL</productname> 15 and up.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      If a starting point cannot be calculated with the previous method,
+      the latest WAL flush location is used as reported by the server from
+      an <literal>IDENTIFY_SYSTEM</literal> command.
+     </para>
+    </listitem>
+   </orderedlist>
+  </para>
+________________________________________________________-->
+  <para>
+   预写式日志流式传输的起始点是在<application>pg_receivewal</application>启动时计算的：
+   <orderedlist>
+    <listitem>
+     <para>
+      首先，扫描写入WAL段文件的目录，并找到最新完成的段文件，将下一个WAL段文件的开头作为起始点。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      如果无法用上述方法计算起始点，并且使用了复制插槽，则会发出额外的<command>READ_REPLICATION_SLOT</command>命令来检索插槽的<literal>restart_lsn</literal>，以用作起始点。
+      仅当从<productname>PostgreSQL</productname> 15及更高版本流式传输预写式日志时才可用此选项。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      如果无法用上述方法计算起始点，则使用服务器从<literal>IDENTIFY_SYSTEM</literal>命令报告的最新WAL刷新位置作为起始点。
+     </para>
+    </listitem>
+   </orderedlist>
+  </para>
+<!-- pgdoc-cn_end sig_en=eeb905d7e36ef27524397f0d923062ea -->
+
+<!-- pgdoc-cn_start sig_en=9adbb4d2d687c33bca450c0f8bda31fc sig_cn_org=None source=14.1 
+  <para>
+   If the connection is lost, or if it cannot be initially established,
+   with a non-fatal error, <application>pg_receivewal</application> will
+   retry the connection indefinitely, and reestablish streaming as soon
+   as possible. To avoid this behavior, use the <literal>-n</literal>
+   parameter.
+  </para>
+________________________________________________________-->
+  <para>
+   如果该连接丢失，或者它一开始就由于一个非致命错误而没有被建立，<application>pg_receivewal</application>将无限期地重试连接并且尽可能重新建立流。为了避免这种行为，使用<literal>-n</literal>参数。
+  </para>
+<!-- pgdoc-cn_end sig_en=9adbb4d2d687c33bca450c0f8bda31fc -->
+
+<!-- pgdoc-cn_start sig_en=d393878a1b793e3f825f6a6aa893300c sig_cn_org=455c94417b96595ec52e2a36fe160802 source=16.8 
+  <para>
+   In the absence of fatal errors, <application>pg_receivewal</application>
+   will run until terminated by the <systemitem>SIGINT</systemitem>
+   (<keycombo action="simul"><keycap>Control</keycap><keycap>C</keycap></keycombo>)
+   or <systemitem>SIGTERM</systemitem> signal.
+  </para>
+________________________________________________________-->
+  <para>
+   如果没有致命错误，<application>pg_receivewal</application>
+   将运行直到被<systemitem>SIGINT</systemitem>
+   (<keycombo action="simul"><keycap>Control</keycap><keycap>C</keycap></keycombo>)
+   或<systemitem>SIGTERM</systemitem>信号终止。
+  </para>
+<!-- pgdoc-cn_end sig_en=d393878a1b793e3f825f6a6aa893300c -->
+ </refsect1>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=ee3f399228d18d2103d5b7f4e0aeeba8 sig_cn_org=None source=14.1 
+  <title>Options</title>
+________________________________________________________-->
+  <title>选项</title>
+<!-- pgdoc-cn_end sig_en=ee3f399228d18d2103d5b7f4e0aeeba8 -->
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">directory</replaceable></option></term>
+      <term><option>--directory=<replaceable class="parameter">directory</replaceable></option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=5a9176bcb899e9d94f86f504ff993b0e sig_cn_org=None source=14.1 
+       <para>
+        Directory to write the output to.
+       </para>
+________________________________________________________-->
+       <para>
+        要把输出写到哪个目录。
+       </para>
+<!-- pgdoc-cn_end sig_en=5a9176bcb899e9d94f86f504ff993b0e -->
+<!-- pgdoc-cn_start sig_en=c4c2e82f51d2387d7499ddcf16a81991 sig_cn_org=None source=14.1 
+       <para>
+        This parameter is required.
+       </para>
+________________________________________________________-->
+       <para>
+        这个参数是必需的。
+       </para>
+<!-- pgdoc-cn_end sig_en=c4c2e82f51d2387d7499ddcf16a81991 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-E <replaceable>lsn</replaceable></option></term>
+      <term><option>--endpos=<replaceable>lsn</replaceable></option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=85cdcc530b4e9708fa88f50f76c56ecd sig_cn_org=None source=14.1 
+       <para>
+        Automatically stop replication and exit with normal exit status 0 when
+        receiving reaches the specified LSN.
+       </para>
+________________________________________________________-->
+       <para>
+        当接收到达指定的LSN时，自动停止复制并且以正常退出状态0退出。
+       </para>
+<!-- pgdoc-cn_end sig_en=85cdcc530b4e9708fa88f50f76c56ecd -->
+
+<!-- pgdoc-cn_start sig_en=f6bbf6cb609ad75ac4bd648b8dad5d05 sig_cn_org=None source=14.1 
+       <para>
+        If there is a record with LSN exactly equal to <replaceable>lsn</replaceable>,
+        the record will be processed.
+       </para>
+________________________________________________________-->
+       <para>
+        如果有一个记录的LSN正好等于<replaceable>lsn</replaceable>，则该记录将会被处理。
+       </para>
+<!-- pgdoc-cn_end sig_en=f6bbf6cb609ad75ac4bd648b8dad5d05 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-not-exists</option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=ad0d1140532bc8cadace18ed9038e862 sig_cn_org=None source=14.1 
+       <para>
+        Do not error out when <option>-&minus;create-slot</option> is specified
+        and a slot with the specified name already exists.
+       </para>
+________________________________________________________-->
+       <para>
+        当指定<option>--create-slot</option>并且具有指定名称
+        的槽已经存在时不要抛出错误。
+       </para>
+<!-- pgdoc-cn_end sig_en=ad0d1140532bc8cadace18ed9038e862 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-loop</option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=989dc0bd14502a962ccc5d3c5cba3368 sig_cn_org=None source=14.1 
+       <para>
+        Don't loop on connection errors. Instead, exit right away with
+        an error.
+       </para>
+________________________________________________________-->
+       <para>
+        不要在连接错误上循环。相反，碰到一个错误时立刻退出。
+       </para>
+<!-- pgdoc-cn_end sig_en=989dc0bd14502a962ccc5d3c5cba3368 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-sync</option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=232cc0dc77bd5908db05641c645d6563 sig_cn_org=None source=14.1 
+       <para>
+        This option causes <command>pg_receivewal</command> to not force WAL
+        data to be flushed to disk.  This is faster, but means that a
+        subsequent operating system crash can leave the WAL segments corrupt.
+        Generally, this option is useful for testing but should not be used
+        when doing WAL archiving on a production deployment.
+       </para>
+________________________________________________________-->
+       <para>
+        这个选项导致<command>pg_receivewal</command>不强制WAL数据被刷回磁盘。这样会更快，但是也意味着接下来的操作系统崩溃会让WAL段损坏。通常，这个选项对于测试有用，但不应该在对生产部署进行WAL归档时使用。
+       </para>
+<!-- pgdoc-cn_end sig_en=232cc0dc77bd5908db05641c645d6563 -->
+
+<!-- pgdoc-cn_start sig_en=7bf3baa2b89d07fc05f35ca451d34e78 sig_cn_org=None source=14.1 
+       <para>
+        This option is incompatible with <literal>-&minus;synchronous</literal>.
+       </para>
+________________________________________________________-->
+       <para>
+        这个选项与<literal>--synchronous</literal>不兼容。
+       </para>
+<!-- pgdoc-cn_end sig_en=7bf3baa2b89d07fc05f35ca451d34e78 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
+      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=d790208e84d8ad2d5268b8c83fdac116 sig_cn_org=None source=14.1 
+       <para>
+        Specifies the number of seconds between status packets sent back to the
+        server. This allows for easier monitoring of the progress from server.
+        A value of zero disables the periodic status updates completely,
+        although an update will still be sent when requested by the server, to
+        avoid timeout disconnect. The default value is 10 seconds.
+       </para>
+________________________________________________________-->
+       <para>
+        指定发送回服务器的状态包之间的秒数。这允许我们更容易地监控服务器的进度。
+        一个零值完全禁用这种周期性的状态更新，不过当服务器需要时还是会有一个更新
+        会被发送来避免超时导致的断开连接。默认值是 10 秒。
+       </para>
+<!-- pgdoc-cn_end sig_en=d790208e84d8ad2d5268b8c83fdac116 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable>slotname</replaceable></option></term>
+      <term><option>--slot=<replaceable class="parameter">slotname</replaceable></option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=dcb039659fb40747ab166935aece1407 sig_cn_org=None source=14.1 
+        <para>
+         Require <application>pg_receivewal</application> to use an existing
+         replication slot (see <xref linkend="streaming-replication-slots"/>).
+         When this option is used, <application>pg_receivewal</application> will report
+         a flush position to the server, indicating when each segment has been
+         synchronized to disk so that the server can remove that segment if it
+         is not otherwise needed.
+        </para>
+________________________________________________________-->
+        <para>
+         要求<application>pg_receivewal</application>使用一个已有的复制槽（见
+         <xref linkend="streaming-replication-slots"/>）。在使用这个选项时，
+         <application>pg_receivewal</application>将会报告给服务器一个刷写位置，指示每一个
+         段是何时被同步到磁盘的，这样服务器可以在不需要该段时移除它。
+        </para>
+<!-- pgdoc-cn_end sig_en=dcb039659fb40747ab166935aece1407 -->
+
+<!-- pgdoc-cn_start sig_en=00eeaab22d9e4aaec4c1821eedf6fcc7 sig_cn_org=None source=14.1 
+        <para>
+         When the replication client
+         of <application>pg_receivewal</application> is configured on the
+         server as a synchronous standby, then using a replication slot will
+         report the flush position to the server, but only when a WAL file is
+         closed.  Therefore, that configuration will cause transactions on the
+         primary to wait for a long time and effectively not work
+         satisfactorily.  The option <literal>-&minus;synchronous</literal> (see
+         below) must be specified in addition to make this work correctly.
+        </para>
+________________________________________________________-->
+        <para>
+         当<application>pg_receivewal</application>的复制客户端在服务器
+         上被配置为一个同步后备时，那么使用一个复制槽将会向服务器报告刷写
+         位置，但只在一个 WAL 文件被关闭时报告。因此，该配置将导致主服务
+         器上的事务等待很长的时间并且无法令人满意地工作。要让这种配置工作
+         正确，还必须制定选项<literal>--synchronous</literal>（见下文）。
+        </para>
+<!-- pgdoc-cn_end sig_en=00eeaab22d9e4aaec4c1821eedf6fcc7 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--synchronous</option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=a83f63e6c469f6e3f7f10491bc44f178 sig_cn_org=None source=14.1 
+       <para>
+        Flush the WAL data to disk immediately after it has been received. Also
+        send a status packet back to the server immediately after flushing,
+        regardless of <literal>-&minus;status-interval</literal>.
+       </para>
+________________________________________________________-->
+       <para>
+        在 WAL 数据被收到后立即刷入到磁盘。还要在刷写后立即向服务器回送
+        一个状态包（不考虑<literal>--status-interval</literal>）。
+       </para>
+<!-- pgdoc-cn_end sig_en=a83f63e6c469f6e3f7f10491bc44f178 -->
+
+<!-- pgdoc-cn_start sig_en=2231998dc3d3984998bea21d16b25644 sig_cn_org=None source=14.1 
+       <para>
+        This option should be specified if the replication client
+        of <application>pg_receivewal</application> is configured on the
+        server as a synchronous standby, to ensure that timely feedback is
+        sent to the server.
+       </para>
+________________________________________________________-->
+       <para>
+        如果<application>pg_receivewal</application>的复制客户端在服务器
+        上被配置为一个同步后备，应该指定这个选项来确保向服务器发送及时的反馈。
+       </para>
+<!-- pgdoc-cn_end sig_en=2231998dc3d3984998bea21d16b25644 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=339089ff97033b86d065f11da22dd7e6 sig_cn_org=None source=14.1 
+       <para>
+        Enables verbose mode.
+       </para>
+________________________________________________________-->
+       <para>
+        启用冗长模式。
+       </para>
+<!-- pgdoc-cn_end sig_en=339089ff97033b86d065f11da22dd7e6 -->
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-Z <replaceable class="parameter">level</replaceable></option></term>
+      <term><option>-Z <replaceable class="parameter">method</replaceable>[:<replaceable>detail</replaceable>]</option></term>
+      <term><option>--compress=<replaceable class="parameter">level</replaceable></option></term>
+      <term><option>--compress=<replaceable class="parameter">method</replaceable>[:<replaceable>detail</replaceable>]</option></term>
+      <listitem>
+<!-- pgdoc-cn_start sig_en=4953f22bbd2cc7b1247a5269fea5ff61 sig_cn_org=b64c2e9faeb488fea1cb4add6314e721 source=15.7 
+       <para>
+        Enables compression of write-ahead logs.
+       </para>
+________________________________________________________-->
+       <para>
+        启用预写式日志的压缩。
+       </para>
+<!-- pgdoc-cn_end sig_en=4953f22bbd2cc7b1247a5269fea5ff61 -->
+<!-- pgdoc-cn_start sig_en=cff4fb256496da779b72d26f71c71991 sig_cn_org=51c551b42545bc75accd0a3aa59c71f6 source=15.7 
+       <para>
+        The compression method can be set to <literal>gzip</literal>,
+        <literal>lz4</literal> (if <productname>PostgreSQL</productname>
+        was compiled with <option>-&minus;with-lz4</option>) or
+        <literal>none</literal> for no compression.
+        A compression detail string can optionally be specified.  If the
+        detail string is an integer, it specifies the compression level.
+        Otherwise, it should be a comma-separated list of items, each of the
+        form <literal>keyword</literal> or <literal>keyword=value</literal>.
+        Currently, the only supported keyword is <literal>level</literal>.
+       </para>
+________________________________________________________-->
+       <para>
+        压缩方法可以设置为<literal>gzip</literal>、<literal>lz4</literal>（如果<productname>PostgreSQL</productname>
+        使用<option>--with-lz4</option>编译）或<literal>none</literal>表示不压缩。
+        可以选择性地指定压缩详细字符串。如果详细字符串是一个整数，则指定压缩级别。
+        否则，它应该是一个逗号分隔的项目列表，每个项目的形式为<literal>keyword</literal>或<literal>keyword=value</literal>。
+        目前，唯一支持的关键字是<literal>level</literal>。
+       </para>
+<!-- pgdoc-cn_end sig_en=cff4fb256496da779b72d26f71c71991 -->
+<!-- pgdoc-cn_start sig_en=22b8b6f8f05cbbf2486d925993fa2afd sig_cn_org=8bacfb1745c656e4f2912f82df539dc0 source=15.7 
+       <para>
+        If no compression level is specified, the default compression level
+        will be used. If only a level is specified without mentioning an
+        algorithm, <literal>gzip</literal> compression will be used if the
+        level is greater than 0, and no compression will be used if the level
+        is 0.
+       </para>
+________________________________________________________-->
+       <para>
+        如果未指定压缩级别，则将使用默认压缩级别。如果只指定了级别而没有提及算法，
+        则如果级别大于0，将使用<literal>gzip</literal>压缩，如果级别为0，则不使用压缩。
+       </para>
+<!-- pgdoc-cn_end sig_en=22b8b6f8f05cbbf2486d925993fa2afd -->
+<!-- pgdoc-cn_start sig_en=5f770f68414623cbab4dbf2833176245 sig_cn_org=ee8c041e4e6f30ab91cf1ad229d32289 source=15.7 
+       <para>
+        The suffix <filename>.gz</filename> will automatically be added to
+        all filenames when using <literal>gzip</literal>, and the suffix
+        <filename>.lz4</filename> is added when using <literal>lz4</literal>.
+       </para>
+________________________________________________________-->
+       <para>
+        当使用<literal>gzip</literal>时，所有文件名都会自动添加后缀<filename>.gz</filename>，
+        而当使用<literal>lz4</literal>时，会添加后缀<filename>.lz4</filename>。
+       </para>
+<!-- pgdoc-cn_end sig_en=5f770f68414623cbab4dbf2833176245 -->
+      </listitem>
+     </varlistentry>
+    </variablelist>
+
+<!-- pgdoc-cn_start sig_en=4862b5ecd76bec6dd450cd7961f0f2ad sig_cn_org=None source=14.1 
+   <para>
+    The following command-line options control the database connection parameters.
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">connstr</replaceable></option></term>
+      <term><option>-&minus;dbname=<replaceable class="parameter">connstr</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies parameters used to connect to the server, as a <link
+        linkend="libpq-connstring">connection string</link>;  these
+        will override any conflicting command line options.
+       </para>
+       <para>
+        The option is called <literal>-&minus;dbname</literal> for consistency with other
+        client applications, but because <application>pg_receivewal</application>
+        doesn't connect to any particular database in the cluster, database
+        name in the connection string will be ignored.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">host</replaceable></option></term>
+      <term><option>-&minus;host=<replaceable class="parameter">host</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies the host name of the machine on which the server is
+        running.  If the value begins with a slash, it is used as the
+        directory for the Unix domain socket. The default is taken
+        from the <envar>PGHOST</envar> environment variable, if set,
+        else a Unix domain socket connection is attempted.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">port</replaceable></option></term>
+      <term><option>-&minus;port=<replaceable class="parameter">port</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies the TCP port or local Unix domain socket file
+        extension on which the server is listening for connections.
+        Defaults to the <envar>PGPORT</envar> environment variable, if
+        set, or a compiled-in default.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>username</replaceable></option></term>
+      <term><option>-&minus;username=<replaceable class="parameter">username</replaceable></option></term>
+      <listitem>
+       <para>
+        User name to connect as.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>-&minus;no-password</option></term>
+      <listitem>
+       <para>
+        Never issue a password prompt.  If the server requires
+        password authentication and a password is not available by
+        other means such as a <filename>.pgpass</filename> file, the
+        connection attempt will fail.  This option can be useful in
+        batch jobs and scripts where no user is present to enter a
+        password.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>-&minus;password</option></term>
+      <listitem>
+       <para>
+        Force <application>pg_receivewal</application> to prompt for a
+        password before connecting to a database.
+       </para>
+
+       <para>
+        This option is never essential, since
+        <application>pg_receivewal</application> will automatically prompt
+        for a password if the server demands password authentication.
+        However, <application>pg_receivewal</application> will waste a
+        connection attempt finding out that the server wants a password.
+        In some cases it is worth typing <option>-W</option> to avoid the extra
+        connection attempt.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+________________________________________________________-->
+   <para>
+    下列命令行选项控制数据库连接参数。
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">connstr</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">connstr</replaceable></option></term>
+      <listitem>
+       <para>
+        指定用于连接到服务器的参数，作为 <link linkend="libpq-connstring">连接字符串</link>；这些将覆盖所有冲突的命令行选项。
+       </para>
+       <para>
+        为了和其他客户端应用一致，该选项被称为<literal>--dbname</literal>。但是因为<application>pg_receivewal</application>并不连接到集簇中的任何特定数据库，连接字符串中的数据库名将被忽略。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">host</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">host</replaceable></option></term>
+      <listitem>
+       <para>
+        指定运行服务器的机器的主机名。如果该值以一个斜线开始，它被用作 Unix 域套接字的目录。默认值取自<envar>PGHOST</envar>环境变量（如果设置），否则会尝试一个 Unix 域套接字连接。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">port</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">port</replaceable></option></term>
+      <listitem>
+       <para>
+        指定服务器正在监听连接的 TCP 端口或本地 Unix 域套接字文件扩展。默认用<envar>PGPORT</envar>环境变量中的值（如果设置），或者一个编译在程序中的默认值。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>username</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">username</replaceable></option></term>
+      <listitem>
+       <para>
+        要作为哪个用户连接。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>
+        从不发出一个口令提示。如果服务器要求口令认证并且没有其他方式提供口令（例如一个<filename>.pgpass</filename>文件），那儿连接尝试将失败。这个选项对于批处理任务和脚本有用，因为在其中没有一个用户来输入口令。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>
+        强制<application>pg_receivewal</application>在连接到一个数据库之前提示要求一个口令。
+       </para>
+
+       <para>
+        这个选项不是必不可少的，因为如果服务器要求口令认证，<application>pg_receivewal</application>将自动提示要求一个口令。但是，<application>pg_receivewal</application>将浪费一次连接尝试来发现服务器想要一个口令。在某些情况下值得用<option>-W</option>来避免额外的连接尝试。
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+<!-- pgdoc-cn_end sig_en=4862b5ecd76bec6dd450cd7961f0f2ad -->
+
+<!-- pgdoc-cn_start sig_en=93756acf23c994776d9d25f20756a8ef sig_cn_org=None source=14.1 
+   <para>
+    <application>pg_receivewal</application> can perform one of the two
+    following actions in order to control physical replication slots:
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-&minus;create-slot</option></term>
+      <listitem>
+       <para>
+        Create a new physical replication slot with the name specified in
+        <option>-&minus;slot</option>, then exit.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-&minus;drop-slot</option></term>
+      <listitem>
+       <para>
+        Drop the replication slot with the name specified in
+        <option>-&minus;slot</option>, then exit.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+________________________________________________________-->
+   <para>
+    为了控制物理复制槽，<application>pg_receivewal</application>
+    可以执行下列两种动作之一：
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--create-slot</option></term>
+      <listitem>
+       <para>
+        用<option>--slot</option>中指定的名称创建一个新的物理复制槽，
+        然后退出。
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--drop-slot</option></term>
+      <listitem>
+       <para>
+        删除<option>--slot</option>中指定的复制槽，然后退出。
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+<!-- pgdoc-cn_end sig_en=93756acf23c994776d9d25f20756a8ef -->
+
+<!-- pgdoc-cn_start sig_en=6812d88e79d4ad08df47baf7e30d4ced sig_cn_org=None source=14.1 
+   <para>
+    Other options are also available:
+
+    <variablelist>
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>-&minus;version</option></term>
+       <listitem>
+       <para>
+       Print the <application>pg_receivewal</application> version and exit.
+       </para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>-&minus;help</option></term>
+       <listitem>
+       <para>
+       Show help about <application>pg_receivewal</application> command line
+       arguments, and exit.
+       </para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+________________________________________________________-->
+   <para>
+    其他选项也可用：
+
+    <variablelist>
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>
+       打印<application>pg_receivewal</application>版本并退出。
+       </para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>
+       显示有关<application>pg_receivewal</application>命令行参数的帮助并退出。
+       </para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+<!-- pgdoc-cn_end sig_en=6812d88e79d4ad08df47baf7e30d4ced -->
+
+ </refsect1>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=2768cc2ef38e43b3ef0849d330c57e21 sig_cn_org=None source=14.1 
+  <title>Exit Status</title>
+________________________________________________________-->
+  <title>退出状态</title>
+<!-- pgdoc-cn_end sig_en=2768cc2ef38e43b3ef0849d330c57e21 -->
+
+<!-- pgdoc-cn_start sig_en=962cd1a0fcd1f29094ff2418d12df271 sig_cn_org=fc1b70431b267929d99b04bdd8e76972 source=16.8 
+  <para>
+   <application>pg_receivewal</application> will exit with status 0 when
+   terminated by the <systemitem>SIGINT</systemitem> or
+   <systemitem>SIGTERM</systemitem> signal.  (That is the
+   normal way to end it.  Hence it is not an error.)  For fatal errors or
+   other signals, the exit status will be nonzero.
+  </para>
+________________________________________________________-->
+  <para>
+   <application>pg_receivewal</application>在接收到<systemitem>SIGINT</systemitem>或
+   <systemitem>SIGTERM</systemitem>信号时将以状态码0退出。（这是正常的结束方式，
+   因此这不是一个错误。）对于致命错误或其他信号，退出状态将为非零。
+  </para>
+<!-- pgdoc-cn_end sig_en=962cd1a0fcd1f29094ff2418d12df271 -->
+
+ </refsect1>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=3b1cdb4e9f7c411322dc1c76ca7f31f3 sig_cn_org=None source=14.1 
+  <title>Environment</title>
+________________________________________________________-->
+  <title>环境</title>
+<!-- pgdoc-cn_end sig_en=3b1cdb4e9f7c411322dc1c76ca7f31f3 -->
+
+<!-- pgdoc-cn_start sig_en=df87a49e7afda6b9e5b4e0213a1ba7c3 sig_cn_org=None source=14.1 
+  <para>
+   This utility, like most other <productname>PostgreSQL</productname> utilities,
+   uses the environment variables supported by <application>libpq</application>
+   (see <xref linkend="libpq-envars"/>).
+  </para>
+________________________________________________________-->
+  <para>
+   和大部分其他<productname>PostgreSQL</productname>工具相似，这个工具也使用<application>libpq</application>（见<xref linkend="libpq-envars"/>）支持的环境变量。
+  </para>
+<!-- pgdoc-cn_end sig_en=df87a49e7afda6b9e5b4e0213a1ba7c3 -->
+
+<!-- pgdoc-cn_start sig_en=72e83e1224b576d8f1aff7fc7c381f83 sig_cn_org=None source=14.1 
+  <para>
+   The environment variable <envar>PG_COLOR</envar> specifies whether to use
+   color in diagnostic messages. Possible values are
+   <literal>always</literal>, <literal>auto</literal> and
+   <literal>never</literal>.
+  </para>
+________________________________________________________-->
+  <para>
+   环境变量<envar>PG_COLOR</envar>规定在诊断消息中是否使用颜色。可能的值为<literal>always</literal>、<literal>auto</literal>、<literal>never</literal>。
+  </para>
+<!-- pgdoc-cn_end sig_en=72e83e1224b576d8f1aff7fc7c381f83 -->
+ </refsect1>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=c44fa43baeb4f69a8a2aa1ea108c6e97 sig_cn_org=None source=14.1 
+  <title>Notes</title>
+________________________________________________________-->
+  <title>注解</title>
+<!-- pgdoc-cn_end sig_en=c44fa43baeb4f69a8a2aa1ea108c6e97 -->
+
+<!-- pgdoc-cn_start sig_en=4fd8ce508a82f06f4dad0df0e6916c78 sig_cn_org=a7f7bf29e90416e096aa30d9a95369af source=15.7 
+  <para>
+   When using <application>pg_receivewal</application> instead of
+   <xref linkend="guc-archive-command"/> or
+   <xref linkend="guc-archive-library"/> as the main WAL backup method, it is
+   strongly recommended to use replication slots.  Otherwise, the server is
+   free to recycle or remove write-ahead log files before they are backed up,
+   because it does not have any information, either
+   from <xref linkend="guc-archive-command"/> or
+   <xref linkend="guc-archive-library"/> or the replication slots, about
+   how far the WAL stream has been archived.  Note, however, that a
+   replication slot will fill up the server's disk space if the receiver does
+   not keep up with fetching the WAL data.
+  </para>
+________________________________________________________-->
+  <para>
+   当使用<application>pg_receivewal</application>而不是
+   <xref linkend="guc-archive-command"/>或
+   <xref linkend="guc-archive-library"/>作为主要的WAL备份方法时，
+   强烈建议使用复制槽。否则，服务器可能会在备份之前回收或删除预写式日志文件，
+   因为它没有任何关于WAL流已归档到哪里的信息，
+   无论是来自<xref linkend="guc-archive-command"/>或
+   <xref linkend="guc-archive-library"/>还是复制槽。但是，请注意，
+   如果接收端无法及时获取WAL数据，复制槽将填满服务器的磁盘空间。
+</para>
+<!-- pgdoc-cn_end sig_en=4fd8ce508a82f06f4dad0df0e6916c78 -->
+
+<!-- pgdoc-cn_start sig_en=4b30cc7f6e151e3039cd48e64192b0af sig_cn_org=None source=14.1 
+  <para>
+   <application>pg_receivewal</application> will preserve group permissions on
+   the received WAL files if group permissions are enabled on the source
+   cluster.
+  </para>
+________________________________________________________-->
+  <para>
+   如果在源集簇上启用了组权限，<application>pg_receivewal</application>将保留接收到的WAL文件上的组权限。
+  </para>
+<!-- pgdoc-cn_end sig_en=4b30cc7f6e151e3039cd48e64192b0af -->
+
+ </refsect1>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=8f24ed0a9e4d47ffa2be9a1f3e09fa6d sig_cn_org=None source=14.1 
+  <title>Examples</title>
+________________________________________________________-->
+  <title>例子</title>
+<!-- pgdoc-cn_end sig_en=8f24ed0a9e4d47ffa2be9a1f3e09fa6d -->
+
+<!-- pgdoc-cn_start sig_en=347db57fe41c1dbf57870d0d05614497 sig_cn_org=None source=14.1 
+  <para>
+   To stream the write-ahead log from the server at
+   <literal>mydbserver</literal> and store it in the local directory
+   <filename>/usr/local/pgsql/archive</filename>:
+<screen>
+<prompt>$</prompt> <userinput>pg_receivewal -h mydbserver -D /usr/local/pgsql/archive</userinput>
+</screen></para>
+________________________________________________________-->
+  <para>
+   要从位于<literal>mydbserver</literal>的服务器流式传送预写式日志并且将它存储在本地目录<filename>/usr/local/pgsql/archive</filename>：
+<screen>
+<prompt>$</prompt> <userinput>pg_receivewal -h mydbserver -D /usr/local/pgsql/archive</userinput>
+</screen></para>
+<!-- pgdoc-cn_end sig_en=347db57fe41c1dbf57870d0d05614497 -->
+ </refsect1>
+
+ <refsect1>
+<!-- pgdoc-cn_start sig_en=8b7cc214676b443e6527e3d6bf054420 sig_cn_org=None source=14.1 
+  <title>See Also</title>
+________________________________________________________-->
+  <title>参见</title>
+<!-- pgdoc-cn_end sig_en=8b7cc214676b443e6527e3d6bf054420 -->
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgbasebackup"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,306 @@
+<!-- doc/src/sgml/generic-wal.sgml -->
+
+<chapter id="generic-wal">
+<!-- pgdoc-cn_start sig_en=ad85e71c3a9f4c5e162e410f3fb902ab sig_cn_org=None source=14.1 
+ <title>Generic WAL Records</title>
+________________________________________________________-->
+ <title>通用WAL 记录</title>
+<!-- pgdoc-cn_end sig_en=ad85e71c3a9f4c5e162e410f3fb902ab -->
+
+<!-- pgdoc-cn_start sig_en=0689caac1a80d4ee86d96c1603509639 sig_cn_org=fa64bf16f74483936e638bf60fa388b0 source=15.7 
+  <para>
+   Although all built-in WAL-logged modules have their own types of WAL
+   records, there is also a generic WAL record type, which describes changes
+   to pages in a generic way. This is useful for extensions that provide
+   custom access methods.
+  </para>
+________________________________________________________-->
+  <para>
+   虽然所有内置的WAL记录模块都有自己的WAL记录类型，但也有一种通用的WAL记录类型，
+   它以通用方式描述页面的更改。这对于提供自定义访问方法的扩展很有用。
+</para>
+<!-- pgdoc-cn_end sig_en=0689caac1a80d4ee86d96c1603509639 -->
+
+<!-- pgdoc-cn_start sig_en=31b67a16c221710a33fdebd020cb3de5 sig_cn_org=00aac631544567c23c9c2083c46ebc37 source=15.7 
+  <para>
+   In comparison with <link linkend="custom-rmgr">Custom WAL Resource
+   Managers</link>, Generic WAL is simpler for an extension to implement and
+   does not require the extension library to be loaded in order to apply the
+   records.
+  </para>
+________________________________________________________-->
+  <para>
+   与<link linkend="custom-rmgr">自定义WAL资源管理器</link>相比，通用WAL更简单，扩展实现起来更容易，
+   并且不需要加载扩展库即可应用记录。
+</para>
+<!-- pgdoc-cn_end sig_en=31b67a16c221710a33fdebd020cb3de5 -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=dc58364d1580ddc7b9df6a63ebe3c2c4 sig_cn_org=31c612d80747ddf34dc3c54f6baa0fcb source=15.7 
+   <para>
+    Generic WAL records are ignored during <link
+    linkend="logicaldecoding">Logical Decoding</link>. If logical decoding is
+    required for your extension, consider a Custom WAL Resource Manager.
+   </para>
+________________________________________________________-->
+   <para>
+    通用WAL记录在<link linkend="logicaldecoding">逻辑解码</link>期间被忽略。如果您的扩展需要逻辑解码，
+    考虑使用自定义WAL资源管理器。
+   </para>
+<!-- pgdoc-cn_end sig_en=dc58364d1580ddc7b9df6a63ebe3c2c4 -->
+  </note>
+
+<!-- pgdoc-cn_start sig_en=37cc19cca8e54abc14a72a56178dd57a sig_cn_org=None source=14.1 
+  <para>
+   The API for constructing generic WAL records is defined in
+   <filename>access/generic_xlog.h</filename> and implemented
+   in <filename>access/transam/generic_xlog.c</filename>.
+  </para>
+________________________________________________________-->
+  <para>
+   构建通用 WAL 记录的 API 定义在<filename>access/generic_xlog.h</filename>中，实现在<filename>access/transam/generic_xlog.c</filename>中。
+  </para>
+<!-- pgdoc-cn_end sig_en=37cc19cca8e54abc14a72a56178dd57a -->
+
+<!-- pgdoc-cn_start sig_en=4df93e4f5a94b24bb6e2e87262451c5c sig_cn_org=None source=14.1 
+  <para>
+   To perform a WAL-logged data update using the generic WAL record
+   facility, follow these steps:
+
+   <orderedlist>
+    <listitem>
+     <para>
+      <function>state = GenericXLogStart(relation)</function> &mdash; start
+      construction of a generic WAL record for the given relation.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <function>page = GenericXLogRegisterBuffer(state, buffer, flags)</function>
+      &mdash; register a buffer to be modified within the current generic WAL
+      record.  This function returns a pointer to a temporary copy of the
+      buffer's page, where modifications should be made.  (Do not modify the
+      buffer's contents directly.)  The third argument is a bit mask of flags
+      applicable to the operation.  Currently the only such flag is
+      <literal>GENERIC_XLOG_FULL_IMAGE</literal>, which indicates that a full-page
+      image rather than a delta update should be included in the WAL record.
+      Typically this flag would be set if the page is new or has been
+      rewritten completely.
+      <function>GenericXLogRegisterBuffer</function> can be repeated if the
+      WAL-logged action needs to modify multiple pages.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Apply modifications to the page images obtained in the previous step.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <function>GenericXLogFinish(state)</function> &mdash; apply the changes to
+      the buffers and emit the generic WAL record.
+     </para>
+    </listitem>
+   </orderedlist>
+  </para>
+________________________________________________________-->
+  <para>
+   要使用通用 WAL 记录工具执行一次被 WAL 记录的数据更新，要遵循这些步骤：
+
+   <orderedlist>
+    <listitem>
+     <para>
+      <function>state = GenericXLogStart(relation)</function> &mdash; 为给定的关系构建一个通用 WAL 记录。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <function>page = GenericXLogRegisterBuffer(state, buffer, flags)</function>
+      &mdash; 注册一个要在当前的通用 WAL 记录中修改的缓冲区。这个函数会返回一个指针指向该缓冲区页面的一份临时拷贝，修改将会在该拷贝上进行（不要直接修改该缓冲区的内容）。第三个参数是适用于该操作的标志的位掩码。当前这类标志只有<literal>GENERIC_XLOG_FULL_IMAGE</literal>，它表示在 WAL 记录中应该包括一个完整页面镜像而不是增量更新。如果是新页面或者页面已经被完全重写，通常会设置这个标志。如果被 WAL 记录的动作需要修改多个页面，可以反复调用<function>GenericXLogRegisterBuffer</function>。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      对包含在上一步中的页面镜像应用修改。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <function>GenericXLogFinish(state)</function> &mdash; 将更改应用到缓冲区并且发出通用 WAL 记录。
+     </para>
+    </listitem>
+   </orderedlist>
+  </para>
+<!-- pgdoc-cn_end sig_en=4df93e4f5a94b24bb6e2e87262451c5c -->
+
+<!-- pgdoc-cn_start sig_en=86e0d9a6e8dd51279e5429d51c2c451b sig_cn_org=None source=14.1 
+  <para>
+   WAL record construction can be canceled between any of the above steps by
+   calling <function>GenericXLogAbort(state)</function>.  This will discard all
+   changes to the page image copies.
+  </para>
+________________________________________________________-->
+  <para>
+   在上述步骤之间都可以调用<function>GenericXLogAbort(state)</function>取消 WAL 记录构造。这会丢弃所有对于页面镜像拷贝的更改。
+  </para>
+<!-- pgdoc-cn_end sig_en=86e0d9a6e8dd51279e5429d51c2c451b -->
+
+<!-- pgdoc-cn_start sig_en=945b104dcd83f84c780067b5c73c85af sig_cn_org=None source=14.1 
+  <para>
+   Please note the following points when using the generic WAL record
+   facility:
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      No direct modifications of buffers are allowed!  All modifications must
+      be done in copies acquired from <function>GenericXLogRegisterBuffer()</function>.
+      In other words, code that makes generic WAL records should never call
+      <function>BufferGetPage()</function> for itself.  However, it remains the
+      caller's responsibility to pin/unpin and lock/unlock the buffers at
+      appropriate times.  Exclusive lock must be held on each target buffer
+      from before <function>GenericXLogRegisterBuffer()</function> until after
+      <function>GenericXLogFinish()</function>.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Registrations of buffers (step 2) and modifications of page images
+      (step 3) can be mixed freely, i.e., both steps may be repeated in any
+      sequence.  Keep in mind that buffers should be registered in the same
+      order in which locks are to be obtained on them during replay.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      The maximum number of buffers that can be registered for a generic WAL
+      record is <literal>MAX_GENERIC_XLOG_PAGES</literal>.  An error will be thrown
+      if this limit is exceeded.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Generic WAL assumes that the pages to be modified have standard
+      layout, and in particular that there is no useful data between
+      <structfield>pd_lower</structfield> and <structfield>pd_upper</structfield>.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      Since you are modifying copies of buffer
+      pages, <function>GenericXLogStart()</function> does not start a critical
+      section.  Thus, you can safely do memory allocation, error throwing,
+      etc. between <function>GenericXLogStart()</function> and
+      <function>GenericXLogFinish()</function>.  The only actual critical section is
+      present inside <function>GenericXLogFinish()</function>.  There is no need to
+      worry about calling  <function>GenericXLogAbort()</function> during an error
+      exit, either.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <function>GenericXLogFinish()</function> takes care of marking buffers dirty
+      and setting their LSNs.  You do not need to do this explicitly.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      For unlogged relations, everything works the same except that no
+      actual WAL record is emitted.  Thus, you typically do not need to do
+      any explicit checks for unlogged relations.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      The generic WAL redo function will acquire exclusive locks to buffers
+      in the same order as they were registered.  After redoing all changes,
+      the locks will be released in the same order.
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      If <literal>GENERIC_XLOG_FULL_IMAGE</literal> is not specified for a
+      registered buffer, the generic WAL record contains a delta between
+      the old and the new page images.  This delta is based on byte-by-byte
+      comparison.  This is not very compact for the case of moving data
+      within a page, and might be improved in the future.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+________________________________________________________-->
+  <para>
+   在使用通用 WAL 记录功能时请注意以下几点：
+
+   <itemizedlist>
+    <listitem>
+     <para>
+      不允许直接修改缓冲区！所有的修改必须在<function>GenericXLogRegisterBuffer()</function>取得的拷贝上完成。换句话说，制造通用 WAL 记录的代码不能为自己调用<function>BufferGetPage()</function>。不过，在合适的时间对缓冲区进行 pin/unpin 以及加锁/解锁仍然是调用者的责任。从<function>GenericXLogRegisterBuffer()</function>之前直到<function>GenericXLogFinish()</function>之后，每个目标上必须保持排他锁。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      可以自由地混合注册缓冲区（步骤 2）和页面镜像修改（步骤 3），即两个步骤可以以任何顺序重复。记住注册缓冲区的顺序应该和重放时对它们加锁的顺序相同。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      一个通用 WAL 记录能注册的缓冲区最大数量是<literal>MAX_GENERIC_XLOG_PAGES</literal>。如果超出这个限制将会抛出一个错误。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      通用 WAL 假定要被修改的页面具有标准布局，特别是在<structfield>pd_lower</structfield>和<structfield>pd_upper</structfield>之间没有有用的数据。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      由于正在修改缓冲区页面的拷贝，<function>GenericXLogStart()</function>不会开始临界区。因此可以在<function>GenericXLogStart()</function>之间<function>GenericXLogFinish()</function>安全地进行内存分配、抛出错误等。唯一真正的临界区存在于<function>GenericXLogFinish()</function>内。还有，不需要担心在错误退出期间对<function>GenericXLogAbort()</function>的调用。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <function>GenericXLogFinish()</function>会负责标记缓冲区为脏并且设置它们的 LSN。你不需要显式地做这些工作。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      对于不做日志的关系，所有的事情都一样，不过不会发出实际的 WAL 记录。因此，对于不做日志的关系你通常不需要做任何显式的检查。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      通用 WAL 重做函数将按照注册缓冲区的顺序对它们获得排他锁。在重做所有更改后，这些锁将按照同样的顺序被释放。
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      如果对一个已注册的缓冲区没有指定<literal>GENERIC_XLOG_FULL_IMAGE</literal>，通用 WAL 记录包含了新旧页面镜像之间的不同。这个不同是以逐字节比较的方式形成的。对于在页面内移动数据的情况来说这种方式不是很紧凑，未来可能会有改进。
+     </para>
+    </listitem>
+   </itemizedlist>
+  </para>
+<!-- pgdoc-cn_end sig_en=945b104dcd83f84c780067b5c73c85af -->
+</chapter>
