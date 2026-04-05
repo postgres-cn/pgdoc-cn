@@ -1,0 +1,276 @@
+<!-- doc/src/sgml/diskusage.sgml -->
+
+<chapter id="diskusage">
+<!-- pgdoc-cn_start sig_en=4986b08868ba0e66d1761a5e5f25321d sig_cn_org=None source=14.1 
+ <title>Monitoring Disk Usage</title>
+________________________________________________________-->
+ <title>监控磁盘使用</title>
+<!-- pgdoc-cn_end sig_en=4986b08868ba0e66d1761a5e5f25321d -->
+
+<!-- pgdoc-cn_start sig_en=f409ab438cf7447a3e60c646b07ecd38 sig_cn_org=None source=14.1 
+ <para>
+  This chapter discusses how to monitor the disk usage of a
+  <productname>PostgreSQL</productname> database system.
+ </para>
+________________________________________________________-->
+ <para>
+  本章讨论如何监控<productname>PostgreSQL</productname>数据库系统的磁盘使用情况。
+ </para>
+<!-- pgdoc-cn_end sig_en=f409ab438cf7447a3e60c646b07ecd38 -->
+
+ <sect1 id="disk-usage">
+<!-- pgdoc-cn_start sig_en=38e039ef5780cbce1064552b1ef1c24b sig_cn_org=None source=14.1 
+  <title>Determining Disk Usage</title>
+________________________________________________________-->
+  <title>判断磁盘用量</title>
+<!-- pgdoc-cn_end sig_en=38e039ef5780cbce1064552b1ef1c24b -->
+
+<!-- pgdoc-cn_start sig_en=4ea5b53e3745b646e49202e7b4bea1a4 sig_cn_org=None source=14.1 
+  <indexterm zone="disk-usage">
+   <primary>disk usage</primary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm zone="disk-usage">
+   <primary>磁盘用量</primary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=4ea5b53e3745b646e49202e7b4bea1a4 -->
+
+<!-- pgdoc-cn_start sig_en=bfb82f2844a3f2920fc7fb9863f9e364 sig_cn_org=None source=14.1 
+  <para>
+   Each table has a primary heap disk file where most of the data is
+   stored. If the table has any columns with potentially-wide values,
+   there also might be a <acronym>TOAST</acronym> file associated with the table,
+   which is used to store values too wide to fit comfortably in the main
+   table (see <xref linkend="storage-toast"/>).  There will be one valid index
+   on the <acronym>TOAST</acronym> table, if present. There also might be indexes
+   associated with the base table.  Each table and index is stored in a
+   separate disk file &mdash; possibly more than one file, if the file would
+   exceed one gigabyte.  Naming conventions for these files are described
+   in <xref linkend="storage-file-layout"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   每个表都有一个主要的堆磁盘文件，大多数数据都存储在其中。如果一个表有着可能会很宽（尺寸大）的列， 则另外还有一个<acronym>TOAST</acronym>文件与这个表相关联， 它用于存储因为太宽而不能存储在主表里面的值（参阅<xref linkend="storage-toast"/>）。如果有这个附属文件，那么<acronym>TOAST</acronym>表上会有一个可用的索引。 当然，同时还可能有索引和基表关联。每个表和索引都存放在单独的磁盘文件里 &mdash; 如果文件超过 1G 字节，甚至可能多于一个文件。这些文件的命名原则在<xref linkend="storage-file-layout"/>中描述。
+  </para>
+<!-- pgdoc-cn_end sig_en=bfb82f2844a3f2920fc7fb9863f9e364 -->
+
+<!-- pgdoc-cn_start sig_en=d7394b853a0a7baac773847373a8891c sig_cn_org=None source=14.1 
+  <para>
+   You can monitor disk space in three ways:
+   using the SQL functions listed in <xref linkend="functions-admin-dbsize"/>,
+   using the <xref linkend="oid2name"/> module, or
+   using manual inspection of the system catalogs.
+   The SQL functions are the easiest to use and are generally recommended.
+   The remainder of this section shows how to do it by inspection of the
+   system catalogs.
+  </para>
+________________________________________________________-->
+  <para>
+   你可以以三种方式监视磁盘空间：使用<xref linkend="functions-admin-dbsize"/>中列出的SQL函数、使用<xref linkend="oid2name"/>模块或者人工观察系统目录。SQL函数是最容易使用的方法，同时也是我们通常推荐的方法。本节剩余的部分将展示如何通过观察系统目录来监视磁盘空间。
+  </para>
+<!-- pgdoc-cn_end sig_en=d7394b853a0a7baac773847373a8891c -->
+
+<!-- pgdoc-cn_start sig_en=08a3848d8f0e3de3b1061bdc1df45c18 sig_cn_org=None source=14.1 
+  <para>
+   Using <application>psql</application> on a recently vacuumed or analyzed database,
+   you can issue queries to see the disk usage of any table:
+<programlisting>
+SELECT pg_relation_filepath(oid), relpages FROM pg_class WHERE relname = 'customer';
+
+ pg_relation_filepath | relpages
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;
+ base/16384/16806     |       60
+(1 row)
+</programlisting>
+   Each page is typically 8 kilobytes. (Remember, <structfield>relpages</structfield>
+   is only updated by <command>VACUUM</command>, <command>ANALYZE</command>, and
+   a few DDL commands such as <command>CREATE INDEX</command>.)  The file path name
+   is of interest if you want to examine the table's disk file directly.
+  </para>
+________________________________________________________-->
+  <para>
+   在一个最近清理过或者分析过的数据库上使用<application>psql</application>，你可以发出查询来查看任意表的磁盘用量：
+<programlisting>
+SELECT pg_relation_filepath(oid), relpages FROM pg_class WHERE relname = 'customer';
+
+ pg_relation_filepath | relpages
+----------------------+----------
+ base/16384/16806     |       60
+(1 row)
+</programlisting>
+   每个页通常都是 8K 字节（记住，<structfield>relpages</structfield>只会由<command>VACUUM</command>、<command>ANALYZE</command>和少数几个 DDL 命令如<command>CREATE INDEX</command>所更新）。如果你想直接检查表的磁盘文件，那么文件路径名应该有用。
+  </para>
+<!-- pgdoc-cn_end sig_en=08a3848d8f0e3de3b1061bdc1df45c18 -->
+
+<!-- pgdoc-cn_start sig_en=2c192f5300b9064767be321f2f864e20 sig_cn_org=None source=14.1 
+  <para>
+   To show the space used by <acronym>TOAST</acronym> tables, use a query
+   like the following:
+<programlisting>
+SELECT relname, relpages
+FROM pg_class,
+     (SELECT reltoastrelid
+      FROM pg_class
+      WHERE relname = 'customer') AS ss
+WHERE oid = ss.reltoastrelid OR
+      oid = (SELECT indexrelid
+             FROM pg_index
+             WHERE indrelid = ss.reltoastrelid)
+ORDER BY relname;
+
+       relname        | relpages
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;
+ pg_toast_16806       |        0
+ pg_toast_16806_index |        1
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   要显示<acronym>TOAST</acronym>表使用的空间，我们可以使用一个类似下面这样的查询：
+<programlisting>
+SELECT relname, relpages
+FROM pg_class,
+     (SELECT reltoastrelid
+      FROM pg_class
+      WHERE relname = 'customer') AS ss
+WHERE oid = ss.reltoastrelid OR
+      oid = (SELECT indexrelid
+             FROM pg_index
+             WHERE indrelid = ss.reltoastrelid)
+ORDER BY relname;
+
+       relname        | relpages
+----------------------+----------
+ pg_toast_16806       |        0
+ pg_toast_16806_index |        1
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=2c192f5300b9064767be321f2f864e20 -->
+
+<!-- pgdoc-cn_start sig_en=7b2949d7b09ee0fc5890fea5766bb3e2 sig_cn_org=None source=14.1 
+  <para>
+   You can easily display index sizes, too:
+<programlisting>
+SELECT c2.relname, c2.relpages
+FROM pg_class c, pg_class c2, pg_index i
+WHERE c.relname = 'customer' AND
+      c.oid = i.indrelid AND
+      c2.oid = i.indexrelid
+ORDER BY c2.relname;
+
+      relname      | relpages
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;
+ customer_id_index |       26
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   你也可以很容易地显示索引的尺寸：
+<programlisting>
+SELECT c2.relname, c2.relpages
+FROM pg_class c, pg_class c2, pg_index i
+WHERE c.relname = 'customer' AND
+      c.oid = i.indrelid AND
+      c2.oid = i.indexrelid
+ORDER BY c2.relname;
+
+      relname      | relpages
+-------------------+----------
+ customer_id_index |       26
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=7b2949d7b09ee0fc5890fea5766bb3e2 -->
+
+<!-- pgdoc-cn_start sig_en=3e5d0ace3b2da0da5bfb5705f3422d9d sig_cn_org=None source=14.1 
+  <para>
+   It is easy to find your largest tables and indexes using this
+   information:
+<programlisting>
+SELECT relname, relpages
+FROM pg_class
+ORDER BY relpages DESC;
+
+       relname        | relpages
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;
+ bigtable             |     3290
+ customer             |     3144
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   我们很容易用下面的信息找出最大的表和索引：
+<programlisting>
+SELECT relname, relpages
+FROM pg_class
+ORDER BY relpages DESC;
+
+       relname        | relpages
+----------------------+----------
+ bigtable             |     3290
+ customer             |     3144
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=3e5d0ace3b2da0da5bfb5705f3422d9d -->
+ </sect1>
+
+ <sect1 id="disk-full">
+<!-- pgdoc-cn_start sig_en=74c893012a9920a56b2babd7381e1da9 sig_cn_org=None source=14.1 
+  <title>Disk Full Failure</title>
+________________________________________________________-->
+  <title>磁盘满失败</title>
+<!-- pgdoc-cn_end sig_en=74c893012a9920a56b2babd7381e1da9 -->
+
+<!-- pgdoc-cn_start sig_en=1c86aa4d1dbed1b35073102b61ae5f47 sig_cn_org=None source=14.1 
+  <para>
+   The most important disk monitoring task of a database administrator
+   is to make sure the disk doesn't become full.  A filled data disk will
+   not result in data corruption, but it might prevent useful activity
+   from occurring. If the disk holding the WAL files grows full, database
+   server panic and consequent shutdown might occur.
+  </para>
+________________________________________________________-->
+  <para>
+   一个数据库管理员最重要的磁盘监控任务就是确保磁盘不会写满。一个写满了的数据磁盘可能不会导致数据的崩溃，但它肯定会让系统变得不可用。如果保存 WAL 文件的磁盘变满，会发生数据库服务器致命错误并且可能发生关闭。
+  </para>
+<!-- pgdoc-cn_end sig_en=1c86aa4d1dbed1b35073102b61ae5f47 -->
+
+<!-- pgdoc-cn_start sig_en=948774412e0e11b7ff38ff01b5d58cbb sig_cn_org=None source=14.1 
+  <para>
+   If you cannot free up additional space on the disk by deleting
+   other things, you can move some of the database files to other file
+   systems by making use of tablespaces. See <xref
+   linkend="manage-ag-tablespaces"/> for more information about that.
+  </para>
+________________________________________________________-->
+  <para>
+   如果你不能通过删除一些其他的东西来释放一些磁盘空间，那么你可以通过使用表空间把一些数据库文件移动到其他文件系统上去。参阅<xref linkend="manage-ag-tablespaces"/>获取更多信息。
+  </para>
+<!-- pgdoc-cn_end sig_en=948774412e0e11b7ff38ff01b5d58cbb -->
+
+  <tip>
+<!-- pgdoc-cn_start sig_en=4f5bb8a4a4d8cfacb3fb6599fb6d5c56 sig_cn_org=None source=14.1 
+   <para>
+    Some file systems perform badly when they are almost full, so do
+    not wait until the disk is completely full to take action.
+   </para>
+________________________________________________________-->
+   <para>
+    有些文件系统在快满的时候性能会急剧恶化，因此不要等到磁盘完全满的时候才采取行动。
+   </para>
+<!-- pgdoc-cn_end sig_en=4f5bb8a4a4d8cfacb3fb6599fb6d5c56 -->
+  </tip>
+
+<!-- pgdoc-cn_start sig_en=b560c1671ae7d765031f072e0f7d58b1 sig_cn_org=None source=14.1 
+  <para>
+   If your system supports per-user disk quotas, then the database
+   will naturally be subject to whatever quota is placed on the user
+   the server runs as.  Exceeding the quota will have the same bad
+   effects as running out of disk space entirely.
+  </para>
+________________________________________________________-->
+  <para>
+   如果你的系统支持每用户的磁盘份额，那么数据库将自然地受制于用户所处的服务器给他的份额限制。超过份额的负面影响和完全用光磁盘是完全一样的。
+  </para>
+<!-- pgdoc-cn_end sig_en=b560c1671ae7d765031f072e0f7d58b1 -->
+ </sect1>
+</chapter>

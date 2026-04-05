@@ -1,0 +1,401 @@
+<!-- doc/src/sgml/xact.sgml -->
+
+<chapter id="transactions">
+
+<!-- pgdoc-cn_start sig_en=9ec37893a19eeec538f9d1b2844418dd sig_cn_org=7f80fbe292c482aa8819829a8b408341 source=16.8 
+ <title>Transaction Processing</title>
+________________________________________________________-->
+ <title>事务处理</title>
+<!-- pgdoc-cn_end sig_en=9ec37893a19eeec538f9d1b2844418dd -->
+
+<!-- pgdoc-cn_start sig_en=0a78557e9f6a232d583b686cde1abafe sig_cn_org=570f462cb605def2be28c1f42c5d42bf source=16.8 
+ <para>
+  This chapter provides an overview of the internals of
+  <productname>PostgreSQL</productname>'s transaction management system.
+  The word transaction is often abbreviated as <firstterm>xact</firstterm>.
+ </para>
+________________________________________________________-->
+ <para>
+  本章概述了<productname>PostgreSQL</productname>事务管理系统的内部结构。
+  事务这个词通常缩写为<firstterm>xact</firstterm>。
+ </para>
+<!-- pgdoc-cn_end sig_en=0a78557e9f6a232d583b686cde1abafe -->
+
+ <sect1 id="transaction-id">
+
+<!-- pgdoc-cn_start sig_en=315b10da2d6327e69f40f9b6d36f5154 sig_cn_org=50a9363d77e653a271b3a996022a908d source=16.8 
+  <title>Transactions and Identifiers</title>
+________________________________________________________-->
+  <title>事务和标识符</title>
+<!-- pgdoc-cn_end sig_en=315b10da2d6327e69f40f9b6d36f5154 -->
+
+<!-- pgdoc-cn_start sig_en=8930789019ea0756014aa4465b2d3636 sig_cn_org=2acd82d8c7ce6bbcf4199c9976056132 source=16.8 
+  <para>
+   Transactions can be created explicitly using <command>BEGIN</command>
+   or <command>START TRANSACTION</command> and ended using
+   <command>COMMIT</command> or <command>ROLLBACK</command>.  SQL
+   statements outside of explicit transactions automatically use
+   single-statement transactions.
+  </para>
+________________________________________________________-->
+  <para>
+   可以使用<command>BEGIN</command>或<command>START TRANSACTION</command>
+   显式创建事务，并使用<command>COMMIT</command>或<command>ROLLBACK</command>
+   结束事务。显式事务之外的SQL语句会自动使用单语句事务。
+  </para>
+<!-- pgdoc-cn_end sig_en=8930789019ea0756014aa4465b2d3636 -->
+
+<!-- pgdoc-cn_start sig_en=19349cf7a62bb34daf1657dc337256b5 sig_cn_org=cc7235ca4cf9d4318d9ca615b0012af0 source=16.8 
+  <para>
+   Every transaction is identified by a unique
+   <literal>VirtualTransactionId</literal> (also called
+   <literal>virtualXID</literal> or <literal>vxid</literal>), which
+   is comprised of a backend ID (or <literal>backendID</literal>)
+   and a sequentially-assigned number local to each backend, known as
+   <literal>localXID</literal>.  For example, the virtual transaction
+   ID <literal>4/12532</literal> has a <literal>backendID</literal>
+   of <literal>4</literal> and a <literal>localXID</literal> of
+   <literal>12532</literal>.
+  </para>
+________________________________________________________-->
+  <para>
+   每个事务都由一个唯一的<literal>VirtualTransactionId</literal>
+   （也称为<literal>virtualXID</literal>或<literal>vxid</literal>）标识，
+   它由一个后端ID（或<literal>backendID</literal>）和一个分配给每个后端的
+   本地顺序号组成，称为<literal>localXID</literal>。例如，虚拟事务ID
+   <literal>4/12532</literal>的<literal>backendID</literal>为
+   <literal>4</literal>，<literal>localXID</literal>为
+   <literal>12532</literal>。
+</para>
+<!-- pgdoc-cn_end sig_en=19349cf7a62bb34daf1657dc337256b5 -->
+
+<!-- pgdoc-cn_start sig_en=32f534be67a539e31a50f1cdba14e828 sig_cn_org=f1048d0568c9e0464ad431f6ea60ad79 source=16.8 
+  <para>
+   Non-virtual <literal>TransactionId</literal>s (or <type>xid</type>),
+   e.g., <literal>278394</literal>, are assigned sequentially to
+   transactions from a global counter used by all databases within
+   the <productname>PostgreSQL</productname> cluster.  This assignment
+   happens when a transaction first writes to the database. This means
+   lower-numbered xids started writing before higher-numbered xids.
+   Note that the order in which transactions perform their first database
+   write might be different from the order in which the transactions
+   started, particularly if the transaction started with statements that
+   only performed database reads.
+  </para>
+________________________________________________________-->
+  <para>
+   非虚拟<literal>TransactionId</literal>（或<type>xid</type>），例如
+   <literal>278394</literal>，是从一个全局计数器中按顺序分配给事务的，
+   该计数器由<productname>PostgreSQL</productname>集群中的所有数据库共用。
+   这种分配发生在事务首次写入数据库时。这意味着编号较低的xid在编号较高
+   的xid之前开始写入。请注意，事务首次写入数据库的顺序可能与事务开始的
+   顺序不同，特别是当事务以仅执行数据库读取的语句开始时。
+  </para>
+<!-- pgdoc-cn_end sig_en=32f534be67a539e31a50f1cdba14e828 -->
+
+<!-- pgdoc-cn_start sig_en=89ebda9d6c8359038384ed5e0532871a sig_cn_org=d2dbb0f6289f1018fd43f0bf9f985937 source=16.8 
+  <para>
+   The internal transaction ID type <type>xid</type> is 32 bits wide
+   and <link linkend="vacuum-for-wraparound">wraps around</link> every
+   4 billion transactions. A 32-bit epoch is incremented during each
+   wraparound. There is also a 64-bit type <type>xid8</type> which
+   includes this epoch and therefore does not wrap around during the
+   life of an installation;  it can be converted to xid by casting.
+   The functions in <xref linkend="functions-pg-snapshot"/>
+   return <type>xid8</type> values.  Xids are used as the
+   basis for <productname>PostgreSQL</productname>'s <link
+   linkend="mvcc">MVCC</link> concurrency mechanism and streaming
+   replication.
+  </para>
+________________________________________________________-->
+  <para>
+   内部事务ID类型<type>xid</type>是32位宽，并且每
+   <link linkend="vacuum-for-wraparound">40亿次事务后回绕</link>。
+   在每次回绕期间，一个32位的纪元会递增。还有一种64位类型
+   <type>xid8</type>，它包含了这个纪元，因此在安装的生命周期内
+   不会回绕；它可以通过类型转换转换为xid。
+   <xref linkend="functions-pg-snapshot"/>中的函数
+   返回<type>xid8</type>值。Xid被用作
+   <productname>PostgreSQL</productname>的
+   <link linkend="mvcc">MVCC</link>并发机制和流复制的基础。
+  </para>
+<!-- pgdoc-cn_end sig_en=89ebda9d6c8359038384ed5e0532871a -->
+
+<!-- pgdoc-cn_start sig_en=657f4ca56b3ecae1833048f2183c061b sig_cn_org=e81bf486ae1b0a036f482b75006b2c2a source=16.8 
+  <para>
+   When a top-level transaction with a (non-virtual) xid commits,
+   it is marked as committed in the <filename>pg_xact</filename>
+   directory. Additional information is recorded in the
+   <filename>pg_commit_ts</filename> directory if <xref
+   linkend="guc-track-commit-timestamp"/> is enabled.
+  </para>
+________________________________________________________-->
+  <para>
+   当一个顶层事务带有（非虚拟的）xid提交时，
+   它会在<filename>pg_xact</filename>目录中标记为已提交。
+   如果启用了<xref linkend="guc-track-commit-timestamp"/>，
+   额外的信息会记录在<filename>pg_commit_ts</filename>目录中。
+  </para>
+<!-- pgdoc-cn_end sig_en=657f4ca56b3ecae1833048f2183c061b -->
+
+<!-- pgdoc-cn_start sig_en=8a9478deea96d8b3f89969b160a1c902 sig_cn_org=98cfbe2593b0a3b62fc9311e918e6916 source=16.8 
+  <para>
+   In addition to <literal>vxid</literal> and <type>xid</type>,
+   prepared transactions are also assigned Global Transaction
+   Identifiers (<acronym>GID</acronym>). GIDs are string literals up
+   to 200 bytes long, which must be unique amongst other currently
+   prepared transactions.  The mapping of GID to xid is shown in <link
+   linkend="view-pg-prepared-xacts"><structname>pg_prepared_xacts</structname></link>.
+  </para>
+________________________________________________________-->
+  <para>
+   除了<literal>vxid</literal>和<type>xid</type>之外，
+   预备事务还被分配了全局事务标识符
+   (<acronym>GID</acronym>)。GID 是长度最多为 200 字节的字符串字面值，
+   必须在当前预备事务中唯一。GID 到 xid 的映射显示在
+   <link linkend="view-pg-prepared-xacts"><structname>pg_prepared_xacts</structname></link>中。
+</para>
+<!-- pgdoc-cn_end sig_en=8a9478deea96d8b3f89969b160a1c902 -->
+ </sect1>
+
+ <sect1 id="xact-locking">
+
+<!-- pgdoc-cn_start sig_en=816aa6454276c8a9e7f4a361c637146d sig_cn_org=d5138bf1e3e8464db75b8d075f117c03 source=16.8 
+  <title>Transactions and Locking</title>
+________________________________________________________-->
+  <title>事务和锁定</title>
+<!-- pgdoc-cn_end sig_en=816aa6454276c8a9e7f4a361c637146d -->
+
+<!-- pgdoc-cn_start sig_en=3c841e37f19286dbea3ea8c07208ddfe sig_cn_org=14648960e8b5418cc704d0d739ebfdef source=16.8 
+  <para>
+   The transaction IDs of currently executing transactions are shown in
+   <link linkend="view-pg-locks"><structname>pg_locks</structname></link>
+   in columns <structfield>virtualxid</structfield> and
+   <structfield>transactionid</structfield>.  Read-only transactions
+   will have <structfield>virtualxid</structfield>s but NULL
+   <structfield>transactionid</structfield>s, while both columns will be
+   set in read-write transactions.
+  </para>
+________________________________________________________-->
+  <para>
+   当前正在执行事务的事务ID显示在
+   <link linkend="view-pg-locks"><structname>pg_locks</structname></link>
+   的<structfield>virtualxid</structfield>和
+   <structfield>transactionid</structfield>列中。只读事务将具有
+   <structfield>virtualxid</structfield>，但<structfield>transactionid</structfield>
+   为NULL，而读写事务中这两列都将被设置。
+  </para>
+<!-- pgdoc-cn_end sig_en=3c841e37f19286dbea3ea8c07208ddfe -->
+
+<!-- pgdoc-cn_start sig_en=2ed7ac532341e74396cd7e1b0ab93654 sig_cn_org=0a2b68c716fb7e6c581588a3d03191c8 source=16.8 
+  <para>
+   Some lock types wait on <structfield>virtualxid</structfield>,
+   while other types wait on <structfield>transactionid</structfield>.
+   Row-level read and write locks are recorded directly in the locked
+   rows and can be inspected using the <xref linkend="pgrowlocks"/>
+   extension.  Row-level read locks might also require the assignment
+   of multixact IDs (<literal>mxid</literal>;  see <xref
+   linkend="vacuum-for-multixact-wraparound"/>).
+  </para>
+________________________________________________________-->
+  <para>
+   一些锁类型会等待<structfield>virtualxid</structfield>，
+   而其他类型会等待<structfield>transactionid</structfield>。
+   行级读写锁直接记录在被锁定的行中，可以通过
+   <xref linkend="pgrowlocks"/>扩展进行检查。行级读锁可能还需要
+   分配多事务ID（<literal>mxid</literal>；参见<xref
+   linkend="vacuum-for-multixact-wraparound"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=2ed7ac532341e74396cd7e1b0ab93654 -->
+ </sect1>
+
+ <sect1 id="subxacts">
+
+<!-- pgdoc-cn_start sig_en=05fd64909b88c6506cbe69164a5bf0e5 sig_cn_org=51e74c2eb8aee242fa3c94f8f377dd10 source=16.8 
+  <title>Subtransactions</title>
+________________________________________________________-->
+  <title>子事务</title>
+<!-- pgdoc-cn_end sig_en=05fd64909b88c6506cbe69164a5bf0e5 -->
+
+<!-- pgdoc-cn_start sig_en=e55dba93aef8a8dddb7d314ff5314336 sig_cn_org=097c1253654732ec5d3f69d7aa8ea847 source=16.8 
+  <para>
+   Subtransactions are started inside transactions, allowing large
+   transactions to be broken into smaller units.  Subtransactions can
+   commit or abort without affecting their parent transactions, allowing
+   parent transactions to continue. This allows errors to be handled
+   more easily, which is a common application development pattern.
+   The word subtransaction is often abbreviated as
+   <firstterm>subxact</firstterm>.
+  </para>
+________________________________________________________-->
+  <para>
+   子事务是在事务内部启动的，允许将大型事务分解为较小的单元。
+   子事务可以提交或中止而不影响其父事务，从而允许父事务继续。
+   这使得错误处理更加容易，这是一个常见的应用程序开发模式。
+   子事务这个词通常缩写为<firstterm>子事务</firstterm>。
+  </para>
+<!-- pgdoc-cn_end sig_en=e55dba93aef8a8dddb7d314ff5314336 -->
+
+<!-- pgdoc-cn_start sig_en=aa1b1f1b1d3a6a06458d8c079ec3de5d sig_cn_org=4dabb9f3867d7f7e676159e4f5c94522 source=16.8 
+  <para>
+   Subtransactions can be started explicitly using the
+   <command>SAVEPOINT</command> command, but can also be started in
+   other ways, such as PL/pgSQL's <command>EXCEPTION</command> clause.
+   PL/Python and PL/Tcl also support explicit subtransactions.
+   Subtransactions can also be started from other subtransactions.
+   The top-level transaction and its child subtransactions form a
+   hierarchy or tree, which is why we refer to the main transaction as
+   the top-level transaction.
+  </para>
+________________________________________________________-->
+  <para>
+   子事务可以通过<command>SAVEPOINT</command>命令显式启动，但也可以通过其他方式启动，
+   例如PL/pgSQL的<command>EXCEPTION</command>子句。PL/Python和PL/Tcl也支持显式子事务。
+   子事务也可以从其他子事务中启动。顶层事务及其子事务形成一个层次结构或树状结构，
+   这就是为什么我们将主事务称为顶层事务。
+</para>
+<!-- pgdoc-cn_end sig_en=aa1b1f1b1d3a6a06458d8c079ec3de5d -->
+
+<!-- pgdoc-cn_start sig_en=56c8f3a674a7c55e1d4f41489aa8ece6 sig_cn_org=bc3ebbc5cb1c9c2b5d843a55f1013c82 source=16.8 
+  <para>
+   If a subtransaction is assigned a non-virtual transaction ID,
+   its transaction ID is referred to as a <quote>subxid</quote>.
+   Read-only subtransactions are not assigned subxids, but once they
+   attempt to write, they will be assigned one. This also causes all of
+   a subxid's parents, up to and including the top-level transaction,
+   to be assigned non-virtual transaction ids.  We ensure that a parent
+   xid is always lower than any of its child subxids.
+  </para>
+________________________________________________________-->
+  <para>
+   如果一个子事务被分配了一个非虚拟事务ID，
+   那么它的事务ID被称为<quote>子事务ID</quote>。
+   只读子事务不会被分配子事务ID，但一旦它们尝试写入，
+   它们将会被分配一个。这也会导致所有子事务ID的父事务，
+   包括顶级事务在内，都被分配非虚拟事务ID。
+   我们确保父事务ID总是小于其任何子事务ID。
+  </para>
+<!-- pgdoc-cn_end sig_en=56c8f3a674a7c55e1d4f41489aa8ece6 -->
+
+<!-- pgdoc-cn_start sig_en=215d9b13c4bd23b2ac46b25054996fcb sig_cn_org=f6a7c33dc3764078ac446a13c9552e8a source=16.8 
+  <para>
+   The immediate parent xid of each subxid is recorded in the
+   <filename>pg_subtrans</filename> directory. No entry is made for
+   top-level xids since they do not have a parent, nor is an entry made
+   for read-only subtransactions.
+  </para>
+________________________________________________________-->
+  <para>
+   每个子事务的直接父事务ID记录在<filename>pg_subtrans</filename>目录中。
+   顶级事务ID没有父事务，因此不会为其创建条目，也不会为只读子事务创建条目。
+  </para>
+<!-- pgdoc-cn_end sig_en=215d9b13c4bd23b2ac46b25054996fcb -->
+
+<!-- pgdoc-cn_start sig_en=2dbc36a3dde87653e1c2e82dcbb7721b sig_cn_org=fcd0db7ea3326834bb23e101bdef226c source=16.8 
+  <para>
+   When a subtransaction commits, all of its committed child
+   subtransactions with subxids will also be considered subcommitted
+   in that transaction.  When a subtransaction aborts, all of its child
+   subtransactions will also be considered aborted.
+  </para>
+________________________________________________________-->
+  <para>
+   当一个子事务提交时，所有带有子事务ID的已提交子事务也会在该事务中被视为
+   子提交状态。当一个子事务中止时，所有的子事务也会被视为中止状态。
+  </para>
+<!-- pgdoc-cn_end sig_en=2dbc36a3dde87653e1c2e82dcbb7721b -->
+
+<!-- pgdoc-cn_start sig_en=30efc67a8bcf3056d62bfd2da042d3d2 sig_cn_org=de4739b1e13dd43df26c5ef8d0c46fc0 source=16.8 
+  <para>
+   When a top-level transaction with an xid commits, all of its
+   subcommitted child subtransactions are also persistently recorded
+   as committed in the <filename>pg_xact</filename> subdirectory.  If the
+   top-level transaction aborts, all its subtransactions are also aborted,
+   even if they were subcommitted.
+  </para>
+________________________________________________________-->
+  <para>
+   当一个具有xid的顶级事务提交时，其所有已子提交的子事务也会被持久性地记录为已提交，
+   存储在<filename>pg_xact</filename>子目录中。如果顶级事务中止，其所有子事务也会中止，
+   即使它们已经被子提交。
+  </para>
+<!-- pgdoc-cn_end sig_en=30efc67a8bcf3056d62bfd2da042d3d2 -->
+
+<!-- pgdoc-cn_start sig_en=ed3b2065e16bde397f86aee72ce1d81c sig_cn_org=6c9889aea4876c3feffe4e484d8a0785 source=16.8 
+  <para>
+   The more subtransactions each transaction keeps open (not
+   rolled back or released), the greater the transaction management
+   overhead. Up to 64 open subxids are cached in shared memory for
+   each backend; after that point, the storage I/O overhead increases
+   significantly due to additional lookups of subxid entries in
+   <filename>pg_subtrans</filename>.
+  </para>
+________________________________________________________-->
+  <para>
+   每个事务保持的子事务越多（未回滚或释放），事务管理的开销就越大。
+   每个后端最多可以在共享内存中缓存64个打开的子事务ID；超过这个点后，
+   由于在<filename>pg_subtrans</filename>中额外查找子事务ID条目的原因，
+   存储I/O开销会显著增加。
+  </para>
+<!-- pgdoc-cn_end sig_en=ed3b2065e16bde397f86aee72ce1d81c -->
+ </sect1>
+
+ <sect1 id="two-phase">
+
+<!-- pgdoc-cn_start sig_en=a8717931330b6a63d3211aba1ce0a098 sig_cn_org=43f5ea7534999abd85a77dcac41bc937 source=16.8 
+  <title>Two-Phase Transactions</title>
+________________________________________________________-->
+  <title>两阶段事务</title>
+<!-- pgdoc-cn_end sig_en=a8717931330b6a63d3211aba1ce0a098 -->
+
+<!-- pgdoc-cn_start sig_en=3bee5568e35d096211ab4f2538e7fe19 sig_cn_org=1e3a8a1216c3dbea8cdcca5e10164ac4 source=16.8 
+  <para>
+   <productname>PostgreSQL</productname> supports a two-phase commit (2PC)
+   protocol that allows multiple distributed systems to work together
+   in a transactional manner.  The commands are <command>PREPARE
+   TRANSACTION</command>, <command>COMMIT PREPARED</command> and
+   <command>ROLLBACK PREPARED</command>.  Two-phase transactions
+   are intended for use by external transaction management systems.
+   <productname>PostgreSQL</productname> follows the features and model
+   proposed by the X/Open XA standard, but does not implement some less
+   often used aspects.
+  </para>
+________________________________________________________-->
+  <para>
+   <productname>PostgreSQL</productname>支持两阶段提交（2PC）协议，
+   该协议允许多个分布式系统以事务方式协同工作。命令包括
+   <command>PREPARE TRANSACTION</command>、<command>COMMIT PREPARED</command>
+   和<command>ROLLBACK PREPARED</command>。两阶段事务旨在供外部事务管理
+   系统使用。<productname>PostgreSQL</productname>遵循X/Open XA标准提出的功能
+   和模型，但未实现一些较少使用的方面。
+  </para>
+<!-- pgdoc-cn_end sig_en=3bee5568e35d096211ab4f2538e7fe19 -->
+
+<!-- pgdoc-cn_start sig_en=00f54eacdbbd35277bf8923cedf52ab4 sig_cn_org=6b3962dd5477d08476df2a11929adc7f source=16.8 
+  <para>
+   When the user executes <command>PREPARE TRANSACTION</command>, the
+   only possible next commands are <command>COMMIT PREPARED</command>
+   or <command>ROLLBACK PREPARED</command>. In general, this prepared
+   state is intended to be of very short duration, but external
+   availability issues might mean transactions stay in this state
+   for an extended interval. Short-lived prepared
+   transactions are stored only in shared memory and WAL.
+   Transactions that span checkpoints are recorded in the
+   <filename>pg_twophase</filename> directory.  Transactions
+   that are currently prepared can be inspected using <link
+   linkend="view-pg-prepared-xacts"><structname>pg_prepared_xacts</structname></link>.
+  </para>
+________________________________________________________-->
+  <para>
+   当用户执行<command>PREPARE TRANSACTION</command>时，唯一可能的下一个命令是
+   <command>COMMIT PREPARED</command>或<command>ROLLBACK PREPARED</command>。通常，
+   这种预备状态的设计是为了持续时间非常短，但外部可用性问题可能导致事务在
+   这种状态下停留较长时间。短期的预备事务仅存储在共享内存和WAL中。跨检查点
+   的事务会记录在<filename>pg_twophase</filename>目录中。当前处于预备状态的事务
+   可以通过使用<link linkend="view-pg-prepared-xacts">
+   <structname>pg_prepared_xacts</structname></link>进行检查。
+  </para>
+<!-- pgdoc-cn_end sig_en=00f54eacdbbd35277bf8923cedf52ab4 -->
+ </sect1>
+
+</chapter>

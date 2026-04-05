@@ -1,0 +1,2183 @@
+<!-- doc/src/sgml/brin.sgml -->
+
+<chapter id="brin">
+<!-- pgdoc-cn_start sig_en=df3195289e5177b35eb8228381533a60 sig_cn_org=None source=14.1 
+<title>BRIN Indexes</title>
+________________________________________________________-->
+<title>BRIN 索引</title>
+<!-- pgdoc-cn_end sig_en=df3195289e5177b35eb8228381533a60 -->
+
+<!-- pgdoc-cn_start sig_en=78461a11ab28570e10ad5727745a0db4 sig_cn_org=None source=14.1 
+   <indexterm>
+    <primary>index</primary>
+    <secondary>BRIN</secondary>
+   </indexterm>
+________________________________________________________-->
+   <indexterm>
+    <primary>index</primary>
+    <secondary>BRIN</secondary>
+   </indexterm>
+<!-- pgdoc-cn_end sig_en=78461a11ab28570e10ad5727745a0db4 -->
+
+<sect1 id="brin-intro">
+<!-- pgdoc-cn_start sig_en=c2fcf93c611ba5f3baff759a5cc428dd sig_cn_org=None source=14.1 
+ <title>Introduction</title>
+________________________________________________________-->
+ <title>简介</title>
+<!-- pgdoc-cn_end sig_en=c2fcf93c611ba5f3baff759a5cc428dd -->
+
+<!-- pgdoc-cn_start sig_en=70b70b4a6c7a9120fc7bfb74340bd5a9 sig_cn_org=c7248f5ecb757702ce9cfdbca04f97e5 source=15.7 
+ <para>
+  <acronym>BRIN</acronym> stands for Block Range Index.
+  <acronym>BRIN</acronym> is designed for handling very large tables
+  in which certain columns have some natural correlation with their
+  physical location within the table.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>BRIN</acronym> 代表块范围索引。
+  <acronym>BRIN</acronym> 旨在处理非常大的表，其中某些列与它们在表中的物理位置具有某种自然相关性。
+</para>
+<!-- pgdoc-cn_end sig_en=70b70b4a6c7a9120fc7bfb74340bd5a9 -->
+
+<!-- pgdoc-cn_start sig_en=e3b2c04d5d86f4054583c592f20f5a2c sig_cn_org=d17947846f3ede2604929bc5063e6959 source=15.7 
+ <para>
+  <acronym>BRIN</acronym> works in terms of <firstterm>block ranges</firstterm>
+  (or <quote>page ranges</quote>).
+  A block range is a group of pages that are physically
+  adjacent in the table; for each block range, some summary info is stored
+  by the index.
+  For example, a table storing a store's sale orders might have
+  a date column on which each order was placed, and most of the time
+  the entries for earlier orders will appear earlier in the table as well;
+  a table storing a ZIP code column might have all codes for a city
+  grouped together naturally.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>BRIN</acronym> 以 <firstterm>block ranges</firstterm>
+  (或 <quote>page ranges</quote>)为单位工作。
+  块范围是表中物理上相邻的一组页面；对于每个块范围，索引会存储一些摘要信息。
+  例如，一个存储商店销售订单的表可能有一个日期列，表示每个订单的下单日期，大多数情况下较早的订单条目也会在表格中较早出现；
+  一个存储邮政编码列的表可能会自然地将同一城市的所有邮政编码分组在一起。
+</para>
+<!-- pgdoc-cn_end sig_en=e3b2c04d5d86f4054583c592f20f5a2c -->
+
+<!-- pgdoc-cn_start sig_en=422ca29447d3c69fde24ec91a96bcb5c sig_cn_org=None source=14.1 
+ <para>
+  <acronym>BRIN</acronym> indexes can satisfy queries via regular bitmap
+  index scans, and will return all tuples in all pages within each range if
+  the summary info stored by the index is <firstterm>consistent</firstterm> with the
+  query conditions.
+  The query executor is in charge of rechecking these tuples and discarding
+  those that do not match the query conditions &mdash; in other words, these
+  indexes are lossy.
+  Because a <acronym>BRIN</acronym> index is very small, scanning the index
+  adds little overhead compared to a sequential scan, but may avoid scanning
+  large parts of the table that are known not to contain matching tuples.
+ </para>
+________________________________________________________-->
+ <para>
+  如果索引中存储的摘要信息与查询条件<firstterm>一致</firstterm>，<acronym>BRIN</acronym>
+  索引可以通过常规的位图索引扫描满足查询，并且将会返回每个范围中所有页面
+  中的所有元组。查询执行器负责再次检查这些元组并且抛弃掉那些不匹配查询条
+  件的元组 &mdash; 换句话说，这些索引是有损的。由于一个<acronym>BRIN</acronym>
+  索引很小，扫描这种索引虽然比使用顺序扫描多出了一点点开销，但是可能会避
+  免扫描表中很多已知不包含匹配元组的部分。
+ </para>
+<!-- pgdoc-cn_end sig_en=422ca29447d3c69fde24ec91a96bcb5c -->
+
+<!-- pgdoc-cn_start sig_en=ee3efefdc27a9720d209136f7c67f417 sig_cn_org=None source=14.1 
+ <para>
+  The specific data that a <acronym>BRIN</acronym> index will store,
+  as well as the specific queries that the index will be able to satisfy,
+  depend on the operator class selected for each column of the index.
+  Data types having a linear sort order can have operator classes that
+  store the minimum and maximum value within each block range, for instance;
+  geometrical types might store the bounding box for all the objects
+  in the block range.
+ </para>
+________________________________________________________-->
+ <para>
+  一个<acronym>BRIN</acronym>索引将存储的特定数据以及该索引将能
+  满足的特定查询，都依赖于为该索引的每一列所选择的操作符类。具有一种
+  线性排序顺序的数据类型的操作符类可以存储在每个块范围内的最小和最大
+  值，例如几何类型可能会存储在块范围内的所有对象的外包盒。
+ </para>
+<!-- pgdoc-cn_end sig_en=ee3efefdc27a9720d209136f7c67f417 -->
+
+<!-- pgdoc-cn_start sig_en=4abc92dcaa77e42bd48137277d6e77f7 sig_cn_org=None source=14.1 
+ <para>
+  The size of the block range is determined at index creation time by
+  the <literal>pages_per_range</literal> storage parameter.  The number of index
+  entries will be equal to the size of the relation in pages divided by
+  the selected value for <literal>pages_per_range</literal>.  Therefore, the smaller
+  the number, the larger the index becomes (because of the need to
+  store more index entries), but at the same time the summary data stored can
+  be more precise and more data blocks can be skipped during an index scan.
+ </para>
+________________________________________________________-->
+ <para>
+  块范围的尺寸在索引创建时由<literal>pages_per_range</literal>存储参数决定。
+  索引项的数量将等于该关系的尺寸（以页面计）除以为
+  <literal>pages_per_range</literal>选择的值。因此，该值越小，索引会变得越大
+  （因为需要存储更多索引项），但是与此同时存储的摘要数据可以更加精确并
+  且在索引扫描期间可以跳过更多数据块。
+ </para>
+<!-- pgdoc-cn_end sig_en=4abc92dcaa77e42bd48137277d6e77f7 -->
+
+ <sect2 id="brin-operation">
+<!-- pgdoc-cn_start sig_en=d2d5f8e1bff2436b2786b8213506802a sig_cn_org=None source=14.1 
+  <title>Index Maintenance</title>
+________________________________________________________-->
+  <title>索引维护</title>
+<!-- pgdoc-cn_end sig_en=d2d5f8e1bff2436b2786b8213506802a -->
+
+<!-- pgdoc-cn_start sig_en=d78d08880003d44470864227fc23a1c3 sig_cn_org=cdd6562dabf8eac63df9076de213de91 source=15.7 
+  <para>
+   At the time of creation, all existing heap pages are scanned and a
+   summary index tuple is created for each range, including the
+   possibly-incomplete range at the end.
+   As new pages are filled with data, page ranges that are already
+   summarized will cause the summary information to be updated with data
+   from the new tuples.
+   When a new page is created that does not fall within the last
+   summarized range, the range that the new page belongs to
+   does not automatically acquire a summary tuple;
+   those tuples remain unsummarized until a summarization run is
+   invoked later, creating the initial summary for that range.
+  </para>
+________________________________________________________-->
+  <para>
+   在创建时，所有现有的堆页面都会被扫描，并为每个范围创建一个摘要索引元组，包括可能不完整的范围在内。
+   随着新页面被填充数据，已经被总结的页面范围将导致摘要信息被更新，使用新元组的数据。
+   当创建一个新页面，不在最后总结的范围内时，新页面所属的范围不会自动获得一个摘要元组；
+   这些元组保持未总结状态，直到稍后调用总结运行，为该范围创建初始摘要。
+</para>
+<!-- pgdoc-cn_end sig_en=d78d08880003d44470864227fc23a1c3 -->
+
+<!-- pgdoc-cn_start sig_en=1373ff19c58ab48118a39c4fb8eeb2db sig_cn_org=893e29a51977b235373e33792daa997a source=15.7 
+  <para>
+   There are several ways to trigger the initial summarization of a page range.
+   If the table is vacuumed, either manually or by
+   <link linkend="autovacuum">autovacuum</link>, all existing unsummarized
+   page ranges are summarized.
+   Also, if the index's
+   <xref linkend="index-reloption-autosummarize"/> parameter is enabled,
+   which it isn't by default,
+   whenever autovacuum runs in that database, summarization will occur for all
+   unsummarized page ranges that have been filled,
+   regardless of whether the table itself is processed by autovacuum; see below.
+  </para>
+________________________________________________________-->
+  <para>
+   有几种方法可以触发页面范围的初始摘要。如果表被手动或通过
+   <link linkend="autovacuum">autovacuum</link>进行了清理，所有现有的未摘要的
+   页面范围都会被摘要。
+   另外，如果索引的
+   <xref linkend="index-reloption-autosummarize"/>参数被启用（默认情况下未启用），
+   那么每当数据库中运行自动清理（autovacuum）时，将对所有已填充的未摘要的页面范围进行摘要处理，
+   无论表本身是否由自动清理（autovacuum）处理；请参见下文。
+</para>
+<!-- pgdoc-cn_end sig_en=1373ff19c58ab48118a39c4fb8eeb2db -->
+
+<!-- pgdoc-cn_start sig_en=386f4b0c90307cf9d5f0e924bfde7043 sig_cn_org=f511996f29c2a9977fb052c3255cadad source=15.7 
+  <para>
+   Lastly, the following functions can be used:
+   <simplelist>
+    <member>
+     <function>brin_summarize_new_values(regclass)</function>
+     which summarizes all unsummarized ranges;
+    </member>
+    <member>
+     <function>brin_summarize_range(regclass, bigint)</function>
+     which summarizes only the range containing the given page,
+     if it is unsummarized.
+    </member>
+   </simplelist>
+  </para>
+________________________________________________________-->
+  <para>
+   最后，可以使用以下函数：
+   <simplelist>
+    <member>
+     <function>brin_summarize_new_values(regclass)</function>
+     它总结了所有未总结的范围;
+    </member>
+    <member>
+     <function>brin_summarize_range(regclass, bigint)</function>
+     如果未汇总，则仅汇总包含给定页面的范围。
+    </member>
+   </simplelist>
+</para>
+<!-- pgdoc-cn_end sig_en=386f4b0c90307cf9d5f0e924bfde7043 -->
+
+<!-- pgdoc-cn_start sig_en=7b170653c5c2c90bf03a0d6bae3922e0 sig_cn_org=3889a908893bf538590784f87c6a7055 source=15.7 
+  <para>
+   When autosummarization is enabled, a request is sent to
+   <literal>autovacuum</literal> to execute a targeted summarization
+   for a block range when an insertion is detected for the first item
+   of the first page of the next block range,
+   to be fulfilled the next time an autovacuum
+   worker finishes running in the
+   same database.  If the request queue is full, the request is not recorded
+   and a message is sent to the server log:
+<screen>
+LOG:  request for BRIN range summarization for index "brin_wi_idx" page 128 was not recorded
+</screen>
+   When this happens, the range will remain unsummarized until the next
+   regular vacuum run on the table, or one of the functions mentioned above
+   are invoked.
+  </para>
+________________________________________________________-->
+  <para>
+   当启用自动摘要时，会向<literal>autovacuum</literal>发送请求，以在检测到下一个块范围的第一页的第一项插入时执行有针对性的摘要，
+   在同一数据库中的下一个自动清理（autovacuum）工作完成后执行。如果请求队列已满，则不记录请求，并向服务器日志发送消息:
+<screen>
+LOG:  request for BRIN range summarization for index "brin_wi_idx" page 128 was not recorded
+</screen>
+   当发生这种情况时，范围将保持未摘要状态，直到表上的下一个常规清理运行，或者调用上述函数之一。
+</para>
+<!-- pgdoc-cn_end sig_en=7b170653c5c2c90bf03a0d6bae3922e0 -->
+
+<!-- pgdoc-cn_start sig_en=e1ef214c3a1b8566154364402b905764 sig_cn_org=c4ecb80145b1f1a6ba44cb791fde5227 source=15.7 
+  <para>
+   Conversely, a range can be de-summarized using the
+   <function>brin_desummarize_range(regclass, bigint)</function> function,
+   which is useful when the index tuple is no longer a very good
+   representation because the existing values have changed.
+   See <xref linkend="functions-admin-index"/> for details.
+  </para>
+________________________________________________________-->
+  <para>
+   相反，可以使用<function>brin_desummarize_range(regclass, bigint)</function>函数对范围进行反汇总，
+   当索引元组不再是一个很好的表示，因为现有值已经改变时，这是很有用的。
+   有关详细信息，请参见<xref linkend="functions-admin-index"/>。
+</para>
+<!-- pgdoc-cn_end sig_en=e1ef214c3a1b8566154364402b905764 -->
+
+ </sect2>
+</sect1>
+
+<sect1 id="brin-builtin-opclasses">
+<!-- pgdoc-cn_start sig_en=f3fa348aa7b75a7cd90f4d3569e72437 sig_cn_org=None source=14.1 
+ <title>Built-in Operator Classes</title>
+________________________________________________________-->
+ <title>内建操作符类</title>
+<!-- pgdoc-cn_end sig_en=f3fa348aa7b75a7cd90f4d3569e72437 -->
+
+<!-- pgdoc-cn_start sig_en=b3cf469a9dadac74983049514a424d57 sig_cn_org=None source=14.1 
+ <para>
+  The core <productname>PostgreSQL</productname> distribution
+  includes the <acronym>BRIN</acronym> operator classes shown in
+  <xref linkend="brin-builtin-opclasses-table"/>.
+ </para>
+________________________________________________________-->
+ <para>
+  核心<productname>PostgreSQL</productname>发布包括了
+  <xref linkend="brin-builtin-opclasses-table"/>中所示的
+  <acronym>BRIN</acronym>操作符类。
+ </para>
+<!-- pgdoc-cn_end sig_en=b3cf469a9dadac74983049514a424d57 -->
+
+<!-- pgdoc-cn_start sig_en=86777d569bb4b30eabe7f1e1677d0e93 sig_cn_org=None source=14.1 
+ <para>
+  The <firstterm>minmax</firstterm>
+  operator classes store the minimum and the maximum values appearing
+  in the indexed column within the range.  The <firstterm>inclusion</firstterm>
+  operator classes store a value which includes the values in the indexed
+  column within the range.  The <firstterm>bloom</firstterm> operator
+  classes build a Bloom filter for all values in the range.  The
+  <firstterm>minmax-multi</firstterm> operator classes store multiple
+  minimum and maximum values, representing values appearing in the indexed
+  column within the range.
+ </para>
+________________________________________________________-->
+ <para>
+  <firstterm>minmax</firstterm>操作符类存储范围内被索引列中出现的最小和最大值。
+  <firstterm>inclusion</firstterm>操作符类存储包括了范围内被索引列中值的一个值。
+  <firstterm>bloom</firstterm>操作符类对范围内的所有值构建一个布隆过滤器。
+  <firstterm>minmax-multi</firstterm>操作符类存储多个最小和最大值，表示范围内出现在索引列里的值。
+ </para>
+<!-- pgdoc-cn_end sig_en=86777d569bb4b30eabe7f1e1677d0e93 -->
+
+ <table id="brin-builtin-opclasses-table">
+<!-- pgdoc-cn_start sig_en=c7d74a0c8709075b96154776f477d05d sig_cn_org=None source=14.1 
+  <title>Built-in <acronym>BRIN</acronym> Operator Classes</title>
+________________________________________________________-->
+  <title>内建 <acronym>BRIN</acronym> 操作符类</title>
+<!-- pgdoc-cn_end sig_en=c7d74a0c8709075b96154776f477d05d -->
+  <tgroup cols="2">
+   <thead>
+<!-- pgdoc-cn_start sig_en=b960bd217a55097433f704ecc13a47ed sig_cn_org=None source=14.1 
+    <row>
+     <entry>Name</entry>
+     <entry>Indexable Operators</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>名称</entry>
+     <entry>可索引操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=b960bd217a55097433f704ecc13a47ed -->
+   </thead>
+   <tbody>
+    <row>
+     <entry valign="middle" morerows="4"><literal>bit_minmax_ops</literal></entry>
+     <entry><literal>= (bit,bit)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (bit,bit)</literal></entry></row>
+    <row><entry><literal>&gt; (bit,bit)</literal></entry></row>
+    <row><entry><literal>&lt;= (bit,bit)</literal></entry></row>
+    <row><entry><literal>&gt;= (bit,bit)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="12"><literal>box_inclusion_ops</literal></entry>
+     <entry><literal>@&gt; (box,point)</literal></entry>
+    </row>
+    <row><entry><literal>&lt;&lt; (box,box)</literal></entry></row>
+    <row><entry><literal>&amp;&lt; (box,box)</literal></entry></row>
+    <row><entry><literal>&amp;&gt; (box,box)</literal></entry></row>
+    <row><entry><literal>&gt;&gt; (box,box)</literal></entry></row>
+    <row><entry><literal>&lt;@ (box,box)</literal></entry></row>
+    <row><entry><literal>@&gt; (box,box)</literal></entry></row>
+    <row><entry><literal>~= (box,box)</literal></entry></row>
+    <row><entry><literal>&amp;&amp; (box,box)</literal></entry></row>
+    <row><entry><literal>&lt;&lt;| (box,box)</literal></entry></row>
+    <row><entry><literal>&amp;&lt;| (box,box)</literal></entry></row>
+    <row><entry><literal>|&amp;&gt; (box,box)</literal></entry></row>
+    <row><entry><literal>|&gt;&gt; (box,box)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>bpchar_bloom_ops</literal></entry>
+     <entry><literal>= (character,character)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>bpchar_minmax_ops</literal></entry>
+     <entry><literal>= (character,character)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (character,character)</literal></entry></row>
+    <row><entry><literal>&lt;= (character,character)</literal></entry></row>
+    <row><entry><literal>&gt; (character,character)</literal></entry></row>
+    <row><entry><literal>&gt;= (character,character)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>bytea_bloom_ops</literal></entry>
+     <entry><literal>= (bytea,bytea)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>bytea_minmax_ops</literal></entry>
+     <entry><literal>= (bytea,bytea)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (bytea,bytea)</literal></entry></row>
+    <row><entry><literal>&lt;= (bytea,bytea)</literal></entry></row>
+    <row><entry><literal>&gt; (bytea,bytea)</literal></entry></row>
+    <row><entry><literal>&gt;= (bytea,bytea)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>char_bloom_ops</literal></entry>
+     <entry><literal>= ("char","char")</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>char_minmax_ops</literal></entry>
+     <entry><literal>= ("char","char")</literal></entry>
+    </row>
+    <row><entry><literal>&lt; ("char","char")</literal></entry></row>
+    <row><entry><literal>&lt;= ("char","char")</literal></entry></row>
+    <row><entry><literal>&gt; ("char","char")</literal></entry></row>
+    <row><entry><literal>&gt;= ("char","char")</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>date_bloom_ops</literal></entry>
+     <entry><literal>= (date,date)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>date_minmax_ops</literal></entry>
+     <entry><literal>= (date,date)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (date,date)</literal></entry></row>
+    <row><entry><literal>&lt;= (date,date)</literal></entry></row>
+    <row><entry><literal>&gt; (date,date)</literal></entry></row>
+    <row><entry><literal>&gt;= (date,date)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>date_minmax_multi_ops</literal></entry>
+     <entry><literal>= (date,date)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (date,date)</literal></entry></row>
+    <row><entry><literal>&lt;= (date,date)</literal></entry></row>
+    <row><entry><literal>&gt; (date,date)</literal></entry></row>
+    <row><entry><literal>&gt;= (date,date)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>float4_bloom_ops</literal></entry>
+     <entry><literal>= (float4,float4)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>float4_minmax_ops</literal></entry>
+     <entry><literal>= (float4,float4)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (float4,float4)</literal></entry></row>
+    <row><entry><literal>&gt; (float4,float4)</literal></entry></row>
+    <row><entry><literal>&lt;= (float4,float4)</literal></entry></row>
+    <row><entry><literal>&gt;= (float4,float4)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>float4_minmax_multi_ops</literal></entry>
+     <entry><literal>= (float4,float4)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (float4,float4)</literal></entry></row>
+    <row><entry><literal>&gt; (float4,float4)</literal></entry></row>
+    <row><entry><literal>&lt;= (float4,float4)</literal></entry></row>
+    <row><entry><literal>&gt;= (float4,float4)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>float8_bloom_ops</literal></entry>
+     <entry><literal>= (float8,float8)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>float8_minmax_ops</literal></entry>
+     <entry><literal>= (float8,float8)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (float8,float8)</literal></entry></row>
+    <row><entry><literal>&lt;= (float8,float8)</literal></entry></row>
+    <row><entry><literal>&gt; (float8,float8)</literal></entry></row>
+    <row><entry><literal>&gt;= (float8,float8)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>float8_minmax_multi_ops</literal></entry>
+     <entry><literal>= (float8,float8)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (float8,float8)</literal></entry></row>
+    <row><entry><literal>&lt;= (float8,float8)</literal></entry></row>
+    <row><entry><literal>&gt; (float8,float8)</literal></entry></row>
+    <row><entry><literal>&gt;= (float8,float8)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="5"><literal>inet_inclusion_ops</literal></entry>
+     <entry><literal>&lt;&lt; (inet,inet)</literal></entry>
+    </row>
+    <row><entry><literal>&lt;&lt;= (inet,inet)</literal></entry></row>
+    <row><entry><literal>&gt;&gt; (inet,inet)</literal></entry></row>
+    <row><entry><literal>&gt;&gt;= (inet,inet)</literal></entry></row>
+    <row><entry><literal>= (inet,inet)</literal></entry></row>
+    <row><entry><literal>&amp;&amp; (inet,inet)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>inet_bloom_ops</literal></entry>
+     <entry><literal>= (inet,inet)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>inet_minmax_ops</literal></entry>
+     <entry><literal>= (inet,inet)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (inet,inet)</literal></entry></row>
+    <row><entry><literal>&lt;= (inet,inet)</literal></entry></row>
+    <row><entry><literal>&gt; (inet,inet)</literal></entry></row>
+    <row><entry><literal>&gt;= (inet,inet)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>inet_minmax_multi_ops</literal></entry>
+     <entry><literal>= (inet,inet)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (inet,inet)</literal></entry></row>
+    <row><entry><literal>&lt;= (inet,inet)</literal></entry></row>
+    <row><entry><literal>&gt; (inet,inet)</literal></entry></row>
+    <row><entry><literal>&gt;= (inet,inet)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>int2_bloom_ops</literal></entry>
+     <entry><literal>= (int2,int2)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>int2_minmax_ops</literal></entry>
+     <entry><literal>= (int2,int2)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (int2,int2)</literal></entry></row>
+    <row><entry><literal>&gt; (int2,int2)</literal></entry></row>
+    <row><entry><literal>&lt;= (int2,int2)</literal></entry></row>
+    <row><entry><literal>&gt;= (int2,int2)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>int2_minmax_multi_ops</literal></entry>
+     <entry><literal>= (int2,int2)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (int2,int2)</literal></entry></row>
+    <row><entry><literal>&gt; (int2,int2)</literal></entry></row>
+    <row><entry><literal>&lt;= (int2,int2)</literal></entry></row>
+    <row><entry><literal>&gt;= (int2,int2)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>int4_bloom_ops</literal></entry>
+     <entry><literal>= (int4,int4)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>int4_minmax_ops</literal></entry>
+     <entry><literal>= (int4,int4)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (int4,int4)</literal></entry></row>
+    <row><entry><literal>&gt; (int4,int4)</literal></entry></row>
+    <row><entry><literal>&lt;= (int4,int4)</literal></entry></row>
+    <row><entry><literal>&gt;= (int4,int4)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>int4_minmax_multi_ops</literal></entry>
+     <entry><literal>= (int4,int4)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (int4,int4)</literal></entry></row>
+    <row><entry><literal>&gt; (int4,int4)</literal></entry></row>
+    <row><entry><literal>&lt;= (int4,int4)</literal></entry></row>
+    <row><entry><literal>&gt;= (int4,int4)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>int8_bloom_ops</literal></entry>
+     <entry><literal>= (bigint,bigint)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>int8_minmax_ops</literal></entry>
+     <entry><literal>= (bigint,bigint)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (bigint,bigint)</literal></entry></row>
+    <row><entry><literal>&gt; (bigint,bigint)</literal></entry></row>
+    <row><entry><literal>&lt;= (bigint,bigint)</literal></entry></row>
+    <row><entry><literal>&gt;= (bigint,bigint)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>int8_minmax_multi_ops</literal></entry>
+     <entry><literal>= (bigint,bigint)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (bigint,bigint)</literal></entry></row>
+    <row><entry><literal>&gt; (bigint,bigint)</literal></entry></row>
+    <row><entry><literal>&lt;= (bigint,bigint)</literal></entry></row>
+    <row><entry><literal>&gt;= (bigint,bigint)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>interval_bloom_ops</literal></entry>
+     <entry><literal>= (interval,interval)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>interval_minmax_ops</literal></entry>
+     <entry><literal>= (interval,interval)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (interval,interval)</literal></entry></row>
+    <row><entry><literal>&lt;= (interval,interval)</literal></entry></row>
+    <row><entry><literal>&gt; (interval,interval)</literal></entry></row>
+    <row><entry><literal>&gt;= (interval,interval)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>interval_minmax_multi_ops</literal></entry>
+     <entry><literal>= (interval,interval)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (interval,interval)</literal></entry></row>
+    <row><entry><literal>&lt;= (interval,interval)</literal></entry></row>
+    <row><entry><literal>&gt; (interval,interval)</literal></entry></row>
+    <row><entry><literal>&gt;= (interval,interval)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>macaddr_bloom_ops</literal></entry>
+     <entry><literal>= (macaddr,macaddr)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>macaddr_minmax_ops</literal></entry>
+     <entry><literal>= (macaddr,macaddr)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (macaddr,macaddr)</literal></entry></row>
+    <row><entry><literal>&lt;= (macaddr,macaddr)</literal></entry></row>
+    <row><entry><literal>&gt; (macaddr,macaddr)</literal></entry></row>
+    <row><entry><literal>&gt;= (macaddr,macaddr)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>macaddr_minmax_multi_ops</literal></entry>
+     <entry><literal>= (macaddr,macaddr)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (macaddr,macaddr)</literal></entry></row>
+    <row><entry><literal>&lt;= (macaddr,macaddr)</literal></entry></row>
+    <row><entry><literal>&gt; (macaddr,macaddr)</literal></entry></row>
+    <row><entry><literal>&gt;= (macaddr,macaddr)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>macaddr8_bloom_ops</literal></entry>
+     <entry><literal>= (macaddr8,macaddr8)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>macaddr8_minmax_ops</literal></entry>
+     <entry><literal>= (macaddr8,macaddr8)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (macaddr8,macaddr8)</literal></entry></row>
+    <row><entry><literal>&lt;= (macaddr8,macaddr8)</literal></entry></row>
+    <row><entry><literal>&gt; (macaddr8,macaddr8)</literal></entry></row>
+    <row><entry><literal>&gt;= (macaddr8,macaddr8)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>macaddr8_minmax_multi_ops</literal></entry>
+     <entry><literal>= (macaddr8,macaddr8)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (macaddr8,macaddr8)</literal></entry></row>
+    <row><entry><literal>&lt;= (macaddr8,macaddr8)</literal></entry></row>
+    <row><entry><literal>&gt; (macaddr8,macaddr8)</literal></entry></row>
+    <row><entry><literal>&gt;= (macaddr8,macaddr8)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>name_bloom_ops</literal></entry>
+     <entry><literal>= (name,name)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>name_minmax_ops</literal></entry>
+     <entry><literal>= (name,name)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (name,name)</literal></entry></row>
+    <row><entry><literal>&lt;= (name,name)</literal></entry></row>
+    <row><entry><literal>&gt; (name,name)</literal></entry></row>
+    <row><entry><literal>&gt;= (name,name)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>numeric_bloom_ops</literal></entry>
+     <entry><literal>= (numeric,numeric)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>numeric_minmax_ops</literal></entry>
+     <entry><literal>= (numeric,numeric)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (numeric,numeric)</literal></entry></row>
+    <row><entry><literal>&lt;= (numeric,numeric)</literal></entry></row>
+    <row><entry><literal>&gt; (numeric,numeric)</literal></entry></row>
+    <row><entry><literal>&gt;= (numeric,numeric)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>numeric_minmax_multi_ops</literal></entry>
+     <entry><literal>= (numeric,numeric)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (numeric,numeric)</literal></entry></row>
+    <row><entry><literal>&lt;= (numeric,numeric)</literal></entry></row>
+    <row><entry><literal>&gt; (numeric,numeric)</literal></entry></row>
+    <row><entry><literal>&gt;= (numeric,numeric)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>oid_bloom_ops</literal></entry>
+     <entry><literal>= (oid,oid)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>oid_minmax_ops</literal></entry>
+     <entry><literal>= (oid,oid)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (oid,oid)</literal></entry></row>
+    <row><entry><literal>&gt; (oid,oid)</literal></entry></row>
+    <row><entry><literal>&lt;= (oid,oid)</literal></entry></row>
+    <row><entry><literal>&gt;= (oid,oid)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>oid_minmax_multi_ops</literal></entry>
+     <entry><literal>= (oid,oid)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (oid,oid)</literal></entry></row>
+    <row><entry><literal>&gt; (oid,oid)</literal></entry></row>
+    <row><entry><literal>&lt;= (oid,oid)</literal></entry></row>
+    <row><entry><literal>&gt;= (oid,oid)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>pg_lsn_bloom_ops</literal></entry>
+     <entry><literal>= (pg_lsn,pg_lsn)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>pg_lsn_minmax_ops</literal></entry>
+     <entry><literal>= (pg_lsn,pg_lsn)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (pg_lsn,pg_lsn)</literal></entry></row>
+    <row><entry><literal>&gt; (pg_lsn,pg_lsn)</literal></entry></row>
+    <row><entry><literal>&lt;= (pg_lsn,pg_lsn)</literal></entry></row>
+    <row><entry><literal>&gt;= (pg_lsn,pg_lsn)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>pg_lsn_minmax_multi_ops</literal></entry>
+     <entry><literal>= (pg_lsn,pg_lsn)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (pg_lsn,pg_lsn)</literal></entry></row>
+    <row><entry><literal>&gt; (pg_lsn,pg_lsn)</literal></entry></row>
+    <row><entry><literal>&lt;= (pg_lsn,pg_lsn)</literal></entry></row>
+    <row><entry><literal>&gt;= (pg_lsn,pg_lsn)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="13"><literal>range_inclusion_ops</literal></entry>
+     <entry><literal>= (anyrange,anyrange)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&lt;= (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&gt;= (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&gt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&amp;&amp; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>@&gt; (anyrange,anyelement)</literal></entry></row>
+    <row><entry><literal>@&gt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&lt;@ (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&lt;&lt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&gt;&gt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&amp;&lt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>&amp;&gt; (anyrange,anyrange)</literal></entry></row>
+    <row><entry><literal>-|- (anyrange,anyrange)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>text_bloom_ops</literal></entry>
+     <entry><literal>= (text,text)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>text_minmax_ops</literal></entry>
+     <entry><literal>= (text,text)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (text,text)</literal></entry></row>
+    <row><entry><literal>&lt;= (text,text)</literal></entry></row>
+    <row><entry><literal>&gt; (text,text)</literal></entry></row>
+    <row><entry><literal>&gt;= (text,text)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>tid_bloom_ops</literal></entry>
+     <entry><literal>= (tid,tid)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>tid_minmax_ops</literal></entry>
+     <entry><literal>= (tid,tid)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (tid,tid)</literal></entry></row>
+    <row><entry><literal>&gt; (tid,tid)</literal></entry></row>
+    <row><entry><literal>&lt;= (tid,tid)</literal></entry></row>
+    <row><entry><literal>&gt;= (tid,tid)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>tid_minmax_multi_ops</literal></entry>
+     <entry><literal>= (tid,tid)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (tid,tid)</literal></entry></row>
+    <row><entry><literal>&gt; (tid,tid)</literal></entry></row>
+    <row><entry><literal>&lt;= (tid,tid)</literal></entry></row>
+    <row><entry><literal>&gt;= (tid,tid)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>timestamp_bloom_ops</literal></entry>
+     <entry><literal>= (timestamp,timestamp)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>timestamp_minmax_ops</literal></entry>
+     <entry><literal>= (timestamp,timestamp)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (timestamp,timestamp)</literal></entry></row>
+    <row><entry><literal>&lt;= (timestamp,timestamp)</literal></entry></row>
+    <row><entry><literal>&gt; (timestamp,timestamp)</literal></entry></row>
+    <row><entry><literal>&gt;= (timestamp,timestamp)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>timestamp_minmax_multi_ops</literal></entry>
+     <entry><literal>= (timestamp,timestamp)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (timestamp,timestamp)</literal></entry></row>
+    <row><entry><literal>&lt;= (timestamp,timestamp)</literal></entry></row>
+    <row><entry><literal>&gt; (timestamp,timestamp)</literal></entry></row>
+    <row><entry><literal>&gt;= (timestamp,timestamp)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>timestamptz_bloom_ops</literal></entry>
+     <entry><literal>= (timestamptz,timestamptz)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>timestamptz_minmax_ops</literal></entry>
+     <entry><literal>= (timestamptz,timestamptz)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (timestamptz,timestamptz)</literal></entry></row>
+    <row><entry><literal>&lt;= (timestamptz,timestamptz)</literal></entry></row>
+    <row><entry><literal>&gt; (timestamptz,timestamptz)</literal></entry></row>
+    <row><entry><literal>&gt;= (timestamptz,timestamptz)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>timestamptz_minmax_multi_ops</literal></entry>
+     <entry><literal>= (timestamptz,timestamptz)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (timestamptz,timestamptz)</literal></entry></row>
+    <row><entry><literal>&lt;= (timestamptz,timestamptz)</literal></entry></row>
+    <row><entry><literal>&gt; (timestamptz,timestamptz)</literal></entry></row>
+    <row><entry><literal>&gt;= (timestamptz,timestamptz)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>time_bloom_ops</literal></entry>
+     <entry><literal>= (time,time)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>time_minmax_ops</literal></entry>
+     <entry><literal>= (time,time)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (time,time)</literal></entry></row>
+    <row><entry><literal>&lt;= (time,time)</literal></entry></row>
+    <row><entry><literal>&gt; (time,time)</literal></entry></row>
+    <row><entry><literal>&gt;= (time,time)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>time_minmax_multi_ops</literal></entry>
+     <entry><literal>= (time,time)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (time,time)</literal></entry></row>
+    <row><entry><literal>&lt;= (time,time)</literal></entry></row>
+    <row><entry><literal>&gt; (time,time)</literal></entry></row>
+    <row><entry><literal>&gt;= (time,time)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>timetz_bloom_ops</literal></entry>
+     <entry><literal>= (timetz,timetz)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>timetz_minmax_ops</literal></entry>
+     <entry><literal>= (timetz,timetz)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (timetz,timetz)</literal></entry></row>
+    <row><entry><literal>&lt;= (timetz,timetz)</literal></entry></row>
+    <row><entry><literal>&gt; (timetz,timetz)</literal></entry></row>
+    <row><entry><literal>&gt;= (timetz,timetz)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>timetz_minmax_multi_ops</literal></entry>
+     <entry><literal>= (timetz,timetz)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (timetz,timetz)</literal></entry></row>
+    <row><entry><literal>&lt;= (timetz,timetz)</literal></entry></row>
+    <row><entry><literal>&gt; (timetz,timetz)</literal></entry></row>
+    <row><entry><literal>&gt;= (timetz,timetz)</literal></entry></row>
+
+    <row>
+     <entry valign="middle"><literal>uuid_bloom_ops</literal></entry>
+     <entry><literal>= (uuid,uuid)</literal></entry>
+    </row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>uuid_minmax_ops</literal></entry>
+     <entry><literal>= (uuid,uuid)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (uuid,uuid)</literal></entry></row>
+    <row><entry><literal>&gt; (uuid,uuid)</literal></entry></row>
+    <row><entry><literal>&lt;= (uuid,uuid)</literal></entry></row>
+    <row><entry><literal>&gt;= (uuid,uuid)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>uuid_minmax_multi_ops</literal></entry>
+     <entry><literal>= (uuid,uuid)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (uuid,uuid)</literal></entry></row>
+    <row><entry><literal>&gt; (uuid,uuid)</literal></entry></row>
+    <row><entry><literal>&lt;= (uuid,uuid)</literal></entry></row>
+    <row><entry><literal>&gt;= (uuid,uuid)</literal></entry></row>
+
+    <row>
+     <entry valign="middle" morerows="4"><literal>varbit_minmax_ops</literal></entry>
+     <entry><literal>= (varbit,varbit)</literal></entry>
+    </row>
+    <row><entry><literal>&lt; (varbit,varbit)</literal></entry></row>
+    <row><entry><literal>&gt; (varbit,varbit)</literal></entry></row>
+    <row><entry><literal>&lt;= (varbit,varbit)</literal></entry></row>
+    <row><entry><literal>&gt;= (varbit,varbit)</literal></entry></row>
+   </tbody>
+  </tgroup>
+ </table>
+
+  <sect2 id="brin-builtin-opclasses--parameters">
+<!-- pgdoc-cn_start sig_en=5a06d7e968890e41956ce8b05949c3da sig_cn_org=None source=14.1 
+   <title>Operator Class Parameters</title>
+________________________________________________________-->
+   <title>操作符类参数</title>
+<!-- pgdoc-cn_end sig_en=5a06d7e968890e41956ce8b05949c3da -->
+
+<!-- pgdoc-cn_start sig_en=f9d8348ade2589bb832a6a178c972d72 sig_cn_org=None source=14.1 
+   <para>
+    Some of the built-in operator classes allow specifying parameters affecting
+    behavior of the operator class.  Each operator class has its own set of
+    allowed parameters.  Only the <literal>bloom</literal> and <literal>minmax-multi</literal>
+    operator classes allow specifying parameters:
+   </para>
+________________________________________________________-->
+   <para>
+    一些内置操作符类允许指定参数，以便控制操作符类的行为。
+    每个操作符类都有自己允许的参数集。
+    只有<literal>bloom</literal> 和 <literal>minmax-multi</literal>操作符类允许指定参数:
+   </para>
+<!-- pgdoc-cn_end sig_en=f9d8348ade2589bb832a6a178c972d72 -->
+
+<!-- pgdoc-cn_start sig_en=055663dd92af96e3cb47ac0befe2958b sig_cn_org=None source=14.1 
+   <para>
+    bloom operator classes accept these parameters:
+   </para>
+________________________________________________________-->
+   <para>
+    bloom 操作符类接受这些参数:
+   </para>
+<!-- pgdoc-cn_end sig_en=055663dd92af96e3cb47ac0befe2958b -->
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>n_distinct_per_range</literal></term>
+    <listitem>
+<!-- pgdoc-cn_start sig_en=6feea255df389bc64e2784c8d1f7b0ae sig_cn_org=None source=14.1 
+    <para>
+     Defines the estimated number of distinct non-null values in the block
+     range, used by <acronym>BRIN</acronym> bloom indexes for sizing of the
+     Bloom filter. It behaves similarly to <literal>n_distinct</literal> option
+     for <xref linkend="sql-altertable"/>. When set to a positive value,
+     each block range is assumed to contain this number of distinct non-null
+     values. When set to a negative value, which must be greater than or
+     equal to -1, the number of distinct non-null values is assumed to grow linearly with
+     the maximum possible number of tuples in the block range (about 290
+     rows per block). The default value is <literal>-0.1</literal>, and
+     the minimum number of distinct non-null values is <literal>16</literal>.
+    </para>
+________________________________________________________-->
+    <para>
+     定义块范围内不同的非空值的估计数量，由<acronym>BRIN</acronym> 布隆索引使用，用于确定布隆过滤器的大小。
+     它的行为类似于<xref linkend="sql-altertable"/>的<literal>n_distinct</literal>选项。
+     当设置为正值时，每个块范围假定包含该数量的不同的非空值。
+     当设置为负值时，该值必须大于或等于-1，不同的非空值的数量假定与块范围内的元组的最大可能数量(大约每个块290行)成线性增长。
+     默认值是<literal>-0.1</literal>，不同的非空值的最小数量是<literal>16</literal>。
+    </para>
+<!-- pgdoc-cn_end sig_en=6feea255df389bc64e2784c8d1f7b0ae -->
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>false_positive_rate</literal></term>
+    <listitem>
+<!-- pgdoc-cn_start sig_en=189a7056e0fc73f032acbf9b3f55c4f9 sig_cn_org=None source=14.1 
+    <para>
+     Defines the desired false positive rate used by <acronym>BRIN</acronym>
+     bloom indexes for sizing of the Bloom filter. The values must be
+     between 0.0001 and 0.25. The default value is 0.01, which is 1% false
+     positive rate.
+    </para>
+________________________________________________________-->
+    <para>
+     定义由<acronym>BRIN</acronym> 布隆索引使用的预期假阳性率，用于确定布隆过滤器的大小。
+     值必须在0.0001和0.25之间。默认值为0.01，即1%的假阳性率。
+    </para>
+<!-- pgdoc-cn_end sig_en=189a7056e0fc73f032acbf9b3f55c4f9 -->
+    </listitem>
+   </varlistentry>
+
+   </variablelist>
+
+<!-- pgdoc-cn_start sig_en=b38fa21dd869732acb6116fecb27fd06 sig_cn_org=None source=14.1 
+   <para>
+    minmax-multi operator classes accept these parameters:
+   </para>
+________________________________________________________-->
+   <para>
+    minmax-multi 操作符类接受这些参数：
+   </para>
+<!-- pgdoc-cn_end sig_en=b38fa21dd869732acb6116fecb27fd06 -->
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>values_per_range</literal></term>
+    <listitem>
+<!-- pgdoc-cn_start sig_en=008b7ac0322766aa51f845611a290843 sig_cn_org=None source=14.1 
+    <para>
+     Defines the maximum number of values stored by <acronym>BRIN</acronym>
+     minmax indexes to summarize a block range. Each value may represent
+     either a point, or a boundary of an interval. Values must be between
+     8 and 256, and the default value is 32.
+    </para>
+________________________________________________________-->
+    <para>
+     定义由<acronym>BRIN</acronym> minmax索引所存储的值的最大数量，以汇总块的范围。
+     每个值可以表示一个点，或者表示区间的边界。
+     值必须介于8和256之间，默认值为32。
+    </para>
+<!-- pgdoc-cn_end sig_en=008b7ac0322766aa51f845611a290843 -->
+    </listitem>
+   </varlistentry>
+
+   </variablelist>
+  </sect2>
+
+</sect1>
+
+<sect1 id="brin-extensibility">
+<!-- pgdoc-cn_start sig_en=ed1e3bcf1b14b8aa337d0a5ec7bf0665 sig_cn_org=None source=14.1 
+ <title>Extensibility</title>
+________________________________________________________-->
+ <title>可扩展性</title>
+<!-- pgdoc-cn_end sig_en=ed1e3bcf1b14b8aa337d0a5ec7bf0665 -->
+
+<!-- pgdoc-cn_start sig_en=10bb1bf4d6ba72e28646d0c43d0db42c sig_cn_org=None source=14.1 
+ <para>
+  The <acronym>BRIN</acronym> interface has a high level of abstraction,
+  requiring the access method implementer only to implement the semantics
+  of the data type being accessed.  The <acronym>BRIN</acronym> layer
+  itself takes care of concurrency, logging and searching the index structure.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>BRIN</acronym>接口具有高层的抽象，要求访问方法实现者只需
+  实现被访问的数据类型的语义。<acronym>BRIN</acronym>层本身会负责并
+  发、日志以及对索引结构的搜索。
+ </para>
+<!-- pgdoc-cn_end sig_en=10bb1bf4d6ba72e28646d0c43d0db42c -->
+
+<!-- pgdoc-cn_start sig_en=03c57ff3b03b19f38c2df58dbd84c031 sig_cn_org=None source=14.1 
+ <para>
+  All it takes to get a <acronym>BRIN</acronym> access method working is to
+  implement a few user-defined methods, which define the behavior of
+  summary values stored in the index and the way they interact with
+  scan keys.
+  In short, <acronym>BRIN</acronym> combines
+  extensibility with generality, code reuse, and a clean interface.
+ </para>
+________________________________________________________-->
+ <para>
+  让一种<acronym>BRIN</acronym>访问方法能够工作要做的全部事情是实现
+  几个用户定义的方法， 它们定义存储在索引中的摘要值的行为以及它们和扫描键
+  的交互。简而言之，<acronym>BRIN</acronym>很好地把可扩展性和通用性、
+  代码重用以及干净的接口结合在了一起。
+ </para>
+<!-- pgdoc-cn_end sig_en=03c57ff3b03b19f38c2df58dbd84c031 -->
+
+<!-- pgdoc-cn_start sig_en=1523b3b84b904440f3c347b5fed07ffb sig_cn_org=None source=14.1 
+ <para>
+  There are four methods that an operator class for <acronym>BRIN</acronym>
+  must provide:
+
+  <variablelist>
+   <varlistentry>
+    <term><function>BrinOpcInfo *opcInfo(Oid type_oid)</function></term>
+    <listitem>
+     <para>
+      Returns internal information about the indexed columns' summary data.
+      The return value must point to a palloc'd <structname>BrinOpcInfo</structname>,
+      which has this definition:
+<programlisting>
+typedef struct BrinOpcInfo
+{
+    /* Number of columns stored in an index column of this opclass */
+    uint16      oi_nstored;
+
+    /* Opaque pointer for the opclass' private use */
+    void       *oi_opaque;
+
+    /* Type cache entries of the stored columns */
+    TypeCacheEntry *oi_typcache[FLEXIBLE_ARRAY_MEMBER];
+} BrinOpcInfo;
+</programlisting>
+      <structname>BrinOpcInfo</structname>.<structfield>oi_opaque</structfield> can be used by the
+      operator class routines to pass information between support functions
+      during an index scan.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool consistent(BrinDesc *bdesc, BrinValues *column,
+       ScanKey *keys, int nkeys)</function></term>
+    <listitem>
+     <para>
+      Returns whether all the ScanKey entries are consistent with the given
+      indexed values for a range.
+      The attribute number to use is passed as part of the scan key.
+      Multiple scan keys for the same attribute may be passed at once; the
+      number of entries is determined by the <literal>nkeys</literal> parameter.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool consistent(BrinDesc *bdesc, BrinValues *column,
+       ScanKey key)</function></term>
+    <listitem>
+     <para>
+      Returns whether the ScanKey is consistent with the given indexed
+      values for a range.
+      The attribute number to use is passed as part of the scan key.
+      This is an older backward-compatible variant of the consistent function.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool addValue(BrinDesc *bdesc, BrinValues *column,
+       Datum newval, bool isnull)</function></term>
+    <listitem>
+     <para>
+      Given an index tuple and an indexed value, modifies the indicated
+      attribute of the tuple so that it additionally represents the new value.
+      If any modification was done to the tuple, <literal>true</literal> is
+      returned.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool unionTuples(BrinDesc *bdesc, BrinValues *a,
+       BrinValues *b)</function></term>
+    <listitem>
+     <para>
+      Consolidates two index tuples. Given two index tuples, modifies the
+      indicated attribute of the first of them so that it represents both tuples.
+      The second tuple is not modified.
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  An operator class for <acronym>BRIN</acronym> can optionally specify the
+  following method:
+
+  <variablelist>
+    <varlistentry>
+     <term><function>void options(local_relopts *relopts)</function></term>
+     <listitem>
+      <para>
+       Defines a set of user-visible parameters that control operator class
+       behavior.
+      </para>
+
+      <para>
+       The <function>options</function> function is passed a pointer to a
+       <structname>local_relopts</structname> struct, which needs to be
+       filled with a set of operator class specific options.  The options
+       can be accessed from other support functions using the
+       <literal>PG_HAS_OPCLASS_OPTIONS()</literal> and
+       <literal>PG_GET_OPCLASS_OPTIONS()</literal> macros.
+      </para>
+
+      <para>
+       Since both key extraction of indexed values and representation of the
+       key in <acronym>BRIN</acronym> are flexible, they may depend on
+       user-specified parameters.
+      </para>
+     </listitem>
+    </varlistentry>
+  </variablelist>
+
+  The core distribution includes support for four types of operator classes:
+  minmax, minmax-multi, inclusion and bloom.  Operator class definitions
+  using them are shipped for in-core data types as appropriate.  Additional
+  operator classes can be defined by the user for other data types using
+  equivalent definitions, without having to write any source code;
+  appropriate catalog entries being declared is enough.  Note that
+  assumptions about the semantics of operator strategies are embedded in the
+  support functions' source code.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>BRIN</acronym>的一个操作符类必须提供四种方法：
+
+  <variablelist>
+   <varlistentry>
+    <term><function>BrinOpcInfo *opcInfo(Oid type_oid)</function></term>
+    <listitem>
+     <para>
+      返回有关被索引列的摘要数据的内部信息。返回值必须指向一个已经 palloc
+      的<structname>BrinOpcInfo</structname>，该结构的定义是：
+<programlisting>
+typedef struct BrinOpcInfo
+{
+    /* 这个 opclass 的一个索引列中存储的列数 */
+    uint16      oi_nstored;
+
+    /* 该 opclass 私有用途的不透明指针 */
+    void       *oi_opaque;
+
+    /* 被存储列的类型缓冲项 */
+    TypeCacheEntry *oi_typcache[FLEXIBLE_ARRAY_MEMBER];
+} BrinOpcInfo;
+</programlisting>
+      <structname>BrinOpcInfo</structname>.<structfield>oi_opaque</structfield>可以被操作符类
+      例程用来在索引扫描期间在支持函数之间传递信息。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool consistent(BrinDesc *bdesc, BrinValues *column,
+       ScanKey *keys, int nkeys)</function></term>
+    <listitem>
+     <para>
+      返回是否所有的ScanKey条目和一个范围的被索引值一致。
+      使用的属性编号作为扫描键的一部分传递。
+      一个属性的多个扫描键可以被传递一次；条目的数量由<literal>nkeys</literal>参数决定。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool consistent(BrinDesc *bdesc, BrinValues *column,
+       ScanKey key)</function></term>
+    <listitem>
+     <para>
+      返回 ScanKey 是否和一个范围的被索引值一致。
+      要使用的索引号作为扫描键的一部分传递。
+      这是consistent函数的一个较古老的向后兼容的变体。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool addValue(BrinDesc *bdesc, BrinValues *column,
+       Datum newval, bool isnull)</function></term>
+    <listitem>
+     <para>
+      给定一个索引元组和一个被索引值，修改该元组的指示属性让该元组能额外地表
+      示新的值。如果对该元组做出了任何修改，就返回<literal>true</literal>。
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool unionTuples(BrinDesc *bdesc, BrinValues *a,
+       BrinValues *b)</function></term>
+    <listitem>
+     <para>
+      联合两个索引元组。给定两个索引元组，修改第一个的指示属性让它能表示
+      两个元组。第二个元组不会被修改。
+     </para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  一个<acronym>BRIN</acronym>的操作符类可以选择指定如下方法:
+
+  <variablelist>
+    <varlistentry>
+     <term><function>void options(local_relopts *relopts)</function></term>
+     <listitem>
+      <para>
+       定义一组控制操作符类行为的用户可见参数.
+      </para>
+
+      <para>
+       <function>options</function>函数传递一个指针到<structname>local_relopts</structname>结构，其需要用一组操作符类指定选项填充。
+       该选项也可以从其他支持的函数来访问，通过使用<literal>PG_HAS_OPCLASS_OPTIONS()</literal>和<literal>PG_GET_OPCLASS_OPTIONS()</literal>宏。
+      </para>
+
+      <para>
+       由于索引值的键提取和<acronym>BRIN</acronym>中的键表达都是灵活的，它们可以取决于用户指定的参数。
+      </para>
+     </listitem>
+    </varlistentry>
+  </variablelist>
+
+  核心发布中包括了对四种类型的操作符类的支持：minmax, minmax-multi, inclusion 和 bloom。
+  发布中也酌情为核心中的数据类型提供了使用它们的操作符类定义。
+  用户可以用等效的定义为其他数据类型定义额外的操作符类，而不需要编写任何源代码，只需要声明一些适当的目录项就足够了。
+  注意有关操作符策略的语义的假设是嵌在支持函数的源代码中的。
+ </para>
+<!-- pgdoc-cn_end sig_en=1523b3b84b904440f3c347b5fed07ffb -->
+
+<!-- pgdoc-cn_start sig_en=ea3410ef5f1aac2788215e2537da3288 sig_cn_org=None source=14.1 
+ <para>
+  Operator classes that implement completely different semantics are also
+  possible, provided implementations of the four main support functions
+  described above are written.  Note that backwards compatibility across major
+  releases is not guaranteed: for example, additional support functions might
+  be required in later releases.
+ </para>
+________________________________________________________-->
+ <para>
+  实现完全不同的语义的操作符类也是可能的，只要提供上述的四个主要支持过程的实
+  现即可。注意在主要发行版之间的向后兼容性是不被保证的：例如，在以后的发行中
+  可能要求额外的支持过程。
+ </para>
+<!-- pgdoc-cn_end sig_en=ea3410ef5f1aac2788215e2537da3288 -->
+
+<!-- pgdoc-cn_start sig_en=62de9186c0e65c3e21911023ae4009b7 sig_cn_org=None source=14.1 
+ <para>
+  To write an operator class for a data type that implements a totally
+  ordered set, it is possible to use the minmax support functions
+  alongside the corresponding operators, as shown in
+  <xref linkend="brin-extensibility-minmax-table"/>.
+  All operator class members (functions and operators) are mandatory.
+ </para>
+________________________________________________________-->
+ <para>
+  要为一种实现了线性有序集的数据类型编写一个操作符类，可以使用 minmax 支持函数配上对应的操作符（如<xref linkend="brin-extensibility-minmax-table"/>所示）。
+  所有的操作符类成员（函数和操作符）都是强制性的。
+ </para>
+<!-- pgdoc-cn_end sig_en=62de9186c0e65c3e21911023ae4009b7 -->
+
+ <table id="brin-extensibility-minmax-table">
+<!-- pgdoc-cn_start sig_en=5fa492f1e47b7b637ee36f7686a832c8 sig_cn_org=None source=14.1 
+  <title>Function and Support Numbers for Minmax Operator Classes</title>
+________________________________________________________-->
+  <title>Minmax 操作符类的函数和支持编号</title>
+<!-- pgdoc-cn_end sig_en=5fa492f1e47b7b637ee36f7686a832c8 -->
+  <tgroup cols="2">
+   <colspec colname="col1" colwidth="1*"/>
+   <colspec colname="col2" colwidth="2*"/>
+   <thead>
+<!-- pgdoc-cn_start sig_en=2623e2fc0bca5234b26dd505be742525 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator class member</entry>
+     <entry>Object</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符类成员</entry>
+     <entry>对象</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=2623e2fc0bca5234b26dd505be742525 -->
+   </thead>
+   <tbody>
+<!-- pgdoc-cn_start sig_en=4b78a2409d3165c01edaed6c3262162f sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 1</entry>
+     <entry>internal function <function>brin_minmax_opcinfo()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 1</entry>
+     <entry>内部函数<function>brin_minmax_opcinfo()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=4b78a2409d3165c01edaed6c3262162f -->
+<!-- pgdoc-cn_start sig_en=2ff0ba080e165448fc1110c1aca7c15a sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 2</entry>
+     <entry>internal function <function>brin_minmax_add_value()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 2</entry>
+     <entry>内部函数<function>brin_minmax_add_value()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=2ff0ba080e165448fc1110c1aca7c15a -->
+<!-- pgdoc-cn_start sig_en=201041c89a2240d3d77940d466554bc1 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 3</entry>
+     <entry>internal function <function>brin_minmax_consistent()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 3</entry>
+     <entry>内部函数<function>brin_minmax_consistent()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=201041c89a2240d3d77940d466554bc1 -->
+<!-- pgdoc-cn_start sig_en=01a0b18f460a1de276250f8c10494c59 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 4</entry>
+     <entry>internal function <function>brin_minmax_union()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 4</entry>
+     <entry>内部函数<function>brin_minmax_union()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=01a0b18f460a1de276250f8c10494c59 -->
+<!-- pgdoc-cn_start sig_en=feb269873ea33a0a1d2bebdb9a36bb4c sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 1</entry>
+     <entry>operator less-than</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 1</entry>
+     <entry>小于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=feb269873ea33a0a1d2bebdb9a36bb4c -->
+<!-- pgdoc-cn_start sig_en=b1422f3aac4b11e33245bc74054f9df4 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 2</entry>
+     <entry>operator less-than-or-equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 2</entry>
+     <entry>小于等于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=b1422f3aac4b11e33245bc74054f9df4 -->
+<!-- pgdoc-cn_start sig_en=4bab24de9460acfcab060b96686a7d79 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 3</entry>
+     <entry>operator equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 3</entry>
+     <entry>等于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=4bab24de9460acfcab060b96686a7d79 -->
+<!-- pgdoc-cn_start sig_en=0208a178e6d810fff8bd0462d56982a4 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 4</entry>
+     <entry>operator greater-than-or-equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 4</entry>
+     <entry>大于等于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=0208a178e6d810fff8bd0462d56982a4 -->
+<!-- pgdoc-cn_start sig_en=2d83bbb6460fc43cfa234c4baa25d6c7 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 5</entry>
+     <entry>operator greater-than</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 5</entry>
+     <entry>大于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=2d83bbb6460fc43cfa234c4baa25d6c7 -->
+   </tbody>
+  </tgroup>
+ </table>
+
+<!-- pgdoc-cn_start sig_en=a89019aa9ecd7d60a448d62e1f21a78a sig_cn_org=None source=14.1 
+ <para>
+  To write an operator class for a complex data type which has values
+  included within another type, it's possible to use the inclusion support
+  functions alongside the corresponding operators, as shown
+  in <xref linkend="brin-extensibility-inclusion-table"/>.  It requires
+  only a single additional function, which can be written in any language.
+  More functions can be defined for additional functionality.  All operators
+  are optional.  Some operators require other operators, as shown as
+  dependencies on the table.
+ </para>
+________________________________________________________-->
+ <para>
+  要为值被包括在另一种类型的复杂数据类型编写操作符类，可以使用 inclusion 支持函数配上相应的操作符（如
+  <xref linkend="brin-extensibility-inclusion-table"/>所示）。它只要求一个
+  可用任何语言编写的附加函数。可以定义更多函数来提供额外的功能。所有的
+  操作符都是可选的。如该表中的依赖性所示，某些操作符需要其他操作符。
+ </para>
+<!-- pgdoc-cn_end sig_en=a89019aa9ecd7d60a448d62e1f21a78a -->
+
+ <table id="brin-extensibility-inclusion-table">
+<!-- pgdoc-cn_start sig_en=0ef2120b80ff9baa9d11275aa2cd75d1 sig_cn_org=None source=14.1 
+  <title>Function and Support Numbers for Inclusion Operator Classes</title>
+________________________________________________________-->
+  <title>Inclusion 操作符类的函数和支持编号</title>
+<!-- pgdoc-cn_end sig_en=0ef2120b80ff9baa9d11275aa2cd75d1 -->
+  <tgroup cols="3">
+   <colspec colname="col1" colwidth="1*"/>
+   <colspec colname="col2" colwidth="2*"/>
+   <colspec colname="col3" colwidth="1*"/>
+   <thead>
+<!-- pgdoc-cn_start sig_en=3d20f2410b913139fc329bfe178544d5 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator class member</entry>
+     <entry>Object</entry>
+     <entry>Dependency</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符类成员</entry>
+     <entry>对象</entry>
+     <entry>依赖性</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=3d20f2410b913139fc329bfe178544d5 -->
+   </thead>
+   <tbody>
+<!-- pgdoc-cn_start sig_en=58a9b0f5736525b468a0a56b8a3b4074 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 1</entry>
+     <entry>internal function <function>brin_inclusion_opcinfo()</function></entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 1</entry>
+     <entry>内部函数<function>brin_inclusion_opcinfo()</function></entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=58a9b0f5736525b468a0a56b8a3b4074 -->
+<!-- pgdoc-cn_start sig_en=7d958463411e743b86479402639c89f2 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 2</entry>
+     <entry>internal function <function>brin_inclusion_add_value()</function></entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 2</entry>
+     <entry>内部函数<function>brin_inclusion_add_value()</function></entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=7d958463411e743b86479402639c89f2 -->
+<!-- pgdoc-cn_start sig_en=4ea6e472a0e0527a06b2463d364463b5 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 3</entry>
+     <entry>internal function <function>brin_inclusion_consistent()</function></entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 3</entry>
+     <entry>内部函数<function>brin_inclusion_consistent()</function></entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=4ea6e472a0e0527a06b2463d364463b5 -->
+<!-- pgdoc-cn_start sig_en=1c1d37f3fdacfc4c6d34dcf378bd9514 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 4</entry>
+     <entry>internal function <function>brin_inclusion_union()</function></entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 4</entry>
+     <entry>内部函数<function>brin_inclusion_union()</function></entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=1c1d37f3fdacfc4c6d34dcf378bd9514 -->
+<!-- pgdoc-cn_start sig_en=d151c84f6d2b5c106778f04e7f2ecb6e sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 11</entry>
+     <entry>function to merge two elements</entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 11</entry>
+     <entry>合并两个元素的函数</entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=d151c84f6d2b5c106778f04e7f2ecb6e -->
+<!-- pgdoc-cn_start sig_en=86cd00a06045a2d99897f8eefcef4acf sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 12</entry>
+     <entry>optional function to check whether two elements are mergeable</entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 12</entry>
+     <entry>可选函数，检查两个元素是否可以合并</entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=86cd00a06045a2d99897f8eefcef4acf -->
+<!-- pgdoc-cn_start sig_en=f177dedb5d3315f9c7640757c6db6138 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 13</entry>
+     <entry>optional function to check if an element is contained within another</entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 13</entry>
+     <entry>可选函数，检查一个元素是否被包含在另一个中</entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=f177dedb5d3315f9c7640757c6db6138 -->
+<!-- pgdoc-cn_start sig_en=08bcb73c5766754ec994baceb0cf1300 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Function 14</entry>
+     <entry>optional function to check whether an element is empty</entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持函数 14</entry>
+     <entry>optional function to check whether an element is empty</entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=08bcb73c5766754ec994baceb0cf1300 -->
+<!-- pgdoc-cn_start sig_en=6f000d51152021d3bba56296a5e53cbb sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 1</entry>
+     <entry>operator left-of</entry>
+     <entry>Operator Strategy 4</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 1</entry>
+     <entry>位于左边操作符 left-of</entry>
+     <entry>操作符策略 4</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=6f000d51152021d3bba56296a5e53cbb -->
+<!-- pgdoc-cn_start sig_en=207619351429180bc2056603ac5bc387 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 2</entry>
+     <entry>operator does-not-extend-to-the-right-of</entry>
+     <entry>Operator Strategy 5</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 2</entry>
+     <entry>不超过左边操作符 does-not-extend-to-the-right-of</entry>
+     <entry>操作符策略 5</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=207619351429180bc2056603ac5bc387 -->
+<!-- pgdoc-cn_start sig_en=a624e7e61a6b234db16ff4d116c988ed sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 3</entry>
+     <entry>operator overlaps</entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 3</entry>
+     <entry>重叠操作符</entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=a624e7e61a6b234db16ff4d116c988ed -->
+<!-- pgdoc-cn_start sig_en=d46647cf4633aa9a4d428d601ad70b55 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 4</entry>
+     <entry>operator does-not-extend-to-the-left-of</entry>
+     <entry>Operator Strategy 1</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 4</entry>
+     <entry>不超过左边操作符 does-not-extend-to-the-left-of</entry>
+     <entry>操作符策略 1</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=d46647cf4633aa9a4d428d601ad70b55 -->
+<!-- pgdoc-cn_start sig_en=e7480506cc6e22cfdbdeec0548806726 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 5</entry>
+     <entry>operator right-of</entry>
+     <entry>Operator Strategy 2</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 5</entry>
+     <entry>位于右边操作符 right-of</entry>
+     <entry>操作符策略 2</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=e7480506cc6e22cfdbdeec0548806726 -->
+<!-- pgdoc-cn_start sig_en=988fabeff920d4296927318c3b723810 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 6, 18</entry>
+     <entry>operator same-as-or-equal-to</entry>
+     <entry>Operator Strategy 7</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 6, 18</entry>
+     <entry>相同或者等于操作符</entry>
+     <entry>操作符策略 7</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=988fabeff920d4296927318c3b723810 -->
+<!-- pgdoc-cn_start sig_en=da9dfcd788aa5d2f5b6881ee5ccd3b69 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 7, 16, 24, 25</entry>
+     <entry>operator contains-or-equal-to</entry>
+     <entry></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 7, 16, 24, 25</entry>
+     <entry>包含或等于操作符</entry>
+     <entry></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=da9dfcd788aa5d2f5b6881ee5ccd3b69 -->
+<!-- pgdoc-cn_start sig_en=843b202198be38921349ac361b378966 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 8, 26, 27</entry>
+     <entry>operator is-contained-by-or-equal-to</entry>
+     <entry>Operator Strategy 3</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 8, 26, 27</entry>
+     <entry>被包含或等于操作符</entry>
+     <entry>操作符策略 3</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=843b202198be38921349ac361b378966 -->
+<!-- pgdoc-cn_start sig_en=3d201583c4be784e2b32365b4cb5cbc4 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 9</entry>
+     <entry>operator does-not-extend-above</entry>
+     <entry>Operator Strategy 11</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 9</entry>
+     <entry>不超过上边操作符 does-not-extend-above</entry>
+     <entry>操作符策略 11</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=3d201583c4be784e2b32365b4cb5cbc4 -->
+<!-- pgdoc-cn_start sig_en=9db0725176b9f3c3e8865686fd59881e sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 10</entry>
+     <entry>operator is-below</entry>
+     <entry>Operator Strategy 12</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 10</entry>
+     <entry>操作符 is-below</entry>
+     <entry>操作符策略 12</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=9db0725176b9f3c3e8865686fd59881e -->
+<!-- pgdoc-cn_start sig_en=8aa13149aaf9563b23cccd91c79eb98a sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 11</entry>
+     <entry>operator is-above</entry>
+     <entry>Operator Strategy 9</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>Operator Strategy 11</entry>
+     <entry>在上面操作符 is-above</entry>
+     <entry>操作符策略 9</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=8aa13149aaf9563b23cccd91c79eb98a -->
+<!-- pgdoc-cn_start sig_en=149530a71d497b767a0b9bc115befcc9 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 12</entry>
+     <entry>operator does-not-extend-below</entry>
+     <entry>Operator Strategy 10</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 12</entry>
+     <entry>不超过下面操作符 does-not-extend-below</entry>
+     <entry>操作符策略 10</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=149530a71d497b767a0b9bc115befcc9 -->
+<!-- pgdoc-cn_start sig_en=1aa779f06165f56d3977c8c2401e76a8 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 20</entry>
+     <entry>operator less-than</entry>
+     <entry>Operator Strategy 5</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 20</entry>
+     <entry>小于操作符</entry>
+     <entry>操作符策略 4</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=1aa779f06165f56d3977c8c2401e76a8 -->
+<!-- pgdoc-cn_start sig_en=fbc9ba6559735f4d7dabf6b1195a1d16 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 21</entry>
+     <entry>operator less-than-or-equal-to</entry>
+     <entry>Operator Strategy 5</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 21</entry>
+     <entry>小于等于操作符</entry>
+     <entry>操作符策略 4</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=fbc9ba6559735f4d7dabf6b1195a1d16 -->
+<!-- pgdoc-cn_start sig_en=f1af798a305f43306f500971f2208ce9 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 22</entry>
+     <entry>operator greater-than</entry>
+     <entry>Operator Strategy 1</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 22</entry>
+     <entry>大于操作符</entry>
+     <entry>操作符策略 1</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=f1af798a305f43306f500971f2208ce9 -->
+<!-- pgdoc-cn_start sig_en=5aee64bb7fd7a3c71dc6cdf381588c9b sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 23</entry>
+     <entry>operator greater-than-or-equal-to</entry>
+     <entry>Operator Strategy 1</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 23</entry>
+     <entry>大于等于操作符</entry>
+     <entry>操作符策略 1</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=5aee64bb7fd7a3c71dc6cdf381588c9b -->
+   </tbody>
+  </tgroup>
+ </table>
+
+<!-- pgdoc-cn_start sig_en=eb9e0ca01c1a496569e34cefd048a2f3 sig_cn_org=None source=14.1 
+ <para>
+    Support function numbers 1 through 10 are reserved for the BRIN internal
+    functions, so the SQL level functions start with number 11.  Support
+    function number 11 is the main function required to build the index.
+    It should accept two arguments with the same data type as the operator class,
+    and return the union of them.  The inclusion operator class can store union
+    values with different data types if it is defined with the
+    <literal>STORAGE</literal> parameter.  The return value of the union
+    function should match the <literal>STORAGE</literal> data type.
+ </para>
+________________________________________________________-->
+ <para>
+    支持过程编号 1 至 10 被保留给 BRIN 的内部函数，因此 SQL 层面的函数从
+    编号 11 开始。支持函数编号 11 是用于构建该索引的主要函数。它应该接
+    受两个具有和操作符类相同数据类型的参数并且返回它们的并集。如果
+    inclusion 操作符类定义时用了<literal>STORAGE</literal>参数，则它可以存储具有
+    不同数据类型的合并值。该并集函数的返回值应该匹配
+    <literal>STORAGE</literal>的数据类型。
+ </para>
+<!-- pgdoc-cn_end sig_en=eb9e0ca01c1a496569e34cefd048a2f3 -->
+
+<!-- pgdoc-cn_start sig_en=546dab1c8ff0c8b6e01c314d6a9ca3b4 sig_cn_org=None source=14.1 
+ <para>
+    Support function numbers 12 and 14 are provided to support
+    irregularities of built-in data types.  Function number 12
+    is used to support network addresses from different families which
+    are not mergeable.  Function number 14 is used to support
+    empty ranges.  Function number 13 is an optional but
+    recommended one, which allows the new value to be checked before
+    it is passed to the union function.  As the BRIN framework can shortcut
+    some operations when the union is not changed, using this
+    function can improve index performance.
+ </para>
+________________________________________________________-->
+ <para>
+    支持函数编号 12 和 14 被提供用来支持内建数据类型的不规则性。函数编号
+    12 被用来支持来自不同地址族的不能合并的网络地址。函数编号 14 被用来
+    支持空范围。函数编号 13 是可选的，但是我们推荐提供它。它允许在新值
+    被传递给并集函数前对其进行检查。因为 BRIN 框架在并集没有改变时可以
+    越过某些操作，所以使用这个函数可以提升索引性能。
+ </para>
+<!-- pgdoc-cn_end sig_en=546dab1c8ff0c8b6e01c314d6a9ca3b4 -->
+
+<!-- pgdoc-cn_start sig_en=3c62ab9a53f57567b392c0c2fcc5dc1c sig_cn_org=None source=14.1 
+ <para>
+  To write an operator class for a data type that implements only an equality
+  operator and supports hashing, it is possible to use the bloom support procedures
+  alongside the corresponding operators, as shown in
+  <xref linkend="brin-extensibility-bloom-table"/>.
+  All operator class members (procedures and operators) are mandatory.
+ </para>
+________________________________________________________-->
+ <para>
+  为仅实现相等运算符并且支持哈希的数据类型编写运算符类， 可以将bloom支持过程与相应的操作程序一起使用， 就像 <xref linkend="brin-extensibility-bloom-table"/>中所列出的。
+  所有的操作符类成员（过程和操作符）都是强制性的。
+ </para>
+<!-- pgdoc-cn_end sig_en=3c62ab9a53f57567b392c0c2fcc5dc1c -->
+
+ <table id="brin-extensibility-bloom-table">
+<!-- pgdoc-cn_start sig_en=3300d4fdc94837ea2acd2fc03dda82c1 sig_cn_org=None source=14.1 
+  <title>Procedure and Support Numbers for Bloom Operator Classes</title>
+________________________________________________________-->
+  <title>布隆操作符类的过程和支持编号</title>
+<!-- pgdoc-cn_end sig_en=3300d4fdc94837ea2acd2fc03dda82c1 -->
+  <tgroup cols="2">
+   <thead>
+<!-- pgdoc-cn_start sig_en=2623e2fc0bca5234b26dd505be742525 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator class member</entry>
+     <entry>Object</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符类成员</entry>
+     <entry>对象</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=2623e2fc0bca5234b26dd505be742525 -->
+   </thead>
+   <tbody>
+<!-- pgdoc-cn_start sig_en=6f2214f40b26d563f344e92a092fb845 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 1</entry>
+     <entry>internal function <function>brin_bloom_opcinfo()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 1</entry>
+     <entry>internal function <function>brin_bloom_opcinfo()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=6f2214f40b26d563f344e92a092fb845 -->
+<!-- pgdoc-cn_start sig_en=426f085d9b0cd9ebd7af353508666312 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 2</entry>
+     <entry>internal function <function>brin_bloom_add_value()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 2</entry>
+     <entry>internal function <function>brin_bloom_add_value()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=426f085d9b0cd9ebd7af353508666312 -->
+<!-- pgdoc-cn_start sig_en=d818fac698a2e7d0202525a69e29b8d6 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 3</entry>
+     <entry>internal function <function>brin_bloom_consistent()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 3</entry>
+     <entry>internal function <function>brin_bloom_consistent()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=d818fac698a2e7d0202525a69e29b8d6 -->
+<!-- pgdoc-cn_start sig_en=0c72e9520c37467497768de71fd44f0a sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 4</entry>
+     <entry>internal function <function>brin_bloom_union()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 4</entry>
+     <entry>internal function <function>brin_bloom_union()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=0c72e9520c37467497768de71fd44f0a -->
+<!-- pgdoc-cn_start sig_en=e8dafabed8526001af18b04be12c5d85 sig_cn_org=35205f7da6a9908b989ff1d2c2e34454 source=15.7 
+    <row>
+     <entry>Support Procedure 5</entry>
+     <entry>internal function <function>brin_bloom_options()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持程序5</entry>
+     <entry>内部函数<function>brin_bloom_options()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=e8dafabed8526001af18b04be12c5d85 -->
+<!-- pgdoc-cn_start sig_en=8ff8202da95d89e8adda5e4752037396 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 11</entry>
+     <entry>function to compute hash of an element</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 11</entry>
+     <entry>function to compute hash of an element</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=8ff8202da95d89e8adda5e4752037396 -->
+<!-- pgdoc-cn_start sig_en=d628d72ce379908ac2b2569201733a81 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 1</entry>
+     <entry>operator equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 1</entry>
+     <entry>operator equal-to</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=d628d72ce379908ac2b2569201733a81 -->
+   </tbody>
+  </tgroup>
+ </table>
+
+<!-- pgdoc-cn_start sig_en=23bec3bff861a5b0589745a700d5b3c3 sig_cn_org=None source=14.1 
+ <para>
+    Support procedure numbers 1-10 are reserved for the BRIN internal
+    functions, so the SQL level functions start with number 11.  Support
+    function number 11 is the main function required to build the index.
+    It should accept one argument with the same data type as the operator class,
+    and return a hash of the value.
+ </para>
+________________________________________________________-->
+ <para>
+    支持过程编号1-10是为BRIN内部函数保留的，因此SQL级别的函数从编号11开始。
+    支持函数编号11是构建索引所需要的主函数。
+    它可以接受一个与操作符类具有相同数据类型的参数，并返回值的hash。
+ </para>
+<!-- pgdoc-cn_end sig_en=23bec3bff861a5b0589745a700d5b3c3 -->
+
+<!-- pgdoc-cn_start sig_en=9c682dc63c7f6e4822b24964d6562a7b sig_cn_org=None source=14.1 
+ <para>
+  The minmax-multi operator class is also intended for data types implementing
+  a totally ordered set, and may be seen as a simple extension of the minmax
+  operator class. While minmax operator class summarizes values from each block
+  range into a single contiguous interval, minmax-multi allows summarization
+  into multiple smaller intervals to improve handling of outlier values.
+  It is possible to use the minmax-multi support procedures alongside the
+  corresponding operators, as shown in
+  <xref linkend="brin-extensibility-minmax-multi-table"/>.
+  All operator class members (procedures and operators) are mandatory.
+ </para>
+________________________________________________________-->
+ <para>
+  minmax-multi操作符类也适用于实现完全有序集的数据类型，也可以看作是minmax操作符类的简单扩展。
+  minmax操作符类汇总值，从每个块范围到单个连续的间隔中，而minmax-multi则允许将值汇总到多个更小的间隔中，以提升离群值的处理。 
+  可以将minmax-multi支持过程与相应的操作符一起使用，如<xref linkend="brin-extensibility-minmax-multi-table"/>中所示。
+  所有操作符类成员(过程和操作符)都是强制性的。
+ </para>
+<!-- pgdoc-cn_end sig_en=9c682dc63c7f6e4822b24964d6562a7b -->
+
+ <table id="brin-extensibility-minmax-multi-table">
+<!-- pgdoc-cn_start sig_en=a610e5dba8dfc8517121ad50163f6fd4 sig_cn_org=None source=14.1 
+  <title>Procedure and Support Numbers for minmax-multi Operator Classes</title>
+________________________________________________________-->
+  <title>minmax-multi操作符类的过程和支持编号</title>
+<!-- pgdoc-cn_end sig_en=a610e5dba8dfc8517121ad50163f6fd4 -->
+  <tgroup cols="2">
+   <thead>
+<!-- pgdoc-cn_start sig_en=2623e2fc0bca5234b26dd505be742525 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator class member</entry>
+     <entry>Object</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符类成员</entry>
+     <entry>对象</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=2623e2fc0bca5234b26dd505be742525 -->
+   </thead>
+   <tbody>
+<!-- pgdoc-cn_start sig_en=4afe1bb079f51e8c321533196f267312 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 1</entry>
+     <entry>internal function <function>brin_minmax_multi_opcinfo()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 1</entry>
+     <entry>内部函数 <function>brin_minmax_multi_opcinfo()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=4afe1bb079f51e8c321533196f267312 -->
+<!-- pgdoc-cn_start sig_en=798706c121740048bccb8d004fd46b21 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 2</entry>
+     <entry>internal function <function>brin_minmax_multi_add_value()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 2</entry>
+     <entry>内部函数 <function>brin_minmax_multi_add_value()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=798706c121740048bccb8d004fd46b21 -->
+<!-- pgdoc-cn_start sig_en=1fb7df57114c56fc9284df034bffb4c4 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 3</entry>
+     <entry>internal function <function>brin_minmax_multi_consistent()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 3</entry>
+     <entry>内部函数 <function>brin_minmax_multi_consistent()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=1fb7df57114c56fc9284df034bffb4c4 -->
+<!-- pgdoc-cn_start sig_en=ec12354305cee6a091dccce83ef1884d sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 4</entry>
+     <entry>internal function <function>brin_minmax_multi_union()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 4</entry>
+     <entry>内部函数 <function>brin_minmax_multi_union()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=ec12354305cee6a091dccce83ef1884d -->
+<!-- pgdoc-cn_start sig_en=1de29bff27b1706c479a2921d7bdb20d sig_cn_org=536229078ff818bf5c54b902747b3009 source=15.7 
+    <row>
+     <entry>Support Procedure 5</entry>
+     <entry>internal function <function>brin_minmax_multi_options()</function></entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持程序 5</entry>
+     <entry>内部函数 <function>brin_minmax_multi_options()</function></entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=1de29bff27b1706c479a2921d7bdb20d -->
+<!-- pgdoc-cn_start sig_en=8adb791d5c6b5aa7f16a123859b905b9 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Support Procedure 11</entry>
+     <entry>function to compute distance between two values (length of a range)</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>支持过程 11</entry>
+     <entry>function to compute distance between two values (length of a range)</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=8adb791d5c6b5aa7f16a123859b905b9 -->
+<!-- pgdoc-cn_start sig_en=feb269873ea33a0a1d2bebdb9a36bb4c sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 1</entry>
+     <entry>operator less-than</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 1</entry>
+     <entry>小于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=feb269873ea33a0a1d2bebdb9a36bb4c -->
+<!-- pgdoc-cn_start sig_en=b1422f3aac4b11e33245bc74054f9df4 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 2</entry>
+     <entry>operator less-than-or-equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 2</entry>
+     <entry>小于等于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=b1422f3aac4b11e33245bc74054f9df4 -->
+<!-- pgdoc-cn_start sig_en=4bab24de9460acfcab060b96686a7d79 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 3</entry>
+     <entry>operator equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 3</entry>
+     <entry>等于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=4bab24de9460acfcab060b96686a7d79 -->
+<!-- pgdoc-cn_start sig_en=0208a178e6d810fff8bd0462d56982a4 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 4</entry>
+     <entry>operator greater-than-or-equal-to</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 4</entry>
+     <entry>大于等于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=0208a178e6d810fff8bd0462d56982a4 -->
+<!-- pgdoc-cn_start sig_en=2d83bbb6460fc43cfa234c4baa25d6c7 sig_cn_org=None source=14.1 
+    <row>
+     <entry>Operator Strategy 5</entry>
+     <entry>operator greater-than</entry>
+    </row>
+________________________________________________________-->
+    <row>
+     <entry>操作符策略 5</entry>
+     <entry>大于操作符</entry>
+    </row>
+<!-- pgdoc-cn_end sig_en=2d83bbb6460fc43cfa234c4baa25d6c7 -->
+   </tbody>
+  </tgroup>
+ </table>
+
+<!-- pgdoc-cn_start sig_en=a3adf5f6576bb952e6825e7cc7311ced sig_cn_org=None source=14.1 
+ <para>
+    Both minmax and inclusion operator classes support cross-data-type
+    operators, though with these the dependencies become more complicated.
+    The minmax operator class requires a full set of operators to be
+    defined with both arguments having the same data type.  It allows
+    additional data types to be supported by defining extra sets
+    of operators.  Inclusion operator class operator strategies are dependent
+    on another operator strategy as shown in
+    <xref linkend="brin-extensibility-inclusion-table"/>, or the same
+    operator strategy as themselves.  They require the dependency
+    operator to be defined with the <literal>STORAGE</literal> data type as the
+    left-hand-side argument and the other supported data type to be the
+    right-hand-side argument of the supported operator.  See
+    <literal>float4_minmax_ops</literal> as an example of minmax, and
+    <literal>box_inclusion_ops</literal> as an example of inclusion.
+ </para>
+________________________________________________________-->
+ <para>
+    minmax 和 inclusion 操作符类都支持跨数据类型操作符，不过如果要支持
+    会让依赖性变得更加复杂。minmax 操作符类要求用具有同样数据类型的
+    参数来定义一个完全的操作符集合。它允许通过定义额外的操作符集合来
+    支持附加的数据类型。如
+    <xref linkend="brin-extensibility-inclusion-table"/>中所示，
+    inclusion 操作符类的操作符策略是依赖于另一种操作符策略的（或者和它们
+    自身相同的操作符策略）。它们要求定义依赖性操作符时，把
+    <literal>STORAGE</literal>数据类型作为左手边参数并且让其他支持的数据类型
+    作为右手边的参数。minmax 的例子可见
+    <literal>float4_minmax_ops</literal>，inclusion 的例子是
+    <literal>box_inclusion_ops</literal>。
+ </para>
+<!-- pgdoc-cn_end sig_en=a3adf5f6576bb952e6825e7cc7311ced -->
+</sect1>
+</chapter>

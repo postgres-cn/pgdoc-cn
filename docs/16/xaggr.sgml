@@ -1,0 +1,1120 @@
+<!-- doc/src/sgml/xaggr.sgml -->
+
+ <sect1 id="xaggr">
+<!-- pgdoc-cn_start sig_en=50719148a2c066c22eda7f31017dc918 sig_cn_org=None source=14.1 
+  <title>User-Defined Aggregates</title>
+________________________________________________________-->
+  <title>用户定义的聚集</title>
+<!-- pgdoc-cn_end sig_en=50719148a2c066c22eda7f31017dc918 -->
+
+<!-- pgdoc-cn_start sig_en=56cfe4eb5b56b40b7729d9f74c7b7dac sig_cn_org=None source=14.1 
+  <indexterm zone="xaggr">
+   <primary>aggregate function</primary>
+   <secondary>user-defined</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm zone="xaggr">
+   <primary>聚集函数</primary>
+   <secondary>用户定义的</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=56cfe4eb5b56b40b7729d9f74c7b7dac -->
+
+<!-- pgdoc-cn_start sig_en=66ba19a46e047f181809de3d67b1226f sig_cn_org=None source=14.1 
+  <para>
+   Aggregate functions in <productname>PostgreSQL</productname>
+   are defined in terms of <firstterm>state values</firstterm>
+   and <firstterm>state transition functions</firstterm>.
+   That is, an aggregate operates using a state value that is updated
+   as each successive input row is processed.
+   To define a new aggregate
+   function, one selects a data type for the state value,
+   an initial value for the state, and a state transition
+   function.  The state transition function takes the previous state
+   value and the aggregate's input value(s) for the current row, and
+   returns a new state value.
+   A <firstterm>final function</firstterm>
+   can also be specified, in case the desired result of the aggregate
+   is different from the data that needs to be kept in the running
+   state value.  The final function takes the ending state value
+   and returns whatever is wanted as the aggregate result.
+   In principle, the transition and final functions are just ordinary
+   functions that could also be used outside the context of the
+   aggregate.  (In practice, it's often helpful for performance reasons
+   to create specialized transition functions that can only work when
+   called as part of an aggregate.)
+  </para>
+________________________________________________________-->
+  <para>
+   <productname>PostgreSQL</productname>中的聚集函数用<firstterm>状态值</firstterm>和<firstterm>状态转换函数</firstterm>定义。也就是，一个聚集操作使用一个状态值，它在每一个后续输入行被处理时被更新。要定义一个新的聚集函数，我们要为状态值选择一种数据类型、一个状态的初始值和一个状态转换函数。状态转换函数接收前一个状态值和该聚集当前行的输入值，并且返回一个新的状态值。万一该聚集的预期结果与需要保存在运行状态之中的数据不同，还能指定一个<firstterm>最终函数</firstterm>。最终函数接受结束状态值并且返回作为聚集结果的任何东西。原则上，转换函数和最终函数只是也可以在聚集环境之外使用的普通函数（实际上，通常出于性能的原因，会创建特殊的只能作为聚集的一部分工作的转换函数）。
+  </para>
+<!-- pgdoc-cn_end sig_en=66ba19a46e047f181809de3d67b1226f -->
+
+<!-- pgdoc-cn_start sig_en=2ed152dc9fa7435f9f4f922fa5c485e4 sig_cn_org=None source=14.1 
+  <para>
+   Thus, in addition to the argument and result data types seen by a user
+   of the aggregate, there is an internal state-value data type that
+   might be different from both the argument and result types.
+  </para>
+________________________________________________________-->
+  <para>
+   因此，除了该聚集的用户所见的参数和结果数据类型之外，还有一种可能不同于参数和结果状态的内部状态值数据类型。
+  </para>
+<!-- pgdoc-cn_end sig_en=2ed152dc9fa7435f9f4f922fa5c485e4 -->
+
+<!-- pgdoc-cn_start sig_en=501f75551d4678f6edd91c39e1f74378 sig_cn_org=None source=14.1 
+  <para>
+   If we define an aggregate that does not use a final function,
+   we have an aggregate that computes a running function of
+   the column values from each row.  <function>sum</function>  is  an
+   example  of  this  kind  of aggregate.  <function>sum</function> starts at
+   zero and always adds the current  row's  value  to
+   its  running  total.  For example, if we want to make a <function>sum</function>
+   aggregate to work on a data type for complex numbers,
+   we only need the addition function for that data type.
+   The aggregate definition would be:
+
+<programlisting>
+CREATE AGGREGATE sum (complex)
+(
+    sfunc = complex_add,
+    stype = complex,
+    initcond = '(0,0)'
+);
+</programlisting>
+
+   which we might use like this:
+
+<programlisting>
+SELECT sum(a) FROM test_complex;
+
+   sum
+-&minus;-&minus;-&minus;-&minus;-&minus;-
+ (34,53.9)
+</programlisting>
+
+   (Notice that we are relying on function overloading: there is more than
+    one aggregate named <function>sum</function>, but
+   <productname>PostgreSQL</productname> can figure out which kind
+   of sum applies to a column of type <type>complex</type>.)
+  </para>
+________________________________________________________-->
+  <para>
+   如果我们定义一个聚集但不使用一个最终函数，我们就得到了一个从每一行的列值计算一个运行函数的聚集。<function>sum</function>是这类聚集的一个例子。<function>sum</function>从零开始，并且总是把当前行的值加到它的运行总和上。例如，如果我们希望让一个<function>sum</function>聚集能工作在复数数据类型上，我们只需要该数据类型的加法函数。聚集定义是：
+
+<programlisting>
+CREATE AGGREGATE sum (complex)
+(
+    sfunc = complex_add,
+    stype = complex,
+    initcond = '(0,0)'
+);
+</programlisting>
+
+   我们可以这样使用：
+
+<programlisting>
+SELECT sum(a) FROM test_complex;
+
+   sum
+-----------
+ (34,53.9)
+</programlisting>
+
+   （注意我们依赖于函数重载：有多于一个名为<function>sum</function>的聚集，但是<productname>PostgreSQL</productname>能够找出哪种 sum 适用于一个类型为<type>complex</type>的列）。
+  </para>
+<!-- pgdoc-cn_end sig_en=501f75551d4678f6edd91c39e1f74378 -->
+
+<!-- pgdoc-cn_start sig_en=a6fa4a56373575214b65c6838c884cb7 sig_cn_org=None source=14.1 
+  <para>
+   The above definition of <function>sum</function> will return zero
+   (the initial state value) if there are no nonnull input values.
+   Perhaps we want to return null in that case instead &mdash; the SQL standard
+   expects <function>sum</function> to behave that way.  We can do this simply by
+   omitting the <literal>initcond</literal> phrase, so that the initial state
+   value is null.  Ordinarily this would mean that the <literal>sfunc</literal>
+   would need to check for a null state-value input.  But for
+   <function>sum</function> and some other simple aggregates like
+   <function>max</function> and <function>min</function>,
+   it is sufficient to insert the first nonnull input value into
+   the state variable and then start applying the transition function
+   at the second nonnull input value.  <productname>PostgreSQL</productname>
+   will do that automatically if the initial state value is null and
+   the transition function is marked <quote>strict</quote> (i.e., not to be called
+   for null inputs).
+  </para>
+________________________________________________________-->
+  <para>
+   如果没有非空输入值，上述的<function>sum</function>定义将返回零（初始状态值）。也许我们想要在这种情况下返回空 &mdash;  SQL 标准期望<function>sum</function>以这种方式行事。我们可以通过忽略<literal>initcond</literal>阶段简单地做到这一点，这样初始状态值就为空。通常这表示<literal>sfunc</literal>将需要检查一个空状态值输入。但是对于<function>sum</function>和一些其他简单聚集（如<function>max</function>和<function>min</function>），把第一个非空输入值插入到状态变量中并且接着在第二个非空输入值上开始应用转换函数就足够了。如果初始状态值为空并且转换函数被标记为<quote>strict</quote>（即不为空输入调用），<productname>PostgreSQL</productname>会自动这样做。
+  </para>
+<!-- pgdoc-cn_end sig_en=a6fa4a56373575214b65c6838c884cb7 -->
+
+<!-- pgdoc-cn_start sig_en=bf47497e2ef73771feac4c77beec5230 sig_cn_org=None source=14.1 
+  <para>
+   Another bit of default behavior for a <quote>strict</quote> transition function
+   is that the previous state value is retained unchanged whenever a
+   null input value is encountered.  Thus, null values are ignored.  If you
+   need some other behavior for null inputs, do not declare your
+   transition function as strict; instead code it to test for null inputs and
+   do whatever is needed.
+  </para>
+________________________________________________________-->
+  <para>
+   <quote>strict</quote>转换函数的另一点默认行为是只要碰到了一个空输入值，之前的状态值就保持不变。因此，空值会被忽略。如果你需要某些其他用于空输入的行为，不要把你的转换函数声明为 strict，而是把它编码为测试空输入并且做所需要的事情。
+  </para>
+<!-- pgdoc-cn_end sig_en=bf47497e2ef73771feac4c77beec5230 -->
+
+<!-- pgdoc-cn_start sig_en=87eb0a904c9a34814c555db4ac8019d9 sig_cn_org=None source=14.1 
+  <para>
+   <function>avg</function> (average) is a more complex example of an aggregate.
+   It requires
+   two pieces of running state: the sum of the inputs and the count
+   of the number of inputs.  The final result is obtained by dividing
+   these quantities.  Average is typically implemented by using an
+   array as the state value.  For example,
+   the built-in implementation of <function>avg(float8)</function>
+   looks like:
+
+<programlisting>
+CREATE AGGREGATE avg (float8)
+(
+    sfunc = float8_accum,
+    stype = float8[],
+    finalfunc = float8_avg,
+    initcond = '{0,0,0}'
+);
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   <function>avg</function>（均值）是一种更复杂的聚集例子。它要求两份运行状态：输入的总和以及输入的计数。最终结果通过将这些量相除而得到。均值是使用一个数组作为状态值的典型实现。例如，内建的<function>avg(float8)</function>实现看起来像：
+
+<programlisting>
+CREATE AGGREGATE avg (float8)
+(
+    sfunc = float8_accum,
+    stype = float8[],
+    finalfunc = float8_avg,
+    initcond = '{0,0,0}'
+);
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=87eb0a904c9a34814c555db4ac8019d9 -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=e96cf9c7c4a0907c63b537dcd8d0df6c sig_cn_org=None source=14.1 
+   <para>
+   <function>float8_accum</function> requires a three-element array, not just
+   two elements, because it accumulates the sum of squares as well as
+   the sum and count of the inputs.  This is so that it can be used for
+   some other aggregates as well as <function>avg</function>.
+   </para>
+________________________________________________________-->
+   <para>
+   （<function>float8_accum</function>要求一个三元素的数组，而不只是两个元素，因为它累积平方和以及输入的总和以及计数。因此它也可以被用于其他聚集函数以及<function>avg</function>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=e96cf9c7c4a0907c63b537dcd8d0df6c -->
+  </note>
+
+<!-- pgdoc-cn_start sig_en=cce39ae92a9ca03362220a8d84fea351 sig_cn_org=None source=14.1 
+  <para>
+   Aggregate function calls in SQL allow <literal>DISTINCT</literal>
+   and <literal>ORDER BY</literal> options that control which rows are fed
+   to the aggregate's transition function and in what order.  These
+   options are implemented behind the scenes and are not the concern
+   of the aggregate's support functions.
+  </para>
+________________________________________________________-->
+  <para>
+   SQL 中的聚集函数调用允许用<literal>DISTINCT</literal>和<literal>ORDER BY</literal>选项控制以什么顺序把行传递给该聚集的转换函数。这些选项的实现不需要该聚集的支持函数关心。
+  </para>
+<!-- pgdoc-cn_end sig_en=cce39ae92a9ca03362220a8d84fea351 -->
+
+<!-- pgdoc-cn_start sig_en=b2fdf55316ca24789e92e225a67c5e5a sig_cn_org=None source=14.1 
+  <para>
+   For further details see the
+   <xref linkend="sql-createaggregate"/>
+   command.
+  </para>
+________________________________________________________-->
+  <para>
+   进一步的细节可见<xref linkend="sql-createaggregate"/>命令。   
+  </para>
+<!-- pgdoc-cn_end sig_en=b2fdf55316ca24789e92e225a67c5e5a -->
+
+ <sect2 id="xaggr-moving-aggregates">
+<!-- pgdoc-cn_start sig_en=40627adfbbbc5e43b26804f4b9ee889b sig_cn_org=None source=14.1 
+  <title>Moving-Aggregate Mode</title>
+________________________________________________________-->
+  <title>移动聚集模式</title>
+<!-- pgdoc-cn_end sig_en=40627adfbbbc5e43b26804f4b9ee889b -->
+
+<!-- pgdoc-cn_start sig_en=fd2d7e9d806f4f4ef31e9a2a466b2591 sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>moving-aggregate mode</primary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>移动聚集模式</primary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=fd2d7e9d806f4f4ef31e9a2a466b2591 -->
+
+<!-- pgdoc-cn_start sig_en=5b6496900e60f56cba0c3e70d113f5b1 sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>aggregate function</primary>
+   <secondary>moving aggregate</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>移动聚集</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=5b6496900e60f56cba0c3e70d113f5b1 -->
+
+<!-- pgdoc-cn_start sig_en=601324f5829baf68018750693db0c3b2 sig_cn_org=None source=14.1 
+  <para>
+   Aggregate functions can optionally support <firstterm>moving-aggregate
+   mode</firstterm>, which allows substantially faster execution of aggregate
+   functions within windows with moving frame starting points.
+   (See <xref linkend="tutorial-window"/>
+   and <xref linkend="syntax-window-functions"/> for information about use of
+   aggregate functions as window functions.)
+   The basic idea is that in addition to a normal <quote>forward</quote>
+   transition function, the aggregate provides an <firstterm>inverse
+   transition function</firstterm>, which allows rows to be removed from the
+   aggregate's running state value when they exit the window frame.
+   For example a <function>sum</function> aggregate, which uses addition as the
+   forward transition function, would use subtraction as the inverse
+   transition function.  Without an inverse transition function, the window
+   function mechanism must recalculate the aggregate from scratch each time
+   the frame starting point moves, resulting in run time proportional to the
+   number of input rows times the average frame length.  With an inverse
+   transition function, the run time is only proportional to the number of
+   input rows.
+  </para>
+________________________________________________________-->
+  <para>
+   聚集函数可以选择性地支持<firstterm>移动聚集模式</firstterm>，这种模式允许很大程度上提高在具有移动帧起点的窗口中执行的聚集函数的速度（有关把聚集函数用作窗口函数请见<xref linkend="tutorial-window"/>和<xref linkend="syntax-window-functions"/>）。基本思想是在通常的<quote>前向</quote>转换函数之外，聚集提供一个<firstterm>逆向转换函数</firstterm>，该函数允许当行退出窗口帧时从聚集的运行状态值中移除它们的值。例如一个<function>sum</function>聚集使用加法作为前向转换函数，它可以使用减法作为逆向转换函数。如果没有一个逆向转换函数，每一次帧起点移动时，窗口函数机制必须重新从头计算该聚集，这会导致运行时间与输入行的数量乘以平均帧长度成比例。如果有一个逆向转换函数，运行时间只与输入行的数量成比例。
+  </para>
+<!-- pgdoc-cn_end sig_en=601324f5829baf68018750693db0c3b2 -->
+
+<!-- pgdoc-cn_start sig_en=ee94dfed3b5e0c6dad2ad646d86d2101 sig_cn_org=None source=14.1 
+  <para>
+   The inverse transition function is passed the current state value and the
+   aggregate input value(s) for the earliest row included in the current
+   state.  It must reconstruct what the state value would have been if the
+   given input row had never been aggregated, but only the rows following
+   it.  This sometimes requires that the forward transition function keep
+   more state than is needed for plain aggregation mode.  Therefore, the
+   moving-aggregate mode uses a completely separate implementation from the
+   plain mode: it has its own state data type, its own forward transition
+   function, and its own final function if needed.  These can be the same as
+   the plain mode's data type and functions, if there is no need for extra
+   state.
+  </para>
+________________________________________________________-->
+  <para>
+   当前状态值和包含在当前状态中最早的行的聚集输入值被传递给逆向转换函数。它必须重新构建出如果给定的输入行不再被聚集（只聚集其后的行）时状态值会是什么样。这有时要求前向转换函数保存比普通聚集模式下更多的状态。因此，移动聚集模式使用一种完全不同于普通模式的实现：它有自己的状态数据类型、自己的前向转换函数以及自己的状态函数（如果需要）。如果不需要额外的状态，这些可以和普通模式的数据类型和函数相同。
+  </para>
+<!-- pgdoc-cn_end sig_en=ee94dfed3b5e0c6dad2ad646d86d2101 -->
+
+<!-- pgdoc-cn_start sig_en=1e3fc734555959532eff1c846f2bc85a sig_cn_org=None source=14.1 
+  <para>
+   As an example, we could extend the <function>sum</function> aggregate given above
+   to support moving-aggregate mode like this:
+
+<programlisting>
+CREATE AGGREGATE sum (complex)
+(
+    sfunc = complex_add,
+    stype = complex,
+    initcond = '(0,0)',
+    msfunc = complex_add,
+    minvfunc = complex_sub,
+    mstype = complex,
+    minitcond = '(0,0)'
+);
+</programlisting>
+
+   The parameters whose names begin with <literal>m</literal> define the
+   moving-aggregate implementation.  Except for the inverse transition
+   function <literal>minvfunc</literal>, they correspond to the plain-aggregate
+   parameters without <literal>m</literal>.
+  </para>
+________________________________________________________-->
+  <para>
+   作为一个例子，我们可以把上面给定的<function>sum</function>聚集扩展成支持移动聚集模式：
+
+<programlisting>
+CREATE AGGREGATE sum (complex)
+(
+    sfunc = complex_add,
+    stype = complex,
+    initcond = '(0,0)',
+    msfunc = complex_add,
+    minvfunc = complex_sub,
+    mstype = complex,
+    minitcond = '(0,0)'
+);
+</programlisting>
+
+   名称以<literal>m</literal>开始的参数定义移动聚集实现。除了逆向转换函数<literal>minvfunc</literal>，它们都对应于没有<literal>m</literal>的普通聚集参数。
+  </para>
+<!-- pgdoc-cn_end sig_en=1e3fc734555959532eff1c846f2bc85a -->
+
+<!-- pgdoc-cn_start sig_en=d7ea0920ccfb4378147b43b5edce5c5c sig_cn_org=None source=14.1 
+  <para>
+   The forward transition function for moving-aggregate mode is not allowed
+   to return null as the new state value.  If the inverse transition
+   function returns null, this is taken as an indication that the inverse
+   function cannot reverse the state calculation for this particular input,
+   and so the aggregate calculation will be redone from scratch for the
+   current frame starting position.  This convention allows moving-aggregate
+   mode to be used in situations where there are some infrequent cases that
+   are impractical to reverse out of the running state value.  The inverse
+   transition function can <quote>punt</quote> on these cases, and yet still come
+   out ahead so long as it can work for most cases.  As an example, an
+   aggregate working with floating-point numbers might choose to punt when
+   a <literal>NaN</literal> (not a number) input has to be removed from the running
+   state value.
+  </para>
+________________________________________________________-->
+  <para>
+   用于移动聚集模式的前向转换函数不允许返回空值作为新状态值。如果逆向转换函数返回空值，这被当作一种指示，它表明该逆向函数无法为这个特定输入逆转状态计算，因此该聚集计算将根据当前的帧开始位置重新从头计算。这种习惯允许移动聚集模式被用在一些不适合逆转运行状态值的少数情况下。逆向转换函数在这些情况下可以<quote>撒手不管</quote>，然后在它能够工作的大部分情况中再出来干活。例如，一个浮点数的聚集可能会在必须从运行状态值中移除一个<literal>NaN</literal>（不是一个数字）输入时撒手不管。
+  </para>
+<!-- pgdoc-cn_end sig_en=d7ea0920ccfb4378147b43b5edce5c5c -->
+
+<!-- pgdoc-cn_start sig_en=1e7873d51d1104331bb31a48486870b8 sig_cn_org=None source=14.1 
+  <para>
+   When writing moving-aggregate support functions, it is important to be
+   sure that the inverse transition function can reconstruct the correct
+   state value exactly.  Otherwise there might be user-visible differences
+   in results depending on whether the moving-aggregate mode is used.
+   An example of an aggregate for which adding an inverse transition
+   function seems easy at first, yet where this requirement cannot be met
+   is <function>sum</function> over <type>float4</type> or <type>float8</type> inputs.  A
+   naive declaration of <function>sum(<type>float8</type>)</function> could be
+
+<programlisting>
+CREATE AGGREGATE unsafe_sum (float8)
+(
+    stype = float8,
+    sfunc = float8pl,
+    mstype = float8,
+    msfunc = float8pl,
+    minvfunc = float8mi
+);
+</programlisting>
+
+   This aggregate, however, can give wildly different results than it would
+   have without the inverse transition function. For example, consider
+
+<programlisting>
+SELECT
+  unsafe_sum(x) OVER (ORDER BY n ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)
+FROM (VALUES (1, 1.0e20::float8),
+             (2, 1.0::float8)) AS v (n,x);
+</programlisting>
+
+   This query returns <literal>0</literal> as its second result, rather than the
+   expected answer of <literal>1</literal>.  The cause is the limited precision of
+   floating-point values: adding <literal>1</literal> to <literal>1e20</literal> results
+   in <literal>1e20</literal> again, and so subtracting <literal>1e20</literal> from that
+   yields <literal>0</literal>, not <literal>1</literal>.  Note that this is a limitation
+   of floating-point arithmetic in general, not a limitation
+   of <productname>PostgreSQL</productname>.
+  </para>
+________________________________________________________-->
+  <para>
+   在编写移动聚集支持函数时，很重要的是确保逆向转换函数能够准确地重构正确的状态值。否则会导致用不用移动聚集模式时结果中产生用户可见的差别。为一个聚集增加一个逆向转换函数的例子最初看起来很简单，但是却无法满足<type>float4</type>或者<type>float8</type>输入上的<function>sum</function>的要求。<function>sum(<type>float8</type>)</function>的一种未经考虑的定义可以是
+
+<programlisting>
+CREATE AGGREGATE unsafe_sum (float8)
+(
+    stype = float8,
+    sfunc = float8pl,
+    mstype = float8,
+    msfunc = float8pl,
+    minvfunc = float8mi
+);
+</programlisting>
+
+   但是，这个聚集可能给出与没有逆向转换函数时很不同的结果。例如，考虑
+
+<programlisting>
+SELECT
+  unsafe_sum(x) OVER (ORDER BY n ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING)
+FROM (VALUES (1, 1.0e20::float8),
+             (2, 1.0::float8)) AS v (n,x);
+</programlisting>
+
+   这个查询返回<literal>0</literal>作为它的第二个结果，而不是我们期待的<literal>1</literal>。其原因是浮点值的有限精度：把<literal>1</literal>加到<literal>1e20</literal>还是会得到<literal>1e20</literal>，因此从中减去<literal>1e20</literal>会得到<literal>0</literal>而不是<literal>1</literal>。这是对于浮点计算的一种一般性限制，而不是<productname>PostgreSQL</productname>的限制。
+  </para>
+<!-- pgdoc-cn_end sig_en=1e7873d51d1104331bb31a48486870b8 -->
+
+ </sect2>
+
+ <sect2 id="xaggr-polymorphic-aggregates">
+<!-- pgdoc-cn_start sig_en=227bb6696e0e418dd2231499f0dc59f1 sig_cn_org=None source=14.1 
+  <title>Polymorphic and Variadic Aggregates</title>
+________________________________________________________-->
+  <title>多态和可变聚集</title>
+<!-- pgdoc-cn_end sig_en=227bb6696e0e418dd2231499f0dc59f1 -->
+
+<!-- pgdoc-cn_start sig_en=86d575b840eb0c298dc678d01b0ac1f0 sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>aggregate function</primary>
+   <secondary>polymorphic</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>多态</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=86d575b840eb0c298dc678d01b0ac1f0 -->
+
+<!-- pgdoc-cn_start sig_en=b8d6eaece41ecd523ff3644b0b2e6d01 sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>aggregate function</primary>
+   <secondary>variadic</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>可变</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=b8d6eaece41ecd523ff3644b0b2e6d01 -->
+
+<!-- pgdoc-cn_start sig_en=44661b5deacf2b47712ed7bc83eead0a sig_cn_org=None source=14.1 
+  <para>
+   Aggregate functions can use polymorphic
+   state transition functions or final functions, so that the same functions
+   can be used to implement multiple aggregates.
+   See <xref linkend="extend-types-polymorphic"/>
+   for an explanation of polymorphic functions.
+   Going a step further, the aggregate function itself can be specified
+   with polymorphic input type(s) and state type, allowing a single
+   aggregate definition to serve for multiple input data types.
+   Here is an example of a polymorphic aggregate:
+
+<programlisting>
+CREATE AGGREGATE array_accum (anycompatible)
+(
+    sfunc = array_append,
+    stype = anycompatiblearray,
+    initcond = '{}'
+);
+</programlisting>
+
+   Here, the actual state type for any given aggregate call is the array type
+   having the actual input type as elements.  The behavior of the aggregate
+   is to concatenate all the inputs into an array of that type.
+   (Note: the built-in aggregate <function>array_agg</function> provides similar
+   functionality, with better performance than this definition would have.)
+  </para>
+________________________________________________________-->
+  <para>
+   聚集函数可以使用多态状态转换函数或最终函数，这样同样的函数能被用来实现多个聚集。关于多态函数的解释可参见<xref linkend="extend-types-polymorphic"/>。更进一步，聚集函数本身可以被指定为具有多态输入类型和状态类型，允许一个聚集函数服务于多种输入数据类型。这里是一个多态聚集的例子：
+
+<programlisting>
+CREATE AGGREGATE array_accum (anycompatible)
+(
+    sfunc = array_append,
+    stype = anycompatiblearray,
+    initcond = '{}'
+);
+</programlisting>
+
+   这里，每一次给定聚集调用的实际状态类型是把实际输入类型作为元素的数组类型。该聚集的行为是串接所有输入成一个该类型的数组（注意：内建的聚集<function>array_agg</function>提供了相似的功能，但是具有比上述定义更好的性能）。
+  </para>
+<!-- pgdoc-cn_end sig_en=44661b5deacf2b47712ed7bc83eead0a -->
+
+<!-- pgdoc-cn_start sig_en=6de0a677de514a31915a9ea128d3bb98 sig_cn_org=e1e050f4365ac43698a46b160776a2f5 source=15.7 
+  <para>
+   Here's the output using two different actual data types as arguments:
+
+<programlisting>
+SELECT attrelid::regclass, array_accum(attname)
+    FROM pg_attribute
+    WHERE attnum &gt; 0 AND attrelid = 'pg_tablespace'::regclass
+    GROUP BY attrelid;
+
+   attrelid    |              array_accum
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ pg_tablespace | {spcname,spcowner,spcacl,spcoptions}
+(1 row)
+
+SELECT attrelid::regclass, array_accum(atttypid::regtype)
+    FROM pg_attribute
+    WHERE attnum &gt; 0 AND attrelid = 'pg_tablespace'::regclass
+    GROUP BY attrelid;
+
+   attrelid    |        array_accum
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ pg_tablespace | {name,oid,aclitem[],text[]}
+(1 row)
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   以下是使用两种不同的实际数据类型作为参数的输出：
+
+<programlisting>
+SELECT attrelid::regclass, array_accum(attname)
+    FROM pg_attribute
+    WHERE attnum &gt; 0 AND attrelid = 'pg_tablespace'::regclass
+    GROUP BY attrelid;
+
+   attrelid    |              array_accum
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ pg_tablespace | {spcname,spcowner,spcacl,spcoptions}
+(1 row)
+
+SELECT attrelid::regclass, array_accum(atttypid::regtype)
+    FROM pg_attribute
+    WHERE attnum &gt; 0 AND attrelid = 'pg_tablespace'::regclass
+    GROUP BY attrelid;
+
+   attrelid    |        array_accum
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ pg_tablespace | {name,oid,aclitem[],text[]}
+(1 row)
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=6de0a677de514a31915a9ea128d3bb98 -->
+
+<!-- pgdoc-cn_start sig_en=844fbc3d868cfff5a42d1adaadf26f0e sig_cn_org=None source=14.1 
+  <para>
+   Ordinarily, an aggregate function with a polymorphic result type has a
+   polymorphic state type, as in the above example.  This is necessary
+   because otherwise the final function cannot be declared sensibly: it
+   would need to have a polymorphic result type but no polymorphic argument
+   type, which <command>CREATE FUNCTION</command> will reject on the grounds that
+   the result type cannot be deduced from a call.  But sometimes it is
+   inconvenient to use a polymorphic state type.  The most common case is
+   where the aggregate support functions are to be written in C and the
+   state type should be declared as <type>internal</type> because there is
+   no SQL-level equivalent for it.  To address this case, it is possible to
+   declare the final function as taking extra <quote>dummy</quote> arguments
+   that match the input arguments of the aggregate.  Such dummy arguments
+   are always passed as null values since no specific value is available when the
+   final function is called.  Their only use is to allow a polymorphic
+   final function's result type to be connected to the aggregate's input
+   type(s).  For example, the definition of the built-in
+   aggregate <function>array_agg</function> is equivalent to
+
+<programlisting>
+CREATE FUNCTION array_agg_transfn(internal, anynonarray)
+  RETURNS internal ...;
+CREATE FUNCTION array_agg_finalfn(internal, anynonarray)
+  RETURNS anyarray ...;
+
+CREATE AGGREGATE array_agg (anynonarray)
+(
+    sfunc = array_agg_transfn,
+    stype = internal,
+    finalfunc = array_agg_finalfn,
+    finalfunc_extra
+);
+</programlisting>
+
+   Here, the <literal>finalfunc_extra</literal> option specifies that the final
+   function receives, in addition to the state value, extra dummy
+   argument(s) corresponding to the aggregate's input argument(s).
+   The extra <type>anynonarray</type> argument allows the declaration
+   of <function>array_agg_finalfn</function> to be valid.
+  </para>
+________________________________________________________-->
+  <para>
+   如上述例子所示，通常一个具有多态结果类型的聚集函数有一个多态状态类型。这是必须的，因为否则就无法有意义地声明最终函数：它会需要有一个多态结果类型但是不能有多态参数类型，<command>CREATE FUNCTION</command>将当场拒绝那些无法从调用中推断结果类型的函数。但是使用一个多态状态类型有时并不方便。最常见的情况是，聚集支持函数使用 C 编写并且状态类型应该被声明为<type>internal</type>，因为在 SQL 层面上没有与它等效的类型。为了表述这种情况，可以声明最终函数为接受额外的匹配该聚集输入参数的<quote>dummy</quote>参数。这种假参数总是被传递为空值，因为当最终函数被调用时没有特定的值可用。它们的唯一用途是允许一个多态最终函数的结果类型被连接到该聚集的输入类型。例如，内建聚集<function>array_agg</function>的定义等效于：
+
+<programlisting>
+CREATE FUNCTION array_agg_transfn(internal, anynonarray)
+  RETURNS internal ...;
+CREATE FUNCTION array_agg_finalfn(internal, anynonarray)
+  RETURNS anyarray ...;
+
+CREATE AGGREGATE array_agg (anynonarray)
+(
+    sfunc = array_agg_transfn,
+    stype = internal,
+    finalfunc = array_agg_finalfn,
+    finalfunc_extra
+);
+</programlisting>
+
+   这里，<literal>finalfunc_extra</literal>选项指定该最终函数接收除了状态值之外，还接收对应于该聚集输入参数的额外假参数。额外的<type>anynonarray</type>参数允许<function>array_agg_finalfn</function>的声明成为合法。
+  </para>
+<!-- pgdoc-cn_end sig_en=844fbc3d868cfff5a42d1adaadf26f0e -->
+
+<!-- pgdoc-cn_start sig_en=35f74c85a728b8f1611e81a478a04b40 sig_cn_org=None source=14.1 
+  <para>
+   An aggregate function can be made to accept a varying number of arguments
+   by declaring its last argument as a <literal>VARIADIC</literal> array, in much
+   the same fashion as for regular functions; see
+   <xref linkend="xfunc-sql-variadic-functions"/>.  The aggregate's transition
+   function(s) must have the same array type as their last argument.  The
+   transition function(s) typically would also be marked <literal>VARIADIC</literal>,
+   but this is not strictly required.
+  </para>
+________________________________________________________-->
+  <para>
+   与常规函数的习惯大致相同，可以通过把一个聚集函数的最后一个参数声明为一个<literal>VARIADIC</literal>数组，这样可以让该函数接受可变数量的参数（见<xref linkend="xfunc-sql-variadic-functions"/>）。该聚集的转换函数也必须有相同的数组类型作为它们的最后一个参数。通常这类转换函数也会被标上<literal>VARIADIC</literal>，但这不被严格要求。
+  </para>
+<!-- pgdoc-cn_end sig_en=35f74c85a728b8f1611e81a478a04b40 -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=92da5076e88ddb721ada17ceb27cf463 sig_cn_org=None source=14.1 
+   <para>
+    Variadic aggregates are easily misused in connection with
+    the <literal>ORDER BY</literal> option (see <xref linkend="syntax-aggregates"/>),
+    since the parser cannot tell whether the wrong number of actual arguments
+    have been given in such a combination.  Keep in mind that everything to
+    the right of <literal>ORDER BY</literal> is a sort key, not an argument to the
+    aggregate.  For example, in
+<programlisting>
+SELECT myaggregate(a ORDER BY a, b, c) FROM ...
+</programlisting>
+    the parser will see this as a single aggregate function argument and
+    three sort keys.  However, the user might have intended
+<programlisting>
+SELECT myaggregate(a, b, c ORDER BY a) FROM ...
+</programlisting>
+    If <literal>myaggregate</literal> is variadic, both these calls could be
+    perfectly valid.
+   </para>
+________________________________________________________-->
+   <para>
+    可变聚集最容易被误用的情况是与<literal>ORDER BY</literal>选项（见<xref linkend="syntax-aggregates"/>）一起使用，因为解析器无法在这样一种组合中是否给出了错误的实际参数数量。要记住在<literal>ORDER BY</literal>右侧的任何东西都是一个排序键，而不是一个聚集的参数。例如，在
+<programlisting>
+SELECT myaggregate(a ORDER BY a, b, c) FROM ...
+</programlisting>
+    中，解析器将认为看到的是一个聚集函数参数和三个排序键。但是，用户可能想要的是
+<programlisting>
+SELECT myaggregate(a, b, c ORDER BY a) FROM ...
+</programlisting>
+    如果<literal>myaggregate</literal>是可变的，两种调用都是合法的。
+   </para>
+<!-- pgdoc-cn_end sig_en=92da5076e88ddb721ada17ceb27cf463 -->
+
+<!-- pgdoc-cn_start sig_en=ef5c9a599a4e203afd055d6f0dcea195 sig_cn_org=None source=14.1 
+   <para>
+    For the same reason, it's wise to think twice before creating aggregate
+    functions with the same names and different numbers of regular arguments.
+   </para>
+________________________________________________________-->
+   <para>
+    出于相同的原因，在创建具有相同名称以及不同数量的常规参数的聚集函数时一定要三思而后行。
+   </para>
+<!-- pgdoc-cn_end sig_en=ef5c9a599a4e203afd055d6f0dcea195 -->
+  </note>
+
+ </sect2>
+
+ <sect2 id="xaggr-ordered-set-aggregates">
+<!-- pgdoc-cn_start sig_en=9d01315c6185360e5424d9b5e2e405ac sig_cn_org=None source=14.1 
+  <title>Ordered-Set Aggregates</title>
+________________________________________________________-->
+  <title>有序集聚集</title>
+<!-- pgdoc-cn_end sig_en=9d01315c6185360e5424d9b5e2e405ac -->
+
+<!-- pgdoc-cn_start sig_en=9da895f2e2d3e5f94e12c070b990932d sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>aggregate function</primary>
+   <secondary>ordered set</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>有序集</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=9da895f2e2d3e5f94e12c070b990932d -->
+
+<!-- pgdoc-cn_start sig_en=0edae7f7affd6c85291401ae79f573e7 sig_cn_org=None source=14.1 
+  <para>
+   The aggregates we have been describing so far are <quote>normal</quote>
+   aggregates.  <productname>PostgreSQL</productname> also
+   supports <firstterm>ordered-set aggregates</firstterm>, which differ from
+   normal aggregates in two key ways.  First, in addition to ordinary
+   aggregated arguments that are evaluated once per input row, an
+   ordered-set aggregate can have <quote>direct</quote> arguments that are
+   evaluated only once per aggregation operation.  Second, the syntax
+   for the ordinary aggregated arguments specifies a sort ordering
+   for them explicitly.  An ordered-set aggregate is usually
+   used to implement a computation that depends on a specific row
+   ordering, for instance rank or percentile, so that the sort ordering
+   is a required aspect of any call.  For example, the built-in
+   definition of <function>percentile_disc</function> is equivalent to:
+
+<programlisting>
+CREATE FUNCTION ordered_set_transition(internal, anyelement)
+  RETURNS internal ...;
+CREATE FUNCTION percentile_disc_final(internal, float8, anyelement)
+  RETURNS anyelement ...;
+
+CREATE AGGREGATE percentile_disc (float8 ORDER BY anyelement)
+(
+    sfunc = ordered_set_transition,
+    stype = internal,
+    finalfunc = percentile_disc_final,
+    finalfunc_extra
+);
+</programlisting>
+
+   This aggregate takes a <type>float8</type> direct argument (the percentile
+   fraction) and an aggregated input that can be of any sortable data type.
+   It could be used to obtain a median household income like this:
+
+<programlisting>
+SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
+ percentile_disc
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+           50489
+</programlisting>
+
+   Here, <literal>0.5</literal> is a direct argument; it would make no sense
+   for the percentile fraction to be a value varying across rows.
+  </para>
+________________________________________________________-->
+  <para>
+   目前为止我们已经描述的聚集都是<quote>普通</quote>聚集。<productname>PostgreSQL</productname>还支持<firstterm>有序集聚集</firstterm>，它和普通聚集在两个关键点上相区别。首先，除了对每个输入行都要计算一次的普通聚集参数之外，一个有序集聚集可以有<quote>直接</quote>参数，这类参数针对每次聚集操作只计算一次。其次，用于普通聚集参数的语法需要显式地为它们指定一个排序顺序。一个有续集聚集通常被用来实现一种依赖于特定行序的计算（例如排名或者百分位数），因此排序是任何调用都要求的。例如，<function>percentile_disc</function>的内建定义等效于：
+
+<programlisting>
+CREATE FUNCTION ordered_set_transition(internal, anyelement)
+  RETURNS internal ...;
+CREATE FUNCTION percentile_disc_final(internal, float8, anyelement)
+  RETURNS anyelement ...;
+
+CREATE AGGREGATE percentile_disc (float8 ORDER BY anyelement)
+(
+    sfunc = ordered_set_transition,
+    stype = internal,
+    finalfunc = percentile_disc_final,
+    finalfunc_extra
+);
+</programlisting>
+
+   这个聚集接受一个<type>float8</type>直接参数（百分位数分数）以及一个可以是任意可排序数据类型的聚集输入。它可以用来得到一个家庭收入的中位数：
+
+<programlisting>
+SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY income) FROM households;
+ percentile_disc
+-----------------
+           50489
+</programlisting>
+
+   这里<literal>0.5</literal>是一个直接参数，它对于要作为一个在行之间变化的百分位数分数没有意义。
+  </para>
+<!-- pgdoc-cn_end sig_en=0edae7f7affd6c85291401ae79f573e7 -->
+
+<!-- pgdoc-cn_start sig_en=ec1fc9080998dc2bf65deb34848f6976 sig_cn_org=None source=14.1 
+  <para>
+   Unlike the case for normal aggregates, the sorting of input rows for
+   an ordered-set aggregate is <emphasis>not</emphasis> done behind the scenes,
+   but is the responsibility of the aggregate's support functions.
+   The typical implementation approach is to keep a reference to
+   a <quote>tuplesort</quote> object in the aggregate's state value, feed the
+   incoming rows into that object, and then complete the sorting and
+   read out the data in the final function.  This design allows the
+   final function to perform special operations such as injecting
+   additional <quote>hypothetical</quote> rows into the data to be sorted.
+   While normal aggregates can often be implemented with support
+   functions written in <application>PL/pgSQL</application> or another
+   PL language, ordered-set aggregates generally have to be written in
+   C, since their state values aren't definable as any SQL data type.
+   (In the above example, notice that the state value is declared as
+   type <type>internal</type> &mdash; this is typical.)
+   Also, because the final function performs the sort, it is not possible
+   to continue adding input rows by executing the transition function again
+   later.  This means the final function is not <literal>READ_ONLY</literal>;
+   it must be declared in <link linkend="sql-createaggregate"><command>CREATE AGGREGATE</command></link>
+   as <literal>READ_WRITE</literal>, or as <literal>SHAREABLE</literal> if
+   it's possible for additional final-function calls to make use of the
+   already-sorted state.
+  </para>
+________________________________________________________-->
+  <para>
+   和普通聚集的情况不同，用于有序集聚集的输入行排序<emphasis>不是</emphasis>在幕后完成的，而是由该聚集的支持函数负责完成。
+   典型的实现方法是在该聚集的状态值中保持对于一个<quote>tuplesort</quote>对象的引用，把到来的行输入给该对象，然后完成排序并且在最终函数中读出该数据。
+   这种设计允许最终函数能够执行特殊操作，例如把附加的<quote>假想</quote>行注入到被排序的数据中。
+   虽然用由<application>PL/pgSQL</application>或另一种 PL 语言编写的支持函数通常能够实现普通聚集，但是有序集聚集通常必须用 C 编写，因为它们的状态值无法用任何 SQL 数据类型来定义（在上面的例子中，注意状态值被声明为类型<type>internal</type> &mdash; 这很典型）。
+   此外，由于最终函数会执行排序，后面就不能继续通过再次执行转移函数增加输入行。
+   这意味着最终函数不是<literal>READ_ONLY</literal>的，它必须在<link linkend="sql-createaggregate"><command>CREATE AGGREGATE</command></link>中被声明为<literal>READ_WRITE</literal>，或者在可以有额外的最终函数调用利用已经排序好的状态时声明为<literal>SHAREABLE</literal>。
+  </para>
+<!-- pgdoc-cn_end sig_en=ec1fc9080998dc2bf65deb34848f6976 -->
+
+<!-- pgdoc-cn_start sig_en=dee6c9cf906aa05f464a474b8ef53137 sig_cn_org=None source=14.1 
+  <para>
+   The state transition function for an ordered-set aggregate receives
+   the current state value plus the aggregated input values for
+   each row, and returns the updated state value.  This is the
+   same definition as for normal aggregates, but note that the direct
+   arguments (if any) are not provided.  The final function receives
+   the last state value, the values of the direct arguments if any,
+   and (if <literal>finalfunc_extra</literal> is specified) null values
+   corresponding to the aggregated input(s).  As with normal
+   aggregates, <literal>finalfunc_extra</literal> is only really useful if the
+   aggregate is polymorphic; then the extra dummy argument(s) are needed
+   to connect the final function's result type to the aggregate's input
+   type(s).
+  </para>
+________________________________________________________-->
+  <para>
+   用于一个有序集聚集的状态转移函数接收当前状态值外加对于每一行的聚集输入值，并且返回更新后的状态值。这和普通聚集的定义相同，但是注意没有提供直接参数（如果有）。最终函数接收最后的状态值、直接参数（如果有）的值以及对应于聚集输入的空值（如果指定了<literal>finalfunc_extra</literal>）。正如普通聚集，只有聚集是多态时<literal>finalfunc_extra</literal>才真正有用，那时就需要额外的假参数把最终函数的结果类型连接到该聚集的输入类型。
+  </para>
+<!-- pgdoc-cn_end sig_en=dee6c9cf906aa05f464a474b8ef53137 -->
+
+<!-- pgdoc-cn_start sig_en=2186351142b19a969a0ef977d0c084f6 sig_cn_org=None source=14.1 
+  <para>
+   Currently, ordered-set aggregates cannot be used as window functions,
+   and therefore there is no need for them to support moving-aggregate mode.
+  </para>
+________________________________________________________-->
+  <para>
+   当前，有序集聚集不能被用做窗口函数，并且因此没有必要让它们支持移动聚集模式。
+  </para>
+<!-- pgdoc-cn_end sig_en=2186351142b19a969a0ef977d0c084f6 -->
+
+ </sect2>
+
+  <sect2 id="xaggr-partial-aggregates">
+<!-- pgdoc-cn_start sig_en=18f0a8559eda18624ef86826b71892f4 sig_cn_org=None source=14.1 
+  <title>Partial Aggregation</title>
+________________________________________________________-->
+  <title>部分聚集</title>
+<!-- pgdoc-cn_end sig_en=18f0a8559eda18624ef86826b71892f4 -->
+
+<!-- pgdoc-cn_start sig_en=037e0d17374314f811e4a57a03439ead sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>aggregate function</primary>
+   <secondary>partial aggregation</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>部分聚集</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=037e0d17374314f811e4a57a03439ead -->
+
+<!-- pgdoc-cn_start sig_en=45d2202d7ef91990323b46d898b97f3c sig_cn_org=None source=14.1 
+  <para>
+   Optionally, an aggregate function can support <firstterm>partial
+   aggregation</firstterm>.  The idea of partial aggregation is to run the aggregate's
+   state transition function over different subsets of the input data
+   independently, and then to combine the state values resulting from those
+   subsets to produce the same state value that would have resulted from
+   scanning all the input in a single operation.  This mode can be used for
+   parallel aggregation by having different worker processes scan different
+   portions of a table.  Each worker produces a partial state value, and at
+   the end those state values are combined to produce a final state value.
+   (In the future this mode might also be used for purposes such as combining
+   aggregations over local and remote tables; but that is not implemented
+   yet.)
+  </para>
+________________________________________________________-->
+  <para>
+   可选地，一个聚集函数可以支持<firstterm>部分聚集</firstterm>。部分聚集的思想是在输入数据的不同子集上独立的运行该聚集的状态转移函数，然后把从这些子集得到的状态值组合起来产生最终的状态值，这样得到的状态值与在单次聚集操作中扫描所有输入得到的状态值相同。这种模式可以被用来进行并行聚集，用不同的工作者进程扫描表的不同部分。每一个工作者产生一个部分状态值，最后把这些部分状态值组合产生最终状态值（在未来，这种模式可能也会被用于组合在本地表和远程表上的聚集，但目前还未实现）。
+  </para>
+<!-- pgdoc-cn_end sig_en=45d2202d7ef91990323b46d898b97f3c -->
+
+<!-- pgdoc-cn_start sig_en=49484264edd0b986e8a193ace7f32421 sig_cn_org=None source=14.1 
+  <para>
+   To support partial aggregation, the aggregate definition must provide
+   a <firstterm>combine function</firstterm>, which takes two values of the
+   aggregate's state type (representing the results of aggregating over two
+   subsets of the input rows) and produces a new value of the state type,
+   representing what the state would have been after aggregating over the
+   combination of those sets of rows.  It is unspecified what the relative
+   order of the input rows from the two sets would have been.  This means
+   that it's usually impossible to define a useful combine function for
+   aggregates that are sensitive to input row order.
+  </para>
+________________________________________________________-->
+  <para>
+   为了支持部分聚集，聚集定义必须提供一个<firstterm>组合函数</firstterm>，这个函数接收两个该聚集的状态类型（表示在输入行的两个不同子集上得到的聚集结果）并且产生一个该状态类型的新值，该结果表示组合哪些聚集结果后的状态。至于来自两个集合的输入行的相对顺序则并没有指定。这意味着通常不可能为对输入行顺序敏感的聚集定义出可用的组合函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=49484264edd0b986e8a193ace7f32421 -->
+
+<!-- pgdoc-cn_start sig_en=3f1be2113413ab668a696ab629cdc8b9 sig_cn_org=None source=14.1 
+  <para>
+   As simple examples, <literal>MAX</literal> and <literal>MIN</literal> aggregates can be
+   made to support partial aggregation by specifying the combine function as
+   the same greater-of-two or lesser-of-two comparison function that is used
+   as their transition function.  <literal>SUM</literal> aggregates just need an
+   addition function as combine function.  (Again, this is the same as their
+   transition function, unless the state value is wider than the input data
+   type.)
+  </para>
+________________________________________________________-->
+  <para>
+   作为简单的例子，通过指定组合函数为与其转移函数中相同的“两者中较大者”和“两者中较小者”比较函数，<literal>MAX</literal>和<literal>MIN</literal>聚集可以支持部分聚集。<literal>SUM</literal>聚集则只需要一个额外的函数作为组合函数（同样，组合函数与其转移函数相同，除非状态值的宽度比输入数据类型更宽）。
+  </para>
+<!-- pgdoc-cn_end sig_en=3f1be2113413ab668a696ab629cdc8b9 -->
+
+<!-- pgdoc-cn_start sig_en=e68760360e5194e0edcaf007d766ea07 sig_cn_org=None source=14.1 
+  <para>
+   The combine function is treated much like a transition function that
+   happens to take a value of the state type, not of the underlying input
+   type, as its second argument.  In particular, the rules for dealing
+   with null values and strict functions are similar.  Also, if the aggregate
+   definition specifies a non-null <literal>initcond</literal>, keep in mind that
+   that will be used not only as the initial state for each partial
+   aggregation run, but also as the initial state for the combine function,
+   which will be called to combine each partial result into that state.
+  </para>
+________________________________________________________-->
+  <para>
+   组合函数很像一个把状态类型值而不是底层输入类型值作为其第二个参数的转移函数。尤其是处理空值和严格函数的规则是相似的。此外，如果聚集定义指定了非空的<literal>initcond</literal>，记住那不仅会被作为每一次部分聚集运行的初始状态，还会被作为组合函数的初始状态，对每一个部分结果都会调用组合函数将部分结果组合到该初始状态中。
+  </para>
+<!-- pgdoc-cn_end sig_en=e68760360e5194e0edcaf007d766ea07 -->
+
+<!-- pgdoc-cn_start sig_en=f38294bab0622b881ac9511948dc9c5e sig_cn_org=None source=14.1 
+  <para>
+   If the aggregate's state type is declared as <type>internal</type>, it is
+   the combine function's responsibility that its result is allocated in
+   the correct memory context for aggregate state values.  This means in
+   particular that when the first input is <literal>NULL</literal> it's invalid
+   to simply return the second input, as that value will be in the wrong
+   context and will not have sufficient lifespan.
+  </para>
+________________________________________________________-->
+  <para>
+   如果聚集的状态类型被声明为<type>internal</type>，则组合函数应负责在用于聚集状态值的内存上下文中分配其结果。这意味着当第一个输入为<literal>NULL</literal>时，不能简单地返回第二个输入，因为那个值将会在错误的上下文中并且将不具有足够的寿命。
+  </para>
+<!-- pgdoc-cn_end sig_en=f38294bab0622b881ac9511948dc9c5e -->
+
+<!-- pgdoc-cn_start sig_en=a9650808d955ec247af1e400a00896c1 sig_cn_org=None source=14.1 
+  <para>
+   When the aggregate's state type is declared as <type>internal</type>, it is
+   usually also appropriate for the aggregate definition to provide a
+   <firstterm>serialization function</firstterm> and a <firstterm>deserialization
+   function</firstterm>, which allow such a state value to be copied from one process
+   to another.  Without these functions, parallel aggregation cannot be
+   performed, and future applications such as local/remote aggregation will
+   probably not work either.
+  </para>
+________________________________________________________-->
+  <para>
+   当聚集的状态类型被声明为<type>internal</type>时，通常聚集定义提供<firstterm>序列化函数</firstterm>和<firstterm>反序列化函数</firstterm>也是合适的，这两个函数允许这样一种状态值被从一个进程复制到另一个进程。如果没有这些函数就无法执行并行聚集，并且未来的本地/远程聚集之类的应用也可能无法工作。
+  </para>
+<!-- pgdoc-cn_end sig_en=a9650808d955ec247af1e400a00896c1 -->
+
+<!-- pgdoc-cn_start sig_en=c0b253ec7760fa71665a0e2038f88614 sig_cn_org=None source=14.1 
+  <para>
+   A serialization function must take a single argument of
+   type <type>internal</type> and return a result of type <type>bytea</type>, which
+   represents the state value packaged up into a flat blob of bytes.
+   Conversely, a deserialization function reverses that conversion.  It must
+   take two arguments of types <type>bytea</type> and <type>internal</type>, and
+   return a result of type <type>internal</type>.  (The second argument is unused
+   and is always zero, but it is required for type-safety reasons.)  The
+   result of the deserialization function should simply be allocated in the
+   current memory context, as unlike the combine function's result, it is not
+   long-lived.
+  </para>
+________________________________________________________-->
+  <para>
+   一个序列化函数必须接收一个单一的<type>internal</type>类型参数并且返回一个<type>bytea</type>类型的结果，它表示把状态值打包成一个平面化的字节串。反过来，反序列化函数是上述转换的逆变换。反序列化函数必须接收两个类型为<type>bytea</type>和<type>internal</type>的参数，并且返回类型为<type>internal</type>的结果（第二个参数没有被使用并且总是为零，它的存在是由于类型安全性的原因）。反序列化函数的结果应该直接在当前内存上下文中分配，这与组合函数的结果不同，因为它不需要长期存在。
+  </para>
+<!-- pgdoc-cn_end sig_en=c0b253ec7760fa71665a0e2038f88614 -->
+
+<!-- pgdoc-cn_start sig_en=e3bc9148cce492f10918c5829fc92b5c sig_cn_org=None source=14.1 
+  <para>
+   Worth noting also is that for an aggregate to be executed in parallel,
+   the aggregate itself must be marked <literal>PARALLEL SAFE</literal>.  The
+   parallel-safety markings on its support functions are not consulted.
+  </para>
+________________________________________________________-->
+  <para>
+   还有一点值得提示的是关于要被并行执行的聚集，聚集本身必须被标记上<literal>PARALLEL SAFE</literal>。其支持函数上的并行安全性标记不会被参考。
+  </para>
+<!-- pgdoc-cn_end sig_en=e3bc9148cce492f10918c5829fc92b5c -->
+
+ </sect2>
+
+ <sect2 id="xaggr-support-functions">
+<!-- pgdoc-cn_start sig_en=8c23b38e641977b8b2389909feacd216 sig_cn_org=None source=14.1 
+  <title>Support Functions for Aggregates</title>
+________________________________________________________-->
+  <title>聚集的支持函数</title>
+<!-- pgdoc-cn_end sig_en=8c23b38e641977b8b2389909feacd216 -->
+
+<!-- pgdoc-cn_start sig_en=c338c737ce16e3dc587a223ff7015635 sig_cn_org=None source=14.1 
+  <indexterm>
+   <primary>aggregate function</primary>
+   <secondary>support functions for</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm>
+   <primary>聚集函数</primary>
+   <secondary>support functions for</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=c338c737ce16e3dc587a223ff7015635 -->
+
+<!-- pgdoc-cn_start sig_en=871be0410d8c48e5eb07cb1e023f8d62 sig_cn_org=None source=14.1 
+  <para>
+   A function written in C can detect that it is being called as an
+   aggregate support function by calling
+   <function>AggCheckCallContext</function>, for example:
+<programlisting>
+if (AggCheckCallContext(fcinfo, NULL))
+</programlisting>
+   One reason for checking this is that when it is true, the first input
+   must be a temporary state value and can therefore safely be modified
+   in-place rather than allocating a new copy.
+   See <function>int8inc()</function> for an example.
+   (While aggregate transition functions are always allowed to modify
+   the transition value in-place, aggregate final functions are generally
+   discouraged from doing so; if they do so, the behavior must be declared
+   when creating the aggregate.  See <xref linkend="sql-createaggregate"/>
+   for more detail.)
+  </para>
+________________________________________________________-->
+  <para>
+   用 C 编写的函数能够通过调用<function>AggCheckCallContext</function>检测它是作为聚集支持函数调用的，例如：
+<programlisting>
+if (AggCheckCallContext(fcinfo, NULL))
+</programlisting>
+   检查这个区别的原因是当它为真时，第一个输入必须是一个临时状态值并且可以因此安全地被就地修改而不是分配一个新的副本。例子可见<literal>int8inc()</literal>（虽然聚集的转移函数总是被允许就地修改转移值，但不鼓励聚集的最终函数这样做。如果最终函数要这样做，必须在创建聚集时声明这种行为。更多细节请参考<xref linkend="sql-createaggregate"/>）。
+  </para>
+<!-- pgdoc-cn_end sig_en=871be0410d8c48e5eb07cb1e023f8d62 -->
+
+<!-- pgdoc-cn_start sig_en=ead77fc5fdd66c94c35353ede45da448 sig_cn_org=None source=14.1 
+  <para>
+   The second argument of <function>AggCheckCallContext</function> can be used to
+   retrieve the memory context in which aggregate state values are being kept.
+   This is useful for transition functions that wish to use <quote>expanded</quote>
+   objects (see <xref linkend="xtypes-toast"/>) as their state values.
+   On first call, the transition function should return an expanded object
+   whose memory context is a child of the aggregate state context, and then
+   keep returning the same expanded object on subsequent calls.  See
+   <function>array_append()</function> for an example.  (<function>array_append()</function>
+   is not the transition function of any built-in aggregate, but it is written
+   to behave efficiently when used as transition function of a custom
+   aggregate.)
+  </para>
+________________________________________________________-->
+  <para>
+   <function>AggCheckCallContext</function>的第二个参数可以被用来检索保存有聚集状态值的内存上下文。这对希望把<quote>扩展</quote>对象（见<xref linkend="xtypes-toast"/>）用作状态值的转移函数有用。在第一次调用时，转移函数应该返回一个扩展对象，其内存上下文是聚集状态上下文的一个子节点，然后在后续的调用中都保持返回同一个扩展对象。示例请见<function>array_append()</function>（<function>array_append()</function>不是任意内建聚集的转移函数，但其编写的目的就是在被用作一种自定义聚集的转移函数时表现得有效）。
+  </para>
+<!-- pgdoc-cn_end sig_en=ead77fc5fdd66c94c35353ede45da448 -->
+
+<!-- pgdoc-cn_start sig_en=0b8b4002128b20d876deb6573ffdd9f1 sig_cn_org=None source=14.1 
+  <para>
+   Another support routine available to aggregate functions written in C
+   is <function>AggGetAggref</function>, which returns the <literal>Aggref</literal>
+   parse node that defines the aggregate call.  This is mainly useful
+   for ordered-set aggregates, which can inspect the substructure of
+   the <literal>Aggref</literal> node to find out what sort ordering they are
+   supposed to implement.  Examples can be found
+   in <filename>orderedsetaggs.c</filename> in the <productname>PostgreSQL</productname>
+   source code.
+  </para>
+________________________________________________________-->
+  <para>
+   另一种可用于由 C 编写的聚集函数的支持例程是<function>AggGetAggref</function>，它返回定义该聚集调用的<literal>Aggref</literal>解析节点。这主要对有序集聚集有用，它能检查<literal>Aggref</literal>的子结构来找出它们本应实现的排序顺序。在<productname>PostgreSQL</productname>源代码的<filename>orderedsetaggs.c</filename>中可以找到例子。
+  </para>
+<!-- pgdoc-cn_end sig_en=0b8b4002128b20d876deb6573ffdd9f1 -->
+
+ </sect2>
+
+ </sect1>

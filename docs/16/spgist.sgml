@@ -1,0 +1,1717 @@
+<!-- doc/src/sgml/spgist.sgml -->
+
+<chapter id="spgist">
+<!-- pgdoc-cn_start sig_en=bac12214065255c77ab56768163af22a sig_cn_org=None source=14.1 
+<title>SP-GiST Indexes</title>
+________________________________________________________-->
+<title>SP-GiST索引</title>
+<!-- pgdoc-cn_end sig_en=bac12214065255c77ab56768163af22a -->
+
+<!-- pgdoc-cn_start sig_en=d82687a3ce2f2388acfc297ee59b6c0d sig_cn_org=None source=14.1 
+   <indexterm>
+    <primary>index</primary>
+    <secondary>SP-GiST</secondary>
+   </indexterm>
+________________________________________________________-->
+   <indexterm>
+    <primary>index</primary>
+    <secondary>SP-GiST</secondary>
+   </indexterm>
+<!-- pgdoc-cn_end sig_en=d82687a3ce2f2388acfc297ee59b6c0d -->
+
+<sect1 id="spgist-intro">
+<!-- pgdoc-cn_start sig_en=c2fcf93c611ba5f3baff759a5cc428dd sig_cn_org=None source=14.1 
+ <title>Introduction</title>
+________________________________________________________-->
+ <title>简介</title>
+<!-- pgdoc-cn_end sig_en=c2fcf93c611ba5f3baff759a5cc428dd -->
+
+<!-- pgdoc-cn_start sig_en=c9a36b824c8c84bc3f1aa2beb0c71882 sig_cn_org=None source=14.1 
+ <para>
+  <acronym>SP-GiST</acronym> is an abbreviation for space-partitioned
+  <acronym>GiST</acronym>.  <acronym>SP-GiST</acronym> supports partitioned
+  search trees, which facilitate development of a wide range of different
+  non-balanced data structures, such as quad-trees, k-d trees, and radix
+  trees (tries).  The common feature of these structures is that they
+  repeatedly divide the search space into partitions that need not be
+  of equal size.  Searches that are well matched to the partitioning rule
+  can be very fast.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>SP-GiST</acronym>是空间划分<acronym>GiST</acronym>（Space-partitioned GiST）的简称。<acronym>SP-GiST</acronym>支持划分搜索树，它们可用于开发许多各种不同的非平衡数据结构，例如四叉树、k-d树和单词查找树。这些结构的共同特征是它们反复地将搜索空间划分成大小不需要相等的分区。匹配这些划分规则的搜索将会很快。
+ </para>
+<!-- pgdoc-cn_end sig_en=c9a36b824c8c84bc3f1aa2beb0c71882 -->
+
+<!-- pgdoc-cn_start sig_en=e59704e4cc0610cdc0fe0c7c735ff231 sig_cn_org=None source=14.1 
+ <para>
+  These popular data structures were originally developed for in-memory
+  usage.  In main memory, they are usually designed as a set of dynamically
+  allocated nodes linked by pointers.  This is not suitable for direct
+  storing on disk, since these chains of pointers can be rather long which
+  would require too many disk accesses.  In contrast, disk-based data
+  structures should have a high fanout to minimize I/O.  The challenge
+  addressed by <acronym>SP-GiST</acronym> is to map search tree nodes to
+  disk pages in such a way that a search need access only a few disk pages,
+  even if it traverses many nodes.
+ </para>
+________________________________________________________-->
+ <para>
+  这些常用的数据结构最初是为在内存中使用而设计的。在主存中，它们通常被设计为一组由指针链接的动态分配的结点。这对直接在磁盘上存储并不合适，因为这些指针链可能很长并且需要太多次的磁盘访问。相反，基于磁盘的数据结构应该具有高扇出来最小化 I/O。<acronym>SP-GiST</acronym>所提出的挑战是将搜索树结点映射到磁盘页面，这样即使是一次搜索会穿过很多结点，它也只需要访问很少的几个磁盘页面。
+ </para>
+<!-- pgdoc-cn_end sig_en=e59704e4cc0610cdc0fe0c7c735ff231 -->
+
+<!-- pgdoc-cn_start sig_en=f9aac8ae4ebeef30c01dba7df10feaac sig_cn_org=None source=14.1 
+ <para>
+  Like <acronym>GiST</acronym>, <acronym>SP-GiST</acronym> is meant to allow
+  the development of custom data types with the appropriate access methods,
+  by an expert in the domain of the data type, rather than a database expert.
+ </para>
+________________________________________________________-->
+ <para>
+  和<acronym>GiST</acronym>一样，<acronym>SP-GiST</acronym>也打算允许带有合适访问方法的自定义数据类型的开发，这种开发只需由该数据类型的领域专家参与，而不需要数据库专家的参与。
+ </para>
+<!-- pgdoc-cn_end sig_en=f9aac8ae4ebeef30c01dba7df10feaac -->
+
+<!-- pgdoc-cn_start sig_en=3d26df65889dc6abcc1ad26141c3b485 sig_cn_org=None source=14.1 
+ <para>
+  Some of the information here is derived from Purdue University's
+  SP-GiST Indexing Project
+  <ulink url="https://www.cs.purdue.edu/spgist/">web site</ulink>.
+  The <acronym>SP-GiST</acronym> implementation in
+  <productname>PostgreSQL</productname> is primarily maintained by Teodor
+  Sigaev and Oleg Bartunov, and there is more information on their
+  <!-&minus; URL will be changed -&minus;>
+  <ulink url="http://www.sai.msu.su/~megera/wiki/spgist_dev">web site</ulink>.
+ </para>
+________________________________________________________-->
+ <para>
+  这里的一些信息是来自于普渡大学的 SP-GiST 索引项目<ulink url="https://www.cs.purdue.edu/spgist/">网站</ulink>。<productname>PostgreSQL</productname>中的<acronym>SP-GiST</acronym>实现主要由 Teodor Sigaev 和 Oleg Bartunov 维护，在他们的
+  <!-- URL will be changed -->
+  <ulink url="http://www.sai.msu.su/~megera/wiki/spgist_dev">网站</ulink>上有更多信息。
+ </para>
+<!-- pgdoc-cn_end sig_en=3d26df65889dc6abcc1ad26141c3b485 -->
+
+</sect1>
+
+<sect1 id="spgist-builtin-opclasses">
+<!-- pgdoc-cn_start sig_en=f3fa348aa7b75a7cd90f4d3569e72437 sig_cn_org=None source=14.1 
+ <title>Built-in Operator Classes</title>
+________________________________________________________-->
+ <title>内建操作符类</title>
+<!-- pgdoc-cn_end sig_en=f3fa348aa7b75a7cd90f4d3569e72437 -->
+
+<!-- pgdoc-cn_start sig_en=a18cbef8669d574c85f498494702b84a sig_cn_org=None source=14.1 
+ <para>
+  The core <productname>PostgreSQL</productname> distribution
+  includes the <acronym>SP-GiST</acronym> operator classes shown in
+  <xref linkend="spgist-builtin-opclasses-table"/>.
+ </para>
+________________________________________________________-->
+ <para>
+  <xref linkend="spgist-builtin-opclasses-table"/>中展示了<productname>PostgreSQL</productname>
+  核心发布所包括的<acronym>SP-GiST</acronym>操作符类。
+ </para>
+<!-- pgdoc-cn_end sig_en=a18cbef8669d574c85f498494702b84a -->
+
+  <table id="spgist-builtin-opclasses-table">
+<!-- pgdoc-cn_start sig_en=0c4134562467e1a7402d5784559960c1 sig_cn_org=None source=14.1 
+   <title>Built-in <acronym>SP-GiST</acronym> Operator Classes</title>
+________________________________________________________-->
+   <title>内建 <acronym>SP-GiST</acronym> 操作符类</title>
+<!-- pgdoc-cn_end sig_en=0c4134562467e1a7402d5784559960c1 -->
+   <tgroup cols="3">
+    <thead>
+<!-- pgdoc-cn_start sig_en=54f7eb31e973dc3b41587e9b821b9270 sig_cn_org=None source=14.1 
+     <row>
+      <entry>Name</entry>
+      <entry>Indexable Operators</entry>
+      <entry>Ordering Operators</entry>
+     </row>
+________________________________________________________-->
+     <row>
+      <entry>名称</entry>
+      <entry>可索引操作符</entry>
+      <entry>排序运算符</entry>
+     </row>
+<!-- pgdoc-cn_end sig_en=54f7eb31e973dc3b41587e9b821b9270 -->
+    </thead>
+    <tbody>
+     <row>
+      <entry valign="middle" morerows="11"><literal>box_ops</literal></entry>
+      <entry><literal>&lt;&lt; (box,box)</literal></entry>
+      <entry valign="middle" morerows="11"><literal>&lt;-&gt; (box,point)</literal></entry>
+     </row>
+     <row><entry><literal>&amp;&lt; (box,box)</literal></entry></row>
+     <row><entry><literal>&amp;&gt; (box,box)</literal></entry></row>
+     <row><entry><literal>&gt;&gt; (box,box)</literal></entry></row>
+     <row><entry><literal>&lt;@ (box,box)</literal></entry></row>
+     <row><entry><literal>@&gt; (box,box)</literal></entry></row>
+     <row><entry><literal>~= (box,box)</literal></entry></row>
+     <row><entry><literal>&amp;&amp; (box,box)</literal></entry></row>
+     <row><entry><literal>&lt;&lt;| (box,box)</literal></entry></row>
+     <row><entry><literal>&amp;&lt;| (box,box)</literal></entry></row>
+     <row><entry><literal>|&amp;&gt; (box,box)</literal></entry></row>
+     <row><entry><literal>|&gt;&gt; (box,box)</literal></entry></row>
+
+     <row>
+      <entry valign="middle" morerows="10"><literal>inet_ops</literal></entry>
+      <entry><literal>&lt;&lt; (inet,inet)</literal></entry>
+      <entry valign="middle" morerows="10"></entry>
+     </row>
+     <row><entry><literal>&lt;&lt;= (inet,inet)</literal></entry></row>
+     <row><entry><literal>&gt;&gt; (inet,inet)</literal></entry></row>
+     <row><entry><literal>&gt;&gt;= (inet,inet)</literal></entry></row>
+     <row><entry><literal>= (inet,inet)</literal></entry></row>
+     <row><entry><literal>&lt;&gt; (inet,inet)</literal></entry></row>
+     <row><entry><literal>&lt; (inet,inet)</literal></entry></row>
+     <row><entry><literal>&lt;= (inet,inet)</literal></entry></row>
+     <row><entry><literal>&gt; (inet,inet)</literal></entry></row>
+     <row><entry><literal>&gt;= (inet,inet)</literal></entry></row>
+     <row><entry><literal>&amp;&amp; (inet,inet)</literal></entry></row>
+
+     <row>
+      <entry valign="middle" morerows="5"><literal>kd_point_ops</literal></entry>
+      <entry><literal>|&gt;&gt; (point,point)</literal></entry>
+      <entry valign="middle" morerows="5"><literal>&lt;-&gt; (point,point)</literal></entry>
+     </row>
+     <row><entry><literal>&lt;&lt; (point,point)</literal></entry></row>
+     <row><entry><literal>&gt;&gt; (point,point)</literal></entry></row>
+     <row><entry><literal>&lt;&lt;| (point,point)</literal></entry></row>
+     <row><entry><literal>~= (point,point)</literal></entry></row>
+     <row><entry><literal>&lt;@ (point,box)</literal></entry></row>
+
+     <row>
+      <entry valign="middle" morerows="11"><literal>poly_ops</literal></entry>
+      <entry><literal>&lt;&lt; (polygon,polygon)</literal></entry>
+      <entry valign="middle" morerows="11"><literal>&lt;-&gt; (polygon,point)</literal></entry>
+     </row>
+     <row><entry><literal>&amp;&lt; (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>&amp;&gt; (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>&gt;&gt; (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>&lt;@ (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>@&gt; (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>~= (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>&amp;&amp; (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>&lt;&lt;| (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>&amp;&lt;| (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>|&gt;&gt; (polygon,polygon)</literal></entry></row>
+     <row><entry><literal>|&amp;&gt; (polygon,polygon)</literal></entry></row>
+
+     <row>
+      <entry valign="middle" morerows="5"><literal>quad_point_ops</literal></entry>
+      <entry><literal>|&gt;&gt; (point,point)</literal></entry>
+      <entry valign="middle" morerows="5"><literal>&lt;-&gt; (point,point)</literal></entry>
+     </row>
+     <row><entry><literal>&lt;&lt; (point,point)</literal></entry></row>
+     <row><entry><literal>&gt;&gt; (point,point)</literal></entry></row>
+     <row><entry><literal>&lt;&lt;| (point,point)</literal></entry></row>
+     <row><entry><literal>~= (point,point)</literal></entry></row>
+     <row><entry><literal>&lt;@ (point,box)</literal></entry></row>
+
+     <row>
+      <entry valign="middle" morerows="9"><literal>range_ops</literal></entry>
+      <entry><literal>= (anyrange,anyrange)</literal></entry>
+      <entry valign="middle" morerows="9"></entry>
+     </row>
+     <row><entry><literal>&amp;&amp; (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>@&gt; (anyrange,anyelement)</literal></entry></row>
+     <row><entry><literal>@&gt; (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>&lt;@ (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>&lt;&lt; (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>&gt;&gt; (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>&amp;&lt; (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>&amp;&gt; (anyrange,anyrange)</literal></entry></row>
+     <row><entry><literal>-|- (anyrange,anyrange)</literal></entry></row>
+
+     <row>
+      <entry valign="middle" morerows="9"><literal>text_ops</literal></entry>
+      <entry><literal>= (text,text)</literal></entry>
+      <entry valign="middle" morerows="9"></entry>
+     </row>
+     <row><entry><literal>&lt; (text,text)</literal></entry></row>
+     <row><entry><literal>&lt;= (text,text)</literal></entry></row>
+     <row><entry><literal>&gt; (text,text)</literal></entry></row>
+     <row><entry><literal>&gt;= (text,text)</literal></entry></row>
+     <row><entry><literal>~&lt;~ (text,text)</literal></entry></row>
+     <row><entry><literal>~&lt;=~ (text,text)</literal></entry></row>
+     <row><entry><literal>~&gt;=~ (text,text)</literal></entry></row>
+     <row><entry><literal>~&gt;~ (text,text)</literal></entry></row>
+     <row><entry><literal>^@ (text,text)</literal></entry></row>
+    </tbody>
+   </tgroup>
+  </table>
+
+<!-- pgdoc-cn_start sig_en=afed883679708c7b0141d624fed2722c sig_cn_org=None source=14.1 
+ <para>
+  Of the two operator classes for type <type>point</type>,
+  <literal>quad_point_ops</literal> is the default.  <literal>kd_point_ops</literal>
+  supports the same operators but uses a different index data structure that
+  may offer better performance in some applications.
+ </para>
+________________________________________________________-->
+ <para>
+  在用于类型<type>point</type>的两种操作符类中，<literal>quad_point_ops</literal>是默认值。<literal>kd_point_ops</literal>支持相同的操作符，但是使用一种不同的索引数据结构，在某些应用中它可以提供更好的性能。
+ </para>
+<!-- pgdoc-cn_end sig_en=afed883679708c7b0141d624fed2722c -->
+<!-- pgdoc-cn_start sig_en=b3eb86dd291ef1098d5333f323e0744c sig_cn_org=None source=14.1 
+ <para>
+  The <literal>quad_point_ops</literal>, <literal>kd_point_ops</literal> and
+  <literal>poly_ops</literal> operator classes support the <literal>&lt;-&gt;</literal>
+  ordering operator, which enables the k-nearest neighbor (<literal>k-NN</literal>)
+  search over indexed point or polygon data sets.
+ </para>
+________________________________________________________-->
+ <para>
+  <literal>quad_point_ops</literal>、<literal>kd_point_ops</literal> 和 <literal>poly_ops</literal> 运算符类别支持<literal>&lt;-&gt;</literal>排序运算符， 
+  支持在索引点或多边形数据集上进行k-最近邻(<literal>k-NN</literal>)搜索。
+ </para>
+<!-- pgdoc-cn_end sig_en=b3eb86dd291ef1098d5333f323e0744c -->
+
+</sect1>
+
+<sect1 id="spgist-extensibility">
+<!-- pgdoc-cn_start sig_en=ed1e3bcf1b14b8aa337d0a5ec7bf0665 sig_cn_org=None source=14.1 
+ <title>Extensibility</title>
+________________________________________________________-->
+ <title>可扩展性</title>
+<!-- pgdoc-cn_end sig_en=ed1e3bcf1b14b8aa337d0a5ec7bf0665 -->
+
+<!-- pgdoc-cn_start sig_en=a8c098c87a445d4f9523a8541458d64e sig_cn_org=None source=14.1 
+ <para>
+  <acronym>SP-GiST</acronym> offers an interface with a high level of
+  abstraction, requiring the access method developer to implement only
+  methods specific to a given data type. The <acronym>SP-GiST</acronym> core
+  is responsible for efficient disk mapping and searching the tree structure.
+  It also takes care of concurrency and logging considerations.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>SP-GiST</acronym>提供了一个高抽象层次的接口，要求访问方法开发者实现与一个给定数据类型相关的几种方法。<acronym>SP-GiST</acronym>核心负责高效的磁盘映射和搜索树结构。它也会处理并发和日志。
+ </para>
+<!-- pgdoc-cn_end sig_en=a8c098c87a445d4f9523a8541458d64e -->
+
+<!-- pgdoc-cn_start sig_en=9c6b6051790bf4433be0b9eac02156d0 sig_cn_org=None source=14.1 
+ <para>
+  Leaf tuples of an <acronym>SP-GiST</acronym> tree usually contain values
+  of the same data type as the indexed column, although it is also possible
+  for them to contain lossy representations of the indexed column.
+  Leaf tuples stored at the root level will directly represent
+  the original indexed data value, but leaf tuples at lower
+  levels might contain only a partial value, such as a suffix.
+  In that case the operator class support functions must be able to
+  reconstruct the original value using information accumulated from the
+  inner tuples that are passed through to reach the leaf level.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>SP-GiST</acronym>树的叶子元组通常包含与被索引列数据类型相同的值，尽管它也可能针对它们包含索引列的有损表示。
+  在根层存储的叶子元组直接表示原始的被索引数据值，但是在较下层的叶子元组可能只含有一个部分的表示，例如一个后缀。
+  在这种情况下，操作符类支持函数必须能够使用从内部元组计算出来的信息重构出原始的值，这些内部元组指的是在到达叶子层的过程中穿过的元组。
+ </para>
+<!-- pgdoc-cn_end sig_en=9c6b6051790bf4433be0b9eac02156d0 -->
+
+<!-- pgdoc-cn_start sig_en=38fa7b390e2ab94044db832fe3ffb670 sig_cn_org=None source=14.1 
+ <para>
+  When an <acronym>SP-GiST</acronym> index is created with
+  <literal>INCLUDE</literal> columns, the values of those columns are also
+  stored in leaf tuples.  The <literal>INCLUDE</literal> columns are of no
+  concern to the <acronym>SP-GiST</acronym> operator class, so they are
+  not discussed further here.
+ </para>
+________________________________________________________-->
+ <para>
+  当<acronym>SP-GiST</acronym> 索引与<literal>INCLUDE</literal>列一起建立时，那些列的值也存储在叶子元组里。
+  <literal>INCLUDE</literal> 列不涉及<acronym>SP-GiST</acronym>操作符类，所以在此不更多讨论。
+ </para>
+<!-- pgdoc-cn_end sig_en=38fa7b390e2ab94044db832fe3ffb670 -->
+
+<!-- pgdoc-cn_start sig_en=a2bad3f8b52eea60598990ad0839272b sig_cn_org=None source=14.1 
+ <para>
+  Inner tuples are more complex, since they are branching points in the
+  search tree.  Each inner tuple contains a set of one or more
+  <firstterm>nodes</firstterm>, which represent groups of similar leaf values.
+  A node contains a downlink that leads either to another, lower-level inner
+  tuple, or to a short list of leaf tuples that all lie on the same index page.
+  Each node normally has a <firstterm>label</firstterm> that describes it; for example,
+  in a radix tree the node label could be the next character of the string
+  value.  (Alternatively, an operator class can omit the node labels, if it
+  works with a fixed set of nodes for all inner tuples;
+  see <xref linkend="spgist-null-labels"/>.)
+  Optionally, an inner tuple can have a <firstterm>prefix</firstterm> value
+  that describes all its members.  In a radix tree this could be the common
+  prefix of the represented strings.  The prefix value is not necessarily
+  really a prefix, but can be any data needed by the operator class;
+  for example, in a quad-tree it can store the central point that the four
+  quadrants are measured with respect to.  A quad-tree inner tuple would
+  then also contain four nodes corresponding to the quadrants around this
+  central point.
+ </para>
+________________________________________________________-->
+ <para>
+  内部元组更加复杂，因为它们是搜索树的分支点。每一个内部元组包含一个或者更多个<firstterm>结点</firstterm>，结点表示一个具有相似叶子值的组。一个结点包含一个向下的链接，这个链接可以导向另一个较下层的内部元组，或者是由位于同一索引页面的叶子元组组成的一个短列表。每一个结点通常还有一个<firstterm>标签</firstterm>来描述它，例如，在一个 radix 树中结点标签可以是串值的下一个字符（或者，如果一种操作符类对于所有内部元组使用一个固定的节点集合，则它可以省略节点标签，见<xref linkend="spgist-null-labels"/>）。可选地，一个内部元组可以有一个<firstterm>前缀</firstterm>值来描述它所有的成员。在一个 radix 树中前缀可以是所表示的串的公共前缀。前缀值并不一定非要是一个真正的前缀，它可以是操作符类需要的任何数据。例如，在一个四叉树中它可以存储用于划分四个象限的中心点。一个四叉树的内部元组则可以包含对应于围绕该中心点的象限的四个结点。
+ </para>
+<!-- pgdoc-cn_end sig_en=a2bad3f8b52eea60598990ad0839272b -->
+
+<!-- pgdoc-cn_start sig_en=8c406368646a08aade8f0a2b58452f82 sig_cn_org=None source=14.1 
+ <para>
+  Some tree algorithms require knowledge of level (or depth) of the current
+  tuple, so the <acronym>SP-GiST</acronym> core provides the possibility for
+  operator classes to manage level counting while descending the tree.
+  There is also support for incrementally reconstructing the represented
+  value when that is needed, and for passing down additional data (called
+  <firstterm>traverse values</firstterm>) during a tree descent.
+ </para>
+________________________________________________________-->
+ <para>
+  某些树算法要求当前元组所在层（或深度）的知识，因此<acronym>SP-GiST</acronym>核心为操作符类提供了机会以便在沿着树下降时管理层计数。当需要重组被表示的值时，这也可以为增量地重构过程提供支持，这还可以为沿着树下降时向下层传递附加数据（称为<firstterm>贯穿值</firstterm>）提供支持。
+ </para>
+<!-- pgdoc-cn_end sig_en=8c406368646a08aade8f0a2b58452f82 -->
+
+ <note>
+<!-- pgdoc-cn_start sig_en=0798b2c4d982b497f1792d98a2a83ca7 sig_cn_org=None source=14.1 
+  <para>
+   The <acronym>SP-GiST</acronym> core code takes care of null entries.
+   Although <acronym>SP-GiST</acronym> indexes do store entries for nulls
+   in indexed columns, this is hidden from the index operator class code:
+   no null index entries or search conditions will ever be passed to the
+   operator class methods.  (It is assumed that <acronym>SP-GiST</acronym>
+   operators are strict and so cannot succeed for null values.)  Null values
+   are therefore not discussed further here.
+  </para>
+________________________________________________________-->
+  <para>
+   <acronym>SP-GiST</acronym>核心代码会关注空项。尽管<acronym>SP-GiST</acronym>索引确实可以存储被索引列中的空值，但这对索引操作符类代码是隐藏的：不会有空索引项或搜索条件会被传递给操作符类方法（我们假定<acronym>SP-GiST</acronym>操作符是严格的并且因此无法成功处理空值）。因此这里不会进一步讨论空值。
+  </para>
+<!-- pgdoc-cn_end sig_en=0798b2c4d982b497f1792d98a2a83ca7 -->
+ </note>
+
+<!-- pgdoc-cn_start sig_en=019de26b89ade52f7b65b941e1292a42 sig_cn_org=None source=14.1 
+ <para>
+  There are five user-defined methods that an index operator class for
+  <acronym>SP-GiST</acronym> must provide, and two are optional.  All five
+  mandatory methods follow the convention of accepting two <type>internal</type>
+  arguments, the first of which is a pointer to a C struct containing input
+  values for the support method, while the second argument is a pointer to a
+  C struct where output values must be placed.  Four of the mandatory methods just
+  return <type>void</type>, since all their results appear in the output struct; but
+  <function>leaf_consistent</function> returns a <type>boolean</type> result.
+  The methods must not modify any fields of their input structs.  In all
+  cases, the output struct is initialized to zeroes before calling the
+  user-defined method.  The optional sixth method <function>compress</function>
+  accepts a <type>datum</type> to be indexed as the only argument and returns a value suitable
+  for physical storage in a leaf tuple.  The optional seventh method
+  <function>options</function> accepts an <type>internal</type> pointer to a C struct, where
+  opclass-specific parameters should be placed, and returns <type>void</type>.
+ </para>
+________________________________________________________-->
+ <para>
+  一个<acronym>SP-GiST</acronym>的索引操作符类必须提供五个用户定义的方法，并且两个是可选的。所有五个强制的方法都接受两个<type>internal</type>参数，其中第一个是一个指针，它指向一个包含用于支持方法的值的 C 结构。而第二个参数也是一个指针，它指向将放置输出值的 C 结构。其中四个强制的函数只返回<type>void</type>，因为它们的所有结果都出现在输出结构中。但是<function>leaf_consistent</function>会返回一个<type>boolean</type>结果。这些方法不能修改它们的输入结构的任何域。在所有情况下，调用用户定义的方法之前输出结构都被初始化为零。可选的第六个方法<function>compress</function>接受要被索引的<type>datum</type>作为唯一的参数并且返回适合于在叶子元组中物理存储的值。可选的第七个方法 <function>options</function> 接受一个指向 C 结构的 <type>internal</type> 指针，其中应放置 opclass 特定的参数，并返回 <type>void</type>。
+ </para>
+<!-- pgdoc-cn_end sig_en=019de26b89ade52f7b65b941e1292a42 -->
+
+<!-- pgdoc-cn_start sig_en=ab26797c929a13840bc6192b9a137b3e sig_cn_org=None source=14.1 
+ <para>
+  The five mandatory user-defined methods are:
+ </para>
+________________________________________________________-->
+ <para>
+  五个强制的用户定义的方法是：
+ </para>
+<!-- pgdoc-cn_end sig_en=ab26797c929a13840bc6192b9a137b3e -->
+
+ <variablelist>
+    <varlistentry>
+     <term><function>config</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=e2e5bdf19a80fa0685554e99e6ccd26e sig_cn_org=None source=14.1 
+      <para>
+       Returns static information about the index implementation, including
+       the data type OIDs of the prefix and node label data types.
+      </para>
+________________________________________________________-->
+      <para>
+       返回关于索引实现的静态信息，包括前缀的数据类型的OID以及结点标签数据类型。
+      </para>
+<!-- pgdoc-cn_end sig_en=e2e5bdf19a80fa0685554e99e6ccd26e -->
+<!-- pgdoc-cn_start sig_en=44049c916a1a7bd4d210396cc0ef1a05 sig_cn_org=None source=14.1 
+     <para>
+      The <acronym>SQL</acronym> declaration of the function must look like this:
+<programlisting>
+CREATE FUNCTION my_config(internal, internal) RETURNS void ...
+</programlisting>
+      The first argument is a pointer to a <structname>spgConfigIn</structname>
+      C struct, containing input data for the function.
+      The second argument is a pointer to a <structname>spgConfigOut</structname>
+      C struct, which the function must fill with result data.
+<programlisting>
+typedef struct spgConfigIn
+{
+    Oid         attType;        /* Data type to be indexed */
+} spgConfigIn;
+
+typedef struct spgConfigOut
+{
+    Oid         prefixType;     /* Data type of inner-tuple prefixes */
+    Oid         labelType;      /* Data type of inner-tuple node labels */
+    Oid         leafType;       /* Data type of leaf-tuple values */
+    bool        canReturnData;  /* Opclass can reconstruct original data */
+    bool        longValuesOK;   /* Opclass can cope with values &gt; 1 page */
+} spgConfigOut;
+</programlisting>
+
+      <structfield>attType</structfield> is passed in order to support polymorphic
+      index operator classes; for ordinary fixed-data-type operator classes, it
+      will always have the same value and so can be ignored.
+     </para>
+________________________________________________________-->
+     <para>
+      这个函数的<acronym>SQL</acronym>声明必须看起来像这样：
+<programlisting>
+CREATE FUNCTION my_config(internal, internal) RETURNS void ...
+</programlisting>
+      第一个参数是一个指向<structname>spgConfigIn</structname> C 结构的指针，包含该函数的输入数据。第二个参数是一个指向<structname>spgConfigOut</structname> C 结构的指针，函数必须将结果数据填充在其中。
+<programlisting>
+typedef struct spgConfigIn
+{
+    Oid         attType;        /* 要被索引的数据类型 */
+} spgConfigIn;
+
+typedef struct spgConfigOut
+{
+    Oid         prefixType;     /* 内部元组前缀的数据类型 */
+    Oid         labelType;      /* 内部元组结点标签的数据类型 */
+    Oid         leafType;       /* 叶子元组值的数据类型 */
+    bool        canReturnData;  /* 操作符类能重构原始数据 */
+    bool        longValuesOK;   /* 操作符类能处理值 &gt; 1 页 */
+} spgConfigOut;
+</programlisting>
+
+      为了支持多态的索引操作符类，<structfield>attType</structfield>要被传入；对于普通固定数据类型的操作符类，它将总是取相同的值，因此可以被忽略。
+     </para>
+<!-- pgdoc-cn_end sig_en=44049c916a1a7bd4d210396cc0ef1a05 -->
+
+<!-- pgdoc-cn_start sig_en=20d4e23d81ccf7fb1413b7002135bda9 sig_cn_org=None source=14.1 
+     <para>
+      For operator classes that do not use prefixes,
+      <structfield>prefixType</structfield> can be set to <literal>VOIDOID</literal>.
+      Likewise, for operator classes that do not use node labels,
+      <structfield>labelType</structfield> can be set to <literal>VOIDOID</literal>.
+      <structfield>canReturnData</structfield> should be set true if the operator class
+      is capable of reconstructing the originally-supplied index value.
+      <structfield>longValuesOK</structfield> should be set true only when the
+      <structfield>attType</structfield> is of variable length and the operator
+      class is capable of segmenting long values by repeated suffixing
+      (see <xref linkend="spgist-limits"/>).
+     </para>
+________________________________________________________-->
+     <para>
+      对于不使用前缀的操作符类，<structfield>prefixType</structfield>可以被设置为<literal>VOIDOID</literal>。同样，对于不使用结点标签的操作符类，<structfield>labelType</structfield>可以被设置为<literal>VOIDOID</literal>。如果操作符类能够重构出原来提供的被索引值，则<structfield>canReturnData</structfield>应该被设置为真。只有当<structfield>attType</structfield>是变长的并且操作符类能够将长值通过反复的添加后缀分段时，<structfield>longValuesOK</structfield>才应当被设置为真（参见<xref linkend="spgist-limits"/>）。
+     </para>
+<!-- pgdoc-cn_end sig_en=20d4e23d81ccf7fb1413b7002135bda9 -->
+
+<!-- pgdoc-cn_start sig_en=1d1ac3649c38d0fa872083f269807a25 sig_cn_org=None source=14.1 
+     <para>
+      <structfield>leafType</structfield> should match the index storage type
+      defined by the operator class's <structfield>opckeytype</structfield>
+      catalog entry.
+      (Note that <structfield>opckeytype</structfield> can be zero,
+      implying the storage type is the same as the operator class's input
+      type, which is the most common situation.)
+      For reasons of backward compatibility, the <function>config</function>
+      method can set <structfield>leafType</structfield> to some other value,
+      and that value will be used; but this is deprecated since the index
+      contents are then incorrectly identified in the catalogs.
+      Also, it's permissible to
+      leave <structfield>leafType</structfield> uninitialized (zero);
+      that is interpreted as meaning the index storage type derived from
+      <structfield>opckeytype</structfield>.
+     </para>
+________________________________________________________-->
+     <para>
+      <structfield>leafType</structfield>应该匹配由操作符类的<structfield>opckeytype</structfield>目录条目定义的索引存储类型。	  
+      (注意<structfield>opckeytype</structfield> 可以为零，意味着存储类型与操作类别的输入类型相同，是最常见的情况。
+      鉴于向后兼容的原因，<function>config</function>方法可以将<structfield>leafType</structfield>设置为其他值，并且该值将被使用；但这是强烈不建议的，因为索引内容会在目录中被错误地标识。
+      此外, 它是允许保留<structfield>leafType</structfield>非初始化(零)；也就是说可以理解为从<structfield>opckeytype</structfield>派生的索引存储类型。
+     </para>
+<!-- pgdoc-cn_end sig_en=1d1ac3649c38d0fa872083f269807a25 -->
+
+<!-- pgdoc-cn_start sig_en=9ca772eef2f23afe20847050acc34e0a sig_cn_org=None source=14.1 
+     <para>
+      When <structfield>attType</structfield>
+      and <structfield>leafType</structfield> are different, the optional
+      method <function>compress</function> must be provided.
+      Method <function>compress</function> is responsible
+      for transformation of datums to be indexed from <structfield>attType</structfield>
+      to <structfield>leafType</structfield>.
+     </para>
+________________________________________________________-->
+     <para>
+      当<structfield>attType</structfield>和<structfield>leafType</structfield> 不相同时，必须提供可选的<function>compress</function>方法。
+      方法<function>compress</function>负责把要被索引的数据从<structfield>attType</structfield>转换为<structfield>leafType</structfield>
+     </para>
+<!-- pgdoc-cn_end sig_en=9ca772eef2f23afe20847050acc34e0a -->
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>choose</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=61faf00b4be23110f6f2edb5063a2565 sig_cn_org=None source=14.1 
+      <para>
+        Chooses a method for inserting a new value into an inner tuple.
+      </para>
+________________________________________________________-->
+      <para>
+        为将一个新值插入到一个内部元组选择一种方法。
+      </para>
+<!-- pgdoc-cn_end sig_en=61faf00b4be23110f6f2edb5063a2565 -->
+
+<!-- pgdoc-cn_start sig_en=44efc5095be7e374de687f845253a344 sig_cn_org=None source=14.1 
+     <para>
+      The <acronym>SQL</acronym> declaration of the function must look like this:
+<programlisting>
+CREATE FUNCTION my_choose(internal, internal) RETURNS void ...
+</programlisting>
+      The first argument is a pointer to a <structname>spgChooseIn</structname>
+      C struct, containing input data for the function.
+      The second argument is a pointer to a <structname>spgChooseOut</structname>
+      C struct, which the function must fill with result data.
+<programlisting>
+typedef struct spgChooseIn
+{
+    Datum       datum;          /* original datum to be indexed */
+    Datum       leafDatum;      /* current datum to be stored at leaf */
+    int         level;          /* current level (counting from zero) */
+
+    /* Data from current inner tuple */
+    bool        allTheSame;     /* tuple is marked all-the-same? */
+    bool        hasPrefix;      /* tuple has a prefix? */
+    Datum       prefixDatum;    /* if so, the prefix value */
+    int         nNodes;         /* number of nodes in the inner tuple */
+    Datum      *nodeLabels;     /* node label values (NULL if none) */
+} spgChooseIn;
+
+typedef enum spgChooseResultType
+{
+    spgMatchNode = 1,           /* descend into existing node */
+    spgAddNode,                 /* add a node to the inner tuple */
+    spgSplitTuple               /* split inner tuple (change its prefix) */
+} spgChooseResultType;
+
+typedef struct spgChooseOut
+{
+    spgChooseResultType resultType;     /* action code, see above */
+    union
+    {
+        struct                  /* results for spgMatchNode */
+        {
+            int         nodeN;      /* descend to this node (index from 0) */
+            int         levelAdd;   /* increment level by this much */
+            Datum       restDatum;  /* new leaf datum */
+        }           matchNode;
+        struct                  /* results for spgAddNode */
+        {
+            Datum       nodeLabel;  /* new node's label */
+            int         nodeN;      /* where to insert it (index from 0) */
+        }           addNode;
+        struct                  /* results for spgSplitTuple */
+        {
+            /* Info to form new upper-level inner tuple with one child tuple */
+            bool        prefixHasPrefix;    /* tuple should have a prefix? */
+            Datum       prefixPrefixDatum;  /* if so, its value */
+            int         prefixNNodes;       /* number of nodes */
+            Datum      *prefixNodeLabels;   /* their labels (or NULL for
+                                             * no labels) */
+            int         childNodeN;         /* which node gets child tuple */
+
+            /* Info to form new lower-level inner tuple with all old nodes */
+            bool        postfixHasPrefix;   /* tuple should have a prefix? */
+            Datum       postfixPrefixDatum; /* if so, its value */
+        }           splitTuple;
+    }           result;
+} spgChooseOut;
+</programlisting>
+
+       <structfield>datum</structfield> is the original datum of
+       <structname>spgConfigIn</structname>.<structfield>attType</structfield>
+       type that was to be inserted into the index.
+       <structfield>leafDatum</structfield> is a value of
+       <structname>spgConfigOut</structname>.<structfield>leafType</structfield>
+       type, which is initially a result of method
+       <function>compress</function> applied to <structfield>datum</structfield>
+       when method <function>compress</function> is provided, or the same value as
+       <structfield>datum</structfield> otherwise.
+       <structfield>leafDatum</structfield> can change at lower levels of the tree
+       if the <function>choose</function> or <function>picksplit</function>
+       methods change it.  When the insertion search reaches a leaf page,
+       the current value of <structfield>leafDatum</structfield> is what will be stored
+       in the newly created leaf tuple.
+       <structfield>level</structfield> is the current inner tuple's level, starting at
+       zero for the root level.
+       <structfield>allTheSame</structfield> is true if the current inner tuple is
+       marked as containing multiple equivalent nodes
+       (see <xref linkend="spgist-all-the-same"/>).
+       <structfield>hasPrefix</structfield> is true if the current inner tuple contains
+       a prefix; if so,
+       <structfield>prefixDatum</structfield> is its value.
+       <structfield>nNodes</structfield> is the number of child nodes contained in the
+       inner tuple, and
+       <structfield>nodeLabels</structfield> is an array of their label values, or
+       NULL if there are no labels.
+      </para>
+________________________________________________________-->
+     <para>
+      该函数的<acronym>SQL</acronym>声明必须看起来像这样：
+<programlisting>
+CREATE FUNCTION my_choose(internal, internal) RETURNS void ...
+</programlisting>
+      第一个参数是一个指向<structname>spgChooseIn</structname> C 结构的指针，包含该函数的输入数据。第二个参数是一个指向<structname>spgChooseOut</structname> C 结构的指针，函数必须将结果数据填充在其中。
+<programlisting>
+typedef struct spgChooseIn
+{
+    Datum       datum;          /* 要被索引的原始数据 */
+    Datum       leafDatum;      /* 要被存储在叶子中的当前数据 */
+    int         level;          /* 当前层（从零计数） */
+
+    /* 来自当前内部元组的数据 */
+    bool        allTheSame;     /* tuple is marked all-the-same? */
+    bool        hasPrefix;      /* 元组有一个前缀？ */
+    Datum       prefixDatum;    /* 如果有，前缀值 */
+    int         nNodes;         /* 内部元组中的结点数目 */
+    Datum      *nodeLabels;     /* 结点标签值（如果没有为 NULL） */
+} spgChooseIn;
+
+typedef enum spgChooseResultType
+{
+    spgMatchNode = 1,           /* 下降到现有结点 */
+    spgAddNode,                 /* 向内部元组增加一个结点 */
+    spgSplitTuple               /* 划分内部元组（修改它的前缀） */
+} spgChooseResultType;
+
+typedef struct spgChooseOut
+{
+    spgChooseResultType resultType;     /* 动作代码，见上文 */
+    union
+    {
+        struct                  /* 用于spgMatchNode的结果 */
+        {
+            int         nodeN;      /* 下降到这个结点（索引从 0 开始） */
+            int         levelAdd;   /* 这次匹配增加的层 */
+            Datum       restDatum;  /* 新叶数据 */
+        }           matchNode;
+        struct                  /* 用于spgAddNode的结果 */
+        {
+            Datum       nodeLabel;  /* 新结点的标签 */
+            int         nodeN;      /* 在哪里插入它（索引从 0 开始） */
+        }           addNode;
+        struct                  /* 用于spgSplitTuple的结果 */
+        {
+            /* 来自有一个子元组的新上层内部元组的信息 */
+            bool        prefixHasPrefix;    /* 元组能有前缀吗？ */
+            Datum       prefixPrefixDatum;  /* 如果有，前缀值 */
+            int         prefixNNodes;       /* 节点的数目 */
+            Datum      *prefixNodeLabels;   /* 它们的标签（NULL表示无标签）*/
+            int         childNodeN;         /* 哪个节点有子元组 */
+
+            /* 来自放有所有旧结点的新下层内部元组的信息 */
+            bool        postfixHasPrefix;   /* 元组能有前缀吗？ */
+            Datum       postfixPrefixDatum; /* 如果有，前缀值 */
+        }           splitTuple;
+    }           result;
+} spgChooseOut;
+</programlisting>
+
+       <structfield>datum</structfield>是要被插入到该索引中的<structname>spgConfigIn</structname>.<structfield>attType</structfield>类型的原始数据。<structfield>leafDatum</structfield>是一个<structname>spgConfigOut</structname>.<structfield>leafType</structfield>类型的值，它最初是方法<function>compress</function>应用到<structfield>datum</structfield>上的结果（如果提供了方法<function>compress</function>）或者是和<structfield>datum</structfield>相同的值（如果没有提供<function>compress</function>方法）。但是如果<function>choose</function>或<function>picksplit</function>改变了它，那么位于树的较低层的<structfield>leafDatum</structfield>值可能会改变。当插入搜索到达一个叶子页，<structfield>leafDatum</structfield>的当前值就会被存储在新创建的叶子元组中。<structfield>level</structfield>是当前内部元组的层次，根层是 0 。如果当前内部元组被标记为包含多个等价节点（见<xref linkend="spgist-all-the-same"/>），<structfield>allTheSame</structfield>为真。如果当前内部元组有一个前缀，<structfield>hasPrefix</structfield>为真，如果这样，<structfield>prefixDatum</structfield>为前缀值。<structfield>nNodes</structfield>是包含在内部元组中子结点的数量，并且<structfield>nodeLabels</structfield>是这些子结点的标签值的数组，如果没有标签则为 NULL。
+      </para>
+<!-- pgdoc-cn_end sig_en=44efc5095be7e374de687f845253a344 -->
+
+<!-- pgdoc-cn_start sig_en=f1b1a69e156a8ef7a493284b49f657ca sig_cn_org=None source=14.1 
+      <para>
+       The <function>choose</function> function can determine either that
+       the new value matches one of the existing child nodes, or that a new
+       child node must be added, or that the new value is inconsistent with
+       the tuple prefix and so the inner tuple must be split to create a
+       less restrictive prefix.
+      </para>
+________________________________________________________-->
+      <para>
+       <function>choose</function>函数能决定新值是匹配一个现有子结点，或是必须增加一个新的子节点，亦或是新值和元组的前缀不一致并且因此该内部元组必须被分裂来创建限制性更低的前缀。
+      </para>
+<!-- pgdoc-cn_end sig_en=f1b1a69e156a8ef7a493284b49f657ca -->
+
+<!-- pgdoc-cn_start sig_en=ebf7aad53d46c5dbadf78abd16042d1c sig_cn_org=None source=14.1 
+      <para>
+       If the new value matches one of the existing child nodes,
+       set <structfield>resultType</structfield> to <literal>spgMatchNode</literal>.
+       Set <structfield>nodeN</structfield> to the index (from zero) of that node in
+       the node array.
+       Set <structfield>levelAdd</structfield> to the increment in
+       <structfield>level</structfield> caused by descending through that node,
+       or leave it as zero if the operator class does not use levels.
+       Set <structfield>restDatum</structfield> to equal <structfield>leafDatum</structfield>
+       if the operator class does not modify datums from one level to the
+       next, or otherwise set it to the modified value to be used as
+       <structfield>leafDatum</structfield> at the next level.
+      </para>
+________________________________________________________-->
+      <para>
+       如果新值匹配一个现有的子结点，将<structfield>resultType</structfield>设置为<literal>spgMatchNode</literal>。将<structfield>nodeN</structfield>设置为该结点在结点数组中的索引（从零开始）。将<structfield>levelAdd</structfield>设置为传到该结点导致的<structfield>level</structfield>增加，或者在操作符类不使用层数时将它置为零。如果操作符类没有把数据从一层修改到下一层，将<structfield>restDatum</structfield>设置为等于<structfield>datum</structfield>，否则将它设置为在下一层用作<structfield>leafDatum</structfield>的被修改后的值。
+      </para>
+<!-- pgdoc-cn_end sig_en=ebf7aad53d46c5dbadf78abd16042d1c -->
+
+<!-- pgdoc-cn_start sig_en=aa8410c70b6e9c2cd036a1388855a1b5 sig_cn_org=None source=14.1 
+      <para>
+       If a new child node must be added,
+       set <structfield>resultType</structfield> to <literal>spgAddNode</literal>.
+       Set <structfield>nodeLabel</structfield> to the label to be used for the new
+       node, and set <structfield>nodeN</structfield> to the index (from zero) at which
+       to insert the node in the node array.
+       After the node has been added, the <function>choose</function>
+       function will be called again with the modified inner tuple;
+       that call should result in an <literal>spgMatchNode</literal> result.
+      </para>
+________________________________________________________-->
+      <para>
+       如果必须增加一个新的子结点，将<structfield>resultType</structfield>设置为<literal>spgAddNode</literal>。将<structfield>nodeLabel</structfield>设置为在新结点中使用的标签，并将<structfield>nodeN</structfield>设置为插入该结点的位置在结点数组中的索引（从零开始）。在结点被增加之后，<function>choose</function>函数将被再次调用并使用修改后的内部元组，那时将会导致一个<literal>spgMatchNode</literal>结果。
+      </para>
+<!-- pgdoc-cn_end sig_en=aa8410c70b6e9c2cd036a1388855a1b5 -->
+
+<!-- pgdoc-cn_start sig_en=ff1877dcf0b9bcbc43fb37d4ada18a55 sig_cn_org=None source=14.1 
+      <para>
+       If the new value is inconsistent with the tuple prefix,
+       set <structfield>resultType</structfield> to <literal>spgSplitTuple</literal>.
+       This action moves all the existing nodes into a new lower-level
+       inner tuple, and replaces the existing inner tuple with a tuple
+       having a single downlink pointing to the new lower-level inner tuple.
+       Set <structfield>prefixHasPrefix</structfield> to indicate whether the new
+       upper tuple should have a prefix, and if so set
+       <structfield>prefixPrefixDatum</structfield> to the prefix value.  This new
+       prefix value must be sufficiently less restrictive than the original
+       to accept the new value to be indexed.
+       Set <structfield>prefixNNodes</structfield> to the number of nodes needed in the
+       new tuple, and set <structfield>prefixNodeLabels</structfield> to a palloc'd array
+       holding their labels, or to NULL if node labels are not required.
+       Note that the total size of the new upper tuple must be no more
+       than the total size of the tuple it is replacing; this constrains
+       the lengths of the new prefix and new labels.
+       Set <structfield>childNodeN</structfield> to the index (from zero) of the node
+       that will downlink to the new lower-level inner tuple.
+       Set <structfield>postfixHasPrefix</structfield> to indicate whether the new
+       lower-level inner tuple should have a prefix, and if so set
+       <structfield>postfixPrefixDatum</structfield> to the prefix value.  The
+       combination of these two prefixes and the downlink node's label
+       (if any) must have the same meaning as the original prefix, because
+       there is no opportunity to alter the node labels that are moved to
+       the new lower-level tuple, nor to change any child index entries.
+       After the node has been split, the <function>choose</function>
+       function will be called again with the replacement inner tuple.
+       That call may return an <literal>spgAddNode</literal> result, if no suitable
+       node was created by the <literal>spgSplitTuple</literal> action.  Eventually
+       <function>choose</function> must return <literal>spgMatchNode</literal> to
+       allow the insertion to descend to the next level.
+      </para>
+________________________________________________________-->
+      <para>
+       如果新值和元组的前缀不一致，将<structfield>resultType</structfield>设置为<literal>spgSplitTuple</literal>。这个动作将所有现有的结点移动到一个新的下层内部元组，并且将现有的内部元组用一个新元组替换，该元组只有一个到那个新的下层内部元组的向下链接。将<structfield>prefixHasPrefix</structfield>设置为指示新的上层元组是否具有一个前缀，并且在如果有前缀时设置<structfield>prefixPrefixDatum</structfield>为前缀值。这个新的前缀值必须比原来的值要足够宽松以便能够接受将被索引的新值。将<structfield>prefixNNodes</structfield>设置为新元组中所需的节点数，并且将<structfield>prefixNodeLabels</structfield>设置为一个已分配的保存它们的标签的数组，或者在不要求节点标签时设置为NULL。注意新上层元组的总尺寸必须不超过它所替换的元组的总尺寸，这限制了新前缀和新标签的长度。将<structfield>childNodeN</structfield>设置为将下链到新的下层內元组的节点的索引（从零开始）。设置<structfield>postfixHasPrefix</structfield>表示新的下层內元组是否应该有一个前缀，并且在应该有前缀的情况下设置<structfield>postfixPrefixDatum</structfield>为前缀值。这两种前缀以及下链节点的标签（如果有）的组合必须具有与原始前缀相同的含义，因为没有机会修改被移动到新下层元组的节点标签，也不能更改任何子索引项。在该节点被分裂后，将再次用替换的内元组调用<function>choose</function>函数。如果<literal>spgSplitTuple</literal>动作没有创建出合适的节点，该调用可以返回一个<literal>spgAddNode</literal>结果。最终<function>choose</function>必须返回<literal>spgMatchNode</literal>以允许插入下降到下一层次中。
+      </para>
+<!-- pgdoc-cn_end sig_en=ff1877dcf0b9bcbc43fb37d4ada18a55 -->
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>picksplit</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=0d0e76570e44f055a2f458a6d8e0c5af sig_cn_org=None source=14.1 
+      <para>
+       Decides how to create a new inner tuple over a set of leaf tuples.
+      </para>
+________________________________________________________-->
+      <para>
+       决定如何在一组叶子元组上创建一个新的内部元组。
+      </para>
+<!-- pgdoc-cn_end sig_en=0d0e76570e44f055a2f458a6d8e0c5af -->
+
+<!-- pgdoc-cn_start sig_en=a67548be02f738ce87ed5d9616b4aa46 sig_cn_org=None source=14.1 
+      <para>
+        The <acronym>SQL</acronym> declaration of the function must look like this:
+<programlisting>
+CREATE FUNCTION my_picksplit(internal, internal) RETURNS void ...
+</programlisting>
+      The first argument is a pointer to a <structname>spgPickSplitIn</structname>
+      C struct, containing input data for the function.
+      The second argument is a pointer to a <structname>spgPickSplitOut</structname>
+      C struct, which the function must fill with result data.
+<programlisting>
+typedef struct spgPickSplitIn
+{
+    int         nTuples;        /* number of leaf tuples */
+    Datum      *datums;         /* their datums (array of length nTuples) */
+    int         level;          /* current level (counting from zero) */
+} spgPickSplitIn;
+
+typedef struct spgPickSplitOut
+{
+    bool        hasPrefix;      /* new inner tuple should have a prefix? */
+    Datum       prefixDatum;    /* if so, its value */
+
+    int         nNodes;         /* number of nodes for new inner tuple */
+    Datum      *nodeLabels;     /* their labels (or NULL for no labels) */
+
+    int        *mapTuplesToNodes;   /* node index for each leaf tuple */
+    Datum      *leafTupleDatums;    /* datum to store in each new leaf tuple */
+} spgPickSplitOut;
+</programlisting>
+
+       <structfield>nTuples</structfield> is the number of leaf tuples provided.
+       <structfield>datums</structfield> is an array of their datum values of
+       <structname>spgConfigOut</structname>.<structfield>leafType</structfield>
+       type.
+       <structfield>level</structfield> is the current level that all the leaf tuples
+       share, which will become the level of the new inner tuple.
+      </para>
+________________________________________________________-->
+      <para>
+        该函数的<acronym>SQL</acronym>声明必须看起来像这样：
+<programlisting>
+CREATE FUNCTION my_picksplit(internal, internal) RETURNS void ...
+</programlisting>
+      第一个参数是一个指向<structname>spgPickSplitIn</structname> C 结构的指针，包含该函数的输入数据。第二个参数是一个指向<structname>spgPickSplitOut</structname> C 结构的指针，函数必须将结果数据填充在其中。
+<programlisting>
+typedef struct spgPickSplitIn
+{
+    int         nTuples;        /* 叶子元组的数量 */
+    Datum      *datums;         /* 它们的数据（长度为 nTuples 的数组） */
+    int         level;          /* 当前层次（从零开始计） */
+} spgPickSplitIn;
+
+typedef struct spgPickSplitOut
+{
+    bool        hasPrefix;      /* 新内部元组应该有一个前缀吗？ */
+    Datum       prefixDatum;    /* 如果有，前缀值 */
+
+    int         nNodes;         /* 新内部元组的结点数 */
+    Datum      *nodeLabels;     /* 它们的标签（没有标签则为NULL） */
+
+    int        *mapTuplesToNodes;   /* 每一个叶子元组的结点索引 */
+    Datum      *leafTupleDatums;    /* 存储在每一个新叶子元组中的数据 */
+} spgPickSplitOut;
+</programlisting>
+
+       <structfield>nTuples</structfield>是提供的叶子元组的数目。<structfield>datums</structfield>是它们的<structname>spgConfigOut</structname>.<structfield>leafType</structfield>类型的数据值的数组。<structfield>level</structfield>是所有这些叶子元组共享的当前层，它将成为新内部元组所在的层次。
+      </para>
+<!-- pgdoc-cn_end sig_en=a67548be02f738ce87ed5d9616b4aa46 -->
+
+<!-- pgdoc-cn_start sig_en=faf35f8d1d9047e269f273e1cbfc2725 sig_cn_org=None source=14.1 
+      <para>
+       Set <structfield>hasPrefix</structfield> to indicate whether the new inner
+       tuple should have a prefix, and if so set
+       <structfield>prefixDatum</structfield> to the prefix value.
+       Set <structfield>nNodes</structfield> to indicate the number of nodes that
+       the new inner tuple will contain, and
+       set <structfield>nodeLabels</structfield> to an array of their label values,
+       or to NULL if node labels are not required.
+       Set <structfield>mapTuplesToNodes</structfield> to an array that gives the index
+       (from zero) of the node that each leaf tuple should be assigned to.
+       Set <structfield>leafTupleDatums</structfield> to an array of the values to
+       be stored in the new leaf tuples (these will be the same as the
+       input <structfield>datums</structfield> if the operator class does not modify
+       datums from one level to the next).
+       Note that the <function>picksplit</function> function is
+       responsible for palloc'ing the
+       <structfield>nodeLabels</structfield>, <structfield>mapTuplesToNodes</structfield> and
+       <structfield>leafTupleDatums</structfield> arrays.
+      </para>
+________________________________________________________-->
+      <para>
+       将<structfield>hasPrefix</structfield>设置为指示新内部元组是否应该有前缀，并且如果有前缀则将<structfield>prefixDatum</structfield>设置成前缀值。将<structfield>nNodes</structfield>设置为新内部元组将包含的结点数目，并且将<structfield>nodeLabels</structfield>设置为它们的标签值的数组或者 NULL（如果结点不要求标签）。将<structfield>mapTuplesToNodes</structfield>设置为一个数组，该数组告诉每一个叶子元组应该被赋予的结点的索引（从零开始）。将<structfield>leafTupleDatums</structfield>设置为由将要被存储在新叶子元组中的值构成的一个数组（如果操作符类不将数据从一层修改到下一层，这些值将和输入的<structfield>datums</structfield>相同）。注意<function>picksplit</function>函数负责为<structfield>nodeLabels</structfield>、<structfield>mapTuplesToNodes</structfield>和<structfield>leafTupleDatums</structfield>数组进行 palloc。
+      </para>
+<!-- pgdoc-cn_end sig_en=faf35f8d1d9047e269f273e1cbfc2725 -->
+
+<!-- pgdoc-cn_start sig_en=071b541a659c256a76da172dee43714a sig_cn_org=None source=14.1 
+      <para>
+       If more than one leaf tuple is supplied, it is expected that the
+       <function>picksplit</function> function will classify them into more than
+       one node; otherwise it is not possible to split the leaf tuples
+       across multiple pages, which is the ultimate purpose of this
+       operation.  Therefore, if the <function>picksplit</function> function
+       ends up placing all the leaf tuples in the same node, the core
+       SP-GiST code will override that decision and generate an inner
+       tuple in which the leaf tuples are assigned at random to several
+       identically-labeled nodes.  Such a tuple is marked
+       <literal>allTheSame</literal> to signify that this has happened.  The
+       <function>choose</function> and <function>inner_consistent</function> functions
+       must take suitable care with such inner tuples.
+       See <xref linkend="spgist-all-the-same"/> for more information.
+      </para>
+________________________________________________________-->
+      <para>
+       如果提供了多于一个叶子元组，<function>picksplit</function>被寄望于将它们分类到多余一个结点中；否则不可能将叶子元组划分到多个页面，这也是这个操作的终极目的。因此，如果<function>picksplit</function>函数结束时把所有叶子元组放在同一个结点中，核心SP-GiST代码将覆盖该决定，并且生成一个内部元组，将叶子元组随机分配到多个不同标签的结点。这样一个元组被标记为<literal>allTheSame</literal>来表示发生了这种情况。<function>choose</function>和<function>inner_consistent</function>函数必须对这样的内部元组采取合适的处理。详见<xref linkend="spgist-all-the-same"/>。
+      </para>
+<!-- pgdoc-cn_end sig_en=071b541a659c256a76da172dee43714a -->
+
+<!-- pgdoc-cn_start sig_en=e5ca2a349e1ad38c5c8cf8b99f1815cb sig_cn_org=None source=14.1 
+      <para>
+       <function>picksplit</function> can be applied to a single leaf tuple only
+       in the case that the <function>config</function> function set
+       <structfield>longValuesOK</structfield> to true and a larger-than-a-page input
+       value has been supplied.  In this case the point of the operation is
+       to strip off a prefix and produce a new, shorter leaf datum value.
+       The call will be repeated until a leaf datum short enough to fit on
+       a page has been produced.  See <xref linkend="spgist-limits"/> for
+       more information.
+      </para>
+________________________________________________________-->
+      <para>
+       <function>picksplit</function>只能在一种情况下被应用在单独一个叶子元组上，这种情况是<function>config</function>函数将<structfield>longValuesOK</structfield>设置为真并且提供了一个长于一页的输入。在这种情况中，该操作的要点是剥离一个前缀并且产生一个新的、较短的叶子数据值。这种调用将被重复直到产生一个足够短能够放入到一页的叶子数据。详见<xref linkend="spgist-limits"/>。
+      </para>
+<!-- pgdoc-cn_end sig_en=e5ca2a349e1ad38c5c8cf8b99f1815cb -->
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>inner_consistent</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=a6bff347390b1a32d28b9655e76f96f8 sig_cn_org=None source=14.1 
+      <para>
+       Returns set of nodes (branches) to follow during tree search.
+      </para>
+________________________________________________________-->
+      <para>
+       在树搜索过程中返回一组要追求的结点（分支）。
+      </para>
+<!-- pgdoc-cn_end sig_en=a6bff347390b1a32d28b9655e76f96f8 -->
+
+<!-- pgdoc-cn_start sig_en=35b136206a6f25081391da23ccd71bfc sig_cn_org=None source=14.1 
+      <para>
+       The <acronym>SQL</acronym> declaration of the function must look like this:
+<programlisting>
+CREATE FUNCTION my_inner_consistent(internal, internal) RETURNS void ...
+</programlisting>
+      The first argument is a pointer to a <structname>spgInnerConsistentIn</structname>
+      C struct, containing input data for the function.
+      The second argument is a pointer to a <structname>spgInnerConsistentOut</structname>
+      C struct, which the function must fill with result data.
+
+<programlisting>
+typedef struct spgInnerConsistentIn
+{
+    ScanKey     scankeys;       /* array of operators and comparison values */
+    ScanKey     orderbys;       /* array of ordering operators and comparison
+                                 * values */
+    int         nkeys;          /* length of scankeys array */
+    int         norderbys;      /* length of orderbys array */
+
+    Datum       reconstructedValue;     /* value reconstructed at parent */
+    void       *traversalValue; /* opclass-specific traverse value */
+    MemoryContext traversalMemoryContext;   /* put new traverse values here */
+    int         level;          /* current level (counting from zero) */
+    bool        returnData;     /* original data must be returned? */
+
+    /* Data from current inner tuple */
+    bool        allTheSame;     /* tuple is marked all-the-same? */
+    bool        hasPrefix;      /* tuple has a prefix? */
+    Datum       prefixDatum;    /* if so, the prefix value */
+    int         nNodes;         /* number of nodes in the inner tuple */
+    Datum      *nodeLabels;     /* node label values (NULL if none) */
+} spgInnerConsistentIn;
+
+typedef struct spgInnerConsistentOut
+{
+    int         nNodes;         /* number of child nodes to be visited */
+    int        *nodeNumbers;    /* their indexes in the node array */
+    int        *levelAdds;      /* increment level by this much for each */
+    Datum      *reconstructedValues;    /* associated reconstructed values */
+    void      **traversalValues;        /* opclass-specific traverse values */
+    double    **distances;              /* associated distances */
+} spgInnerConsistentOut;
+</programlisting>
+
+       The array <structfield>scankeys</structfield>, of length <structfield>nkeys</structfield>,
+       describes the index search condition(s).  These conditions are
+       combined with AND &mdash; only index entries that satisfy all of
+       them are interesting.  (Note that <structfield>nkeys</structfield> = 0 implies
+       that all index entries satisfy the query.)  Usually the consistent
+       function only cares about the <structfield>sk_strategy</structfield> and
+       <structfield>sk_argument</structfield> fields of each array entry, which
+       respectively give the indexable operator and comparison value.
+       In particular it is not necessary to check <structfield>sk_flags</structfield> to
+       see if the comparison value is NULL, because the SP-GiST core code
+       will filter out such conditions.
+       The array <structfield>orderbys</structfield>, of length <structfield>norderbys</structfield>,
+       describes ordering operators (if any) in the same manner.
+       <structfield>reconstructedValue</structfield> is the value reconstructed for the
+       parent tuple; it is <literal>(Datum) 0</literal> at the root level or if the
+       <function>inner_consistent</function> function did not provide a value at the
+       parent level.
+       <structfield>traversalValue</structfield> is a pointer to any traverse data
+       passed down from the previous call of <function>inner_consistent</function>
+       on the parent index tuple, or NULL at the root level.
+       <structfield>traversalMemoryContext</structfield> is the memory context in which
+       to store output traverse values (see below).
+       <structfield>level</structfield> is the current inner tuple's level, starting at
+       zero for the root level.
+       <structfield>returnData</structfield> is <literal>true</literal> if reconstructed data is
+       required for this query; this will only be so if the
+       <function>config</function> function asserted <structfield>canReturnData</structfield>.
+       <structfield>allTheSame</structfield> is true if the current inner tuple is
+       marked <quote>all-the-same</quote>; in this case all the nodes have the
+       same label (if any) and so either all or none of them match the query
+       (see <xref linkend="spgist-all-the-same"/>).
+       <structfield>hasPrefix</structfield> is true if the current inner tuple contains
+       a prefix; if so,
+       <structfield>prefixDatum</structfield> is its value.
+       <structfield>nNodes</structfield> is the number of child nodes contained in the
+       inner tuple, and
+       <structfield>nodeLabels</structfield> is an array of their label values, or
+       NULL if the nodes do not have labels.
+      </para>
+________________________________________________________-->
+      <para>
+       该函数的<acronym>SQL</acronym>声明必须看起来像这样：
+<programlisting>
+CREATE FUNCTION my_inner_consistent(internal, internal) RETURNS void ...
+</programlisting>
+      第一个参数是一个指向<structname>spgInnerConsistentIn</structname> C 结构的指针，包含该函数的输入数据。第二个参数是一个指向<structname>spgInnerConsistentOut</structname> C 结构的指针，函数必须将结果数据填充在其中。
+
+<programlisting>
+typedef struct spgInnerConsistentIn
+{
+    ScanKey     scankeys;       /* 操作符和比较值的数组 */
+    ScanKey     orderbys;       /* 排序运算符和比较数组 
+                                 * 值 */
+    int         nkeys;          /* 扫描键数组的长度 */
+    int         norderbys;      /* 排序数组的长度 */
+
+    Datum       reconstructedValue;     /* 在父结点中的重构值 */
+    void       *traversalValue; /* 操作符类相关的贯穿值 */
+    MemoryContext traversalMemoryContext;   /* 把新的贯穿值放在这里 */
+    int         level;          /* 当前层次（从零开始计） */
+    bool        returnData;     /* 是否必须返回原始数据？ */
+
+    /* 来自当前内元组的数据 */
+    bool        allTheSame;     /* 元组被标记为完全相同？ */
+    bool        hasPrefix;      /* 元组有前缀？ */
+    Datum       prefixDatum;    /* 如果有，前缀值 */
+    int         nNodes;         /* 内元组中的结点数 */
+    Datum      *nodeLabels;     /* 结点标签值（没有就是 NULL） */
+} spgInnerConsistentIn;
+
+typedef struct spgInnerConsistentOut
+{
+    int         nNodes;         /* 要被访问的子结点数 */
+    int        *nodeNumbers;    /* 它们在结点数组中的索引 */
+    int        *levelAdds;      /* 为每个子结点要增加的层数 */
+    Datum      *reconstructedValues;    /* 相关的重构值 */
+    void      **traversalValues;        /* 操作符类相关的贯穿值 */
+    double    **distances;              /* 关联距离 */
+} spgInnerConsistentOut;
+</programlisting>
+
+       长度为<structfield>nkeys</structfield>的数组<structfield>scankeys</structfield>描述了索引搜索条件。
+       这些条件用 AND 组合 &mdash; 只对满足所有条件的索引项感兴趣（注意，<structfield>nkeys</structfield> = 0 表示所有索引项满足该查询）。
+       通常一致函数只关心每个数组项的<structfield>sk_strategy</structfield>和<structfield>sk_argument</structfield>，它们分别给出了可索引操作符和比较值。
+       特别要说明的是，没有必要去检查<structfield>sk_flags</structfield>来看比较值是否为 NULL，因为 SP-GiST 的核心代码会过滤这样的条件。
+       数组<structfield>orderbys</structfield>，长度<structfield>norderbys</structfield>，以相同的方式描述排序运算符（如果有）。
+       <structfield>reconstructedValue</structfield>是用于父元组的重构值，在根层时或者如果<function>inner_consistent</function>函数没有在父层提供一个值时，它为<literal>(Datum) 0</literal>。
+       <structfield>traversalValue</structfield>是任意贯穿数据的指针，该数据由父索引元组上的上一次<function>inner_consistent</function>调用传递下来，在根层上这个指针为 NULL。
+       <structfield>traversalMemoryContext</structfield>是用于存放输出的贯穿值（见下文）的内存上下文。
+       <structfield>level</structfield>是当前内元组层次，根层是 0。
+       如果这个查询要求重构的数据，<structfield>returnData</structfield>是<literal>true</literal>。
+       如果<function>config</function>断言<structfield>canReturnData</structfield>，<structfield>returnData</structfield>只会是<literal>true</literal>。
+       如果当前的内元组被标记为<quote>完全一样</quote>，那么<structfield>allTheSame</structfield>为真。
+       在这种情况下，所有的结点都具有相同的标签（如果有），而且它们要么全部匹配该查询，要么一个都不匹配查询（见<xref linkend="spgist-all-the-same"/>）。
+       如果当前内元组包含一个前缀，则<structfield>hasPrefix</structfield>为真。
+       如果这样，<structfield>prefixDatum</structfield>就是该前缀的值。
+       <structfield>nNodes</structfield>是包含在内元组中的子结点的数量，<structfield>nodeLabels</structfield>是它们的标签值的数组。
+       当然如果结点没有标签，这个数组就为 NULL。
+      </para>
+<!-- pgdoc-cn_end sig_en=35b136206a6f25081391da23ccd71bfc -->
+
+<!-- pgdoc-cn_start sig_en=b2a377032629634e14dd13e539fd1fda sig_cn_org=None source=14.1 
+      <para>
+       <structfield>nNodes</structfield> must be set to the number of child nodes that
+       need to be visited by the search, and
+       <structfield>nodeNumbers</structfield> must be set to an array of their indexes.
+       If the operator class keeps track of levels, set
+       <structfield>levelAdds</structfield> to an array of the level increments
+       required when descending to each node to be visited.  (Often these
+       increments will be the same for all the nodes, but that's not
+       necessarily so, so an array is used.)
+       If value reconstruction is needed, set
+       <structfield>reconstructedValues</structfield> to an array of the values
+       reconstructed for each child node to be visited; otherwise, leave
+       <structfield>reconstructedValues</structfield> as NULL.
+       The reconstructed values are assumed to be of type
+       <structname>spgConfigOut</structname>.<structfield>leafType</structfield>.
+       (However, since the core system will do nothing with them except
+       possibly copy them, it is sufficient for them to have the
+       same <literal>typlen</literal> and <literal>typbyval</literal>
+       properties as <structfield>leafType</structfield>.)
+       If ordered search is performed, set <structfield>distances</structfield>
+       to an array of distance values according to <structfield>orderbys</structfield>
+       array (nodes with lowest distances will be processed first).  Leave it
+       NULL otherwise.
+       If it is desired to pass down additional out-of-band information
+       (<quote>traverse values</quote>) to lower levels of the tree search,
+       set <structfield>traversalValues</structfield> to an array of the appropriate
+       traverse values, one for each child node to be visited; otherwise,
+       leave <structfield>traversalValues</structfield> as NULL.
+       Note that the <function>inner_consistent</function> function is
+       responsible for palloc'ing the
+       <structfield>nodeNumbers</structfield>, <structfield>levelAdds</structfield>,
+       <structfield>distances</structfield>,
+       <structfield>reconstructedValues</structfield>, and
+       <structfield>traversalValues</structfield> arrays in the current memory context.
+       However, any output traverse values pointed to by
+       the <structfield>traversalValues</structfield> array should be allocated
+       in <structfield>traversalMemoryContext</structfield>.
+       Each traverse value must be a single palloc'd chunk.
+      </para>
+________________________________________________________-->
+      <para>
+       <structfield>nNodes</structfield>必须被设置为搜索需要访问的子结点数，并且<structfield>nodeNumbers</structfield>必须被设置为子结点索引的数组。
+       如果操作符类跟踪层次，把<structfield>levelAdds</structfield>设置成一个数组，其中说明了在下降到要被访问的每一个结点时需要增加的层数（通常这些增量对于所有结点都是相同的，但是并不一定如此，所以需要使用一个数组）。
+       如果需要值重构，将<structfield>reconstructedValues</structfield>设置为一个值的数组，这些值是为要被访问的每一个子节点构造的。
+       否则，把<structfield>reconstructedValues</structfield>留为NULL。
+       重构值假设为<structname>spgConfigOut</structname>.<structfield>leafType</structfield>类型。
+       (无论如何, 因为内核系统将不会对它们做什么，除了可能的拷贝它们，具有与<structfield>leafType</structfield>一样的<literal>typlen</literal>和<literal>typbyval</literal>属性对它们是足够的。
+       如果执行有序搜索，根据<structfield>orderbys</structfield>数组，设置<structfield>distances</structfield>为距离值数组。
+       （距离最短的节点将首先处理）。 
+       否则，保留它为空。
+       如果想要把额外的带外信息（<quote>贯穿值</quote>）向下传递给树搜索的较低层，可以把<structfield>traversalValues</structfield>设置成合适的贯穿值的数组，其中每一个元素用于一个要被访问的子节点。
+       如果不需要传递额外的带外信息，则把<structfield>traversalValues</structfield>设置为 NULL。
+       注意，<function>inner_consistent</function>函数负责在当前内存上下文中分配<structfield>nodeNumbers</structfield>、<structfield>levelAdds</structfield>、<structfield>distances</structfield>、<structfield>reconstructedValues</structfield>和<structfield>traversalValues</structfield>数组。
+       不过，任何由<structfield>traversalValues</structfield>数组指向的输出贯穿值应该在<structfield>traversalMemoryContext</structfield>中分配。
+       每一个贯穿值必须是一个单独分配的块（chunk）。
+      </para>
+<!-- pgdoc-cn_end sig_en=b2a377032629634e14dd13e539fd1fda -->
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>leaf_consistent</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=9cfb76eb6735fe33ed9d8392e9829e9d sig_cn_org=None source=14.1 
+      <para>
+       Returns true if a leaf tuple satisfies a query.
+      </para>
+________________________________________________________-->
+      <para>
+       如果一个叶子元组满足一个查询则返回真。
+      </para>
+<!-- pgdoc-cn_end sig_en=9cfb76eb6735fe33ed9d8392e9829e9d -->
+
+<!-- pgdoc-cn_start sig_en=5d3a12883d49753de7dafaf9c789092f sig_cn_org=None source=14.1 
+      <para>
+       The <acronym>SQL</acronym> declaration of the function must look like this:
+<programlisting>
+CREATE FUNCTION my_leaf_consistent(internal, internal) RETURNS bool ...
+</programlisting>
+      The first argument is a pointer to a <structname>spgLeafConsistentIn</structname>
+      C struct, containing input data for the function.
+      The second argument is a pointer to a <structname>spgLeafConsistentOut</structname>
+      C struct, which the function must fill with result data.
+<programlisting>
+typedef struct spgLeafConsistentIn
+{
+    ScanKey     scankeys;       /* array of operators and comparison values */
+    ScanKey     orderbys;       /* array of ordering operators and comparison
+                                 * values */
+    int         nkeys;          /* length of scankeys array */
+    int         norderbys;      /* length of orderbys array */
+
+    Datum       reconstructedValue;     /* value reconstructed at parent */
+    void       *traversalValue; /* opclass-specific traverse value */
+    int         level;          /* current level (counting from zero) */
+    bool        returnData;     /* original data must be returned? */
+
+    Datum       leafDatum;      /* datum in leaf tuple */
+} spgLeafConsistentIn;
+
+typedef struct spgLeafConsistentOut
+{
+    Datum       leafValue;        /* reconstructed original data, if any */
+    bool        recheck;          /* set true if operator must be rechecked */
+    bool        recheckDistances; /* set true if distances must be rechecked */
+    double     *distances;        /* associated distances */
+} spgLeafConsistentOut;
+</programlisting>
+
+       The array <structfield>scankeys</structfield>, of length <structfield>nkeys</structfield>,
+       describes the index search condition(s).  These conditions are
+       combined with AND &mdash; only index entries that satisfy all of
+       them satisfy the query.  (Note that <structfield>nkeys</structfield> = 0 implies
+       that all index entries satisfy the query.)  Usually the consistent
+       function only cares about the <structfield>sk_strategy</structfield> and
+       <structfield>sk_argument</structfield> fields of each array entry, which
+       respectively give the indexable operator and comparison value.
+       In particular it is not necessary to check <structfield>sk_flags</structfield> to
+       see if the comparison value is NULL, because the SP-GiST core code
+       will filter out such conditions.
+       The array <structfield>orderbys</structfield>, of length <structfield>norderbys</structfield>,
+       describes the ordering operators in the same manner.
+       <structfield>reconstructedValue</structfield> is the value reconstructed for the
+       parent tuple; it is <literal>(Datum) 0</literal> at the root level or if the
+       <function>inner_consistent</function> function did not provide a value at the
+       parent level.
+       <structfield>traversalValue</structfield> is a pointer to any traverse data
+       passed down from the previous call of <function>inner_consistent</function>
+       on the parent index tuple, or NULL at the root level.
+       <structfield>level</structfield> is the current leaf tuple's level, starting at
+       zero for the root level.
+       <structfield>returnData</structfield> is <literal>true</literal> if reconstructed data is
+       required for this query; this will only be so if the
+       <function>config</function> function asserted <structfield>canReturnData</structfield>.
+       <structfield>leafDatum</structfield> is the key value of
+       <structname>spgConfigOut</structname>.<structfield>leafType</structfield>
+       stored in the current leaf tuple.
+      </para>
+________________________________________________________-->
+      <para>
+       该函数的<acronym>SQL</acronym>声明必须看起来像这样：
+<programlisting>
+CREATE FUNCTION my_leaf_consistent(internal, internal) RETURNS bool ...
+</programlisting>
+      第一个参数是一个指向<structname>spgLeafConsistentIn</structname> C 结构的指针，包含该函数的输入数据。第二个参数是一个指向<structname>spgLeafConsistentOut</structname> C 结构的指针，函数必须将结果数据填充在其中。
+<programlisting>
+typedef struct spgLeafConsistentIn
+{
+    ScanKey     scankeys;       /* 操作符和比较值的数组 */
+    ScanKey     orderbys;       /* 排序运算符和比较数组 
+                                 * 值 */
+    int         nkeys;          /* 扫描键数组的长度 */
+    int         norderbys;      /* 排序数组的长度 */
+
+    Datum       reconstructedValue;     /* 在父节点重构的值 */
+    void       *traversalValue; /* 操作符类相关的贯穿值 */
+    int         level;          /* 当前层次（从零开始计） */
+    bool        returnData;     /* 是否必须返回原始数据？ */
+
+    Datum       leafDatum;      /* 叶子元组中的数据 */
+} spgLeafConsistentIn;
+
+typedef struct spgLeafConsistentOut
+{
+    Datum       leafValue;        /* 重构的原始数据，如果有 */
+    bool        recheck;          /* 如果操作符必须被重新检查则设为真 */
+    bool        recheckDistances; /* 如果距离必须被重新检查，设置为 true */
+    double     *distances;        /* 关联距离 */
+} spgLeafConsistentOut;
+</programlisting>
+
+       长度为<structfield>nkeys</structfield>的数组<structfield>scankeys</structfield>描述了索引搜索条件。
+       这些条件用 AND 组合在一起 &mdash; 只有满足所有条件的索引项才满足该查询（注意<structfield>nkeys</structfield> = 0 表示所有的索引项都满足查询）。
+       通常 consistent 函数值关注每一个数组项的<structfield>sk_strategy</structfield>和<structfield>sk_argument</structfield>域，它们分别给出了可索引操作符和比较值。
+       特别是它无需检查<structfield>sk_flags</structfield>来检查比较值是否为 NULL，因为 SP-GiST 核心代码将过滤掉这类条件。
+       数组<structfield>orderbys</structfield>，长度<structfield>norderbys</structfield>，以相同的方式描述排序运算符（如果有）。
+       <structfield>reconstructedValue</structfield>是为父元组重构的值，在根层或者当<function>inner_consistent</function>没有提供父层上的值时，它是<literal>(Datum) 0</literal>。
+       <structfield>traversalValue</structfield>是任意贯穿数据的指针，该数据由父索引元组上的上一次<function>inner_consistent</function>调用传递下来，在根层上这个指针为 NULL。
+       <structfield>level</structfield>是当前的叶子元组所在的层次，根层为零。如果这个查询要求重构的数据，则<structfield>returnData</structfield>为<literal>true</literal>。
+       只有在<function>config</function>函数主张了<structfield>canReturnData</structfield>时才会如此。
+       <structfield>leafDatum</structfield>是存储在当前叶子元组中的<structname>spgConfigOut</structname>.<structfield>leafType</structfield>的键值。
+      </para>
+<!-- pgdoc-cn_end sig_en=5d3a12883d49753de7dafaf9c789092f -->
+
+<!-- pgdoc-cn_start sig_en=fcf87b50d4fe5db1ba59f41a8c038389 sig_cn_org=None source=14.1 
+      <para>
+       The function must return <literal>true</literal> if the leaf tuple matches the
+       query, or <literal>false</literal> if not.  In the <literal>true</literal> case,
+       if <structfield>returnData</structfield> is <literal>true</literal> then
+       <structfield>leafValue</structfield> must be set to the value (of type
+       <structname>spgConfigIn</structname>.<structfield>attType</structfield>)
+       originally supplied to be indexed for this leaf tuple.  Also,
+       <structfield>recheck</structfield> may be set to <literal>true</literal> if the match
+       is uncertain and so the operator(s) must be re-applied to the actual
+       heap tuple to verify the match.
+       If ordered search is performed, set <structfield>distances</structfield>
+       to an array of distance values according to <structfield>orderbys</structfield>
+       array.  Leave it NULL otherwise.  If at least one of returned distances
+       is not exact, set <structfield>recheckDistances</structfield> to true.
+       In this case, the executor will calculate the exact distances after
+       fetching the tuple from the heap, and will reorder the tuples if needed.
+      </para>
+________________________________________________________-->
+      <para>
+       如果叶子元组匹配查询，则该函数必须返回<literal>true</literal>，否则返回<literal>false</literal>。
+       在返回<literal>true</literal>的情况中，如果<structfield>returnData</structfield>为<literal>true</literal>，则<structfield>leafValue</structfield>必须被设置为最初为构建这个叶子元组提供的（<structname>spgConfigIn</structname>.<structfield>attType</structfield>类型）值。
+       还有，如果匹配是不确定的并且操作符必须被重新应用在实际堆元组上验证匹配，则<structfield>recheck</structfield>会被设置为<literal>true</literal>。
+       如果执行有序搜索，则根据<structfield>orderbys</structfield>数组设置<structfield>distances</structfield>为距离值数组。
+       否则，保留它为空。 
+       如果至少有一个返回的距离不准确，则<structfield>recheckDistances</structfield>为 true。
+       在这种情况下，执行器将从堆中获取元组之后计算精确的距离，并根据需要重新排序元组。
+      </para>
+<!-- pgdoc-cn_end sig_en=fcf87b50d4fe5db1ba59f41a8c038389 -->
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+<!-- pgdoc-cn_start sig_en=8f3e009bf49bff14784835394ce03b3b sig_cn_org=None source=14.1 
+ <para>
+  The optional user-defined methods are:
+ </para>
+________________________________________________________-->
+ <para>
+  可选的用户定义的方法是：
+ </para>
+<!-- pgdoc-cn_end sig_en=8f3e009bf49bff14784835394ce03b3b -->
+
+ <variablelist>
+    <varlistentry>
+     <term><function>Datum compress(Datum in)</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=c4d2258b805b760ba80c7e83fb6f10f7 sig_cn_org=None source=14.1 
+      <para>
+       Converts a data item into a format suitable for physical storage in
+       a leaf tuple of the index.  It accepts a value of type
+       <structname>spgConfigIn</structname>.<structfield>attType</structfield>
+       and returns a value of type
+       <structname>spgConfigOut</structname>.<structfield>leafType</structfield>.
+       The output value must not contain an out-of-line TOAST pointer.
+      </para>
+________________________________________________________-->
+      <para>
+       将数据项转换成一种适合索引的叶子元组中物理存储方式的格式。
+       它接受<structname>spgConfigIn</structname>.<structfield>attType</structfield>类型的值并且返回<structname>spgConfigOut</structname>.<structfield>leafType</structfield>类型的值。
+       输出值必须不包含线外的TOAST指针。
+      </para>
+<!-- pgdoc-cn_end sig_en=c4d2258b805b760ba80c7e83fb6f10f7 -->
+
+<!-- pgdoc-cn_start sig_en=88485b4d2150a70c6d2b20c9b48160e2 sig_cn_org=None source=14.1 
+      <para>
+       Note: the <function>compress</function> method is only applied to
+       values to be stored.  The consistent methods receive query
+       <structfield>scankeys</structfield> unchanged, without transformation
+       using <function>compress</function>.
+      </para>
+________________________________________________________-->
+      <para>
+       注意: <function>compress</function> 方法仅应用于被存储的值。
+       一致性方法接收查询<structfield>scankeys</structfield>未变化，没有使用<function>compress</function>转换。
+      </para>
+<!-- pgdoc-cn_end sig_en=88485b4d2150a70c6d2b20c9b48160e2 -->
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>options</function></term>
+     <listitem>
+<!-- pgdoc-cn_start sig_en=d4f15fb7f219897a3f342c78e2869982 sig_cn_org=None source=14.1 
+      <para>
+       Defines a set of user-visible parameters that control operator class
+       behavior.
+      </para>
+________________________________________________________-->
+      <para>
+       定义一组控制运算符类行为的用户可见参数。
+      </para>
+<!-- pgdoc-cn_end sig_en=d4f15fb7f219897a3f342c78e2869982 -->
+
+<!-- pgdoc-cn_start sig_en=e1bc31518367487ed67939889b20e5e4 sig_cn_org=None source=14.1 
+      <para>
+        The <acronym>SQL</acronym> declaration of the function must look like this:
+
+<programlisting>
+CREATE OR REPLACE FUNCTION my_options(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+</programlisting>
+      </para>
+________________________________________________________-->
+      <para>
+        函数的 <acronym>SQL</acronym> 声明必须如下所示：
+
+<programlisting>
+CREATE OR REPLACE FUNCTION my_options(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+</programlisting>
+      </para>
+<!-- pgdoc-cn_end sig_en=e1bc31518367487ed67939889b20e5e4 -->
+
+<!-- pgdoc-cn_start sig_en=05ae6edaf070b86f092a6e322a7a0620 sig_cn_org=None source=14.1 
+      <para>
+       The function is passed a pointer to a <structname>local_relopts</structname>
+       struct, which needs to be filled with a set of operator class
+       specific options.  The options can be accessed from other support
+       functions using the <literal>PG_HAS_OPCLASS_OPTIONS()</literal> and
+       <literal>PG_GET_OPCLASS_OPTIONS()</literal> macros.
+      </para>
+________________________________________________________-->
+      <para>
+       该函数被传递一个指向 <structname>local_relopts</structname> 结构的指针，该结构需要填充一组特定于运算符类的选项。 可以使用 <literal>PG_HAS_OPCLASS_OPTIONS()</literal> 和 <literal>PG_GET_OPCLASS_OPTIONS()</literal> 宏从其他支持函数访问这些选项。
+      </para>
+<!-- pgdoc-cn_end sig_en=05ae6edaf070b86f092a6e322a7a0620 -->
+
+<!-- pgdoc-cn_start sig_en=0db73155d21a02db85208663eaf31dc7 sig_cn_org=None source=14.1 
+      <para>
+       Since the representation of the key in <acronym>SP-GiST</acronym> is
+       flexible, it may depend on user-specified parameters.
+      </para>
+________________________________________________________-->
+      <para>
+       由于 <acronym>SP-GiST</acronym> 中键的表示是灵活的，它可能取决于用户指定的参数。
+      </para>
+<!-- pgdoc-cn_end sig_en=0db73155d21a02db85208663eaf31dc7 -->
+     </listitem>
+    </varlistentry>
+  </variablelist>
+
+<!-- pgdoc-cn_start sig_en=c097ab1cb81bf1d1159d4e487dff7b46 sig_cn_org=None source=14.1 
+  <para>
+   All the SP-GiST support methods are normally called in a short-lived
+   memory context; that is, <varname>CurrentMemoryContext</varname> will be reset
+   after processing of each tuple.  It is therefore not very important to
+   worry about pfree'ing everything you palloc.  (The <function>config</function>
+   method is an exception: it should try to avoid leaking memory.  But
+   usually the <function>config</function> method need do nothing but assign
+   constants into the passed parameter struct.)
+  </para>
+________________________________________________________-->
+  <para>
+   所有的 SP-GiST 支持方法通常都在一个短期存在的内存上下文中被调用，即在处理完每一个元组后<varname>CurrentMemoryContext</varname>将被重置。因此并不需要操心 pfree 你 palloc 的任何东西（<function>config</function>方法是一个特例：它应该避免泄漏内存。但是通常<function>config</function>方法只需要为传出的参数结构赋常数值）。
+  </para>
+<!-- pgdoc-cn_end sig_en=c097ab1cb81bf1d1159d4e487dff7b46 -->
+
+<!-- pgdoc-cn_start sig_en=927452850938dc0c627eece70f826af4 sig_cn_org=None source=14.1 
+  <para>
+   If the indexed column is of a collatable data type, the index collation
+   will be passed to all the support methods, using the standard
+   <function>PG_GET_COLLATION()</function> mechanism.
+  </para>
+________________________________________________________-->
+  <para>
+   如果被索引的列是一种可排序的数据类型，索引的排序规则将被使用标准的<function>PG_GET_COLLATION()</function>机制传递给所有的支持方法。
+  </para>
+<!-- pgdoc-cn_end sig_en=927452850938dc0c627eece70f826af4 -->
+
+</sect1>
+
+<sect1 id="spgist-implementation">
+<!-- pgdoc-cn_start sig_en=05afc0ba076ec1f3b376592bf28077e0 sig_cn_org=None source=14.1 
+ <title>Implementation</title>
+________________________________________________________-->
+ <title>实现</title>
+<!-- pgdoc-cn_end sig_en=05afc0ba076ec1f3b376592bf28077e0 -->
+
+<!-- pgdoc-cn_start sig_en=6cbcfd7ce76cd04417b4668be4b055df sig_cn_org=None source=14.1 
+  <para>
+   This section covers implementation details and other tricks that are
+   useful for implementers of <acronym>SP-GiST</acronym> operator classes to
+   know.
+  </para>
+________________________________________________________-->
+  <para>
+   这一节覆盖了实现细节以及<acronym>SP-GiST</acronym>操作符类的实现者需要知道的有用的技巧。
+  </para>
+<!-- pgdoc-cn_end sig_en=6cbcfd7ce76cd04417b4668be4b055df -->
+
+ <sect2 id="spgist-limits">
+<!-- pgdoc-cn_start sig_en=1894004e0de415e93bb3af9ddcdc191c sig_cn_org=None source=14.1 
+  <title>SP-GiST Limits</title>
+________________________________________________________-->
+  <title>SP-GiST 限制</title>
+<!-- pgdoc-cn_end sig_en=1894004e0de415e93bb3af9ddcdc191c -->
+
+<!-- pgdoc-cn_start sig_en=80dae24a9e40b06dc302d7d7c66b5968 sig_cn_org=None source=14.1 
+  <para>
+   Individual leaf tuples and inner tuples must fit on a single index page
+   (8kB by default).  Therefore, when indexing values of variable-length
+   data types, long values can only be supported by methods such as radix
+   trees, in which each level of the tree includes a prefix that is short
+   enough to fit on a page, and the final leaf level includes a suffix also
+   short enough to fit on a page.  The operator class should set
+   <structfield>longValuesOK</structfield> to true only if it is prepared to arrange for
+   this to happen.  Otherwise, the <acronym>SP-GiST</acronym> core will
+   reject any request to index a value that is too large to fit
+   on an index page.
+  </para>
+________________________________________________________-->
+  <para>
+   单独的叶子节点和内部节点必须能适合一个单一的索引页面（默认为 8kB）。因此，当索引值是一种变长数据类型时（长值只能由如 radix 树的方法所支持），树的每一层包含的前缀都足够短以适合一个页面，并且最终的叶子层包括的后缀也足够短以适合一个页面。如果操作符类准备好做这种事情，它应该将<structfield>longValuesOK</structfield>设置为true。否则，<acronym>SP-GiST</acronym>核心将拒绝任何要索引超过一个所以页面长度的值的请求。
+  </para>
+<!-- pgdoc-cn_end sig_en=80dae24a9e40b06dc302d7d7c66b5968 -->
+
+<!-- pgdoc-cn_start sig_en=5a3ad1d21d5bc8281a93a57887d6a4c4 sig_cn_org=None source=14.1 
+  <para>
+   Likewise, it is the operator class's responsibility that inner tuples
+   do not grow too large to fit on an index page; this limits the number
+   of child nodes that can be used in one inner tuple, as well as the
+   maximum size of a prefix value.
+  </para>
+________________________________________________________-->
+  <para>
+   同样，操作符类应该负责不要让内部元组增长到无法放在一个索引页面中。这限制了能在一个内部元组中使用的子节点的数目，以及一个前缀值的最大尺寸。
+  </para>
+<!-- pgdoc-cn_end sig_en=5a3ad1d21d5bc8281a93a57887d6a4c4 -->
+
+<!-- pgdoc-cn_start sig_en=f36a9b5a82608042d5a9c6fb9906e8c7 sig_cn_org=None source=14.1 
+  <para>
+   Another limitation is that when an inner tuple's node points to a set
+   of leaf tuples, those tuples must all be in the same index page.
+   (This is a design decision to reduce seeking and save space in the
+   links that chain such tuples together.)  If the set of leaf tuples
+   grows too large for a page, a split is performed and an intermediate
+   inner tuple is inserted.  For this to fix the problem, the new inner
+   tuple <emphasis>must</emphasis> divide the set of leaf values into more than one
+   node group.  If the operator class's <function>picksplit</function> function
+   fails to do that, the <acronym>SP-GiST</acronym> core resorts to
+   extraordinary measures described in <xref linkend="spgist-all-the-same"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   另一个限制是，当一个内部元组的节点指向一组叶子元组时，这些元组必须都在同一个索引页面中（这种设计是为了减少在这类元组构成链中进行定位的时间并且节省空间）。如果叶子元组集合增长到无法放在一个页面中，将执行一次分裂并且插入一个中间的内部元组。为此，新的内部元组<emphasis>必须</emphasis>把叶子值的集合划分成多于一个节点分组。如果操作符类的<function>picksplit</function>函数无法做到这一点，<acronym>SP-GiST</acronym>核心只能求助于<xref linkend="spgist-all-the-same"/>中所介绍的额外措施。
+  </para>
+<!-- pgdoc-cn_end sig_en=f36a9b5a82608042d5a9c6fb9906e8c7 -->
+
+<!-- pgdoc-cn_start sig_en=b8a5b4611c8d911a003d1fb72573a410 sig_cn_org=None source=14.1 
+  <para>
+   When <structfield>longValuesOK</structfield> is true, it is expected
+   that successive levels of the <acronym>SP-GiST</acronym> tree will
+   absorb more and more information into the prefixes and node labels of
+   the inner tuples, making the required leaf datum smaller and smaller,
+   so that eventually it will fit on a page.
+   To prevent bugs in operator classes from causing infinite insertion
+   loops, the <acronym>SP-GiST</acronym> core will raise an error if the
+   leaf datum does not become any smaller within ten cycles
+   of <function>choose</function> method calls.
+  </para>
+________________________________________________________-->
+  <para>
+   当<structfield>longValuesOK</structfield>为真，可以预期<acronym>SP-GiST</acronym>树的连续级别将吸收越来越多的信息到内部元组的前缀和节点标签中，使得所需的叶数据越来越小，这样最终就能放在一页上了。
+   为了防止从导致无限插入循环的操作符类中的错误，<acronym>SP-GiST</acronym>内核将抛出一个错误，如果<function>choose</function>方法调用的10个周期内叶数据没有变得更小。
+  </para>
+<!-- pgdoc-cn_end sig_en=b8a5b4611c8d911a003d1fb72573a410 -->
+ </sect2>
+
+ <sect2 id="spgist-null-labels">
+<!-- pgdoc-cn_start sig_en=eb26f21d061c87a521aa4828fa7a5a7c sig_cn_org=None source=14.1 
+  <title>SP-GiST Without Node Labels</title>
+________________________________________________________-->
+  <title>无节点标签的 SP-GiST</title>
+<!-- pgdoc-cn_end sig_en=eb26f21d061c87a521aa4828fa7a5a7c -->
+
+<!-- pgdoc-cn_start sig_en=efc3ea6f7d84b2736606b431163161db sig_cn_org=None source=14.1 
+  <para>
+   Some tree algorithms use a fixed set of nodes for each inner tuple;
+   for example, in a quad-tree there are always exactly four nodes
+   corresponding to the four quadrants around the inner tuple's centroid
+   point.  In such a case the code typically works with the nodes by
+   number, and there is no need for explicit node labels.  To suppress
+   node labels (and thereby save some space), the <function>picksplit</function>
+   function can return NULL for the <structfield>nodeLabels</structfield> array,
+   and likewise the <function>choose</function> function can return NULL for
+   the <structfield>prefixNodeLabels</structfield> array during
+   a <literal>spgSplitTuple</literal> action.
+   This will in turn result in <structfield>nodeLabels</structfield> being NULL during
+   subsequent calls to <function>choose</function> and <function>inner_consistent</function>.
+   In principle, node labels could be used for some inner tuples and omitted
+   for others in the same index.
+  </para>
+________________________________________________________-->
+  <para>
+   某些树算法对每个内部元组都使用一种固定的节点集合。例如，在一个四叉树中总是正好有四个节点对应于围绕内部节点中心点的四个象限。在这种情况下，代码总是通过编号来处理节点，而不需要显式的节点标签。要抑制节点标签（因而节省一些空间），<function>picksplit</function>函数可以为<structfield>nodeLabels</structfield>数组返回NULL，同样<function>choose</function>函数可以在一个<literal>spgSplitTuple</literal>动作期间为<structfield>prefixNodeLabels</structfield>数组返回NULL。这将会导致后续对<function>choose</function>和<function>inner_consistent</function>调用时<structfield>nodeLabels</structfield>也为 NULL。原则上，可以为同一个索引中的某些内部元组使用节点标签而对其他内部节点省略节点标签。
+  </para>
+<!-- pgdoc-cn_end sig_en=efc3ea6f7d84b2736606b431163161db -->
+
+<!-- pgdoc-cn_start sig_en=8c4ab40602f2f77e82dd5d8ef39cfe9b sig_cn_org=None source=14.1 
+  <para>
+   When working with an inner tuple having unlabeled nodes, it is an error
+   for <function>choose</function> to return <literal>spgAddNode</literal>, since the set
+   of nodes is supposed to be fixed in such cases.
+  </para>
+________________________________________________________-->
+  <para>
+   在处理具有无标签节点的内部元组时，让<function>choose</function>返回<literal>spgAddNode</literal>是一种错误，因为该节点集合在这种情况下被假定为固定的集合。
+  </para>
+<!-- pgdoc-cn_end sig_en=8c4ab40602f2f77e82dd5d8ef39cfe9b -->
+ </sect2>
+
+ <sect2 id="spgist-all-the-same">
+<!-- pgdoc-cn_start sig_en=881d0e95faa70a5e0dc42b8ca967938f sig_cn_org=None source=14.1 
+  <title><quote>All-the-Same</quote> Inner Tuples</title>
+________________________________________________________-->
+  <title><quote>All-the-Same</quote>内部元组</title>
+<!-- pgdoc-cn_end sig_en=881d0e95faa70a5e0dc42b8ca967938f -->
+
+<!-- pgdoc-cn_start sig_en=c481abec4ebae314f3bca48fe99a0d72 sig_cn_org=None source=14.1 
+  <para>
+   The <acronym>SP-GiST</acronym> core can override the results of the
+   operator class's <function>picksplit</function> function when
+   <function>picksplit</function> fails to divide the supplied leaf values into
+   at least two node categories.  When this happens, the new inner tuple
+   is created with multiple nodes that each have the same label (if any)
+   that <function>picksplit</function> gave to the one node it did use, and the
+   leaf values are divided at random among these equivalent nodes.
+   The <literal>allTheSame</literal> flag is set on the inner tuple to warn the
+   <function>choose</function> and <function>inner_consistent</function> functions that the
+   tuple does not have the node set that they might otherwise expect.
+  </para>
+________________________________________________________-->
+  <para>
+   当<function>picksplit</function>无法把提供的叶子值划分成至少两个节点分类，<acronym>SP-GiST</acronym>核心能推翻操作符类的<function>picksplit</function>函数的结果。在发生这种情况时，会创建一个新的内部元组，其中有多个节点，每一个节点都有相同的标签（如果有标签），标签是由<function>picksplit</function>之前给一个节点用的，并且叶子值会被随机地划分给这些等效的节点中。该内部元组上会设置<literal>allTheSame</literal>标志以警告<function>choose</function>和<function>inner_consistent</function>函数该元组不具有它们所期望的节点集合。
+  </para>
+<!-- pgdoc-cn_end sig_en=c481abec4ebae314f3bca48fe99a0d72 -->
+
+<!-- pgdoc-cn_start sig_en=fdc8a35a979e01154b1d37d49252d747 sig_cn_org=None source=14.1 
+  <para>
+   When dealing with an <literal>allTheSame</literal> tuple, a <function>choose</function>
+   result of <literal>spgMatchNode</literal> is interpreted to mean that the new
+   value can be assigned to any of the equivalent nodes; the core code will
+   ignore the supplied  <structfield>nodeN</structfield> value and descend into one
+   of the nodes at random (so as to keep the tree balanced).  It is an
+   error for <function>choose</function> to return <literal>spgAddNode</literal>, since
+   that would make the nodes not all equivalent; the
+   <literal>spgSplitTuple</literal> action must be used if the value to be inserted
+   doesn't match the existing nodes.
+  </para>
+________________________________________________________-->
+  <para>
+   在处理<literal>allTheSame</literal>元组时，<function>choose</function>函数的结果<literal>spgMatchNode</literal>会被解释为新值可以被赋值给任一等价的节点。核心代码将忽略提供的<structfield>nodeN</structfield>值并且随机地下降到其中一个节点中（以便保持树平衡）。对<function>choose</function>来说，返回<literal>spgAddNode</literal>是一种错误，因为那会让节点不全部等效。如果要被插入的值不匹配现有的节点，则必须使用<literal>spgSplitTuple</literal>动作。
+  </para>
+<!-- pgdoc-cn_end sig_en=fdc8a35a979e01154b1d37d49252d747 -->
+
+<!-- pgdoc-cn_start sig_en=67ba4e3ff3ded4ab20ac5c4486a22904 sig_cn_org=None source=14.1 
+  <para>
+   When dealing with an <literal>allTheSame</literal> tuple, the
+   <function>inner_consistent</function> function should return either all or none
+   of the nodes as targets for continuing the index search, since they are
+   all equivalent.  This may or may not require any special-case code,
+   depending on how much the <function>inner_consistent</function> function normally
+   assumes about the meaning of the nodes.
+  </para>
+________________________________________________________-->
+  <para>
+   在处理<literal>allTheSame</literal>元组时，为了继续索引搜索，<function>inner_consistent</function>函数应该返回全部节点或者不返回节点作为目标，因为这些节点都是等效的。根据<function>inner_consistent</function>函数对这些节点含义的假定程度，这可能会也可能不会要求任何处理特殊情况的代码。
+  </para>
+<!-- pgdoc-cn_end sig_en=67ba4e3ff3ded4ab20ac5c4486a22904 -->
+ </sect2>
+
+</sect1>
+
+<sect1 id="spgist-examples">
+<!-- pgdoc-cn_start sig_en=8f24ed0a9e4d47ffa2be9a1f3e09fa6d sig_cn_org=None source=14.1 
+ <title>Examples</title>
+________________________________________________________-->
+ <title>例子</title>
+<!-- pgdoc-cn_end sig_en=8f24ed0a9e4d47ffa2be9a1f3e09fa6d -->
+
+<!-- pgdoc-cn_start sig_en=45d164f4e124249dadf9f50c6ed73347 sig_cn_org=None source=14.1 
+ <para>
+  The <productname>PostgreSQL</productname> source distribution includes
+  several examples of index operator classes for <acronym>SP-GiST</acronym>,
+  as described in <xref linkend="spgist-builtin-opclasses-table"/>.  Look
+  into <filename>src/backend/access/spgist/</filename>
+  and <filename>src/backend/utils/adt/</filename> to see the code.
+ </para>
+________________________________________________________-->
+ <para>
+  如<xref linkend="spgist-builtin-opclasses-table"/>中所述，<productname>PostgreSQL</productname>源代码发布包括多个用于<acronym>SP-GiST</acronym>的索引操作符类的例子。其代码可以看看<filename>src/backend/access/spgist/</filename>和<filename>src/backend/utils/adt/</filename>中的文件。
+ </para>
+<!-- pgdoc-cn_end sig_en=45d164f4e124249dadf9f50c6ed73347 -->
+
+</sect1>
+
+</chapter>
