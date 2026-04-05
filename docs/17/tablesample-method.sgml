@@ -1,0 +1,578 @@
+<!-- doc/src/sgml/tablesample-method.sgml -->
+
+<chapter id="tablesample-method">
+<!-- pgdoc-cn_start sig_en=17a286e8665210e458cbea396cae8483 sig_cn_org=None source=14.1 
+ <title>Writing a Table Sampling Method</title>
+________________________________________________________-->
+ <title>编写一种表采样方法</title>
+<!-- pgdoc-cn_end sig_en=17a286e8665210e458cbea396cae8483 -->
+
+<!-- pgdoc-cn_start sig_en=67ce0218467f77a471ecc27d1ce33161 sig_cn_org=None source=14.1 
+ <indexterm zone="tablesample-method">
+  <primary>table sampling method</primary>
+ </indexterm>
+________________________________________________________-->
+ <indexterm zone="tablesample-method">
+  <primary>表采样方法</primary>
+ </indexterm>
+<!-- pgdoc-cn_end sig_en=67ce0218467f77a471ecc27d1ce33161 -->
+
+<!-- pgdoc-cn_start sig_en=4a5d41b430f39f6eb08c31841890ef2b sig_cn_org=None source=14.1 
+ <indexterm zone="tablesample-method">
+  <primary><literal>TABLESAMPLE</literal> method</primary>
+ </indexterm>
+________________________________________________________-->
+ <indexterm zone="tablesample-method">
+  <primary><literal>TABLESAMPLE</literal> 方法</primary>
+ </indexterm>
+<!-- pgdoc-cn_end sig_en=4a5d41b430f39f6eb08c31841890ef2b -->
+
+<!-- pgdoc-cn_start sig_en=01064d1325f347b0392ed1280a5f0600 sig_cn_org=None source=14.1 
+ <para>
+  <productname>PostgreSQL</productname>'s implementation of the <literal>TABLESAMPLE</literal>
+  clause supports custom table sampling methods, in addition to
+  the <literal>BERNOULLI</literal> and <literal>SYSTEM</literal> methods that are required
+  by the SQL standard.  The sampling method determines which rows of the
+  table will be selected when the <literal>TABLESAMPLE</literal> clause is used.
+ </para>
+________________________________________________________-->
+ <para>
+  <productname>PostgreSQL</productname>的<literal>TABLESAMPLE</literal>子句实现支持
+  在 SQL 标准要求的<literal>BERNOULLI</literal>和<literal>SYSTEM</literal>方法之
+  外自定义表采样方法。采样方法决定了使用<literal>TABLESAMPLE</literal>子句时
+  表的哪些行会被选择。
+ </para>
+<!-- pgdoc-cn_end sig_en=01064d1325f347b0392ed1280a5f0600 -->
+
+<!-- pgdoc-cn_start sig_en=8859543befe7aed7760af4bad088d45c sig_cn_org=None source=14.1 
+ <para>
+  At the SQL level, a table sampling method is represented by a single SQL
+  function, typically implemented in C, having the signature
+<programlisting>
+method_name(internal) RETURNS tsm_handler
+</programlisting>
+  The name of the function is the same method name appearing in the
+  <literal>TABLESAMPLE</literal> clause.  The <type>internal</type> argument is a dummy
+  (always having value zero) that simply serves to prevent this function from
+  being called directly from an SQL command.
+  The result of the function must be a palloc'd struct of
+  type <type>TsmRoutine</type>, which contains pointers to support functions for
+  the sampling method.  These support functions are plain C functions and
+  are not visible or callable at the SQL level.  The support functions are
+  described in <xref linkend="tablesample-support-functions"/>.
+ </para>
+________________________________________________________-->
+ <para>
+  在 SQL 层上，一种表采样方法被表达为一个 SQL 函数（通常用 C 实现），
+  其签名是：
+<programlisting>
+method_name(internal) RETURNS tsm_handler
+</programlisting>
+  函数的名称是出现在<literal>TABLESAMPLE</literal>子句中的同一个方法名称。
+  <type>internal</type>参数是不起作用的（总是值为零），它仅仅是为了阻止
+  直接从 SQL 命令中调用该函数。函数的结果必须是一个 palloc 好的
+  <type>TsmRoutine</type>结构，它包含了该采样方法的支持函数的指针。
+  这些支持函数是纯 C 函数并且对于 SQL 层面不可见也不可调用。支持函数见
+  <xref linkend="tablesample-support-functions"/>。
+ </para>
+<!-- pgdoc-cn_end sig_en=8859543befe7aed7760af4bad088d45c -->
+
+<!-- pgdoc-cn_start sig_en=4fd3a444805d9cb34c9091cfb3b9cb40 sig_cn_org=None source=14.1 
+ <para>
+  In addition to function pointers, the <type>TsmRoutine</type> struct must
+  provide these additional fields:
+ </para>
+________________________________________________________-->
+ <para>
+  除了函数指针之外，<type>TsmRoutine</type>结构必须提供这些额外的域：
+ </para>
+<!-- pgdoc-cn_end sig_en=4fd3a444805d9cb34c9091cfb3b9cb40 -->
+
+ <variablelist>
+  <varlistentry>
+   <term><literal>List *parameterTypes</literal></term>
+   <listitem>
+<!-- pgdoc-cn_start sig_en=a464dc74287db11976ffa8d4eb00656a sig_cn_org=None source=14.1 
+    <para>
+     This is an OID list containing the data type OIDs of the parameter(s)
+     that will be accepted by the <literal>TABLESAMPLE</literal> clause when this
+     sampling method is used.  For example, for the built-in methods, this
+     list contains a single item with value <literal>FLOAT4OID</literal>, which
+     represents the sampling percentage.  Custom sampling methods can have
+     more or different parameters.
+    </para>
+________________________________________________________-->
+    <para>
+     这是一个 OID 列表，它包含了使用这种采样方法时<literal>TABLESAMPLE</literal>
+     子句接受的参数的数据类型 OID。例如，对于内建方法，这个列表只包含一个值
+     为<literal>FLOAT4OID</literal>的项，它表示采样的百分数。自定义采样方法可以有
+     更多或者不同的参数。
+    </para>
+<!-- pgdoc-cn_end sig_en=a464dc74287db11976ffa8d4eb00656a -->
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>bool repeatable_across_queries</literal></term>
+   <listitem>
+<!-- pgdoc-cn_start sig_en=17a2e91a84799426fabd61b62bb2c462 sig_cn_org=None source=14.1 
+    <para>
+     If <literal>true</literal>, the sampling method can deliver identical samples
+     across successive queries, if the same parameters
+     and <literal>REPEATABLE</literal> seed value are supplied each time and the
+     table contents have not changed.  When this is <literal>false</literal>,
+     the <literal>REPEATABLE</literal> clause is not accepted for use with the
+     sampling method.
+    </para>
+________________________________________________________-->
+    <para>
+     如果为<literal>true</literal>，当每次查询时给出相同的参数和
+     <literal>REPEATABLE</literal>种子值且表内容没有改变时，采样方法可以在
+     连续的查询中给出相同的采样。当这个域为<literal>false</literal>时，不能把
+     <literal>REPEATABLE</literal>子句用于这种采样方法。
+    </para>
+<!-- pgdoc-cn_end sig_en=17a2e91a84799426fabd61b62bb2c462 -->
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>bool repeatable_across_scans</literal></term>
+   <listitem>
+<!-- pgdoc-cn_start sig_en=94af5761396bd56e5b28191598266a49 sig_cn_org=None source=14.1 
+    <para>
+     If <literal>true</literal>, the sampling method can deliver identical samples
+     across successive scans in the same query (assuming unchanging
+     parameters, seed value, and snapshot).
+     When this is <literal>false</literal>, the planner will not select plans that
+     would require scanning the sampled table more than once, since that
+     might result in inconsistent query output.
+    </para>
+________________________________________________________-->
+    <para>
+     如果为<literal>true</literal>，这种采样方法在同一个查询的连续扫描中给出
+     相同的采样（假定参数、种子值和快照都不变）。当这个域为
+     <literal>false</literal>时，规划器将不会选择要求扫描被采样表多于一次的计划，
+     因为那会导致不一致的查询输出。
+    </para>
+<!-- pgdoc-cn_end sig_en=94af5761396bd56e5b28191598266a49 -->
+   </listitem>
+  </varlistentry>
+ </variablelist>
+
+<!-- pgdoc-cn_start sig_en=77bb72c4da420219eba2f2f44eefd72c sig_cn_org=None source=14.1 
+ <para>
+  The <type>TsmRoutine</type> struct type is declared
+  in <filename>src/include/access/tsmapi.h</filename>, which see for additional
+  details.
+ </para>
+________________________________________________________-->
+ <para>
+  <type>TsmRoutine</type>结构类型被声明在
+  <filename>src/include/access/tsmapi.h</filename>中，需要更多细节可以参考该文件。
+ </para>
+<!-- pgdoc-cn_end sig_en=77bb72c4da420219eba2f2f44eefd72c -->
+
+<!-- pgdoc-cn_start sig_en=15db25fc82e52d28df233d45909bcc85 sig_cn_org=None source=14.1 
+ <para>
+  The table sampling methods included in the standard distribution are good
+  references when trying to write your own.  Look into
+  the <filename>src/backend/access/tablesample</filename> subdirectory of the source
+  tree for the built-in sampling methods, and into the <filename>contrib</filename>
+  subdirectory for add-on methods.
+ </para>
+________________________________________________________-->
+ <para>
+  在尝试编写自己的采样方法时，包括在标准发布中的表采样方法是很好的参考。内建
+  采样方法的源代码树可见<filename>src/backend/access/tablesample</filename>子目录，
+  在<filename>contrib</filename>子目录中可以找到额外的方法。
+ </para>
+<!-- pgdoc-cn_end sig_en=15db25fc82e52d28df233d45909bcc85 -->
+
+ <sect1 id="tablesample-support-functions">
+<!-- pgdoc-cn_start sig_en=124ad184f3c71729bc0d0b5377faad4f sig_cn_org=None source=14.1 
+  <title>Sampling Method Support Functions</title>
+________________________________________________________-->
+  <title>采样方法支持函数</title>
+<!-- pgdoc-cn_end sig_en=124ad184f3c71729bc0d0b5377faad4f -->
+
+<!-- pgdoc-cn_start sig_en=4889e761298ad682f1694986ed88c4cc sig_cn_org=None source=14.1 
+  <para>
+   The TSM handler function returns a palloc'd <type>TsmRoutine</type> struct
+   containing pointers to the support functions described below.  Most of
+   the functions are required, but some are optional, and those pointers can
+   be NULL.
+  </para>
+________________________________________________________-->
+  <para>
+   TSM 处理器函数返回一个 palloc 好的<type>TsmRoutine</type>结构，其中包含
+   了下文所述的支持函数的指针。大部分函数是必须的，但是有些是可选的（它们
+   的指针可以为 NULL）。
+  </para>
+<!-- pgdoc-cn_end sig_en=4889e761298ad682f1694986ed88c4cc -->
+
+<!-- pgdoc-cn_start sig_en=8b77affb179fd14312c5bd834c33dcc1 sig_cn_org=None source=14.1 
+  <para>
+<programlisting>
+void
+SampleScanGetSampleSize (PlannerInfo *root,
+                         RelOptInfo *baserel,
+                         List *paramexprs,
+                         BlockNumber *pages,
+                         double *tuples);
+</programlisting>
+
+   This function is called during planning.  It must estimate the number of
+   relation pages that will be read during a sample scan, and the number of
+   tuples that will be selected by the scan.  (For example, these might be
+   determined by estimating the sampling fraction, and then multiplying
+   the <literal>baserel-&gt;pages</literal> and <literal>baserel-&gt;tuples</literal>
+   numbers by that, being sure to round the results to integral values.)
+   The <literal>paramexprs</literal> list holds the expression(s) that are
+   parameters to the <literal>TABLESAMPLE</literal> clause.  It is recommended to
+   use <function>estimate_expression_value()</function> to try to reduce these
+   expressions to constants, if their values are needed for estimation
+   purposes; but the function must provide size estimates even if they cannot
+   be reduced, and it should not fail even if the values appear invalid
+   (remember that they're only estimates of what the run-time values will be).
+   The <literal>pages</literal> and <literal>tuples</literal> parameters are outputs.
+  </para>
+________________________________________________________-->
+  <para>
+<programlisting>
+void
+SampleScanGetSampleSize (PlannerInfo *root,
+                         RelOptInfo *baserel,
+                         List *paramexprs,
+                         BlockNumber *pages,
+                         double *tuples);
+</programlisting>
+
+   这个函数在规划期间被掉欧勇。它必须估计在一次采样扫描中会被读到的关系
+   页面数，以及将被该扫描所选择的元组数（例如，可以先估计采样分数，
+   乘上<literal>baserel-&gt;pages</literal>和<literal>baserel-&gt;tuples</literal>
+   数，并且把结果圆整）。<literal>paramexprs</literal>列表保存作为
+   <literal>TABLESAMPLE</literal>子句的参数的表达式。如果出于优化的目的需要
+   这些表达式的值，我们推荐使用<function>estimate_expression_value()</function>
+   来尝试将这些表达式变成常量。但是即便这些表达不能被简化，该函数必须提供
+   估计的尺寸，并且即使出现不合法的值它也不应该失败（记住它们只是运行时值
+   的估计）。<literal>pages</literal>和<literal>tuples</literal>参数是输出。
+  </para>
+<!-- pgdoc-cn_end sig_en=8b77affb179fd14312c5bd834c33dcc1 -->
+
+<!-- pgdoc-cn_start sig_en=50084caeafb37da9d2abdb6b9009a2b2 sig_cn_org=None source=14.1 
+  <para>
+<programlisting>
+void
+InitSampleScan (SampleScanState *node,
+                int eflags);
+</programlisting>
+
+   Initialize for execution of a SampleScan plan node.
+   This is called during executor startup.
+   It should perform any initialization needed before processing can start.
+   The <structname>SampleScanState</structname> node has already been created, but
+   its <structfield>tsm_state</structfield> field is NULL.
+   The <function>InitSampleScan</function> function can palloc whatever internal
+   state data is needed by the sampling method, and store a pointer to
+   it in <literal>node-&gt;tsm_state</literal>.
+   Information about the table to scan is accessible through other fields
+   of the <structname>SampleScanState</structname> node (but note that the
+   <literal>node-&gt;ss.ss_currentScanDesc</literal> scan descriptor is not set
+   up yet).
+   <literal>eflags</literal> contains flag bits describing the executor's
+   operating mode for this plan node.
+  </para>
+________________________________________________________-->
+  <para>
+<programlisting>
+void
+InitSampleScan (SampleScanState *node,
+                int eflags);
+</programlisting>
+
+   为 SampleScan 计划节点的执行进行初始化。这会在执行器启动时被调用。
+   它应该执行执行处理启动所需的任何初始化工作。
+   <structname>SampleScanState</structname>节点已经被创建，但是它的
+   <structfield>tsm_state</structfield>域为 NULL。
+   <function>InitSampleScan</function>函数可以 palloc 任何采样方法需要的内部
+   状态数据，并且把它的一个指针存储在<literal>node-&gt;tsm_state</literal>
+   中。有关要扫描的表的信息可以通过<structname>SampleScanState</structname>
+   节点的其他域访问（但是要注意
+   <literal>node-&gt;ss.ss_currentScanDesc</literal>扫描描述符还没有被设置）。
+   <literal>eflags</literal>包含描述这个计划节点的执行器操作模式的标志位。
+  </para>
+<!-- pgdoc-cn_end sig_en=50084caeafb37da9d2abdb6b9009a2b2 -->
+
+<!-- pgdoc-cn_start sig_en=9c0bdb600257c407974c0577e5cbedb8 sig_cn_org=None source=14.1 
+  <para>
+   When <literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</literal> is true,
+   the scan will not actually be performed, so this function should only do
+   the minimum required to make the node state valid for <command>EXPLAIN</command>
+   and <function>EndSampleScan</function>.
+  </para>
+________________________________________________________-->
+  <para>
+   当<literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</literal>为真时，该
+   扫描将不会被真正执行，因此这个函数应该只做最少的事情，让该节点状态对
+   <command>EXPLAIN</command>和<function>EndSampleScan</function>可用。
+  </para>
+<!-- pgdoc-cn_end sig_en=9c0bdb600257c407974c0577e5cbedb8 -->
+
+<!-- pgdoc-cn_start sig_en=3d6d20a631a146d506f3464d0dbb3b7e sig_cn_org=None source=14.1 
+  <para>
+   This function can be omitted (set the pointer to NULL), in which case
+   <function>BeginSampleScan</function> must perform all initialization needed
+   by the sampling method.
+  </para>
+________________________________________________________-->
+  <para>
+   这个函数可以被省略（把指针设置为 NULL），在那种情况下
+   <function>BeginSampleScan</function>必须执行采样方法所需的所有初始化工作。
+  </para>
+<!-- pgdoc-cn_end sig_en=3d6d20a631a146d506f3464d0dbb3b7e -->
+
+<!-- pgdoc-cn_start sig_en=c81610dde9fa853b0570b120780f2e20 sig_cn_org=None source=14.1 
+  <para>
+<programlisting>
+void
+BeginSampleScan (SampleScanState *node,
+                 Datum *params,
+                 int nparams,
+                 uint32 seed);
+</programlisting>
+
+   Begin execution of a sampling scan.
+   This is called just before the first attempt to fetch a tuple, and
+   may be called again if the scan needs to be restarted.
+   Information about the table to scan is accessible through fields
+   of the <structname>SampleScanState</structname> node (but note that the
+   <literal>node-&gt;ss.ss_currentScanDesc</literal> scan descriptor is not set
+   up yet).
+   The <literal>params</literal> array, of length <literal>nparams</literal>, contains the
+   values of the parameters supplied in the <literal>TABLESAMPLE</literal> clause.
+   These will have the number and types specified in the sampling
+   method's <literal>parameterTypes</literal> list, and have been checked
+   to not be null.
+   <literal>seed</literal> contains a seed to use for any random numbers generated
+   within the sampling method; it is either a hash derived from the
+   <literal>REPEATABLE</literal> value if one was given, or the result
+   of <literal>random()</literal> if not.
+  </para>
+________________________________________________________-->
+  <para>
+<programlisting>
+void
+BeginSampleScan (SampleScanState *node,
+                 Datum *params,
+                 int nparams,
+                 uint32 seed);
+</programlisting>
+
+   开始执行一次采样扫描。就在第一次尝试取得一个元组时就会调用这个函数，
+   如果该扫描需要被重启可能还要再次调用它。有关要扫描的表的信息可以通过
+   <structname>SampleScanState</structname>节点的其他域访问（但是要注意
+   <literal>node-&gt;ss.ss_currentScanDesc</literal>扫描描述符还没有被设置）。
+   长度为<literal>nparams</literal>的<literal>params</literal>数组包含在
+   <literal>TABLESAMPLE</literal>子句中提供的参数的值。这些参数的编号和类型
+   在采样方法的<literal>parameterTypes</literal>列表中指定，并且已经被
+   检查过不为空。<literal>seed</literal>包含用于在采样方法中生成任何随机数的
+   种子。如果给定了<literal>REPEATABLE</literal>值，种子将是该值的哈希。如果
+   没有指定<literal>REPEATABLE</literal>值，种子将是<literal>random()</literal>的
+   结果。
+  </para>
+<!-- pgdoc-cn_end sig_en=c81610dde9fa853b0570b120780f2e20 -->
+
+<!-- pgdoc-cn_start sig_en=c3629273fd7ffe7d7c435d8a6eebb9e3 sig_cn_org=None source=14.1 
+  <para>
+   This function may adjust the fields <literal>node-&gt;use_bulkread</literal>
+   and <literal>node-&gt;use_pagemode</literal>.
+   If <literal>node-&gt;use_bulkread</literal> is <literal>true</literal>, which it is by
+   default, the scan will use a buffer access strategy that encourages
+   recycling buffers after use.  It might be reasonable to set this
+   to <literal>false</literal> if the scan will visit only a small fraction of the
+   table's pages.
+   If <literal>node-&gt;use_pagemode</literal> is <literal>true</literal>, which it is by
+   default, the scan will perform visibility checking in a single pass for
+   all tuples on each visited page.  It might be reasonable to set this
+   to <literal>false</literal> if the scan will select only a small fraction of the
+   tuples on each visited page.  That will result in fewer tuple visibility
+   checks being performed, though each one will be more expensive because it
+   will require more locking.
+  </para>
+________________________________________________________-->
+  <para>
+   这个函数可能会调整域<literal>node-&gt;use_bulkread</literal>
+   以及<literal>node-&gt;use_pagemode</literal>。
+   如果<literal>node-&gt;use_bulkread</literal>为<literal>true</literal>（默认），
+   该扫描将使用一种鼓励重用缓冲区的缓冲区访问策略。如果该扫描只访问
+   该表的页面的一小部分，将这个域设置为<literal>false</literal>比较合理。
+   如果<literal>node-&gt;use_pagemode</literal>为<literal>true</literal>（默认），
+   那么对于每一个被访问的页面上的所有元组，该扫描将会在一趟中执行它们
+   的可见性检查。如果该扫描只选择每个被访问页面上的一小部分，将这个域
+   设置为<literal>false</literal>比较合理。这将导致执行较少次的元组可见性检查，
+   但是每一次都会代价更大，因为需要更多锁定。
+  </para>
+<!-- pgdoc-cn_end sig_en=c3629273fd7ffe7d7c435d8a6eebb9e3 -->
+
+<!-- pgdoc-cn_start sig_en=d2bb6f6f3c290902e787998d40249892 sig_cn_org=None source=14.1 
+  <para>
+   If the sampling method is
+   marked <literal>repeatable_across_scans</literal>, it must be able to
+   select the same set of tuples during a rescan as it did originally, that is
+   a fresh call of <function>BeginSampleScan</function> must lead to selecting the
+   same tuples as before (if the <literal>TABLESAMPLE</literal> parameters
+   and seed don't change).
+  </para>
+________________________________________________________-->
+  <para>
+   如果采样方法被标记为<literal>repeatable_across_scans</literal>，在重
+   新扫描时，它必须能够选择和第一次扫描相同的元组集合，也就是说对
+   <function>BeginSampleScan</function>的一次新调用必须选择和之前相同的元组
+   （如果<literal>TABLESAMPLE</literal>参数和种子没有变化）。
+  </para>
+<!-- pgdoc-cn_end sig_en=d2bb6f6f3c290902e787998d40249892 -->
+
+<!-- pgdoc-cn_start sig_en=a2ce43ae0441f7191b917d91323be734 sig_cn_org=None source=14.1 
+  <para>
+<programlisting>
+BlockNumber
+NextSampleBlock (SampleScanState *node, BlockNumber nblocks);
+</programlisting>
+
+   Returns the block number of the next page to be scanned, or
+   <literal>InvalidBlockNumber</literal> if no pages remain to be scanned.
+  </para>
+________________________________________________________-->
+  <para>
+<programlisting>
+BlockNumber
+NextSampleBlock (SampleScanState *node, BlockNumber nblocks);
+</programlisting>
+
+   返回下一个要扫描的页面的块号，如果没有剩余的页面需要扫描则返回
+   <literal>InvalidBlockNumber</literal>。
+  </para>
+<!-- pgdoc-cn_end sig_en=a2ce43ae0441f7191b917d91323be734 -->
+
+<!-- pgdoc-cn_start sig_en=39a395e3332aa5b5b0b0d7df9c33c319 sig_cn_org=None source=14.1 
+  <para>
+   This function can be omitted (set the pointer to NULL), in which case
+   the core code will perform a sequential scan of the entire relation.
+   Such a scan can use synchronized scanning, so that the sampling method
+   cannot assume that the relation pages are visited in the same order on
+   each scan.
+  </para>
+________________________________________________________-->
+  <para>
+   这个函数可以被省略（设置指针为 NULL），在那种情况下核心代码将
+   执行整个关系的一次顺序扫描。这样一个扫描可以使用同步扫描，这样
+   采样方法不能假定每一次扫描都用同样的顺序访问关系页面。
+  </para>
+<!-- pgdoc-cn_end sig_en=39a395e3332aa5b5b0b0d7df9c33c319 -->
+
+<!-- pgdoc-cn_start sig_en=b2e8ecfe9b5d33b9a6942d1cf220dded sig_cn_org=None source=14.1 
+  <para>
+<programlisting>
+OffsetNumber
+NextSampleTuple (SampleScanState *node,
+                 BlockNumber blockno,
+                 OffsetNumber maxoffset);
+</programlisting>
+
+   Returns the offset number of the next tuple to be sampled on the
+   specified page, or <literal>InvalidOffsetNumber</literal> if no tuples remain to
+   be sampled.  <literal>maxoffset</literal> is the largest offset number in use
+   on the page.
+  </para>
+________________________________________________________-->
+  <para>
+<programlisting>
+OffsetNumber
+NextSampleTuple (SampleScanState *node,
+                 BlockNumber blockno,
+                 OffsetNumber maxoffset);
+</programlisting>
+
+   返回指定页面上下一个要被采样的元组的偏移量，如果没有剩余元组需要被采样，
+   则返回<literal>InvalidOffsetNumber</literal>。<literal>maxoffset</literal>是页面上
+   使用的最大偏移量。
+  </para>
+<!-- pgdoc-cn_end sig_en=b2e8ecfe9b5d33b9a6942d1cf220dded -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=70fa190b2c1a9076be5b7a6badb6e3de sig_cn_org=None source=14.1 
+   <para>
+    <function>NextSampleTuple</function> is not explicitly told which of the offset
+    numbers in the range <literal>1 .. maxoffset</literal> actually contain valid
+    tuples.  This is not normally a problem since the core code ignores
+    requests to sample missing or invisible tuples; that should not result in
+    any bias in the sample.  However, if necessary, the function can use
+    <literal>node-&gt;donetuples</literal> to examine how many of the tuples
+    it returned were valid and visible.
+   </para>
+________________________________________________________-->
+   <para>
+    <function>NextSampleTuple</function>没有被显式地告知范围
+    <literal>1 .. maxoffset</literal>中的哪些偏移量真正包含了合法的元组。这通常不
+    成问题，因为核心代码会忽略采样丢失或者不可见元组的请求。这不会导致采样
+    中的任何偏差。
+    不过，如果必要，该函数可以用<literal>node-&gt;donetuples</literal>来检查它返回的元组有多少是合法并且可见的。
+   </para>
+<!-- pgdoc-cn_end sig_en=70fa190b2c1a9076be5b7a6badb6e3de -->
+  </note>
+
+  <note>
+<!-- pgdoc-cn_start sig_en=590eefc742dab07ecc5b3e54f61d2464 sig_cn_org=None source=14.1 
+   <para>
+    <function>NextSampleTuple</function> must <emphasis>not</emphasis> assume
+    that <literal>blockno</literal> is the same page number returned by the most
+    recent <function>NextSampleBlock</function> call.  It was returned by some
+    previous <function>NextSampleBlock</function> call, but the core code is allowed
+    to call <function>NextSampleBlock</function> in advance of actually scanning
+    pages, so as to support prefetching.  It is OK to assume that once
+    sampling of a given page begins, successive <function>NextSampleTuple</function>
+    calls all refer to the same page until <literal>InvalidOffsetNumber</literal> is
+    returned.
+   </para>
+________________________________________________________-->
+   <para>
+    <function>NextSampleTuple</function><emphasis>不能</emphasis>假定
+    <literal>blockno</literal>是最近一次<function>NextSampleBlock</function>调用返回的
+    同一个页面号。它由之前某次<function>NextSampleBlock</function>调用所返回，
+    但是核心代码被允许在真正扫描页面之前调用<function>NextSampleBlock</function>，
+    以便支持预取。假定一旦一个给定页面的采样开始，连续的
+    <function>NextSampleTuple</function>调用都将引用同一个页面（直到返回
+    <literal>InvalidOffsetNumber</literal>）。
+   </para>
+<!-- pgdoc-cn_end sig_en=590eefc742dab07ecc5b3e54f61d2464 -->
+  </note>
+
+<!-- pgdoc-cn_start sig_en=b270f092b420c7be79345c41c12e18ae sig_cn_org=None source=14.1 
+  <para>
+<programlisting>
+void
+EndSampleScan (SampleScanState *node);
+</programlisting>
+
+   End the scan and release resources.  It is normally not important
+   to release palloc'd memory, but any externally-visible resources
+   should be cleaned up.
+   This function can be omitted (set the pointer to NULL) in the common
+   case where no such resources exist.
+  </para>
+________________________________________________________-->
+  <para>
+<programlisting>
+void
+EndSampleScan (SampleScanState *node);
+</programlisting>
+
+   结束扫描并且释放资源。释放 palloc 过的内存通常并不重要，但是任何外部
+   可见的资源应该被清除。在没有这类资源存在的通常情况下，这个函数可以被
+   省略（设置指针为 NULL）。
+  </para>
+<!-- pgdoc-cn_end sig_en=b270f092b420c7be79345c41c12e18ae -->
+
+ </sect1>
+
+</chapter>

@@ -1,0 +1,707 @@
+<!-- doc/src/sgml/xtypes.sgml -->
+
+ <sect1 id="xtypes">
+<!-- pgdoc-cn_start sig_en=ff62960f648f6901a2afbf7303095c94 sig_cn_org=None source=14.1 
+  <title>User-Defined Types</title>
+________________________________________________________-->
+  <title>用户定义的类型</title>
+<!-- pgdoc-cn_end sig_en=ff62960f648f6901a2afbf7303095c94 -->
+
+<!-- pgdoc-cn_start sig_en=7ed1adb16ef8ad05eae2daa92068b37b sig_cn_org=None source=14.1 
+  <indexterm zone="xtypes">
+   <primary>data type</primary>
+   <secondary>user-defined</secondary>
+  </indexterm>
+________________________________________________________-->
+  <indexterm zone="xtypes">
+   <primary>数据类型</primary>
+   <secondary>用户定义的</secondary>
+  </indexterm>
+<!-- pgdoc-cn_end sig_en=7ed1adb16ef8ad05eae2daa92068b37b -->
+
+<!-- pgdoc-cn_start sig_en=b18d6acd29281bc60b5dde3d857b5742 sig_cn_org=None source=14.1 
+  <para>
+   As described in <xref linkend="extend-type-system"/>,
+   <productname>PostgreSQL</productname> can be extended to support new
+   data types.  This section describes how to define new base types,
+   which are data types defined below the level of the <acronym>SQL</acronym>
+   language.  Creating a new base type requires implementing functions
+   to operate on the type in a low-level language, usually C.
+  </para>
+________________________________________________________-->
+  <para>
+   如<xref linkend="extend-type-system"/>中所述，
+   <productname>PostgreSQL</productname>能够被扩展成支持新的数据类型。这一节描述了如何定义新的基本类型，它们是被定义在<acronym>SQL</acronym>语言层面之下的数据类型。创建一种新的基本类型要求使用低层语言（通常是 C）实现在该类型上操作的函数。
+  </para>
+<!-- pgdoc-cn_end sig_en=b18d6acd29281bc60b5dde3d857b5742 -->
+
+<!-- pgdoc-cn_start sig_en=f22408dba1cb3b26ce34a4848154d332 sig_cn_org=None source=14.1 
+  <para>
+   The examples in this section can be found in
+   <filename>complex.sql</filename> and <filename>complex.c</filename>
+   in the <filename>src/tutorial</filename> directory of the source distribution.
+   See the <filename>README</filename> file in that directory for instructions
+   about running the examples.
+  </para>
+________________________________________________________-->
+  <para>
+   这一节中的例子可以在源代码<filename>src/tutorial</filename>目录下的<filename>complex.sql</filename>和<filename>complex.c</filename>中找到。运行这些例子的指令可以在该目录的<filename>README</filename>文件中找到。
+  </para>
+<!-- pgdoc-cn_end sig_en=f22408dba1cb3b26ce34a4848154d332 -->
+
+<!-- pgdoc-cn_start sig_en=3b229f912961554e351777831ab04e92 sig_cn_org=None source=14.1 
+ <para>
+  <indexterm>
+   <primary>input function</primary>
+  </indexterm>
+  <indexterm>
+   <primary>output function</primary>
+  </indexterm>
+  A user-defined type must always have input and output functions.
+  These functions determine how the type appears in strings (for input
+  by the user and output to the user) and how the type is organized in
+  memory.  The input function takes a null-terminated character string
+  as its argument and returns the internal (in memory) representation
+  of the type.  The output function takes the internal representation
+  of the type as argument and returns a null-terminated character
+  string.  If we want to do anything more with the type than merely
+  store it, we must provide additional functions to implement whatever
+  operations we'd like to have for the type.
+ </para>
+________________________________________________________-->
+ <para>
+  <indexterm>
+   <primary>输入函数</primary>
+  </indexterm>
+  <indexterm>
+   <primary>输出函数</primary>
+  </indexterm>
+  一种用户定义的类型必须总是具有输入和输出函数。这些函数决定该类型如何出现在字符串中（用于用户输入或者对用户的输出）以及如何在内存中组织该类型。输入函数采用一个空终止的字符串作为它的参数并且返回该类型的内部（内存）表达。输出函数采用该类型的内部表达作为参数并且返回一个空终止的字符串。如果我们想要对该类型做更多事情而不是只存储它，我们必须提供为我们想要的任何操作提供额外的实现函数。
+ </para>
+<!-- pgdoc-cn_end sig_en=3b229f912961554e351777831ab04e92 -->
+
+<!-- pgdoc-cn_start sig_en=be06865daf29ee2da87e83327e6ba584 sig_cn_org=None source=14.1 
+ <para>
+  Suppose we want to define a type <type>complex</type> that represents
+  complex numbers. A natural way to represent a complex number in
+  memory would be the following C structure:
+
+<programlisting>
+typedef struct Complex {
+    double      x;
+    double      y;
+} Complex;
+</programlisting>
+
+  We will need to make this a pass-by-reference type, since it's too
+  large to fit into a single <type>Datum</type> value.
+ </para>
+________________________________________________________-->
+ <para>
+  假设我们想要定义一种类型<type>complex</type>，它表示复数。一种在内存中表达复数的自然的方法是下面的 C 结构：
+
+<programlisting>
+typedef struct Complex {
+    double      x;
+    double      y;
+} Complex;
+</programlisting>
+
+  我们将需要让它成为一种传引用类型，因为它没办法放到一个单一的<type>Datum</type>值中。
+ </para>
+<!-- pgdoc-cn_end sig_en=be06865daf29ee2da87e83327e6ba584 -->
+
+<!-- pgdoc-cn_start sig_en=13c4efb12137c2a8b86756ba93e50b09 sig_cn_org=None source=14.1 
+ <para>
+  As the external string representation of the type, we choose a
+  string of the form <literal>(x,y)</literal>.
+ </para>
+________________________________________________________-->
+ <para>
+  至于该类型的外部字符串表达，我们选择了一种字符串形式的<literal>(x,y)</literal>。
+ </para>
+<!-- pgdoc-cn_end sig_en=13c4efb12137c2a8b86756ba93e50b09 -->
+
+<!-- pgdoc-cn_start sig_en=e4ae012774673b7cb51e0a888dd9db38 sig_cn_org=None source=14.1 
+ <para>
+  The input and output functions are usually not hard to write,
+  especially the output function.  But when defining the external
+  string representation of the type, remember that you must eventually
+  write a complete and robust parser for that representation as your
+  input function.  For instance:
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_in);
+
+Datum
+complex_in(PG_FUNCTION_ARGS)
+{
+    char       *str = PG_GETARG_CSTRING(0);
+    double      x,
+                y;
+    Complex    *result;
+
+    if (sscanf(str, " ( %lf , %lf )", &x, &y) != 2)
+        ereport(ERROR,
+                (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                 errmsg("invalid input syntax for type %s: \"%s\"",
+                        "complex", str)));
+
+    result = (Complex *) palloc(sizeof(Complex));
+    result->x = x;
+    result->y = y;
+    PG_RETURN_POINTER(result);
+}
+]]>
+</programlisting>
+
+  The output function can simply be:
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_out);
+
+Datum
+complex_out(PG_FUNCTION_ARGS)
+{
+    Complex    *complex = (Complex *) PG_GETARG_POINTER(0);
+    char       *result;
+
+    result = psprintf("(%g,%g)", complex->x, complex->y);
+    PG_RETURN_CSTRING(result);
+}
+]]>
+</programlisting>
+ </para>
+________________________________________________________-->
+ <para>
+  输入和输出函数通常并不难编写，特别是输出函数。但是在定义类型的外部字符串表达时，记住你必须最终为该表达编写一个完整并且鲁棒的解析器作为你的输入函数。例如：
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_in);
+
+Datum
+complex_in(PG_FUNCTION_ARGS)
+{
+    char       *str = PG_GETARG_CSTRING(0);
+    double      x,
+                y;
+    Complex    *result;
+
+    if (sscanf(str, " ( %lf , %lf )", &x, &y) != 2)
+        ereport(ERROR,
+                (errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                 errmsg("invalid input syntax for type %s: \"%s\"",
+                        "complex", str)));
+
+    result = (Complex *) palloc(sizeof(Complex));
+    result->x = x;
+    result->y = y;
+    PG_RETURN_POINTER(result);
+}
+]]>
+</programlisting>
+
+  输出函数可以简单地写作：
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_out);
+
+Datum
+complex_out(PG_FUNCTION_ARGS)
+{
+    Complex    *complex = (Complex *) PG_GETARG_POINTER(0);
+    char       *result;
+
+    result = psprintf("(%g,%g)", complex->x, complex->y);
+    PG_RETURN_CSTRING(result);
+}
+]]>
+</programlisting>
+ </para>
+<!-- pgdoc-cn_end sig_en=e4ae012774673b7cb51e0a888dd9db38 -->
+
+<!-- pgdoc-cn_start sig_en=f08129b7c9dcbeae501ab79a248c0413 sig_cn_org=None source=14.1 
+ <para>
+  You should be careful to make the input and output functions inverses of
+  each other.  If you do not, you will have severe problems when you
+  need to dump your data into a file and then read it back in.  This
+  is a particularly common problem when floating-point numbers are
+  involved.
+ </para>
+________________________________________________________-->
+ <para>
+  你应当让输入和输出函数互为彼此的逆函数。如果不这样做，当你需要把数据转储到一个文件并且以后将它重新读入时会遇到很严重的问题。在涉及到浮点数时这是一个特别常见的问题。
+ </para>
+<!-- pgdoc-cn_end sig_en=f08129b7c9dcbeae501ab79a248c0413 -->
+
+<!-- pgdoc-cn_start sig_en=f55ae87474078c3ff8b43a887e951338 sig_cn_org=None source=14.1 
+ <para>
+  Optionally, a user-defined type can provide binary input and output
+  routines.  Binary I/O is normally faster but less portable than textual
+  I/O.  As with textual I/O, it is up to you to define exactly what the
+  external binary representation is.  Most of the built-in data types
+  try to provide a machine-independent binary representation.  For
+  <type>complex</type>, we will piggy-back on the binary I/O converters
+  for type <type>float8</type>:
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_recv);
+
+Datum
+complex_recv(PG_FUNCTION_ARGS)
+{
+    StringInfo  buf = (StringInfo) PG_GETARG_POINTER(0);
+    Complex    *result;
+
+    result = (Complex *) palloc(sizeof(Complex));
+    result->x = pq_getmsgfloat8(buf);
+    result->y = pq_getmsgfloat8(buf);
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(complex_send);
+
+Datum
+complex_send(PG_FUNCTION_ARGS)
+{
+    Complex    *complex = (Complex *) PG_GETARG_POINTER(0);
+    StringInfoData buf;
+
+    pq_begintypsend(&buf);
+    pq_sendfloat8(&buf, complex->x);
+    pq_sendfloat8(&buf, complex->y);
+    PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
+}
+]]>
+</programlisting>
+ </para>
+________________________________________________________-->
+ <para>
+  可选地，一种用户定义的类型可以提供二进制输入和输出例程。二进制 I/O 通常比文本 I/O 更快但是可移植性更差。与文本 I/O 一样，定义准确的外部二进制表达是你需要负责的工作。大部分的内建数据类型都尝试提供一种不依赖机器的二进制表达。对于<type>complex</type>，我们的工作将建立在为类型<type>float8</type>提供的二进制 I/O 转换器上：
+
+<programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(complex_recv);
+
+Datum
+complex_recv(PG_FUNCTION_ARGS)
+{
+    StringInfo  buf = (StringInfo) PG_GETARG_POINTER(0);
+    Complex    *result;
+
+    result = (Complex *) palloc(sizeof(Complex));
+    result->x = pq_getmsgfloat8(buf);
+    result->y = pq_getmsgfloat8(buf);
+    PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(complex_send);
+
+Datum
+complex_send(PG_FUNCTION_ARGS)
+{
+    Complex    *complex = (Complex *) PG_GETARG_POINTER(0);
+    StringInfoData buf;
+
+    pq_begintypsend(&buf);
+    pq_sendfloat8(&buf, complex->x);
+    pq_sendfloat8(&buf, complex->y);
+    PG_RETURN_BYTEA_P(pq_endtypsend(&buf));
+}
+]]>
+</programlisting>
+ </para>
+<!-- pgdoc-cn_end sig_en=f55ae87474078c3ff8b43a887e951338 -->
+
+<!-- pgdoc-cn_start sig_en=e6998d367e41eec06d9de45bb0858c3f sig_cn_org=None source=14.1 
+ <para>
+  Once we have written the I/O functions and compiled them into a shared
+  library, we can define the <type>complex</type> type in SQL.
+  First we declare it as a shell type:
+
+<programlisting>
+CREATE TYPE complex;
+</programlisting>
+
+  This serves as a placeholder that allows us to reference the type while
+  defining its I/O functions.  Now we can define the I/O functions:
+
+<programlisting>
+CREATE FUNCTION complex_in(cstring)
+    RETURNS complex
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION complex_out(complex)
+    RETURNS cstring
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION complex_recv(internal)
+   RETURNS complex
+   AS '<replaceable>filename</replaceable>'
+   LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION complex_send(complex)
+   RETURNS bytea
+   AS '<replaceable>filename</replaceable>'
+   LANGUAGE C IMMUTABLE STRICT;
+</programlisting>
+ </para>
+________________________________________________________-->
+ <para>
+  一旦我们编写了 I/O 函数并且把它们编译到了一个共享库中，我们就可以在 SQL 中定义<type>complex</type>类型。首先我们把它声明为一种 shell 类型：
+
+<programlisting>
+CREATE TYPE complex;
+</programlisting>
+
+  这个语句的作用是为要定义的类型创建了一个占位符，这样允许我们在定义其 I/O 函数时引用该类型。现在我们可以定义 I/O 函数：
+
+<programlisting>
+CREATE FUNCTION complex_in(cstring)
+    RETURNS complex
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION complex_out(complex)
+    RETURNS cstring
+    AS '<replaceable>filename</replaceable>'
+    LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION complex_recv(internal)
+   RETURNS complex
+   AS '<replaceable>filename</replaceable>'
+   LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION complex_send(complex)
+   RETURNS bytea
+   AS '<replaceable>filename</replaceable>'
+   LANGUAGE C IMMUTABLE STRICT;
+</programlisting>
+ </para>
+<!-- pgdoc-cn_end sig_en=e6998d367e41eec06d9de45bb0858c3f -->
+
+<!-- pgdoc-cn_start sig_en=2d3f7a86378645fbdddcf0bc273ae080 sig_cn_org=None source=14.1 
+ <para>
+  Finally, we can provide the full definition of the data type:
+<programlisting>
+CREATE TYPE complex (
+   internallength = 16,
+   input = complex_in,
+   output = complex_out,
+   receive = complex_recv,
+   send = complex_send,
+   alignment = double
+);
+</programlisting>
+ </para>
+________________________________________________________-->
+ <para>
+  最后，我们可以提供该数据类型的完整定义：
+<programlisting>
+CREATE TYPE complex (
+   internallength = 16,
+   input = complex_in,
+   output = complex_out,
+   receive = complex_recv,
+   send = complex_send,
+   alignment = double
+);
+</programlisting>
+ </para>
+<!-- pgdoc-cn_end sig_en=2d3f7a86378645fbdddcf0bc273ae080 -->
+
+<!-- pgdoc-cn_start sig_en=08ac893342349ffe8a9068657ee4f8c2 sig_cn_org=None source=14.1 
+ <para>
+  <indexterm>
+    <primary>array</primary>
+    <secondary>of user-defined type</secondary>
+  </indexterm>
+  When you define a new base type,
+  <productname>PostgreSQL</productname> automatically provides support
+  for arrays of that type.  The array type typically
+  has the same name as the base type with the underscore character
+  (<literal>_</literal>) prepended.
+ </para>
+________________________________________________________-->
+ <para>
+  <indexterm>
+    <primary>数组</primary>
+    <secondary>用户定义类型的</secondary>
+  </indexterm>
+  在定义了一种新的基本类型后，
+  <productname>PostgreSQL</productname>会自动提供对这种类型的数组支持。数组类型通常具有和基本类型相同的名称以及一个前置的下划线字符（<literal>_</literal>）。
+ </para>
+<!-- pgdoc-cn_end sig_en=08ac893342349ffe8a9068657ee4f8c2 -->
+
+<!-- pgdoc-cn_start sig_en=8863d790b843fdc803de895f4d8fe8e3 sig_cn_org=None source=14.1 
+ <para>
+  Once the data type exists, we can declare additional functions to
+  provide useful operations on the data type.  Operators can then be
+  defined atop the functions, and if needed, operator classes can be
+  created to support indexing of the data type.  These additional
+  layers are discussed in following sections.
+ </para>
+________________________________________________________-->
+ <para>
+  一旦数据类型存在，我们就能够声明额外的函数来提供在该数据类型上有用的操作。然后可以在函数之上定义操作符，并且如果需要，可以创建操作符类来支持对该数据类型进行索引。这些额外的内容会在下面的小节中讨论。
+ </para>
+<!-- pgdoc-cn_end sig_en=8863d790b843fdc803de895f4d8fe8e3 -->
+
+<!-- pgdoc-cn_start sig_en=b71f28c4c119d8201b99a030d80e2fee sig_cn_org=None source=14.1 
+ <para>
+  If the internal representation of the data type is variable-length, the
+  internal representation must follow the standard layout for variable-length
+  data: the first four bytes must be a <type>char[4]</type> field which is
+  never accessed directly (customarily named <structfield>vl_len_</structfield>). You
+  must use the <function>SET_VARSIZE()</function> macro to store the total
+  size of the datum (including the length field itself) in this field
+  and <function>VARSIZE()</function> to retrieve it.  (These macros exist
+  because the length field may be encoded depending on platform.)
+ </para>
+________________________________________________________-->
+ <para>
+   如果数据类型的内部表达是可变长的，则内部表达必须遵循可变长数据的标准布局：
+   头四个字节必须是一个<type>char[4]</type>域，它从来不会被直接访问（通常
+   被称为<structfield>vl_len_</structfield>）。你必须使用<function>SET_VARSIZE()</function>
+   宏在这个域中存储整个数据的尺寸（包括长度域本身），并且使用
+   <function>VARSIZE()</function>来检索它（这些宏之所以存在，是因为长度域
+   可能会根据平台来进行解码）。
+ </para>
+<!-- pgdoc-cn_end sig_en=b71f28c4c119d8201b99a030d80e2fee -->
+
+<!-- pgdoc-cn_start sig_en=b19e45fbe035d56cbace45dc696c9ccd sig_cn_org=None source=14.1 
+ <para>
+  For further details see the description of the
+  <xref linkend="sql-createtype"/> command.
+ </para>
+________________________________________________________-->
+ <para>
+  更多细节请见<xref linkend="sql-createtype"/>命令的描述。
+ </para>
+<!-- pgdoc-cn_end sig_en=b19e45fbe035d56cbace45dc696c9ccd -->
+
+ <sect2 id="xtypes-toast">
+<!-- pgdoc-cn_start sig_en=9dc592e295ced578b7aa25b3d02d5976 sig_cn_org=None source=14.1 
+  <title>TOAST Considerations</title>
+________________________________________________________-->
+  <title>TOAST 考量</title>
+<!-- pgdoc-cn_end sig_en=9dc592e295ced578b7aa25b3d02d5976 -->
+<!-- pgdoc-cn_start sig_en=4419ca41bb03d5d949108abdbe0c2cb4 sig_cn_org=None source=14.1 
+   <indexterm>
+    <primary>TOAST</primary>
+    <secondary>and user-defined types</secondary>
+   </indexterm>
+________________________________________________________-->
+   <indexterm>
+    <primary>TOAST</primary>
+    <secondary>以及用户定义的类型</secondary>
+   </indexterm>
+<!-- pgdoc-cn_end sig_en=4419ca41bb03d5d949108abdbe0c2cb4 -->
+
+<!-- pgdoc-cn_start sig_en=5774d210a1cf1134a654bdd7f918e0c2 sig_cn_org=None source=14.1 
+ <para>
+  If the values of your data type vary in size (in internal form), it's
+  usually desirable to make the data type <acronym>TOAST</acronym>-able (see <xref
+  linkend="storage-toast"/>). You should do this even if the values are always
+  too small to be compressed or stored externally, because
+  <acronym>TOAST</acronym> can save space on small data too, by reducing header
+  overhead.
+ </para>
+________________________________________________________-->
+ <para>
+  如果你的数据类型值的尺寸（内部形式）是可变的，更适合让该数据类型变成可
+  <acronym>TOAST</acronym>的（见<xref linkend="storage-toast"/>）。即便值总是很小不会被压缩或者线外存储你也应该
+  这样做，因为<acronym>TOAST</acronym>也能通过减少头部负荷来为小数据减少空间。
+ </para>
+<!-- pgdoc-cn_end sig_en=5774d210a1cf1134a654bdd7f918e0c2 -->
+
+<!-- pgdoc-cn_start sig_en=ec081de7530d51f4ff7d6a6b5652be62 sig_cn_org=None source=14.1 
+ <para>
+  To support <acronym>TOAST</acronym> storage, the C functions operating on the data
+  type must always be careful to unpack any toasted values they are handed
+  by using <function>PG_DETOAST_DATUM</function>.  (This detail is customarily hidden
+  by defining type-specific <function>GETARG_DATATYPE_P</function> macros.)
+  Then, when running the <command>CREATE TYPE</command> command, specify the
+  internal length as <literal>variable</literal> and select some appropriate storage
+  option other than <literal>plain</literal>.
+ </para>
+________________________________________________________-->
+ <para>
+  为了支持<acronym>TOAST</acronym>存储，在该数据类型上操作的 C 函数必须总是要使用<function>PG_DETOAST_DATUM</function>解包任何交给它们的被 TOAST 过的值（习惯上这些细节都通过定义类型相关的<function>GETARG_DATATYPE_P</function>宏隐藏起来）。然后，在运行<command>CREATE TYPE</command>命令时，指定内部长度为<literal>variable</literal>并且选择某个不是<literal>plain</literal>的适当的存储选项。
+ </para>
+<!-- pgdoc-cn_end sig_en=ec081de7530d51f4ff7d6a6b5652be62 -->
+
+<!-- pgdoc-cn_start sig_en=0ba6c9b01133efcf6df46a7cf6fecec2 sig_cn_org=None source=14.1 
+ <para>
+  If data alignment is unimportant (either just for a specific function or
+  because the data type specifies byte alignment anyway) then it's possible
+  to avoid some of the overhead of <function>PG_DETOAST_DATUM</function>. You can use
+  <function>PG_DETOAST_DATUM_PACKED</function> instead (customarily hidden by
+  defining a <function>GETARG_DATATYPE_PP</function> macro) and using the macros
+  <function>VARSIZE_ANY_EXHDR</function> and <function>VARDATA_ANY</function> to access
+  a potentially-packed datum.
+  Again, the data returned by these macros is not aligned even if the data
+  type definition specifies an alignment. If the alignment is important you
+  must go through the regular <function>PG_DETOAST_DATUM</function> interface.
+ </para>
+________________________________________________________-->
+ <para>
+  如果数据对齐无关紧要（不管是为一个特定函数或者因为数据类型指定了字节对齐），那么有可能避免<function>PG_DETOAST_DATUM</function>的一些开销。你可以转而使用<function>PG_DETOAST_DATUM_PACKED</function>（习惯上通过定义一个<function>GETARG_DATATYPE_PP</function>宏隐藏）并且使用宏<function>VARSIZE_ANY_EXHDR</function>以及<function>VARDATA_ANY</function>来访问一个可能包装过的数据。此外，即使数据类型定义指定了一种对齐方式，这些宏返回的数据也不是对齐过的。如果对齐对你很重要，你必须使用常规的<function>PG_DETOAST_DATUM</function>接口。
+ </para>
+<!-- pgdoc-cn_end sig_en=0ba6c9b01133efcf6df46a7cf6fecec2 -->
+
+ <note>
+<!-- pgdoc-cn_start sig_en=e5ff146ef8118be4c698ed7e5d4eb593 sig_cn_org=None source=14.1 
+  <para>
+   Older code frequently declares <structfield>vl_len_</structfield> as an
+   <type>int32</type> field instead of <type>char[4]</type>.  This is OK as long as
+   the struct definition has other fields that have at least <type>int32</type>
+   alignment.  But it is dangerous to use such a struct definition when
+   working with a potentially unaligned datum; the compiler may take it as
+   license to assume the datum actually is aligned, leading to core dumps on
+   architectures that are strict about alignment.
+  </para>
+________________________________________________________-->
+  <para>
+   老的代码经常声明<structfield>vl_len_</structfield>为一个<type>int32</type>域而不是<type>char[4]</type>。只要结构定义含有其他具有至少<type>int32</type>对齐的域，这就是 OK 的。但是在使用可能未对齐的数据时，使用这样一种结构定义就是危险的，编译器可能会把它当作一个授权来假定数据实际上已经被对齐，在对于对齐很严格的架构上会导致核心转储。
+  </para>
+<!-- pgdoc-cn_end sig_en=e5ff146ef8118be4c698ed7e5d4eb593 -->
+ </note>
+
+<!-- pgdoc-cn_start sig_en=52788e2906226a6288d270e002abe4de sig_cn_org=None source=14.1 
+ <para>
+  Another feature that's enabled by <acronym>TOAST</acronym> support is the
+  possibility of having an <firstterm>expanded</firstterm> in-memory data
+  representation that is more convenient to work with than the format that
+  is stored on disk.  The regular or <quote>flat</quote> varlena storage format
+  is ultimately just a blob of bytes; it cannot for example contain
+  pointers, since it may get copied to other locations in memory.
+  For complex data types, the flat format may be quite expensive to work
+  with, so <productname>PostgreSQL</productname> provides a way to <quote>expand</quote>
+  the flat format into a representation that is more suited to computation,
+  and then pass that format in-memory between functions of the data type.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>TOAST</acronym>支持带来的另一个特性是能够拥有一种
+  <firstterm>扩展</firstterm>内存中数据表达，它比存储在磁盘上的格式使用起来更方便。
+  常规的或者<quote>扁平的</quote> varlena 存储格式最终只是一堆字节，它不能包含
+  指针，因为它可能会被复制到内存中的其他位置。对于复杂数据类型，扁平格式使
+  用起来可能代价更高，因此<productname>PostgreSQL</productname>提供了一种方式把
+  扁平格式<quote>扩展</quote>成更适合计算的一种表达，然后在该数据类型的函数之
+  间传递这种在内存中的格式。
+ </para>
+<!-- pgdoc-cn_end sig_en=52788e2906226a6288d270e002abe4de -->
+
+<!-- pgdoc-cn_start sig_en=2caba6a2cf60c3c18671ae0016da271d sig_cn_org=None source=14.1 
+ <para>
+  To use expanded storage, a data type must define an expanded format that
+  follows the rules given in <filename>src/include/utils/expandeddatum.h</filename>,
+  and provide functions to <quote>expand</quote> a flat varlena value into
+  expanded format and <quote>flatten</quote> the expanded format back to the
+  regular varlena representation.  Then ensure that all C functions for
+  the data type can accept either representation, possibly by converting
+  one into the other immediately upon receipt.  This does not require fixing
+  all existing functions for the data type at once, because the standard
+  <function>PG_DETOAST_DATUM</function> macro is defined to convert expanded inputs
+  into regular flat format.  Therefore, existing functions that work with
+  the flat varlena format will continue to work, though slightly
+  inefficiently, with expanded inputs; they need not be converted until and
+  unless better performance is important.
+ </para>
+________________________________________________________-->
+ <para>
+  要使用扩展存储，数据类型必须遵循<filename>src/include/utils/expandeddatum.h</filename>
+  中给定的规则定义一种扩展的格式，并且提供函数把扁平的 varlena 值<quote>扩展</quote>
+  到该格式以及从该格式<quote>扁平化</quote>回常规的 varlena 表达。然后确保所有该
+  数据类型的 C 函数都能接受这两种表达（可能通过一接收到其中一种就立刻
+  转换成另一种来做到）。这不要求一次性修改所有该数据类型的现有函数，
+  因为标准的<function>PG_DETOAST_DATUM</function>宏可以把扩展输入转换
+  成常规扁平格式。因此，现有的用于扁平 varlena 格式的函数仍然能够用于
+  扩展输入（虽然效率略低）。它不需要被转换，直到需要提高性能。
+ </para>
+<!-- pgdoc-cn_end sig_en=2caba6a2cf60c3c18671ae0016da271d -->
+
+<!-- pgdoc-cn_start sig_en=740f935d3e1d6b6b16d9e2144468e871 sig_cn_org=None source=14.1 
+ <para>
+  C functions that know how to work with an expanded representation
+  typically fall into two categories: those that can only handle expanded
+  format, and those that can handle either expanded or flat varlena inputs.
+  The former are easier to write but may be less efficient overall, because
+  converting a flat input to expanded form for use by a single function may
+  cost more than is saved by operating on the expanded format.
+  When only expanded format need be handled, conversion of flat inputs to
+  expanded form can be hidden inside an argument-fetching macro, so that
+  the function appears no more complex than one working with traditional
+  varlena input.
+  To handle both types of input, write an argument-fetching function that
+  will detoast external, short-header, and compressed varlena inputs, but
+  not expanded inputs.  Such a function can be defined as returning a
+  pointer to a union of the flat varlena format and the expanded format.
+  Callers can use the <function>VARATT_IS_EXPANDED_HEADER()</function> macro to
+  determine which format they received.
+ </para>
+________________________________________________________-->
+ <para>
+  直到如何对付扩展表达的 C 函数通常分为两类：只能处理扩展格式的，以及
+  能同时处理扩展或扁平 varlena 输入的。前者更容易编写，但是可能总体效率
+  较低，因为由单个函数将一种扁平输入转换为扩展的形式的开销可能会超过在
+  扩展格式上操作所节省的开销。在只需要处理扩展格式时，可以把扁平输入到
+  扩展形式的转换隐藏在一个参数获取宏中，这样该函数就显得不比处理传统
+  varlena 输入的函数更复杂了。要处理两种类型的输入，需要编写一个参数获取
+  函数来反 TOAST 外部、短头部以及压缩的 varlena 输入，但不需要处理扩展
+  输入。这样一个函数可以被定义为返回一个指向由扁平 varlena 格式和扩展
+  格式组成的联合的指针。调用者可以使用
+  <function>VARATT_IS_EXPANDED_HEADER()</function>宏来判断它们接收到的
+  是哪种格式。
+ </para>
+<!-- pgdoc-cn_end sig_en=740f935d3e1d6b6b16d9e2144468e871 -->
+
+<!-- pgdoc-cn_start sig_en=5e0f5589af59d57b2a6252c558818736 sig_cn_org=None source=14.1 
+ <para>
+  The <acronym>TOAST</acronym> infrastructure not only allows regular varlena
+  values to be distinguished from expanded values, but also
+  distinguishes <quote>read-write</quote> and <quote>read-only</quote> pointers to
+  expanded values.  C functions that only need to examine an expanded
+  value, or will only change it in safe and non-semantically-visible ways,
+  need not care which type of pointer they receive.  C functions that
+  produce a modified version of an input value are allowed to modify an
+  expanded input value in-place if they receive a read-write pointer, but
+  must not modify the input if they receive a read-only pointer; in that
+  case they have to copy the value first, producing a new value to modify.
+  A C function that has constructed a new expanded value should always
+  return a read-write pointer to it.  Also, a C function that is modifying
+  a read-write expanded value in-place should take care to leave the value
+  in a sane state if it fails partway through.
+ </para>
+________________________________________________________-->
+ <para>
+  <acronym>TOAST</acronym>机制不仅允许把常规 varlena 值同扩展值区分开来，
+  还能区分指向扩展值的<quote>read-write</quote>和<quote>read-only</quote>
+  指针。只需要检查扩展值或者只会以安全的并且非语义可见的方式更改扩展
+  值的 C 函数不需要关心它们收到的是哪种类型的指针。如果收到一个读写
+  指针，要为输入值产生一个修改版本的 C 函数将被允许就地修改该扩展输入
+  值，但是如果它们收到的是一个只读指针则不能修改，在这种情况下它们不
+  得不先复制该值产生一个用于修改的新值。构建了新扩展值的 C 函数应该总
+  是返回一个指向该值的读写指针。还有，如果一个就地修改读写扩展值的 C
+  函数中途失败，它应该负责让该值处于一种正常的状态。
+ </para>
+<!-- pgdoc-cn_end sig_en=5e0f5589af59d57b2a6252c558818736 -->
+
+<!-- pgdoc-cn_start sig_en=dc50c0725b98008b395bd6c782c272f7 sig_cn_org=None source=14.1 
+ <para>
+  For examples of working with expanded values, see the standard array
+  infrastructure, particularly
+  <filename>src/backend/utils/adt/array_expanded.c</filename>.
+ </para>
+________________________________________________________-->
+ <para>
+  有关使用扩展值的例子，请见标准数组这种基础结构，特别是
+  <filename>src/backend/utils/adt/array_expanded.c</filename>。
+ </para>
+<!-- pgdoc-cn_end sig_en=dc50c0725b98008b395bd6c782c272f7 -->
+
+ </sect2>
+
+</sect1>
