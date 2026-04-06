@@ -34,7 +34,7 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-   <productname>PostgreSQL</productname>能设计出利用多 CPU 让查询更快的查询计划。这种特性被称为并行查询。由于现有实现的限制或者因为没有比连续查询计划更快的查询计划存在，很多查询并不能从并行查询获益。不过，对于那些可以从并行查询获益的查询来说，并行查询带来的速度提升是显著的。很多查询在使用并行查询时比之前快了超过两倍，有些查询是以前的四倍甚至更多的倍数。那些访问大量数据但只返回其中少数行给用户的查询最能从并行查询中获益。这一章介绍一些并行查询如何工作的细节以及哪些情况下可以使用并行查询，这样希望充分利用并行查询的用户可以理解他们能从并行查询得到什么。
+   <productname>PostgreSQL</productname>能设计出利用多个 CPU 让查询更快的查询计划。这种特性被称为并行查询。由于现有实现的限制或者因为没有比串行查询计划更快的查询计划存在，很多查询并不能从并行查询获益。不过，对于那些可以从并行查询获益的查询来说，并行查询带来的速度提升是显著的。很多查询在使用并行查询时比之前快了超过两倍，有些查询是以前的四倍甚至更多的倍数。那些访问大量数据但只返回其中少数行给用户的查询最能从并行查询中获益。这一章介绍一些并行查询如何工作的细节以及哪些情况下可以使用并行查询，这样希望充分利用并行查询的用户可以理解他们能从并行查询得到什么。
   </para>
 <!-- pgdoc-cn_end sig_en=51e24db21753ec85a58e21b6c9dd6d88 -->
 
@@ -95,7 +95,7 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
    </para>
 ________________________________________________________-->
    <para>
-    在所有的情形下，<literal>Gather</literal>或<firstterm>Gather Merge</firstterm>节点都只有一个子计划，它是将被并行执行的计划的一部分。如果<literal>Gather</literal>或<firstterm>Gather Merge</firstterm>节点位于计划树的最顶层，那么整个查询将并行执行。如果它位于计划树的其他位置，那么只有查询中在它之下的那一部分会并行执行。在上面的例子中，查询只访问了一个表，因此除<literal>Gather</literal>节点本身之外只有一个计划节点。因为该计划节点是<literal>Gather</literal>节点的孩子节点，所以它会并行执行。
+    在所有的情形下，<literal>Gather</literal>或<literal>Gather Merge</literal>节点都只有一个子计划，它是将被并行执行的计划的一部分。如果<literal>Gather</literal>或<literal>Gather Merge</literal>节点位于计划树的最顶层，那么整个查询将并行执行。如果它位于计划树的其他位置，那么只有查询中在它之下的那一部分会并行执行。在上面的例子中，查询只访问了一个表，因此除<literal>Gather</literal>节点本身之外只有一个计划节点。因为该计划节点是<literal>Gather</literal>节点的子节点，所以它会并行执行。
    </para>
 <!-- pgdoc-cn_end sig_en=e37d68961a728479c77d478ea85f30f7 -->
 
@@ -123,7 +123,7 @@ ________________________________________________________-->
    </para>
 ________________________________________________________-->
    <para>
-    <link linkend="using-explain">使用 EXPLAIN</link>命令, 你能看到规划器选择的工作者数量。当查询执行期间到达<literal>Gather</literal>节点时，实现用户会话的进程将会请求和规划器选中的工作者数量一样多的<link linkend="bgworker">后台工作者进程</link> 。规划器将考虑使用的后台工作者的数量被限制为最多<xref linkend="guc-max-parallel-workers-per-gather"/>个。任何时候能够存在的后台工作者进程的总数由<xref linkend="guc-max-worker-processes"/>和<xref linkend="guc-max-parallel-workers"/>限制。因此，一个并行查询可能会使用比规划中少的工作者来运行，甚至有可能根本不使用工作者。最优的计划可能取决于可用的工作者的数量，因此这可能会导致不好的查询性能。如果这种情况经常发生，那么就应当考虑一下提高<varname>max_worker_processes</varname>和<varname>max_parallel_workers</varname>的值，这样更多的工作者可以同时运行；或者降低<varname>max_parallel_workers_per_gather</varname>，这样规划器会要求少一些的工作者。
+    <link linkend="using-explain">使用 EXPLAIN</link>命令, 你能看到规划器选择的工作者数量。当查询执行期间到达<literal>Gather</literal>节点时，实现用户会话的进程将会请求和规划器选中的工作者数量一样多的<link linkend="bgworker">后台工作者进程</link>。规划器将考虑使用的后台工作者的数量被限制为最多<xref linkend="guc-max-parallel-workers-per-gather"/>个。任何时候能够存在的后台工作者进程的总数由<xref linkend="guc-max-worker-processes"/>和<xref linkend="guc-max-parallel-workers"/>限制。因此，一个并行查询可能会使用比规划中少的工作者来运行，甚至有可能根本不使用工作者。最优的计划可能取决于可用的工作者的数量，因此这可能会导致不好的查询性能。如果这种情况经常发生，那么就应当考虑一下提高<varname>max_worker_processes</varname>和<varname>max_parallel_workers</varname>的值，这样更多的工作者可以同时运行；或者降低<varname>max_parallel_workers_per_gather</varname>，这样规划器会要求少一些的工作者。
    </para>
 <!-- pgdoc-cn_end sig_en=ce2ec6a659560adc838bc25dbee0e0a1 -->
 
@@ -170,7 +170,7 @@ ________________________________________________________-->
 <!-- pgdoc-cn_start sig_en=3f4541af625878a74bd4d83ddbb44012 sig_cn_org=None source=14.1 
   <title>When Can Parallel Query Be Used?</title>
 ________________________________________________________-->
-  <title>何时会用到并行查询？</title>
+  <title>何时可以使用并行查询？</title>
 <!-- pgdoc-cn_end sig_en=3f4541af625878a74bd4d83ddbb44012 -->
 
 <!-- pgdoc-cn_start sig_en=6358e71a827bc191c786ac86661e3a47 sig_cn_org=None source=14.1 
@@ -254,8 +254,8 @@ ________________________________________________________-->
         </itemizedlist>
       </para>
 ________________________________________________________-->
-      <para> 
-        查询要写任何数据或者锁定任何数据库行。如果一个查询在顶层或者 CTE 中包含了数据修改操作，那么不会为该查询产生并行计划。作为例外，以下创建新表并更新数据的命令，可以对查询的<literal>SELECT</literal>部分使用并行计划。
+      <para>
+        查询要写任何数据或者锁定任何数据库行。如果一个查询在顶层或者CTE中包含了数据修改操作，那么不会为该查询产生并行计划。作为例外，以下创建新表并更新数据的命令，可以对查询的<literal>SELECT</literal>部分使用并行计划。
 
         <itemizedlist>
                 <listitem>
@@ -290,7 +290,7 @@ ________________________________________________________-->
       </para>
 ________________________________________________________-->
       <para>
-        查询可能在执行过程中被暂停。只要在系统认为可能发生部分或者增量式执行，就不会产生并行计划。例如：用<link linkend="sql-declare">DECLARE CURSOR</link>创建的游标将永远不会使用并行计划。类似地，一个<literal>FOR x IN query LOOP .. END LOOP</literal>形式的 PL/pgSQL 循环也永远不会使用并行计划，因为当并行查询进行时，并行查询系统无法验证循环中的代码执行起来是安全的。
+        查询可能在执行过程中被暂停。只要在系统认为可能发生部分或者增量式执行，就不会产生并行计划。例如，用<link linkend="sql-declare">DECLARE CURSOR</link>创建的游标将永远不会使用并行计划。类似地，一个<literal>FOR x IN query LOOP .. END LOOP</literal>形式的PL/pgSQL循环也永远不会使用并行计划，因为当并行查询进行时，并行查询系统无法验证循环中的代码执行起来是安全的。
       </para>
 <!-- pgdoc-cn_end sig_en=a8d30bb835c9843f9711ba2c1d7e703b -->
     </listitem>
@@ -356,7 +356,7 @@ ________________________________________________________-->
         <xref linkend="guc-max-worker-processes"/>.
       </para>
 ________________________________________________________-->
-      <para> 
+      <para>
         因为后台工作者进程的总数不能超过<xref linkend="guc-max-worker-processes"/>，导致不能得到后台工作者进程。
       </para>
 <!-- pgdoc-cn_end sig_en=53354504b0fcd030e23e71da0d6b9290 -->
@@ -391,7 +391,7 @@ ________________________________________________________-->
         that may be suboptimal when run serially.
       </para>
 ________________________________________________________-->
-      <para> 
+      <para>
         客户端发送了一个执行消息，并且消息中要求取元组的数量不为零。执行消息可见<link linkend="protocol-flow-ext-query">扩展查询协议</link>中的讨论。因为<link linkend="libpq">libpq</link>当前没有提供方法来发送这种消息，所以这种情况只可能发生在不依赖 libpq 的客户端中。如果这种情况经常发生，那在它可能发生的会话中设置 <xref linkend="guc-max-parallel-workers-per-gather"/>为零是一个很好的主意，这样可以避免产生连续运行时次优的查询计划。
       </para>
 <!-- pgdoc-cn_end sig_en=4334df76791d034f84abe09a54fa5c98 -->
@@ -423,7 +423,7 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    因为每个工作者只执行完成计划的并行部分，所以不可能简单地产生一个普通查询计划并使用多个工作者运行它。每个工作者都会产生输出结果集的一个完全拷贝，因而查询并不会比普通查询运行得更快甚至还会产生不正确的结果。相反，计划的并行部分一定被查询优化器在内部当作一个<firstterm>部分计划</firstterm>，即它必须被构建出来，这样每一个执行该计划的进程将以无重复地方式产生输出行的一个子集，即保证每一个所需要的输出行正好只被一个合作进程生成。通常，这意味着该查询的驱动表上的扫描必须是一种可并行的扫描。
+    因为每个工作者只执行完成计划的并行部分，所以不可能简单地产生一个普通查询计划并使用多个工作者运行它。每个工作者都会产生输出结果集的一个完全拷贝，因而查询并不会比普通查询运行得更快甚至还会产生不正确的结果。相反，计划的并行部分一定被查询优化器在内部当作一个<firstterm>部分计划</firstterm>，即它必须被构建出来，这样每一个执行该计划的进程将以无重复的方式产生输出行的一个子集，即保证每一个所需要的输出行正好只被一个合作进程生成。通常，这意味着该查询的驱动表上的扫描必须是一种可并行的扫描。
   </para>
 <!-- pgdoc-cn_end sig_en=8ac0a8c773ee8664e1b265cc9716a7ae -->
 
@@ -528,7 +528,7 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    正如在非并行计划中那样，驱动表可能被使用嵌套循环、哈希连接或者归并连接连接到一个或者多个其他表。连接的内侧可以是任何类型的被规划器支持的非并行计划，假设它能够安全地在并行工作者中运行。根据连接类型，内侧还可以是一种并行计划。
+    正如在非并行计划中那样，驱动表可能被使用嵌套循环、哈希连接或者归并连接连接到一个或多个其他表。连接的内侧可以是任何类型的被规划器支持的非并行计划，假设它能够安全地在并行工作者中运行。根据连接类型，内侧还可以是一种并行计划。
   </para>
 <!-- pgdoc-cn_end sig_en=17ebc99f78bfeb56544b74d9a25148ee -->
 
@@ -602,7 +602,7 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    <productname>PostgreSQL</productname>通过按两个阶段进行聚集来支持并行聚集。首先，每个参与到查询并行部分的进程执行一个聚集步骤，为该进程注意到的每个分组产生一个部分结果。这在计划中反映为一个<literal>Partial Aggregate</literal>节点。然后，部分结果通过<literal>Gather</literal>或者<literal>Gather Merge</literal>被传输到领导者。最后，领导者对来自所有工作者的结果进行重新聚集得到最终的结果。这在计划中反映为一个<literal>Finalize Aggregate</literal>节点。
+    <productname>PostgreSQL</productname>通过按两个阶段进行聚集来支持并行聚集。首先，每个参与到查询并行部分的进程执行一个聚集步骤，为该进程注意到的每个分组产生一个部分结果。这在计划中反映为一个<literal>Partial Aggregate</literal>节点。然后，部分结果通过<literal>Gather</literal>或者<literal>Gather Merge</literal>被传输到领导者。最后，领导者对来自所有工作者的结果进行重新聚集以得到最终的结果。这在计划中反映为一个<literal>Finalize Aggregate</literal>节点。
   </para>
 <!-- pgdoc-cn_end sig_en=7b397ca1cd6702c1eae7a48fc401278d -->
 
@@ -650,7 +650,7 @@ ________________________________________________________-->
 <!-- pgdoc-cn_start sig_en=2ded69d0684b9bcdc28abe39014bb985 sig_cn_org=None source=14.1 
   <title>Parallel Append</title>
 ________________________________________________________-->
-  <title>并行Append</title>
+  <title>并行追加</title>
 <!-- pgdoc-cn_end sig_en=2ded69d0684b9bcdc28abe39014bb985 -->
 
 <!-- pgdoc-cn_start sig_en=ef133fc22892f1dce13fa077d51cdd33 sig_cn_org=None source=14.1 
@@ -726,7 +726,7 @@ ________________________________________________________-->
 <!-- pgdoc-cn_start sig_en=444887369169ca649dc6af4ea0f7674e sig_cn_org=None source=14.1 
   <title>Parallel Plan Tips</title>
 ________________________________________________________-->
-  <title>并行计划小贴士</title>
+  <title>并行计划提示</title>
 <!-- pgdoc-cn_end sig_en=444887369169ca649dc6af4ea0f7674e -->
 
 <!-- pgdoc-cn_start sig_en=f821c08137ef20507755d42945d849ef sig_cn_org=None source=14.1 
@@ -745,7 +745,14 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    如果我们想要一个查询能产生并行计划但事实上又没有产生，可以尝试减小<xref linkend="guc-parallel-setup-cost"/>或者<xref linkend="guc-parallel-tuple-cost"/>。当然，这个计划可能比规划器优先产生的顺序计划还要慢，但也不总是如此。如果将这些设置为很小的值（例如把它们设置为零）也不能得到并行计划，那就可能是有某种原因导致查询规划器无法为你的查询产生并行计划。可能的原因可见<xref linkend="when-can-parallel-query-be-used"/>和<xref linkend="parallel-safety"/>。
+    如果一个预期会产生并行计划的查询没有产生并行计划，
+  可以尝试减小<xref linkend="guc-parallel-setup-cost"/>或
+  <xref linkend="guc-parallel-tuple-cost"/>。当然，这个计划可能会比
+  规划器优先选择的顺序计划慢，但并不总是如此。如果在将这些设置
+  （例如，将它们都设置为零）设为非常小的值后仍然没有得到并行计划，
+  可能有某种原因导致查询规划器无法为你的查询生成并行计划。有关
+  可能原因的信息，请参见<xref linkend="when-can-parallel-query-be-used"/>
+  和<xref linkend="parallel-safety"/>。
   </para>
 <!-- pgdoc-cn_end sig_en=f821c08137ef20507755d42945d849ef -->
 
@@ -759,7 +766,10 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    在执行一个并行计划时，可以用<literal>EXPLAIN (ANALYZE,VERBOSE)</literal>来显示每个计划节点在每个工作者上的统计信息。这些信息有助于确定是否所有的工作被均匀地分发到所有计划节点以及从总体上理解计划的性能特点。
+    在执行并行计划时，可以使用<literal>EXPLAIN (ANALYZE,
+  VERBOSE)</literal>来显示每个计划节点的每个工作者的统计信息。
+  这可能有助于确定工作是否在所有计划节点之间均匀分配，以及
+  更一般地理解计划的性能特征。
   </para>
 <!-- pgdoc-cn_end sig_en=a2275e27dd3fed2755f75263fb2d3ea5 -->
 
@@ -770,7 +780,7 @@ ________________________________________________________-->
 <!-- pgdoc-cn_start sig_en=f7eaf5bef7d75486511c6bc9f13aaea1 sig_cn_org=None source=14.1 
   <title>Parallel Safety</title>
 ________________________________________________________-->
-  <title>并行安全性</title>
+  <title>并行安全</title>
 <!-- pgdoc-cn_end sig_en=f7eaf5bef7d75486511c6bc9f13aaea1 -->
 
 <!-- pgdoc-cn_start sig_en=ab06e46b9c6c9d2cefd7244d99a261b7 sig_cn_org=None source=14.1 
@@ -790,7 +800,15 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    规划器把查询中涉及的操作分类成<firstterm>并行安全</firstterm>、<firstterm>并行受限</firstterm>或者<firstterm>并行不安全</firstterm>。并行安全的操作不会与并行查询的使用产生冲突。并行受限的操作不能在并行工作者中执行，但是能够在并行查询的领导者中执行。因此，并行受限的操作不能出现在<literal>Gather</literal>或者<literal>Gather Merge</literal>节点之下，但是能够出现在包含这类节点的计划的其他位置。并行不安全的操作不能在并行查询中执行，甚至不能在领导者中执行。当一个查询包含任何并行不安全操作时，并行查询对这个查询是完全被禁用的。
+    规划器将查询中涉及的操作分类为<firstterm>并行安全</firstterm>、
+  <firstterm>并行受限</firstterm>或<firstterm>并行不安全</firstterm>。
+  并行安全的操作是指不会与并行查询的使用产生冲突的操作。
+  并行受限的操作是指不能在并行工作者中执行，但可以在并行查询
+  的领导者中执行。因此，并行受限的操作不能出现在<literal>Gather</literal>
+  或<literal>Gather Merge</literal>节点之下，但可以出现在包含这类节点的
+  计划的其他位置。并行不安全的操作是指在并行查询使用时无法执行的操作，
+  甚至在领导者中也不能执行。当一个查询包含任何并行不安全的内容时，
+  并行查询将完全禁用该查询。
   </para>
 <!-- pgdoc-cn_end sig_en=ab06e46b9c6c9d2cefd7244d99a261b7 -->
 
@@ -800,7 +818,7 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    下面的操作总是并行受限的。
+    下面的操作总是并行受限：
   </para>
 <!-- pgdoc-cn_end sig_en=e9b1a502e8abb2f9a9513b2f4e06e418 -->
 
@@ -837,7 +855,8 @@ ________________________________________________________-->
       </para>
 ________________________________________________________-->
       <para>
-        外部表的扫描，除非外部数据包装器有一个<literal>IsForeignScanParallelSafe</literal> API。
+        外部表的扫描，除非外部数据包装器有一个<literal>IsForeignScanParallelSafe</literal> API
+      指示其他情况。
       </para>
 <!-- pgdoc-cn_end sig_en=a2e70ff47094dd54699ad6070b634f63 -->
     </listitem>
@@ -859,7 +878,7 @@ ________________________________________________________-->
 <!-- pgdoc-cn_start sig_en=47295e52c15e27a66651a50dca9b3825 sig_cn_org=None source=14.1 
   <title>Parallel Labeling for Functions and Aggregates</title>
 ________________________________________________________-->
-  <title>为函数和聚集加并行标签</title>
+  <title>为函数和聚合加并行标签</title>
 <!-- pgdoc-cn_end sig_en=47295e52c15e27a66651a50dca9b3825 -->
 
 <!-- pgdoc-cn_start sig_en=4ccb9a6c434d51035cb3f589f1163a96 sig_cn_org=None source=14.1 
@@ -882,7 +901,15 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    规划器无法自动判定一个用户定义的函数或者聚集是并行安全、并行受限还是并行不安全，因为这需要预测函数可能执行的每一个操作。一般而言，这就相当于一个停机问题，因此是不可能的。甚至对于可以做到判定的简单函数我们也不会尝试，因为那会非常昂贵而且容易出错。相反，除非是被标记出来，所有用户定义的函数都被认为是并行不安全的。在使用<xref linkend="sql-createfunction"/>或者<xref linkend="sql-alterfunction"/>时，可以通过指定<literal>PARALLEL SAFE</literal>、<literal>PARALLEL RESTRICTED</literal>或者<literal>PARALLEL UNSAFE</literal>来设置标记 。在使用<xref linkend="sql-createaggregate"/>时，<literal>PARALLEL</literal>选项可以被指定为<literal>SAFE</literal>、<literal>RESTRICTED</literal>或者 <literal>UNSAFE</literal>。
+    规划器无法自动判定一个用户定义的函数或者聚合是并行安全、并行受限还是并行
+  不安全，因为这需要预测函数可能执行的每一个操作。一般而言，这就相当于一个
+  停机问题，因此是不可能的。甚至对于可以做到判定的简单函数我们也不会尝试，
+  因为那会非常昂贵而且容易出错。相反，除非是被标记出来，所有用户定义的函数
+  都被认为是并行不安全的。在使用<xref linkend="sql-createfunction"/>或者
+  <xref linkend="sql-alterfunction"/>时，可以通过指定<literal>PARALLEL SAFE</literal>、
+  <literal>PARALLEL RESTRICTED</literal>或者<literal>PARALLEL UNSAFE</literal>来设置标记。
+  在使用<xref linkend="sql-createaggregate"/>时，<literal>PARALLEL</literal>选项可以被
+  指定为<literal>SAFE</literal>、<literal>RESTRICTED</literal>或者<literal>UNSAFE</literal>。
   </para>
 <!-- pgdoc-cn_end sig_en=4ccb9a6c434d51035cb3f589f1163a96 -->
 
@@ -901,11 +928,11 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    如果函数和聚合写入数据库、更改事务状态（除通过子事务进行错误恢复外）、访问序列或对
-    设置进行持久更改，则必须标记为<literal>PARALLEL UNSAFE</literal>。同样，如果函数访问临时
-    表、客户端连接状态、游标、预处理语句或系统无法在工作进程间同步的其他后端本地状态，
-    则必须标记为<literal>PARALLEL RESTRICTED</literal>。例如，<literal>setseed</literal>和
-    <literal>random</literal>正是出于这个原因被标记为并行受限。
+    如果函数和聚合写入数据库、更改事务状态（除通过子事务进行错误恢复外）、访问序列
+    或对设置进行持久更改，则必须标记为<literal>PARALLEL UNSAFE</literal>。同样，如果函数
+    访问临时表、客户端连接状态、游标、预处理语句或系统无法在工作进程间同步的其他
+    后端本地状态，则必须标记为<literal>PARALLEL RESTRICTED</literal>。例如，
+    <literal>setseed</literal>和<literal>random</literal>正是出于这个原因被标记为并行受限。
   </para>
 <!-- pgdoc-cn_end sig_en=d7cc1bac1e051da07ed2cbc94e7417b8 -->
 
@@ -922,7 +949,11 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    一般而言，如果一个函数是受限或者不安全的却被标记为安全，或者它实际是不安全的却被标记为受限，把它用在并行查询中时可能会抛出错误或者产生错误的回答。如果 C 语言函数被错误标记，理论上它会展现出完全不明确的行为，因为系统中无法保护自身不受任意 C 代码的影响。但是，在最有可能的情况下，结果不会比其他任何函数更糟糕。如果有疑虑，最好还是标记函数为<literal>UNSAFE</literal>。
+    一般而言，如果一个函数是受限或者不安全的却被标记为安全，或者它实际是不安全的
+  却被标记为受限，把它用在并行查询中时可能会抛出错误或者产生错误的回答。如果
+  C 语言函数被错误标记，理论上它会展现出完全不明确的行为，因为系统中无法保护
+  自身不受任意 C 代码的影响。但是，在最有可能的情况下，结果不会比其他任何
+  函数更糟糕。如果有疑虑，最好还是标记函数为<literal>UNSAFE</literal>。
   </para>
 <!-- pgdoc-cn_end sig_en=d7d7771714c53cd224f1717374b037f4 -->
 
@@ -938,7 +969,10 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    如果在并行工作者中执行的函数要求领导者没有持有的锁，例如读该查询中没有引用的表，那么工作者退出时会释放那些锁（而不是在事务结束时释放）。如果你写了一个这样做的函数并且这种不同的行为对你很重要，把这类函数标记为<literal>PARALLEL RESTRICTED</literal>以确保它们只在领导者中执行。
+    如果在并行工作者中执行的函数要求领导者没有持有的锁，例如读该查询中没有引用
+  的表，那么工作者退出时会释放那些锁（而不是在事务结束时释放）。如果你写了一个
+  这样做的函数并且这种不同的行为对你很重要，把这类函数标记为<literal>PARALLEL
+  RESTRICTED</literal>以确保它们只在领导者中执行。
   </para>
 <!-- pgdoc-cn_end sig_en=6c0e84770eaab317d756949126fd0396 -->
 
@@ -957,7 +991,11 @@ ________________________________________________________-->
   </para>
 ________________________________________________________-->
   <para>
-    注意查询规划器不会为了获取一个更好的计划而考虑延迟计算并行受限的函数或者聚集。所以，如果一个被应用到特定表的<literal>WHERE</literal>子句是并行受限的，查询规划器就不会考虑对处于计划并行部分的表执行一次扫描。在一些情况中，可以（甚至效率更高）把对表的扫描包括在查询的并行部分并且延迟对<literal>WHERE</literal>子句的计算，这样它会出现在<literal>Gather</literal>节点之上。不过，规划器不会这样做。
+    注意查询规划器不会为了获取一个更好的计划而考虑延迟计算并行受限的函数或者聚集。
+  所以，如果一个被应用到特定表的<literal>WHERE</literal>子句是并行受限的，查询
+  规划器就不会考虑对处于计划并行部分的表执行一次扫描。在一些情况中，可以（甚至
+  效率更高）把对表的扫描包括在查询的并行部分并且延迟对<literal>WHERE</literal>子句
+  的计算，这样它会出现在<literal>Gather</literal>节点之上。不过，规划器不会这样做。
   </para>
 <!-- pgdoc-cn_end sig_en=ecb7bfdbbdd3a395ab19bfecca42ee2a -->
 

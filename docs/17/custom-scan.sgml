@@ -4,7 +4,7 @@
 <!-- pgdoc-cn_start sig_en=5d7b35a112a1295af19c930edbde345c sig_cn_org=None source=14.1 
  <title>Writing a Custom Scan Provider</title>
 ________________________________________________________-->
- <title>编写一个自定义扫描提供者</title>
+ <title>编写自定义扫描提供者</title>
 <!-- pgdoc-cn_end sig_en=5d7b35a112a1295af19c930edbde345c -->
 
 <!-- pgdoc-cn_start sig_en=9564714e660fdeaa2753055900700b8e sig_cn_org=None source=14.1 
@@ -33,7 +33,7 @@ ________________________________________________________-->
  </para>
 ________________________________________________________-->
  <para>
-  <productname>PostgreSQL</productname>支持一组实验性的功能，它们的目的是允许扩展模块向系统中增加新的扫描类型。与<link linkend="fdwhandler">外部数据包装器</link>不同（只负责给出如何扫描其自身的外部表的知识），自定义扫描提供者可以提供另一种扫描系统中任一关系的方法。通常，编写一个自定义扫描提供者的动机是允许使用某种核心系统不支持的优化，例如缓冲或者某种形式的硬件加速。这一章简要介绍了如何编写一个新的自定义扫描提供者。
+  <productname>PostgreSQL</productname>支持一组实验性的功能，它们的目的是允许扩展模块向系统中增加新的扫描类型。与<link linkend="fdwhandler">外部数据包装器</link>不同（只负责给出如何扫描其自身的外部表的知识），自定义扫描提供者可以提供另一种扫描系统中任一关系的方法。通常，编写自定义扫描提供者的动机是允许使用某种核心系统不支持的优化，例如缓存或某种形式的硬件加速。这一章简要介绍了如何编写新的自定义扫描提供者。
  </para>
 <!-- pgdoc-cn_end sig_en=fc1d5deae1d1cd00291c0fae1926d49f -->
 
@@ -50,7 +50,7 @@ ________________________________________________________-->
  </para>
 ________________________________________________________-->
  <para>
-  实现一个新类别的自定义扫描分成三步。首先，在规划期间需要生成表达使用所提出策略的扫描的访问路径。然后，如果规划器选择这些访问路径之一作为最优策略来扫描一个特定关系，该访问路径必须被转换成计划。最后，必须能执行该计划并且产生和其他以同一关系为目标的访问路径相同的结果。
+  实现新类型的自定义扫描是一个三步过程。首先，在规划期间，需要生成表示使用所提出策略的扫描的访问路径。其次，如果规划器选择这些访问路径之一作为扫描特定关系的最优策略，则必须将该访问路径转换为计划。最后，必须能够执行该计划并生成与任何其他针对同一关系的访问路径相同的结果。
  </para>
 <!-- pgdoc-cn_end sig_en=4659336ce4b130dc1727335f65a2dddd -->
 
@@ -78,17 +78,15 @@ extern PGDLLIMPORT set_rel_pathlist_hook_type set_rel_pathlist_hook;
   </para>
 ________________________________________________________-->
   <para>
-    自定义扫描提供者通常会通过设置以下钩子来为基础关系添加路径，该钩子在核心代码
-    为关系生成所有可用访问路径后调用（除了Gather和Gather Merge路径，这些路径在此
-    调用之后生成，以便它们可以使用钩子添加的部分路径）：
-<programlisting>
-typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,
-                                            RelOptInfo *rel,
-                                            Index rti,
+    自定义扫描提供者通常会通过设置以下钩子来为基础关系添加路径，该钩子在核心代码为关系生成所有可用访问路径后调用（除了Gather和Gather Merge路径，这些路径在此调用之后生成，以便它们可以使用钩子添加的部分路径）：
+    <programlisting>
+    typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,
+RelOptInfo *rel,
+Index rti,
                                             RangeTblEntry *rte);
-extern PGDLLIMPORT set_rel_pathlist_hook_type set_rel_pathlist_hook;
-</programlisting>
-  </para>
+                                            extern PGDLLIMPORT set_rel_pathlist_hook_type set_rel_pathlist_hook;
+                                            </programlisting>
+</para>
 <!-- pgdoc-cn_end sig_en=fcbe8681f5e4e70eebc924f11082e05e -->
 
 <!-- pgdoc-cn_start sig_en=8f4850cb1f5b67b57408abf254e91339 sig_cn_org=2ca3ab4f3f8a291839f83236c881a8ad source=17.5 
@@ -114,22 +112,19 @@ typedef struct CustomPath
   </para>
 ________________________________________________________-->
   <para>
-    虽然此钩子函数可用于检查、修改或移除核心系统生成的路径，但自定义扫描提供者通常
-    限于生成<structname>CustomPath</structname>对象并使用<function>add_path</function>将其添加到
-    <literal>rel</literal>，如果是部分路径，则使用<function>add_partial_path</function>。自定义扫描提供者负责初始化
-    <structname>CustomPath</structname>对象，其声明如下：
-<programlisting>
-typedef struct CustomPath
-{
-    Path      path;
-    uint32    flags;
-    List     *custom_paths;
+    虽然此钩子函数可用于检查、修改或移除核心系统生成的路径，但自定义扫描提供者通常限于生成<structname>CustomPath</structname>对象并使用<function>add_path</function>将其添加到<literal>rel</literal>，如果是部分路径，则使用<function>add_partial_path</function>。自定义扫描提供者负责初始化<structname>CustomPath</structname>对象，其声明如下：
+    <programlisting>
+    typedef struct CustomPath
+    {
+Path      path;
+uint32    flags;
+List     *custom_paths;
     List     *custom_restrictinfo;
     List     *custom_private;
     const CustomPathMethods *methods;
-} CustomPath;
-</programlisting>
-  </para>
+    } CustomPath;
+    </programlisting>
+    </para>
 <!-- pgdoc-cn_end sig_en=8f4850cb1f5b67b57408abf254e91339 -->
 
 <!-- pgdoc-cn_start sig_en=1a3da6cde440325f46c7b18a3d08e275 sig_cn_org=9eb38f4595b605fce1db09badafbec5f source=17.5 
@@ -163,24 +158,8 @@ typedef struct CustomPath
   </para>
 ________________________________________________________-->
   <para>
-    <structfield>path</structfield> 必须像其他路径一样初始化，包括行数估计、起始和总成本，
-    以及该路径提供的排序顺序。<structfield>flags</structfield> 是一个位掩码，
-    指定扫描提供者是否支持某些可选功能。<structfield>flags</structfield> 应该包含
-    <literal>CUSTOMPATH_SUPPORT_BACKWARD_SCAN</literal>，如果自定义路径支持向后扫描，
-    <literal>CUSTOMPATH_SUPPORT_MARK_RESTORE</literal>，如果支持标记和恢复，
-    以及 <literal>CUSTOMPATH_SUPPORT_PROJECTION</literal>，如果能执行投影。
-    （如果未设置 <literal>CUSTOMPATH_SUPPORT_PROJECTION</literal>，扫描节点只会被要求
-    产生扫描关系的 Vars；而如果设置了该标志，扫描节点必须能够对这些 Vars
-    计算标量表达式。）一个可选的 <structfield>custom_paths</structfield> 是一个
-    <structname>Path</structname> 节点列表，由该自定义路径节点使用；这些将由规划器
-    转换为 <structname>Plan</structname> 节点。如下所述，自定义路径也可以为连接关系
-    创建。在这种情况下，<structfield>custom_restrictinfo</structfield> 应该用于存储
-    应用于自定义路径替代的连接的连接子句集合。否则应为 NIL。
-    <structfield>custom_private</structfield> 可用于存储自定义路径的私有数据。
-    私有数据应以 <literal>nodeToString</literal> 能处理的形式存储，以便调试程序
-    尝试打印自定义路径时能正常工作。<structfield>methods</structfield> 必须指向
-    一个（通常是静态分配的）实现所需自定义路径方法的对象，具体细节如下。
-  </para>
+    <structfield>path</structfield>必须像其他路径一样初始化，包括行数估计、起始和总成本，以及该路径提供的排序顺序。<structfield>flags</structfield>是一个位掩码，指定扫描提供者是否支持某些可选功能。<structfield>flags</structfield>应该包含<literal>CUSTOMPATH_SUPPORT_BACKWARD_SCAN</literal>，如果自定义路径支持向后扫描，<literal>CUSTOMPATH_SUPPORT_MARK_RESTORE</literal>，如果支持标记和恢复，以及<literal>CUSTOMPATH_SUPPORT_PROJECTION</literal>，如果能执行投影。（如果未设置<literal>CUSTOMPATH_SUPPORT_PROJECTION</literal>，扫描节点只会被要求产生扫描关系的Vars；而如果设置了该标志，扫描节点必须能够对这些Vars计算标量表达式。）一个可选的<structfield>custom_paths</structfield>是一个<structname>Path</structname>节点列表，由该自定义路径节点使用；这些将由规划器转换为<structname>Plan</structname>节点。如下面所述，自定义路径也可以为连接关系创建。在这种情况下，<structfield>custom_restrictinfo</structfield>应该用于存储应用于自定义路径替代的连接的连接子句集合。否则应为NIL。<structfield>custom_private</structfield>可用于存储自定义路径的私有数据。私有数据应以<literal>nodeToString</literal>能处理的形式存储，以便调试程序尝试打印自定义路径时能正常工作。<structfield>methods</structfield>必须指向一个（通常是静态分配的）实现所需自定义路径方法的对象，具体细节如下。
+    </para>
 <!-- pgdoc-cn_end sig_en=1a3da6cde440325f46c7b18a3d08e275 -->
 
 <!-- pgdoc-cn_start sig_en=2896f68331746eae56b1c8efe1d73768 sig_cn_org=None source=14.1 
@@ -384,7 +363,7 @@ typedef struct CustomScan
   </para>
 ________________________________________________________-->
   <para>
-    <structfield>scan</structfield>必须和任何其他扫描一样被初始化，包括估计代价、目标列表、条件等等。<structfield>flags</structfield>是一个位掩码，它的含义和<structname>CustomPath</structname>中的一样。<structfield>custom_plans</structfield>可以用来存储子<structname>Plan</structname>节点。<structfield>custom_exprs</structfield>应该被用来存储需要由<filename>setrefs.c</filename>和<filename>subselect.c</filename>修整的表达式树，而<structfield>custom_private</structfield>应该被用来存储其他只由自定义扫描提供者本身使用的私有数据。在扫描一个基本关系时，<structfield>custom_scan_tlist</structfield>可以为 NIL，表示该自定义扫描返回符合该基本关系行类型的扫描元组。否则，它是一个描述实际扫描元组的目标列表。对于连接必须提供<structfield>custom_scan_tlist</structfield>。如果自定义扫描提供者能够计算某些非-Var 表达式，也应该提供这个域的值。<structfield>custom_relids</structfield>会被核心代码设置成这个扫描节点要处理的关系的集合（范围表索引）。当这个扫描被放在一个链接上时是一种例外，那时其中只有一个成员。<structfield>methods</structfield>必须指向一个实现了所需自定义扫描方法的对象（通常是静态分配的），将进一步在下文详细介绍。
+    <structfield>scan</structfield>必须和任何其他扫描一样被初始化，包括估计代价、目标列表、条件等等。<structfield>flags</structfield>是一个位掩码，它的含义和<structname>CustomPath</structname>中的一样。<structfield>custom_plans</structfield>可以用来存储子<structname>Plan</structname>节点。<structfield>custom_exprs</structfield>应该被用来存储需要由<filename>setrefs.c</filename>和<filename>subselect.c</filename>修整的表达式树，而<structfield>custom_private</structfield>应该被用来存储其他只由自定义扫描提供者本身使用的私有数据。在扫描一个基本关系时，<structfield>custom_scan_tlist</structfield>可以为 NIL，表示该自定义扫描返回符合该基本关系行类型的扫描元组。否则，它是一个描述实际扫描元组的目标列表。对于连接必须提供<structfield>custom_scan_tlist</structfield>。如果自定义扫描提供者能够计算某些非-Var 表达式，也应该提供这个域的值。<structfield>custom_relids</structfield>会被核心代码设置成这个扫描节点要处理的关系的集合（范围表索引）。当这个扫描被放在一个连接上时是一种例外，那时其中只有一个成员。<structfield>methods</structfield>必须指向一个实现了所需自定义扫描方法的对象（通常是静态分配的），将进一步在下文详细介绍。
   </para>
 <!-- pgdoc-cn_end sig_en=de818f58acc3c137c41baf5e657b098a -->
 
@@ -527,7 +506,7 @@ void (*BeginCustomScan) (CustomScanState *node,
                          EState *estate,
                          int eflags);
 </programlisting>
-    完成所提供的<structname>CustomScanState</structname>的初始化。标准的域已经被<function>ExecInitCustomScan</function>初始化，但是任何私有的域应该在这里被初始化。
+    完成所提供的<structname>CustomScanState</structname>的初始化。标准字段已经被<function>ExecInitCustomScan</function>初始化，但是任何私有字段应该在这里被初始化。
    </para>
 <!-- pgdoc-cn_end sig_en=2e501a32b3db889687cbba7cb7fe4777 -->
 
@@ -546,7 +525,7 @@ ________________________________________________________-->
 <programlisting>
 TupleTableSlot *(*ExecCustomScan) (CustomScanState *node);
 </programlisting>
-    取下一个扫描元组。如果还有任何元组剩余，它应该用当前扫描方向的下一个元组填充<literal>ps_ResultTupleSlot</literal>，并且接着返回该元组槽。如果没有，则用<literal>NULL</literal>填充或者返回一个空槽。
+    取下一个扫描元组。如果还有任何元组剩余，它应该用当前扫描方向的下一个元组填充<literal>ps_ResultTupleSlot</literal>，并且接着返回该元组槽。如果没有，则返回<literal>NULL</literal>或一个空槽。
    </para>
 <!-- pgdoc-cn_end sig_en=1ef2c6b0677a97339d07ef7c7fb33d2c -->
 
@@ -581,7 +560,7 @@ ________________________________________________________-->
 <programlisting>
 void (*ReScanCustomScan) (CustomScanState *node);
 </programlisting>
-    把当前扫描倒回到开始处，并且准备重新扫描该关系。
+    把当前扫描倒回到开始处，并准备重新扫描该关系。
    </para>
 <!-- pgdoc-cn_end sig_en=4d599b01848c75987ced8feb26c2005e -->
 
@@ -641,7 +620,7 @@ ________________________________________________________-->
 Size (*EstimateDSMCustomScan) (CustomScanState *node,
                                ParallelContext *pcxt);
 </programlisting>
-    估计并行操作所需要的动态共享内存的数量。这可能会比实际使用的量更大，但是绝不能更低。返回值的单位是字节。这个回调是可选的，只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
+    估计并行操作所需的动态共享内存的数量。这可能会比实际使用的量更大，但是绝不能更低。返回值的单位是字节。这个回调是可选的，只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
    </para>
 <!-- pgdoc-cn_end sig_en=20fc325f7d243cb5b67dbf24722b9786 -->
 
@@ -666,9 +645,9 @@ void (*InitializeDSMCustomScan) (CustomScanState *node,
                                  void *coordinate);
 </programlisting>
     初始化并行操作所需的动态共享内存。<literal>coordinate</literal>
-	指向一块大小等于<function>EstimateDSMCustomScan</function>
-	返回值的共享内存区域。这个回调是可选的，
-	只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
+ 指向一块大小等于<function>EstimateDSMCustomScan</function>
+ 返回值的共享内存区域。这个回调是可选的，
+ 只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
    </para>
 <!-- pgdoc-cn_end sig_en=017657306adc80bd814e3aa00c6d037e -->
 
@@ -697,11 +676,11 @@ void (*ReInitializeDSMCustomScan) (CustomScanState *node,
                                    void *coordinate);
 </programlisting>
     当自定义扫描计划节点即将被重新扫描时，
-	重新初始化并行操作所需的动态共享内存。这个回调是可选的，
-	只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
-	推荐的做法是，此回调仅重置共享状态，而<function>ReScanCustomScan</function>
-	回调仅重置本地状态。目前，该回调将在<function>ReScanCustomScan</function>
-	之前调用，但最好不要依赖该顺序。
+ 重新初始化并行操作所需的动态共享内存。这个回调是可选的，
+ 只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
+ 推荐的做法是，此回调仅重置共享状态，而<function>ReScanCustomScan</function>
+ 回调仅重置本地状态。目前，该回调将在<function>ReScanCustomScan</function>
+ 之前调用，但最好不要依赖该顺序。
    </para>
 <!-- pgdoc-cn_end sig_en=7dc577de02cf32a461b33c4ba5039d40 -->
 
@@ -725,8 +704,8 @@ void (*InitializeWorkerCustomScan) (CustomScanState *node,
                                     void *coordinate);
 </programlisting>
     基于<function>InitializeDSMCustomScan</function>期间通过领导者
-	设置的共享状态初始化并行工作者的本地状态。这个回调是可选的，
-	只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
+ 设置的共享状态初始化并行工作者的本地状态。这个回调是可选的，
+ 只有在这个自定义扫描提供者支持并行执行时才必须提供这个回调。
    </para>
 <!-- pgdoc-cn_end sig_en=11f2d2a7e2c89b7d6f64ec34d9fbdaca -->
 
@@ -749,9 +728,9 @@ ________________________________________________________-->
 void (*ShutdownCustomScan) (CustomScanState *node);
 </programlisting>
     预计节点将不会执行完成时释放资源。并不是在所有情况下都调用；
-	有时，<literal>EndCustomScan</literal>可能会在调用此函数之前调用。
-	由于并行查询使用的DSM段在调用此回调后即被销毁，
-	因此希望在DSM段消失之前采取某些操作的自定义扫描提供程序应实现此方法。
+ 有时，<literal>EndCustomScan</literal>可能会在调用此函数之前调用。
+ 由于并行查询使用的DSM段在调用此回调后即被销毁，
+ 因此希望在DSM段消失之前采取某些操作的自定义扫描提供程序应实现此方法。
    </para>
 <!-- pgdoc-cn_end sig_en=a92d6e266a3f0f396a13b326e5f3505a -->
 
