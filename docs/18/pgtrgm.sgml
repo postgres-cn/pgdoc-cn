@@ -1,0 +1,1281 @@
+<!-- doc/src/sgml/pgtrgm.sgml -->
+
+<sect1 id="pgtrgm" xreflabel="pg_trgm">
+<!-- pgdoc-cn_start sig_en=b50ce9a042aa8ddef6e6f4b5c4d5b853 sig_cn_org=38efa8d2e50c4c41a0ee461d0ab788e1 source=16.8 
+ <title>pg_trgm &mdash;
+   support for similarity of text using trigram matching</title>
+________________________________________________________-->
+ <title>pg_trgm &mdash;
+   使用三元组匹配支持文本相似性</title>
+<!-- pgdoc-cn_end sig_en=b50ce9a042aa8ddef6e6f4b5c4d5b853 -->
+
+<!-- pgdoc-cn_start sig_en=69d9b306f7b651627ef3dbd337ee2224 sig_cn_org=None source=14.1 
+ <indexterm zone="pgtrgm">
+  <primary>pg_trgm</primary>
+ </indexterm>
+________________________________________________________-->
+ <indexterm zone="pgtrgm">
+  <primary>pg_trgm</primary>
+ </indexterm>
+<!-- pgdoc-cn_end sig_en=69d9b306f7b651627ef3dbd337ee2224 -->
+
+<!-- pgdoc-cn_start sig_en=eace8013b40a8e7028cad5a3a5168f1d sig_cn_org=None source=14.1 
+ <para>
+  The <filename>pg_trgm</filename> module provides functions and operators
+  for determining the similarity of
+  alphanumeric text based on trigram matching, as
+  well as index operator classes that support fast searching for similar
+  strings.
+ </para>
+________________________________________________________-->
+ <para>
+  <filename>pg_trgm</filename>模块提供用于确定基于三元组匹配的字母数字文本相似度的函数和操作符，以及支持快速搜索相似字符串的索引操作符类。
+ </para>
+<!-- pgdoc-cn_end sig_en=eace8013b40a8e7028cad5a3a5168f1d -->
+
+<!-- pgdoc-cn_start sig_en=73fd7076637bb21a0cce44734412cba6 sig_cn_org=None source=14.1 
+ <para>
+  This module is considered <quote>trusted</quote>, that is, it can be
+  installed by non-superusers who have <literal>CREATE</literal> privilege
+  on the current database.
+ </para>
+________________________________________________________-->
+ <para>
+  该模块被认为是<quote>trusted</quote>，也就是说，它可以由对当前数据库具有<literal>CREATE</literal>权限的非超级用户安装。
+ </para>
+<!-- pgdoc-cn_end sig_en=73fd7076637bb21a0cce44734412cba6 -->
+
+ <sect2 id="pgtrgm-concepts">
+<!-- pgdoc-cn_start sig_en=742692dd53ef74d68873b4ca11f1f37e sig_cn_org=None source=14.1 
+  <title>Trigram (or Trigraph) Concepts</title>
+________________________________________________________-->
+  <title>三元组（或者三元组）概念</title>
+<!-- pgdoc-cn_end sig_en=742692dd53ef74d68873b4ca11f1f37e -->
+
+<!-- pgdoc-cn_start sig_en=f167b970f33839663e73d9efe945f3db sig_cn_org=None source=14.1 
+  <para>
+   A trigram is a group of three consecutive characters taken
+   from a string.  We can measure the similarity of two strings by
+   counting the number of trigrams they share.  This simple idea
+   turns out to be very effective for measuring the similarity of
+   words in many natural languages.
+  </para>
+________________________________________________________-->
+  <para>
+   一个三元组是从一个字符串中取出的由三个连续字符组成的组。我们可以通过对两个字符串之间共享的三元组计数来度量它们的相似度。这种简单的思想已经成为在很多自然语言中度量词相似度的有效方法。
+  </para>
+<!-- pgdoc-cn_end sig_en=f167b970f33839663e73d9efe945f3db -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=55b0213d708e4d84fb58b62a7a399463 sig_cn_org=None source=14.1 
+   <para>
+    <filename>pg_trgm</filename> ignores non-word characters
+    (non-alphanumerics) when extracting trigrams from a string.
+    Each word is considered to have two spaces
+    prefixed and one space suffixed when determining the set
+    of trigrams contained in the string.
+    For example, the set of trigrams in the string
+    <quote><literal>cat</literal></quote> is
+    <quote><literal>  c</literal></quote>,
+    <quote><literal> ca</literal></quote>,
+    <quote><literal>cat</literal></quote>, and
+    <quote><literal>at </literal></quote>.
+    The set of trigrams in the string
+    <quote><literal>foo|bar</literal></quote> is
+    <quote><literal>  f</literal></quote>,
+    <quote><literal> fo</literal></quote>,
+    <quote><literal>foo</literal></quote>,
+    <quote><literal>oo </literal></quote>,
+    <quote><literal>  b</literal></quote>,
+    <quote><literal> ba</literal></quote>,
+    <quote><literal>bar</literal></quote>, and
+    <quote><literal>ar </literal></quote>.
+   </para>
+________________________________________________________-->
+   <para>
+    <filename>pg_trgm</filename>在从一个字符串中提取三元组时会忽略非词字符（非字母数字）。在决定字符串中所含的三元组集合时，每一个词被认为具有两个空格前缀和一个空格后缀。例如，字符串<quote><literal>cat</literal></quote>中的三元组集合是：
+    <quote><literal>  c</literal></quote>、
+    <quote><literal> ca</literal></quote>、
+    <quote><literal>cat</literal></quote>以及
+    <quote><literal>at </literal></quote>。
+    字符串<quote><literal>foo|bar</literal></quote>中的三元组集合是：
+    <quote><literal>  f</literal></quote>、
+    <quote><literal> fo</literal></quote>、
+    <quote><literal>foo</literal></quote>、
+    <quote><literal>oo </literal></quote>、
+    <quote><literal>  b</literal></quote>、
+    <quote><literal> ba</literal></quote>、
+    <quote><literal>bar</literal></quote>以及
+    <quote><literal>ar </literal></quote>。
+   </para>
+<!-- pgdoc-cn_end sig_en=55b0213d708e4d84fb58b62a7a399463 -->
+  </note>
+ </sect2>
+
+ <sect2 id="pgtrgm-funcs-ops">
+<!-- pgdoc-cn_start sig_en=ed883272be06c3247383bf977684a98e sig_cn_org=None source=14.1 
+  <title>Functions and Operators</title>
+________________________________________________________-->
+  <title>函数和操作符</title>
+<!-- pgdoc-cn_end sig_en=ed883272be06c3247383bf977684a98e -->
+
+<!-- pgdoc-cn_start sig_en=7a5aebdd7b2072e8378dd9333f26dbf7 sig_cn_org=None source=14.1 
+  <para>
+   The functions provided by the <filename>pg_trgm</filename> module
+   are shown in <xref linkend="pgtrgm-func-table"/>, the operators
+   in <xref linkend="pgtrgm-op-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   <filename>pg_trgm</filename>模块所提供的函数如<xref linkend="pgtrgm-func-table"/>中所示，操作符则显示在<xref linkend="pgtrgm-op-table"/>中。
+  </para>
+<!-- pgdoc-cn_end sig_en=7a5aebdd7b2072e8378dd9333f26dbf7 -->
+
+  <table id="pgtrgm-func-table">
+<!-- pgdoc-cn_start sig_en=d14773201c479335ff034afcb8380360 sig_cn_org=None source=14.1 
+   <title><filename>pg_trgm</filename> Functions</title>
+________________________________________________________-->
+   <title><filename>pg_trgm</filename> 函数</title>
+<!-- pgdoc-cn_end sig_en=d14773201c479335ff034afcb8380360 -->
+    <tgroup cols="1">
+     <thead>
+<!-- pgdoc-cn_start sig_en=4c899847d3051ef2b6955dda3de51c66 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        函数
+       </para>
+       <para>
+        描述
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=4c899847d3051ef2b6955dda3de51c66 -->
+     </thead>
+
+     <tbody>
+<!-- pgdoc-cn_start sig_en=34cc38a7723f220412f64c0a5c53d9cb sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>similarity</primary></indexterm>
+        <function>similarity</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Returns a number that indicates how similar the two arguments are.
+        The range of the result is zero (indicating that the two strings are
+        completely dissimilar) to one (indicating that the two strings are
+        identical).
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>similarity</primary></indexterm>
+        <function>similarity</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        返回一个数字指示两个参数有多相似。该结果的范围是 0（指示两个字符串完全不相似）到 1（指示两个字符串完全相同）。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=34cc38a7723f220412f64c0a5c53d9cb -->
+
+<!-- pgdoc-cn_start sig_en=71a7020014d07da8acdd51592274d577 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>show_trgm</primary></indexterm>
+        <function>show_trgm</function> ( <type>text</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Returns an array of all the trigrams in the given string.
+        (In practice this is seldom useful except for debugging.)
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>show_trgm</primary></indexterm>
+        <function>show_trgm</function> ( <type>text</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        返回一个给定字符串中所有的 trigrams 组成的一个数组（实际上除了调试很少有用）。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=71a7020014d07da8acdd51592274d577 -->
+
+<!-- pgdoc-cn_start sig_en=8f1d06c68f4f38fd7a7563ae44994d93 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>word_similarity</primary></indexterm>
+        <function>word_similarity</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Returns a number that indicates the greatest similarity between
+        the set of trigrams in the first string and any continuous extent
+        of an ordered set of trigrams in the second string.  For details, see
+        the explanation below.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>word_similarity</primary></indexterm>
+        <function>word_similarity</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        返回一个数字表示第一个字符串中的 trigram 集合与第二个字符串中 trigram 的有序集中任何连续部分的最大相似度。详情请见下文的解释。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=8f1d06c68f4f38fd7a7563ae44994d93 -->
+
+<!-- pgdoc-cn_start sig_en=f3cdff55054f6605eb399b577dd44d44 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>strict_word_similarity</primary></indexterm>
+        <function>strict_word_similarity</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Same as <function>word_similarity</function>, but forces
+        extent boundaries to match word boundaries.  Since we don't have
+        cross-word trigrams, this function actually returns greatest similarity
+        between first string and any continuous extent of words of the second
+        string.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>strict_word_similarity</primary></indexterm>
+        <function>strict_word_similarity</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        与<function>word_similarity</function>相同，但是强制连续部分的边界与词边界相匹配。由于我们没有跨词的 trigram，这个函数实际上返回第一个字符串和第二个字符串任意连续部分的相似度。
+        </para></entry>
+       </row>
+<!-- pgdoc-cn_end sig_en=f3cdff55054f6605eb399b577dd44d44 -->
+
+<!-- pgdoc-cn_start sig_en=b109aea9328a9ebf46d4e3262fcedd21 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>show_limit</primary></indexterm>
+        <function>show_limit</function> ()
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Returns the current similarity threshold used by the <literal>%</literal>
+        operator.  This sets the minimum similarity between
+        two words for them to be considered similar enough to
+        be misspellings of each other, for example.
+        (<emphasis>Deprecated</emphasis>; instead use <command>SHOW</command>
+        <varname>pg_trgm.similarity_threshold</varname>.)
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>show_limit</primary></indexterm>
+        <function>show_limit</function> ()
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        返回<literal>%</literal>操作符使用的当前相似度阈值。例如，这设定两个词被认为足够相似时，它们之间应满足的最小相似度（<emphasis>已废弃</emphasis>；而是使用<command>SHOW</command> <varname>pg_trgm.similarity_threshold</varname>）。
+        </para></entry>
+        </row>
+<!-- pgdoc-cn_end sig_en=b109aea9328a9ebf46d4e3262fcedd21 -->
+
+<!-- pgdoc-cn_start sig_en=cdafd89254efd94fbe32500251328449 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>set_limit</primary></indexterm>
+        <function>set_limit</function> ( <type>real</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Sets the current similarity threshold that is used by the <literal>%</literal>
+        operator.  The threshold must be between 0 and 1 (default is 0.3).
+        Returns the same value passed in.
+        (<emphasis>Deprecated</emphasis>; instead use <command>SET</command>
+        <varname>pg_trgm.similarity_threshold</varname>.)
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>set_limit</primary></indexterm>
+        <function>set_limit</function> ( <type>real</type> )
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        设定<literal>%</literal>操作符使用的当前相似度阈值。该阈值必须介于 0 和 1 之间（默认为 0.3）。
+        返回传递进来的同一个值（<emphasis>已废弃</emphasis>；
+        而是使用<command>SET</command> <varname>pg_trgm.similarity_threshold</varname>）。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=cdafd89254efd94fbe32500251328449 -->
+     </tbody>
+    </tgroup>
+  </table>
+
+<!-- pgdoc-cn_start sig_en=51b282e91639ff6d0c2b902b76561037 sig_cn_org=None source=14.1 
+  <para>
+   Consider the following example:
+
+<programlisting>
+# SELECT word_similarity('word', 'two words');
+ word_similarity
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+             0.8
+(1 row)
+</programlisting>
+
+   In the first string, the set of trigrams is
+   <literal>{"  w"," wo","wor","ord","rd "}</literal>.
+   In the second string, the ordered set of trigrams is
+   <literal>{"  t"," tw","two","wo ","  w"," wo","wor","ord","rds","ds "}</literal>.
+   The most similar extent of an ordered set of trigrams in the second string
+   is <literal>{"  w"," wo","wor","ord"}</literal>, and the similarity is
+   <literal>0.8</literal>.
+  </para>
+________________________________________________________-->
+  <para>
+   考虑下面的例子：
+
+<programlisting>
+# SELECT word_similarity('word', 'two words');
+ word_similarity
+-----------------
+             0.8
+(1 row)
+</programlisting>
+
+   在第一个字符串中，trigram集合是<literal>{"  w"," wo","wor","ord","rd "}</literal>。
+  在第二个字符串中，trigram的有序集是<literal>{"  t"," tw","two","wo ","  w"," wo","wor","ord","rds","ds "}</literal>。
+  在第二个字符串中最相似的trigram有序集的部分是<literal>{"  w"," wo","wor","ord"}</literal>，并且相似度是<literal>0.8</literal>。
+  </para>
+<!-- pgdoc-cn_end sig_en=51b282e91639ff6d0c2b902b76561037 -->
+
+<!-- pgdoc-cn_start sig_en=ac9575b5f564c66bc18db497ab1ff1d4 sig_cn_org=None source=14.1 
+  <para>
+   This function returns a value that can be approximately understood as the
+   greatest similarity between the first string and any substring of the second
+   string.  However, this function does not add padding to the boundaries of
+   the extent.  Thus, the number of additional characters present in the
+   second string is not considered, except for the mismatched word boundaries.
+  </para>
+________________________________________________________-->
+  <para>
+   这个函数返回的值可以大概地理解为第一个字符串和第二个字符串任意子串的最大相似度。不过，这个函数不会对该部分的边界加入填充。因此，除了失配的词边界之外，第二个字符串中存在的额外字符的数目没有被考虑。
+  </para>
+<!-- pgdoc-cn_end sig_en=ac9575b5f564c66bc18db497ab1ff1d4 -->
+
+<!-- pgdoc-cn_start sig_en=555be736936654df232c8139f1299eb6 sig_cn_org=None source=14.1 
+  <para>
+   At the same time, <function>strict_word_similarity</function>
+   selects an extent of words in the second string.  In the example above,
+   <function>strict_word_similarity</function> would select the
+   extent of a single word <literal>'words'</literal>, whose set of trigrams is
+   <literal>{"  w"," wo","wor","ord","rds","ds "}</literal>.
+
+<programlisting>
+# SELECT strict_word_similarity('word', 'two words'), similarity('word', 'words');
+ strict_word_similarity | similarity
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+               0.571429 |   0.571429
+(1 row)
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   同时，<function>strict_word_similarity</function>在第二个字符串中选择一个由词构成的部分。
+   在上面的例子中，<function>strict_word_similarity</function>会选择单个词<literal>'words'</literal>形成的部分，
+   其trigram集合为<literal>{"  w"," wo","wor","ord","rds","ds "}</literal>。
+
+<programlisting>
+# SELECT strict_word_similarity('word', 'two words'), similarity('word', 'words');
+ strict_word_similarity | similarity
+------------------------+------------
+               0.571429 |   0.571429
+(1 row)
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=555be736936654df232c8139f1299eb6 -->
+
+<!-- pgdoc-cn_start sig_en=dfc6c0b97c4460991c9eaf9c881ede74 sig_cn_org=None source=14.1 
+  <para>
+   Thus, the <function>strict_word_similarity</function> function
+   is useful for finding the similarity to whole words, while
+   <function>word_similarity</function> is more suitable for
+   finding the similarity for parts of words.
+  </para>
+________________________________________________________-->
+  <para>
+   因此，<function>strict_word_similarity</function>函数对于计算整个词的相似度有用，而<function>word_similarity</function>更适合于计算词的部分相似度。
+  </para>
+<!-- pgdoc-cn_end sig_en=dfc6c0b97c4460991c9eaf9c881ede74 -->
+
+  <table id="pgtrgm-op-table">
+<!-- pgdoc-cn_start sig_en=02c84dd9014f1ed9388abd2b50005f4c sig_cn_org=None source=14.1 
+   <title><filename>pg_trgm</filename> Operators</title>
+________________________________________________________-->
+   <title><filename>pg_trgm</filename> 操作符</title>
+<!-- pgdoc-cn_end sig_en=02c84dd9014f1ed9388abd2b50005f4c -->
+    <tgroup cols="1">
+     <thead>
+<!-- pgdoc-cn_start sig_en=860582efa5a4237e828778cb17b589cb sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Operator
+       </para>
+       <para>
+        Description
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        操作符
+       </para>
+       <para>
+        描述
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=860582efa5a4237e828778cb17b589cb -->
+     </thead>
+
+     <tbody>
+<!-- pgdoc-cn_start sig_en=f8e50eb09085972057650cc163011bdd sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>%</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Returns <literal>true</literal> if its arguments have a similarity
+        that is greater than the current similarity threshold set by
+        <varname>pg_trgm.similarity_threshold</varname>.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>%</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        如果参数具有超过<varname>pg_trgm.similarity_threshold</varname>设置的当前相似度阈值的相似度，则返回<literal>true</literal>。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f8e50eb09085972057650cc163011bdd -->
+
+<!-- pgdoc-cn_start sig_en=5aff8bd23f114d8ed8016cab01760d18 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;%</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Returns <literal>true</literal> if the similarity between the trigram
+        set in the first argument and a continuous extent of an ordered trigram
+        set in the second argument is greater than the current word similarity
+        threshold set by <varname>pg_trgm.word_similarity_threshold</varname>
+        parameter.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;%</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        如果第一个参数中的trigram集合与第二个参数中有序trigram集合的一个连续部分之间的相似度超过
+        <varname>pg_trgm.word_similarity_threshold</varname>参数设置的当前词相似度阈值，
+        则返回<literal>true</literal>。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5aff8bd23f114d8ed8016cab01760d18 -->
+
+<!-- pgdoc-cn_start sig_en=daf7d08e40ec0ddc57540ecfd1d03548 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>%&gt;</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Commutator of the <literal>&lt;%</literal> operator.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>%&gt;</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <literal>&lt;%</literal>操作符的交换子。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=daf7d08e40ec0ddc57540ecfd1d03548 -->
+
+<!-- pgdoc-cn_start sig_en=b10a67f4bc162802f312e87ea27e84a2 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;&lt;%</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Returns <literal>true</literal> if its second argument has a continuous
+        extent of an ordered trigram set that matches word boundaries,
+        and its similarity to the trigram set of the first argument is greater
+        than the current strict word similarity threshold set by the
+        <varname>pg_trgm.strict_word_similarity_threshold</varname> parameter.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;&lt;%</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        如果第二个参数有有序trigram集合的一个连续部分匹配词边界，并且其与第一个参数的trigram集合的相似度超过
+        <varname>pg_trgm.strict_word_similarity_threshold</varname>参数设置的当前严格词相似度阈值，
+        则返回<literal>true</literal>。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=b10a67f4bc162802f312e87ea27e84a2 -->
+
+<!-- pgdoc-cn_start sig_en=510125ce9ee943e19397d13770f5c409 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>%&gt;&gt;</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Commutator of the <literal>&lt;&lt;%</literal> operator.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>%&gt;&gt;</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <literal>&lt;&lt;%</literal>操作符的交换子。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=510125ce9ee943e19397d13770f5c409 -->
+
+<!-- pgdoc-cn_start sig_en=88a34eb0e8ebdb32fe512aa46da460b4 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;-&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Returns the <quote>distance</quote> between the arguments, that is
+        one minus the <function>similarity()</function> value.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;-&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        返回参数之间的<quote>距离</quote>，即 1 减去<function>similarity()</function>值。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=88a34eb0e8ebdb32fe512aa46da460b4 -->
+
+<!-- pgdoc-cn_start sig_en=4b43566eda15cd372286e757e381b90f sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;&lt;-&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Returns the <quote>distance</quote> between the arguments, that is
+        one minus the <function>word_similarity()</function> value.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;&lt;-&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        返回参数之间的<quote>距离</quote>，它是 1 减去<function>word_similarity()</function>的值。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=4b43566eda15cd372286e757e381b90f -->
+
+<!-- pgdoc-cn_start sig_en=75aba08681277438594df03973477e1d sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;-&gt;&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Commutator of the <literal>&lt;&lt;-&gt;</literal> operator.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;-&gt;&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        <literal>&lt;&lt;-&gt;</literal>操作符的交换子。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=75aba08681277438594df03973477e1d -->
+
+<!-- pgdoc-cn_start sig_en=42d6c9128ba770b951aac7bfcce39e81 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;&lt;&lt;-&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Returns the <quote>distance</quote> between the arguments, that is
+        one minus the <function>strict_word_similarity()</function> value.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;&lt;&lt;-&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        返回参数之间的<quote>距离</quote>，也就是1减去<function>strict_word_similarity()</function>的值。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=42d6c9128ba770b951aac7bfcce39e81 -->
+
+<!-- pgdoc-cn_start sig_en=f5b81f862e62cb9154490939d1588b0d sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;-&gt;&gt;&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        Commutator of the <literal>&lt;&lt;&lt;-&gt;</literal> operator.
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>text</type> <literal>&lt;-&gt;&gt;&gt;</literal> <type>text</type>
+        <returnvalue>real</returnvalue>
+       </para>
+       <para>
+        <literal>&lt;&lt;&lt;-&gt;</literal>操作符的交换子。
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f5b81f862e62cb9154490939d1588b0d -->
+     </tbody>
+    </tgroup>
+  </table>
+ </sect2>
+
+ <sect2 id="pgtrgm-guc">
+<!-- pgdoc-cn_start sig_en=710ef786a77a8b4999d35aebdbbda04f sig_cn_org=None source=14.1 
+  <title>GUC Parameters</title>
+________________________________________________________-->
+  <title>GUC 参数</title>
+<!-- pgdoc-cn_end sig_en=710ef786a77a8b4999d35aebdbbda04f -->
+
+  <variablelist>
+   <varlistentry id="guc-pgtrgm-similarity-threshold" xreflabel="pg_trgm.similarity_threshold">
+<!-- pgdoc-cn_start sig_en=8a9fceb10ede6b13382a439ef5d2e85f sig_cn_org=None source=14.1 
+    <term>
+     <varname>pg_trgm.similarity_threshold</varname> (<type>real</type>)
+     <indexterm>
+      <primary><varname>pg_trgm.similarity_threshold</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+________________________________________________________-->
+    <term>
+     <varname>pg_trgm.similarity_threshold</varname> (<type>real</type>)
+     <indexterm>
+      <primary><varname>pg_trgm.similarity_threshold</varname> 配置参数</primary>
+     </indexterm>
+    </term>
+<!-- pgdoc-cn_end sig_en=8a9fceb10ede6b13382a439ef5d2e85f -->
+    <listitem>
+<!-- pgdoc-cn_start sig_en=e925f57065b691f2917ef3e88ae63372 sig_cn_org=None source=14.1 
+     <para>
+      Sets the current similarity threshold that is used by the <literal>%</literal>
+      operator.  The threshold must be between 0 and 1 (default is 0.3).
+     </para>
+________________________________________________________-->
+     <para>
+      设置<literal>%</literal>操作符使用的当前相似度阈值。该阈值必须位于 0 和 1 之间（默认是 0.3）。
+     </para>
+<!-- pgdoc-cn_end sig_en=e925f57065b691f2917ef3e88ae63372 -->
+    </listitem>
+   </varlistentry>
+   <varlistentry id="guc-pgtrgm-word-similarity-threshold" xreflabel="pg_trgm.word_similarity_threshold">
+<!-- pgdoc-cn_start sig_en=8a987ea8ecc3373d8757c7d732d4d696 sig_cn_org=None source=14.1 
+    <term>
+     <varname>pg_trgm.word_similarity_threshold</varname> (<type>real</type>)
+     <indexterm>
+      <primary><varname>pg_trgm.word_similarity_threshold</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+________________________________________________________-->
+    <term>
+     <varname>pg_trgm.word_similarity_threshold</varname> (<type>real</type>)
+     <indexterm>
+      <primary>
+       <varname>pg_trgm.word_similarity_threshold</varname> 配置参数
+      </primary>
+     </indexterm>
+    </term>
+<!-- pgdoc-cn_end sig_en=8a987ea8ecc3373d8757c7d732d4d696 -->
+    <listitem>
+<!-- pgdoc-cn_start sig_en=7ed926f2fd76fbea17d55f2f646eaf62 sig_cn_org=None source=14.1 
+     <para>
+      Sets the current word similarity threshold that is used by the
+      <literal>&lt;%</literal> and <literal>%&gt;</literal> operators.  The threshold
+      must be between 0 and 1 (default is 0.6).
+     </para>
+________________________________________________________-->
+     <para>
+      设置<literal>&lt;%</literal>和<literal>%&gt;</literal>操作符使用的当前词相似度阈值。该阈值必须位于 0 和 1 之间（默认是 0.6）。
+     </para>
+<!-- pgdoc-cn_end sig_en=7ed926f2fd76fbea17d55f2f646eaf62 -->
+    </listitem>
+   </varlistentry>
+   <varlistentry id="guc-pgtrgm-strict-word-similarity-threshold" xreflabel="pg_trgm.strict_word_similarity_threshold">
+<!-- pgdoc-cn_start sig_en=da7172fb1835ad0220a66e708a35dc51 sig_cn_org=None source=14.1 
+    <term>
+     <varname>pg_trgm.strict_word_similarity_threshold</varname> (<type>real</type>)
+     <indexterm>
+      <primary><varname>pg_trgm.strict_word_similarity_threshold</varname> configuration parameter</primary>
+     </indexterm>
+    </term>
+________________________________________________________-->
+    <term>
+     <varname>pg_trgm.strict_word_similarity_threshold</varname> (<type>real</type>)
+     <indexterm>
+      <primary>
+       <varname>pg_trgm.strict_word_similarity_threshold</varname> 配置参数
+      </primary>
+     </indexterm>
+    </term>
+<!-- pgdoc-cn_end sig_en=da7172fb1835ad0220a66e708a35dc51 -->
+    <listitem>
+<!-- pgdoc-cn_start sig_en=0a08092a2c8c5be6b1e979708931cb0b sig_cn_org=None source=14.1 
+     <para>
+      Sets the current strict word similarity threshold that is used by the
+      <literal>&lt;&lt;%</literal> and <literal>%&gt;&gt;</literal> operators.  The threshold
+      must be between 0 and 1 (default is 0.5).
+     </para>
+________________________________________________________-->
+     <para>
+      设置<literal>&lt;&lt;%</literal>和<literal>%&gt;&gt;</literal>运算符使用的当前严格词相似度阈值。
+      阈值必须介于0和1之间（默认值为0.5）。
+     </para>
+<!-- pgdoc-cn_end sig_en=0a08092a2c8c5be6b1e979708931cb0b -->
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2 id="pgtrgm-index">
+<!-- pgdoc-cn_start sig_en=e958caa78a7291f098a4a880b0470bc4 sig_cn_org=None source=14.1 
+  <title>Index Support</title>
+________________________________________________________-->
+  <title>索引支持</title>
+<!-- pgdoc-cn_end sig_en=e958caa78a7291f098a4a880b0470bc4 -->
+
+<!-- pgdoc-cn_start sig_en=48ad6a6aff6d1d670cf79c34a45954fa sig_cn_org=dd18363f98431199b9bb556c2f958b0d source=16.8 
+  <para>
+   The <filename>pg_trgm</filename> module provides GiST and GIN index
+   operator classes that allow you to create an index over a text column for
+   the purpose of very fast similarity searches.  These index types support
+   the above-described similarity operators, and additionally support
+   trigram-based index searches for <literal>LIKE</literal>, <literal>ILIKE</literal>,
+   <literal>~</literal>, <literal>~*</literal> and <literal>=</literal> queries.
+   The similarity comparisons are case-insensitive in a default build of
+   <filename>pg_trgm</filename>.
+   Inequality operators are not supported.
+   Note that those indexes may not be as efficient as regular B-tree indexes
+   for equality operator.
+  </para>
+________________________________________________________-->
+  <para>
+   <filename>pg_trgm</filename>模块提供了GiST和GIN索引操作符类，这些类允许您在文本列上创建索引，
+   以实现非常快速的相似性搜索。这些索引类型支持上述描述的相似性操作符，并且还支持基于三元组的
+   索引搜索，例如<literal>LIKE</literal>、<literal>ILIKE</literal>、<literal>~</literal>、
+   <literal>~*</literal>和<literal>=</literal>查询。
+   在默认构建的<filename>pg_trgm</filename>中，相似性比较是大小写不敏感的。
+   不支持不等式操作符。
+   请注意，对于等式操作符，这些索引可能不如常规B树索引高效。
+  </para>
+<!-- pgdoc-cn_end sig_en=48ad6a6aff6d1d670cf79c34a45954fa -->
+
+<!-- pgdoc-cn_start sig_en=a134f35adc9bc260d06350e41959a957 sig_cn_org=None source=14.1 
+  <para>
+   Example:
+
+<programlisting>
+CREATE TABLE test_trgm (t text);
+CREATE INDEX trgm_idx ON test_trgm USING GIST (t gist_trgm_ops);
+</programlisting>
+or
+<programlisting>
+CREATE INDEX trgm_idx ON test_trgm USING GIN (t gin_trgm_ops);
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   例子：
+
+<programlisting>
+CREATE TABLE test_trgm (t text);
+CREATE INDEX trgm_idx ON test_trgm USING GIST (t gist_trgm_ops);
+</programlisting>
+或
+<programlisting>
+CREATE INDEX trgm_idx ON test_trgm USING GIN (t gin_trgm_ops);
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=a134f35adc9bc260d06350e41959a957 -->
+
+<!-- pgdoc-cn_start sig_en=b566b621073e80dc08ab78e42943d5fb sig_cn_org=None source=14.1 
+  <para>
+   <literal>gist_trgm_ops</literal> GiST opclass approximates a set of
+   trigrams as a bitmap signature.  Its optional integer parameter
+   <literal>siglen</literal> determines the
+   signature length in bytes.  The default length is 12 bytes.
+   Valid values of signature length are between 1 and 2024 bytes.  Longer
+   signatures lead to a more precise search (scanning a smaller fraction of the index and
+   fewer heap pages), at the cost of a larger index.
+  </para>
+________________________________________________________-->
+  <para>
+   <literal>gist_trgm_ops</literal> GiST opclass 将一组三元组近似为位图签名。
+   它的可选整数参数<literal>siglen</literal> 确定签名长度（以字节为单位）。
+   默认长度为12个字节。签名长度的有效值介于1到2024字节之间。
+   更长的签名导致更精确的搜索（扫描索引的一小部分和更少的堆页面），但代价是更大的索引。
+  </para>
+<!-- pgdoc-cn_end sig_en=b566b621073e80dc08ab78e42943d5fb -->
+
+<!-- pgdoc-cn_start sig_en=a879ac50ad01e9fe77ef96b4928ede7c sig_cn_org=None source=14.1 
+  <para>
+   Example of creating such an index with a signature length of 32 bytes:
+  </para>
+________________________________________________________-->
+  <para>
+   创建签名长度为32字节的此类索引的示例：
+  </para>
+<!-- pgdoc-cn_end sig_en=a879ac50ad01e9fe77ef96b4928ede7c -->
+<!-- pgdoc-cn_start sig_en=ec8590165716982450f386cf59b3aeb1 sig_cn_org=None source=14.1 
+<programlisting>
+CREATE INDEX trgm_idx ON test_trgm USING GIST (t gist_trgm_ops(siglen=32));
+</programlisting>
+________________________________________________________-->
+<programlisting>
+CREATE INDEX trgm_idx ON test_trgm USING GIST (t gist_trgm_ops(siglen=32));
+</programlisting>
+<!-- pgdoc-cn_end sig_en=ec8590165716982450f386cf59b3aeb1 -->
+
+<!-- pgdoc-cn_start sig_en=3fcbe346d2de1f6418ec29e650c788ec sig_cn_org=None source=14.1 
+  <para>
+   At this point, you will have an index on the <structfield>t</structfield> column that
+   you can use for similarity searching.  A typical query is
+<programlisting>
+SELECT t, similarity(t, '<replaceable>word</replaceable>') AS sml
+  FROM test_trgm
+  WHERE t % '<replaceable>word</replaceable>'
+  ORDER BY sml DESC, t;
+</programlisting>
+   This will return all values in the text column that are sufficiently
+   similar to <replaceable>word</replaceable>, sorted from best match to worst.  The
+   index will be used to make this a fast operation even over very large data
+   sets.
+  </para>
+________________________________________________________-->
+  <para>
+   此时，你将有一个<structfield>t</structfield>列上的索引，你可以用它进行相似度搜索。一个典型的查询是
+<programlisting>
+SELECT t, similarity(t, '<replaceable>word</replaceable>') AS sml
+  FROM test_trgm
+  WHERE t % '<replaceable>word</replaceable>'
+  ORDER BY sml DESC, t;
+</programlisting>
+   这将返回在文本列中与<replaceable>word</replaceable>足够相似的所有值，按最佳匹配到最差匹配的方式排序。索引将被用来让这种搜索变快，即使在一个非常大的数据集上。
+  </para>
+<!-- pgdoc-cn_end sig_en=3fcbe346d2de1f6418ec29e650c788ec -->
+
+<!-- pgdoc-cn_start sig_en=3d1313ae0578afa44457fdc05102654e sig_cn_org=None source=14.1 
+  <para>
+   A variant of the above query is
+<programlisting>
+SELECT t, t &lt;-&gt; '<replaceable>word</replaceable>' AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;
+</programlisting>
+   This can be implemented quite efficiently by GiST indexes, but not
+   by GIN indexes.  It will usually beat the first formulation when only
+   a small number of the closest matches is wanted.
+  </para>
+________________________________________________________-->
+  <para>
+   上述查询的一种变体是
+<programlisting>
+SELECT t, t &lt;-&gt; '<replaceable>word</replaceable>' AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;
+</programlisting>
+   这能够用GiST索引有效地实现，但是用GIN索引无法做到。当只想要少数最接近的匹配时，这通常会比第一种形式更好。
+  </para>
+<!-- pgdoc-cn_end sig_en=3d1313ae0578afa44457fdc05102654e -->
+
+<!-- pgdoc-cn_start sig_en=9c08e1a36a6379dcdbffa927bf3bcd6f sig_cn_org=None source=14.1 
+  <para>
+   Also you can use an index on the <structfield>t</structfield> column for word
+   similarity or strict word similarity.  Typical queries are:
+<programlisting>
+SELECT t, word_similarity('<replaceable>word</replaceable>', t) AS sml
+  FROM test_trgm
+  WHERE '<replaceable>word</replaceable>' &lt;% t
+  ORDER BY sml DESC, t;
+</programlisting>
+   and
+<programlisting>
+SELECT t, strict_word_similarity('<replaceable>word</replaceable>', t) AS sml
+  FROM test_trgm
+  WHERE '<replaceable>word</replaceable>' &lt;&lt;% t
+  ORDER BY sml DESC, t;
+</programlisting>
+   This will return all values in the text column for which there is a
+   continuous extent in the corresponding ordered trigram set that is
+   sufficiently similar to the trigram set of <replaceable>word</replaceable>,
+   sorted from best match to worst.  The index will be used to make this
+   a fast operation even over very large data sets.
+  </para>
+________________________________________________________-->
+  <para>
+   也可以把一个<structfield>t</structfield>列上的索引用于词相似度或者严格词相似度。典型的查询是：
+<programlisting>
+SELECT t, word_similarity('<replaceable>word</replaceable>', t) AS sml
+  FROM test_trgm
+  WHERE '<replaceable>word</replaceable>' &lt;% t
+  ORDER BY sml DESC, t;
+</programlisting>
+   和
+<programlisting>
+SELECT t, strict_word_similarity('<replaceable>word</replaceable>', t) AS sml
+  FROM test_trgm
+  WHERE '<replaceable>word</replaceable>' &lt;&lt;% t
+  ORDER BY sml DESC, t;
+</programlisting>
+   这将返回文本列中符合条件的所有值：这些值在其对应的有序trigram集中有一个连续部分与<replaceable>word</replaceable>的trigram集合足够相似，这些值会按照最好匹配到最差匹配的顺序排列。即便在非常大的数据集上，索引也将使得这一操作的速度更快。
+  </para>
+<!-- pgdoc-cn_end sig_en=9c08e1a36a6379dcdbffa927bf3bcd6f -->
+
+<!-- pgdoc-cn_start sig_en=6ab51b7e2f12c69754d924302cdd05a9 sig_cn_org=None source=14.1 
+  <para>
+   Possible variants of the above queries are:
+<programlisting>
+SELECT t, '<replaceable>word</replaceable>' &lt;&lt;-&gt; t AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;
+</programlisting>
+   and
+<programlisting>
+SELECT t, '<replaceable>word</replaceable>' &lt;&lt;&lt;-&gt; t AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;
+</programlisting>
+   This can be implemented quite efficiently by GiST indexes, but not
+   by GIN indexes.
+  </para>
+________________________________________________________-->
+  <para>
+   上述查询可能的变体有：
+<programlisting>
+SELECT t, '<replaceable>word</replaceable>' &lt;&lt;-&gt; t AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;
+</programlisting>
+   和
+<programlisting>
+SELECT t, '<replaceable>word</replaceable>' &lt;&lt;&lt;-&gt; t AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;
+</programlisting>
+   这可以用 GiST 索引很高效地实现，但是用 GIN 索引不行。
+  </para>
+<!-- pgdoc-cn_end sig_en=6ab51b7e2f12c69754d924302cdd05a9 -->
+
+
+<!-- pgdoc-cn_start sig_en=733d19967f810fdbb75b771042e5f784 sig_cn_org=None source=14.1 
+  <para>
+   Beginning in <productname>PostgreSQL</productname> 9.1, these index types also support
+   index searches for <literal>LIKE</literal> and <literal>ILIKE</literal>, for example
+<programlisting>
+SELECT * FROM test_trgm WHERE t LIKE '%foo%bar';
+</programlisting>
+   The index search works by extracting trigrams from the search string
+   and then looking these up in the index.  The more trigrams in the search
+   string, the more effective the index search is.  Unlike B-tree based
+   searches, the search string need not be left-anchored.
+  </para>
+________________________________________________________-->
+  <para>
+   从<productname>PostgreSQL</productname> 9.1 中开始，这些索引类型也支持用于<literal>LIKE</literal>和<literal>ILIKE</literal>的索引搜索，例如
+<programlisting>
+SELECT * FROM test_trgm WHERE t LIKE '%foo%bar';
+</programlisting>
+   该索引搜索通过从搜索字符串中抽取 trigram 并且在索引中查找它们来工作。搜索字符串中有更多 trigram，索引搜索的效率更高。不像基于 B-树的搜索，搜索字符串不需要是左锚定的。
+  </para>
+<!-- pgdoc-cn_end sig_en=733d19967f810fdbb75b771042e5f784 -->
+
+<!-- pgdoc-cn_start sig_en=ae72a6633d6bb003dabf28df4736fe0c sig_cn_org=None source=14.1 
+  <para>
+   Beginning in <productname>PostgreSQL</productname> 9.3, these index types also support
+   index searches for regular-expression matches
+   (<literal>~</literal> and <literal>~*</literal> operators), for example
+<programlisting>
+SELECT * FROM test_trgm WHERE t ~ '(foo|bar)';
+</programlisting>
+   The index search works by extracting trigrams from the regular expression
+   and then looking these up in the index.  The more trigrams that can be
+   extracted from the regular expression, the more effective the index search
+   is.  Unlike B-tree based searches, the search string need not be
+   left-anchored.
+  </para>
+________________________________________________________-->
+  <para>
+   从<productname>PostgreSQL</productname> 9.3 中开始，这些索引类型也支持用于正则表达式匹配（<literal>~</literal>和<literal>~*</literal>操作符）的索引搜索，例如
+<programlisting>
+SELECT * FROM test_trgm WHERE t ~ '(foo|bar)';
+</programlisting>
+   该索引搜索通过从正则表达式中抽取 trigram 并且在索引中查找它们来工作。正则表达式中能抽取出更多 trigram，索引搜索的效率更高。不像基于 B-树的搜索，搜索字符串不需要是左锚定的。
+  </para>
+<!-- pgdoc-cn_end sig_en=ae72a6633d6bb003dabf28df4736fe0c -->
+
+<!-- pgdoc-cn_start sig_en=9735594f138b22355aa34891694eb043 sig_cn_org=None source=14.1 
+  <para>
+   For both <literal>LIKE</literal> and regular-expression searches, keep in mind
+   that a pattern with no extractable trigrams will degenerate to a full-index
+   scan.
+  </para>
+________________________________________________________-->
+  <para>
+   对于<literal>LIKE</literal>和正则表达式搜索，记住没有可抽取 trigram 的模式将退化成一个全索引扫描。
+  </para>
+<!-- pgdoc-cn_end sig_en=9735594f138b22355aa34891694eb043 -->
+
+<!-- pgdoc-cn_start sig_en=b7c01efd1536cc47ec6e0c535b625d66 sig_cn_org=None source=14.1 
+  <para>
+   The choice between GiST and GIN indexing depends on the relative
+   performance characteristics of GiST and GIN, which are discussed elsewhere.
+  </para>
+________________________________________________________-->
+  <para>
+   GiST 和 GIN 索引之间的选择依赖于 GiST 和 GIN 的相对性能特性，这在其他地方讨论。
+  </para>
+<!-- pgdoc-cn_end sig_en=b7c01efd1536cc47ec6e0c535b625d66 -->
+ </sect2>
+
+ <sect2 id="pgtrgm-text-search">
+<!-- pgdoc-cn_start sig_en=d92bde83ed655651186326f35dc88c51 sig_cn_org=None source=14.1 
+  <title>Text Search Integration</title>
+________________________________________________________-->
+  <title>文本搜索集成</title>
+<!-- pgdoc-cn_end sig_en=d92bde83ed655651186326f35dc88c51 -->
+
+<!-- pgdoc-cn_start sig_en=ccc7ec0976e2936d9fad3b179460702b sig_cn_org=None source=14.1 
+  <para>
+   Trigram matching is a very useful tool when used in conjunction
+   with a full text index.  In particular it can help to recognize
+   misspelled input words that will not be matched directly by the
+   full text search mechanism.
+  </para>
+________________________________________________________-->
+  <para>
+   在与一个全文索引联合使用时，trigram 匹配是一种非常有用的工具。特别是它能有助于识别拼写错误的输入词，这些词直接用全文搜索机制是不会被匹配的。
+  </para>
+<!-- pgdoc-cn_end sig_en=ccc7ec0976e2936d9fad3b179460702b -->
+
+<!-- pgdoc-cn_start sig_en=8cc9c19547a1cc9afab0d9347e02922f sig_cn_org=None source=14.1 
+  <para>
+   The first step is to generate an auxiliary table containing all
+   the unique words in the documents:
+
+<programlisting>
+CREATE TABLE words AS SELECT word FROM
+        ts_stat('SELECT to_tsvector(''simple'', bodytext) FROM documents');
+</programlisting>
+
+   where <structname>documents</structname> is a table that has a text field
+   <structfield>bodytext</structfield> that we wish to search.  The reason for using
+   the <literal>simple</literal> configuration with the <function>to_tsvector</function>
+   function, instead of using a language-specific configuration,
+   is that we want a list of the original (unstemmed) words.
+  </para>
+________________________________________________________-->
+  <para>
+   第一步是生成一个包含文档中所有唯一词的辅助表：
+
+<programlisting>
+CREATE TABLE words AS SELECT word FROM
+        ts_stat('SELECT to_tsvector(''simple'', bodytext) FROM documents');
+</programlisting>
+
+   其中<structname>documents</structname>是一个具有我们希望搜索的文本字段<structfield>bodytext</structfield>的表。对<function>to_tsvector</function>函数使用<literal>simple</literal>配置而不是使用语言相关的配置的原因是，我们想要一个原始（未去掉词根的）词的列表。
+  </para>
+<!-- pgdoc-cn_end sig_en=8cc9c19547a1cc9afab0d9347e02922f -->
+
+<!-- pgdoc-cn_start sig_en=794a2cf2092952fdbdfa2bae00db80e8 sig_cn_org=None source=14.1 
+  <para>
+   Next, create a trigram index on the word column:
+
+<programlisting>
+CREATE INDEX words_idx ON words USING GIN (word gin_trgm_ops);
+</programlisting>
+
+   Now, a <command>SELECT</command> query similar to the previous example can
+   be used to suggest spellings for misspelled words in user search terms.
+   A useful extra test is to require that the selected words are also of
+   similar length to the misspelled word.
+  </para>
+________________________________________________________-->
+  <para>
+   接下来，在词列上创建一个 trigram 索引：
+
+<programlisting>
+CREATE INDEX words_idx ON words USING GIN (word gin_trgm_ops);
+</programlisting>
+
+   现在，类似于前面例子的一个<command>SELECT</command>查询可以用来为用户搜索术语中的拼写错误的词建议拼写。要求被选择的词也与拼写错误的词具有相似的长度是一种有用的额外测试。
+  </para>
+<!-- pgdoc-cn_end sig_en=794a2cf2092952fdbdfa2bae00db80e8 -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=be1c2e95bb83632fa2c7f963f9e2f189 sig_cn_org=None source=14.1 
+   <para>
+    Since the <structname>words</structname> table has been generated as a separate,
+    static table, it will need to be periodically regenerated so that
+    it remains reasonably up-to-date with the document collection.
+    Keeping it exactly current is usually unnecessary.
+   </para>
+________________________________________________________-->
+   <para>
+    由于<structname>words</structname>表已经被生成为一个单独的、静态的表，它将需要定期重新生成，以便与文档集合保持合理的同步。要求它完全与文档集合同步通常是不必要的。
+   </para>
+<!-- pgdoc-cn_end sig_en=be1c2e95bb83632fa2c7f963f9e2f189 -->
+  </note>
+ </sect2>
+
+ <sect2 id="pgtrgm-references">
+<!-- pgdoc-cn_start sig_en=5c188e1143059b53354b04c89caaf0c9 sig_cn_org=None source=14.1 
+  <title>References</title>
+________________________________________________________-->
+  <title>参考</title>
+<!-- pgdoc-cn_end sig_en=5c188e1143059b53354b04c89caaf0c9 -->
+
+<!-- pgdoc-cn_start sig_en=70cd28f04cecf8f3182f667663179860 sig_cn_org=None source=14.1 
+  <para>
+   GiST Development Site
+   <ulink url="http://www.sai.msu.su/~megera/postgres/gist/"></ulink>
+  </para>
+________________________________________________________-->
+  <para>
+   GiST 开发站点
+   <ulink url="http://www.sai.msu.su/~megera/postgres/gist/"></ulink>
+  </para>
+<!-- pgdoc-cn_end sig_en=70cd28f04cecf8f3182f667663179860 -->
+<!-- pgdoc-cn_start sig_en=03729b6f43a448efe7bd3834627528b7 sig_cn_org=None source=14.1 
+  <para>
+   Tsearch2 Development Site
+   <ulink url="http://www.sai.msu.su/~megera/postgres/gist/tsearch/V2/"></ulink>
+  </para>
+________________________________________________________-->
+  <para>
+   Tsearch2 开发站点
+   <ulink url="http://www.sai.msu.su/~megera/postgres/gist/tsearch/V2/"></ulink>
+  </para>
+<!-- pgdoc-cn_end sig_en=03729b6f43a448efe7bd3834627528b7 -->
+ </sect2>
+
+ <sect2 id="pgtrgm-authors">
+<!-- pgdoc-cn_start sig_en=c9d18a21a6b8c7d5325e8feeb56b7420 sig_cn_org=None source=14.1 
+  <title>Authors</title>
+________________________________________________________-->
+  <title>作者</title>
+<!-- pgdoc-cn_end sig_en=c9d18a21a6b8c7d5325e8feeb56b7420 -->
+
+<!-- pgdoc-cn_start sig_en=da8e1e5ab6d4b351f5bb45b4cb8c8125 sig_cn_org=None source=14.1 
+  <para>
+   Oleg Bartunov <email>oleg@sai.msu.su</email>, Moscow, Moscow University, Russia
+  </para>
+________________________________________________________-->
+  <para>
+   Oleg Bartunov <email>oleg@sai.msu.su</email>，俄罗斯莫斯科，莫斯科大学
+  </para>
+<!-- pgdoc-cn_end sig_en=da8e1e5ab6d4b351f5bb45b4cb8c8125 -->
+<!-- pgdoc-cn_start sig_en=520fa167371d7c5437271054df598596 sig_cn_org=None source=14.1 
+  <para>
+   Teodor Sigaev <email>teodor@sigaev.ru</email>, Moscow, Delta-Soft Ltd.,Russia
+  </para>
+________________________________________________________-->
+  <para>
+   Teodor Sigaev <email>teodor@sigaev.ru</email>，俄罗斯莫斯科 Delta-Soft Ltd.，俄罗斯
+  </para>
+<!-- pgdoc-cn_end sig_en=520fa167371d7c5437271054df598596 -->
+<!-- pgdoc-cn_start sig_en=78ddae2a5f9eea8412fcfa493b9004e3 sig_cn_org=None source=14.1 
+  <para>
+   Alexander Korotkov <email>a.korotkov@postgrespro.ru</email>, Moscow, Postgres Professional, Russia
+  </para>
+________________________________________________________-->
+  <para>
+   Alexander Korotkov <email>a.korotkov@postgrespro.ru</email>，俄罗斯莫斯科，Postgres Professional
+  </para>
+<!-- pgdoc-cn_end sig_en=78ddae2a5f9eea8412fcfa493b9004e3 -->
+<!-- pgdoc-cn_start sig_en=2fdb4ac7f4d32a14f60b2dbb8ce73e60 sig_cn_org=None source=14.1 
+  <para>
+   Documentation: Christopher Kings-Lynne
+  </para>
+________________________________________________________-->
+  <para>
+   文档：Christopher Kings-Lynne
+  </para>
+<!-- pgdoc-cn_end sig_en=2fdb4ac7f4d32a14f60b2dbb8ce73e60 -->
+<!-- pgdoc-cn_start sig_en=5f854b0a75a698c57797d6a23d664a6e sig_cn_org=None source=14.1 
+  <para>
+   This module is sponsored by Delta-Soft Ltd., Moscow, Russia.
+  </para>
+________________________________________________________-->
+  <para>
+   这个模块由俄罗斯莫斯科 Delta-Soft Ltd. 赞助。
+  </para>
+<!-- pgdoc-cn_end sig_en=5f854b0a75a698c57797d6a23d664a6e -->
+ </sect2>
+
+</sect1>
