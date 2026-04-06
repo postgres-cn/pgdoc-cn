@@ -1,0 +1,1979 @@
+<!-- doc/src/sgml/hstore.sgml -->
+
+<sect1 id="hstore" xreflabel="hstore">
+<!-- pgdoc-cn_start sig_en=052eda8c7287839dc9d2f4ebe2a08086 sig_cn_org=8a56f5f3ec304df7e870d537c2f7225c source=16.8 
+ <title>hstore &mdash; hstore key/value datatype</title>
+________________________________________________________-->
+ <title>hstore &mdash; hstore 键/值数据类型</title>
+<!-- pgdoc-cn_end sig_en=052eda8c7287839dc9d2f4ebe2a08086 -->
+
+<!-- pgdoc-cn_start sig_en=eae40bd0bdfb442a50026bbaa32d6ee1 sig_cn_org=None source=14.1 
+ <indexterm zone="hstore">
+  <primary>hstore</primary>
+ </indexterm>
+________________________________________________________-->
+ <indexterm zone="hstore">
+  <primary>hstore</primary>
+ </indexterm>
+<!-- pgdoc-cn_end sig_en=eae40bd0bdfb442a50026bbaa32d6ee1 -->
+
+<!-- pgdoc-cn_start sig_en=e89b8b022c2dff2e1f2cfe533ca3a029 sig_cn_org=None source=14.1 
+ <para>
+  This module implements the <type>hstore</type> data type for storing sets of
+  key/value pairs within a single <productname>PostgreSQL</productname> value.
+  This can be useful in various scenarios, such as rows with many attributes
+  that are rarely examined, or semi-structured data.  Keys and values are
+  simply text strings.
+ </para>
+________________________________________________________-->
+ <para>
+  这个模块实现了<type>hstore</type>数据类型用来在一个单一<productname>PostgreSQL</productname>值中存储键值对。这在各种场景下都有用，例如带有很多很少被检查的属性的行或者半结构化数据。键和值都是简单的文本字符串。
+ </para>
+<!-- pgdoc-cn_end sig_en=e89b8b022c2dff2e1f2cfe533ca3a029 -->
+
+<!-- pgdoc-cn_start sig_en=73fd7076637bb21a0cce44734412cba6 sig_cn_org=None source=14.1 
+ <para>
+  This module is considered <quote>trusted</quote>, that is, it can be
+  installed by non-superusers who have <literal>CREATE</literal> privilege
+  on the current database.
+ </para>
+________________________________________________________-->
+ <para>
+  这个模块被视为<quote>trusted</quote>，也就是说，它可以由对当前数据库具有<literal>CREATE</literal>权限的非超级用户安装。
+ </para>
+<!-- pgdoc-cn_end sig_en=73fd7076637bb21a0cce44734412cba6 -->
+
+ <sect2 id="hstore-external-rep">
+<!-- pgdoc-cn_start sig_en=b6bc764deec0ff4514cc710ce19d3045 sig_cn_org=None source=14.1 
+  <title><type>hstore</type> External Representation</title>
+________________________________________________________-->
+  <title><type>hstore</type> 外部表示</title>
+<!-- pgdoc-cn_end sig_en=b6bc764deec0ff4514cc710ce19d3045 -->
+
+<!-- pgdoc-cn_start sig_en=1d1f510014ece44b382300e264562cb6 sig_cn_org=None source=14.1 
+  <para>
+
+   The text representation of an <type>hstore</type>, used for input and output,
+   includes zero or more <replaceable>key</replaceable> <literal>=&gt;</literal>
+   <replaceable>value</replaceable> pairs separated by commas. Some examples:
+
+<synopsis>
+k =&gt; v
+foo =&gt; bar, baz =&gt; whatever
+"1-a" =&gt; "anything at all"
+</synopsis>
+
+   The order of the pairs is not significant (and may not be reproduced on
+   output). Whitespace between pairs or around the <literal>=&gt;</literal> sign is
+   ignored. Double-quote keys and values that include whitespace, commas,
+   <literal>=</literal>s or <literal>&gt;</literal>s. To include a double quote or a
+   backslash in a key or value, escape it with a backslash.
+  </para>
+________________________________________________________-->
+  <para>
+
+   一个<type>hstore</type>的文本表示用于输入和输出，包括零个或者多个由逗号分隔的<replaceable>key</replaceable> <literal>=&gt;</literal> <replaceable>value</replaceable>对。一些例子：
+
+<synopsis>
+k =&gt; v
+foo =&gt; bar, baz =&gt; whatever
+"1-a" =&gt; "anything at all"
+</synopsis>
+
+   键值对的顺序没有意义（并且在输出时也不会重现）。键值对之间或者<literal>=&gt;</literal>号周围的空白会被忽略。双引号内的键和值可以包括空白、逗号、<literal>=</literal>或<literal>&gt;</literal>。要在一个键或值中包括一个双引号或一个反斜线，用一个反斜线对它转义。
+  </para>
+<!-- pgdoc-cn_end sig_en=1d1f510014ece44b382300e264562cb6 -->
+
+<!-- pgdoc-cn_start sig_en=95668b02736ad3c3ceb210b3bec2bb75 sig_cn_org=None source=14.1 
+  <para>
+   Each key in an <type>hstore</type> is unique. If you declare an <type>hstore</type>
+   with duplicate keys, only one will be stored in the <type>hstore</type> and
+   there is no guarantee as to which will be kept:
+
+<programlisting>
+SELECT 'a=&gt;1,a=&gt;2'::hstore;
+  hstore
+-&minus;-&minus;-&minus;-&minus;-&minus;
+ "a"=&gt;"1"
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   一个<type>hstore</type>中的每一个键是唯一的。如果你声明了一个有重复键的<type>hstore</type>，只有一个会被存储在<type>hstore</type>中并且无法保证哪一个将被保留：
+
+<programlisting>
+SELECT 'a=&gt;1,a=&gt;2'::hstore;
+  hstore
+---------------- 
+ "a"=&gt;"1"
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=95668b02736ad3c3ceb210b3bec2bb75 -->
+
+<!-- pgdoc-cn_start sig_en=1379139e5b9f0c800f30aedf8a54938e sig_cn_org=None source=14.1 
+  <para>
+   A value (but not a key) can be an SQL <literal>NULL</literal>. For example:
+
+<programlisting>
+key =&gt; NULL
+</programlisting>
+
+   The <literal>NULL</literal> keyword is case-insensitive. Double-quote the
+   <literal>NULL</literal> to treat it as the ordinary string <quote>NULL</quote>.
+  </para>
+________________________________________________________-->
+  <para>
+   一个值（但不是一个键）可以是一个 SQL <literal>NULL</literal>。例如：
+
+<programlisting>
+key =&gt; NULL
+</programlisting>
+
+   <literal>NULL</literal>关键词是大小写不敏感的。将<literal>NULL</literal>放在双引号中可以将它当作一个普通的字符串<quote>NULL</quote>。
+  </para>
+<!-- pgdoc-cn_end sig_en=1379139e5b9f0c800f30aedf8a54938e -->
+
+  <note>
+<!-- pgdoc-cn_start sig_en=00bcf029f65c1cefad90b9d9fcc3ce23 sig_cn_org=None source=14.1 
+  <para>
+   Keep in mind that the <type>hstore</type> text format, when used for input,
+   applies <emphasis>before</emphasis> any required quoting or escaping. If you are
+   passing an <type>hstore</type> literal via a parameter, then no additional
+   processing is needed. But if you're passing it as a quoted literal
+   constant, then any single-quote characters and (depending on the setting of
+   the <varname>standard_conforming_strings</varname> configuration parameter)
+   backslash characters need to be escaped correctly. See
+   <xref linkend="sql-syntax-strings"/> for more on the handling of string
+   constants.
+  </para>
+________________________________________________________-->
+  <para>
+   记住当<type>hstore</type>文本格式被用于输入时，它应用在任何必须的引用或转义<emphasis>之前</emphasis>。如果你通过一个参数传递一个<type>hstore</type>文字，那么不需要额外的处理。但是如果你将它作为一个引用的文字常数，那么任何单引号字符以及（取决于<varname>standard_conforming_strings</varname>配置参数的设置）反斜线字符需要被正确地转义。更多关于处理字符串常量的内容可见<xref linkend="sql-syntax-strings"/>。
+  </para>
+<!-- pgdoc-cn_end sig_en=00bcf029f65c1cefad90b9d9fcc3ce23 -->
+  </note>
+
+<!-- pgdoc-cn_start sig_en=cca0ad7140bdd32698768a24875c2488 sig_cn_org=None source=14.1 
+  <para>
+   On output, double quotes always surround keys and values, even when it's
+   not strictly necessary.
+  </para>
+________________________________________________________-->
+  <para>
+   在输出时，双引号总是围绕着键和值，即使这样做不是绝对必要。
+  </para>
+<!-- pgdoc-cn_end sig_en=cca0ad7140bdd32698768a24875c2488 -->
+
+ </sect2>
+
+ <sect2 id="hstore-ops-funcs">
+<!-- pgdoc-cn_start sig_en=0d8f51b80f4001f5466fbe539587c8b0 sig_cn_org=None source=14.1 
+  <title><type>hstore</type> Operators and Functions</title>
+________________________________________________________-->
+  <title><type>hstore</type> 操作符和函数</title>
+<!-- pgdoc-cn_end sig_en=0d8f51b80f4001f5466fbe539587c8b0 -->
+
+<!-- pgdoc-cn_start sig_en=61bca379b77df2770176a9124c9201fe sig_cn_org=None source=14.1 
+  <para>
+   The operators provided by the <literal>hstore</literal> module are
+   shown in <xref linkend="hstore-op-table"/>, the functions
+   in <xref linkend="hstore-func-table"/>.
+  </para>
+________________________________________________________-->
+  <para>
+   <literal>hstore</literal>模块所提供的操作符显示在<xref linkend="hstore-op-table"/>中，函数在<xref linkend="hstore-func-table"/>中。
+  </para>
+<!-- pgdoc-cn_end sig_en=61bca379b77df2770176a9124c9201fe -->
+
+  <table id="hstore-op-table">
+<!-- pgdoc-cn_start sig_en=c4bfed50e8187b33581f8b0bed33d8a7 sig_cn_org=None source=14.1 
+   <title><type>hstore</type> Operators</title>
+________________________________________________________-->
+   <title><type>hstore</type> 操作符</title>
+<!-- pgdoc-cn_end sig_en=c4bfed50e8187b33581f8b0bed33d8a7 -->
+    <tgroup cols="1">
+     <thead>
+<!-- pgdoc-cn_start sig_en=fb35e599e1a11d09e6f5b9cc5fc7368a sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Operator
+       </para>
+       <para>
+        Description
+       </para>
+       <para>
+        Example(s)
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        操作符
+       </para>
+       <para>
+        描述
+       </para>
+       <para>
+        示例
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=fb35e599e1a11d09e6f5b9cc5fc7368a -->
+     </thead>
+
+     <tbody>
+<!-- pgdoc-cn_start sig_en=b6a129af826bbe1dfa6d699fbba0964a sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-&gt;</literal> <type>text</type>
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        Returns value associated with given key, or <literal>NULL</literal> if
+        not present.
+       </para>
+       <para>
+        <literal>'a=&gt;x, b=&gt;y'::hstore -&gt; 'a'</literal>
+        <returnvalue>x</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-&gt;</literal> <type>text</type>
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        返回与给定键相关联的值，如果不存在则返回<literal>NULL</literal>。
+       </para>
+       <para>
+        <literal>'a=&gt;x, b=&gt;y'::hstore -&gt; 'a'</literal>
+        <returnvalue>x</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=b6a129af826bbe1dfa6d699fbba0964a -->
+
+<!-- pgdoc-cn_start sig_en=99f6b03598b3e37d0847cd10fa49ebcc sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-&gt;</literal> <type>text[]</type>
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Returns values associated with given keys, or <literal>NULL</literal>
+        if not present.
+       </para>
+       <para>
+        <literal>'a=&gt;x, b=&gt;y, c=&gt;z'::hstore -&gt; ARRAY['c','a']</literal>
+        <returnvalue>{"z","x"}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-&gt;</literal> <type>text[]</type>
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        返回与给定键（多个）相关联的值，如果不存在则返回<literal>NULL</literal>。
+       </para>
+       <para>
+        <literal>'a=&gt;x, b=&gt;y, c=&gt;z'::hstore -&gt; ARRAY['c','a']</literal>
+        <returnvalue>{"z","x"}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=99f6b03598b3e37d0847cd10fa49ebcc -->
+
+<!-- pgdoc-cn_start sig_en=ff628e9e4d5a005831a683a1de19acbb sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>||</literal> <type>hstore</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Concatenates two <type>hstore</type>s.
+       </para>
+       <para>
+        <literal>'a=&gt;b, c=&gt;d'::hstore || 'c=&gt;x, d=&gt;q'::hstore</literal>
+        <returnvalue>"a"=&gt;"b", "c"=&gt;"x", "d"=&gt;"q"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>||</literal> <type>hstore</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        连接两个 <type>hstore</type>。
+       </para>
+       <para>
+        <literal>'a=&gt;b, c=&gt;d'::hstore || 'c=&gt;x, d=&gt;q'::hstore</literal>
+        <returnvalue>"a"=&gt;"b", "c"=&gt;"x", "d"=&gt;"q"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=ff628e9e4d5a005831a683a1de19acbb -->
+
+<!-- pgdoc-cn_start sig_en=df6fa937a42e4665345532d6f1db704f sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>?</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Does <type>hstore</type> contain key?
+       </para>
+       <para>
+        <literal>'a=&gt;1'::hstore ? 'a'</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>?</literal> <type>text</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <type>hstore</type> 是否包含键？
+       </para>
+       <para>
+        <literal>'a=&gt;1'::hstore ? 'a'</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=df6fa937a42e4665345532d6f1db704f -->
+
+<!-- pgdoc-cn_start sig_en=7ee76b7b0871c7f2d06fe43b345364b7 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>?&amp;</literal> <type>text[]</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Does <type>hstore</type> contain all the specified keys?
+       </para>
+       <para>
+        <literal>'a=&gt;1,b=&gt;2'::hstore ?&amp; ARRAY['a','b']</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>?&amp;</literal> <type>text[]</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <type>hstore</type> 是否包含所有指定的键？
+       </para>
+       <para>
+        <literal>'a=&gt;1,b=&gt;2'::hstore ?&amp; ARRAY['a','b']</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=7ee76b7b0871c7f2d06fe43b345364b7 -->
+
+<!-- pgdoc-cn_start sig_en=9a4a6fce5599cb2337e8aba2a1fd7d28 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>?|</literal> <type>text[]</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Does <type>hstore</type> contain any of the specified keys?
+       </para>
+       <para>
+        <literal>'a=&gt;1,b=&gt;2'::hstore ?| ARRAY['b','c']</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>?|</literal> <type>text[]</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <type>hstore</type> 是否包含任何指定的键？
+       </para>
+       <para>
+        <literal>'a=&gt;1,b=&gt;2'::hstore ?| ARRAY['b','c']</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=9a4a6fce5599cb2337e8aba2a1fd7d28 -->
+
+<!-- pgdoc-cn_start sig_en=f0a71b85c54ba2c341325d49c96a9f65 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>@&gt;</literal> <type>hstore</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Does left operand contain right?
+       </para>
+       <para>
+        <literal>'a=&gt;b, b=&gt;1, c=&gt;NULL'::hstore @&gt; 'b=&gt;1'</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>@&gt;</literal> <type>hstore</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        左操作数是否包含右操作数？
+       </para>
+       <para>
+        <literal>'a=&gt;b, b=&gt;1, c=&gt;NULL'::hstore @&gt; 'b=&gt;1'</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f0a71b85c54ba2c341325d49c96a9f65 -->
+
+<!-- pgdoc-cn_start sig_en=39c418bf60425c7639829124d860a71c sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>&lt;@</literal> <type>hstore</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Is left operand contained in right?
+       </para>
+       <para>
+        <literal>'a=&gt;c'::hstore &lt;@ 'a=&gt;b, b=&gt;1, c=&gt;NULL'</literal>
+        <returnvalue>f</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>&lt;@</literal> <type>hstore</type>
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        左操作数是否包含在右操作数中？
+       </para>
+       <para>
+        <literal>'a=&gt;c'::hstore &lt;@ 'a=&gt;b, b=&gt;1, c=&gt;NULL'</literal>
+        <returnvalue>f</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=39c418bf60425c7639829124d860a71c -->
+
+<!-- pgdoc-cn_start sig_en=14aac0e9fd40304752f3c43eb972da69 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-</literal> <type>text</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Deletes key from left operand.
+       </para>
+       <para>
+        <literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - 'b'::text</literal>
+        <returnvalue>"a"=&gt;"1", "c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-</literal> <type>text</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        从左操作数中删除键。
+       </para>
+       <para>
+        <literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - 'b'::text</literal>
+        <returnvalue>"a"=&gt;"1", "c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=14aac0e9fd40304752f3c43eb972da69 -->
+
+<!-- pgdoc-cn_start sig_en=05272fa6a53abb1e18181f08150433d3 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-</literal> <type>text[]</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Deletes keys from left operand.
+       </para>
+       <para>
+        <literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - ARRAY['a','b']</literal>
+        <returnvalue>"c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-</literal> <type>text[]</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        从左操作数中删除多个键。
+       </para>
+       <para>
+        <literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - ARRAY['a','b']</literal>
+        <returnvalue>"c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=05272fa6a53abb1e18181f08150433d3 -->
+
+<!-- pgdoc-cn_start sig_en=162f9333fef25774cb26a8adbf9a3417 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-</literal> <type>hstore</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Deletes pairs from left operand that match pairs in the right operand.
+       </para>
+       <para>
+        <literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - 'a=&gt;4, b=&gt;2'::hstore</literal>
+        <returnvalue>"a"=&gt;"1", "c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>hstore</type> <literal>-</literal> <type>hstore</type>
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        从左操作数中删除与右操作数中的对相匹配的对。
+       </para>
+       <para>
+        <literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - 'a=&gt;4, b=&gt;2'::hstore</literal>
+        <returnvalue>"a"=&gt;"1", "c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=162f9333fef25774cb26a8adbf9a3417 -->
+
+<!-- pgdoc-cn_start sig_en=da4894efda54861428c6e7dae0996223 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>anyelement</type> <literal>#=</literal> <type>hstore</type>
+        <returnvalue>anyelement</returnvalue>
+       </para>
+       <para>
+        Replaces fields in the left operand (which must be a composite type)
+        with matching values from <type>hstore</type>.
+       </para>
+       <para>
+        <literal>ROW(1,3) #= 'f1=>11'::hstore</literal>
+        <returnvalue>(11,3)</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <type>anyelement</type> <literal>#=</literal> <type>hstore</type>
+        <returnvalue>anyelement</returnvalue>
+       </para>
+       <para>
+        用<type>hstore</type>中匹配的值替换左操作数（必须是复合类型）中的字段。
+       </para>
+       <para>
+        <literal>ROW(1,3) #= 'f1=>11'::hstore</literal>
+        <returnvalue>(11,3)</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=da4894efda54861428c6e7dae0996223 -->
+
+<!-- pgdoc-cn_start sig_en=fce7661bca9a6d4b1e60a6fac9207498 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <literal>%%</literal> <type>hstore</type>
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Converts <type>hstore</type> to an array of alternating keys and
+        values.
+       </para>
+       <para>
+        <literal>%% 'a=&gt;foo, b=&gt;bar'::hstore</literal>
+        <returnvalue>{a,foo,b,bar}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <literal>%%</literal> <type>hstore</type>
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        将<type>hstore</type>转换为交替的键和值的数组。
+       </para>
+       <para>
+        <literal>%% 'a=&gt;foo, b=&gt;bar'::hstore</literal>
+        <returnvalue>{a,foo,b,bar}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=fce7661bca9a6d4b1e60a6fac9207498 -->
+
+<!-- pgdoc-cn_start sig_en=5e28d5ad5f5af460c8131dcbfa1528f5 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <literal>%#</literal> <type>hstore</type>
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Converts <type>hstore</type> to a two-dimensional key/value array.
+       </para>
+       <para>
+        <literal>%# 'a=&gt;foo, b=&gt;bar'::hstore</literal>
+        <returnvalue>{{a,foo},{b,bar}}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <literal>%#</literal> <type>hstore</type>
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        将<type>hstore</type>转换为二维的键/值数组。
+       </para>
+       <para>
+        <literal>%# 'a=&gt;foo, b=&gt;bar'::hstore</literal>
+        <returnvalue>{{a,foo},{b,bar}}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=5e28d5ad5f5af460c8131dcbfa1528f5 -->
+     </tbody>
+    </tgroup>
+  </table>
+
+  <table id="hstore-func-table">
+<!-- pgdoc-cn_start sig_en=8ce84ca4cfc1eece2b0172939fa593d8 sig_cn_org=None source=14.1 
+   <title><type>hstore</type> Functions</title>
+________________________________________________________-->
+   <title><type>hstore</type> 函数</title>
+<!-- pgdoc-cn_end sig_en=8ce84ca4cfc1eece2b0172939fa593d8 -->
+    <tgroup cols="1">
+     <thead>
+<!-- pgdoc-cn_start sig_en=aea31b510d403ec475cd76fb26ed5e1f sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para>
+       <para>
+        Example(s)
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        函数
+       </para>
+       <para>
+        描述
+       </para>
+       <para>
+        示例
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=aea31b510d403ec475cd76fb26ed5e1f -->
+     </thead>
+
+     <tbody>
+<!-- pgdoc-cn_start sig_en=da8a6e089d56dc3780679f8dac1f0b5c sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore</primary></indexterm>
+        <function>hstore</function> ( <type>record</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Constructs an <type>hstore</type> from a record or row.
+       </para>
+       <para>
+        <literal>hstore(ROW(1,2))</literal>
+        <returnvalue>"f1"=&gt;"1", "f2"=&gt;"2"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore</primary></indexterm>
+        <function>hstore</function> ( <type>record</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        从一个记录或行构造一个<type>hstore</type>。
+       </para>
+       <para>
+        <literal>hstore(ROW(1,2))</literal>
+        <returnvalue>"f1"=&gt;"1", "f2"=&gt;"2"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=da8a6e089d56dc3780679f8dac1f0b5c -->
+
+<!-- pgdoc-cn_start sig_en=f6ee1d6222a63ce8fb54f1bb752ebae6 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>hstore</function> ( <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Constructs an <type>hstore</type> from an array, which may be either
+        a key/value array, or a two-dimensional array.
+       </para>
+       <para>
+        <literal>hstore(ARRAY['a','1','b','2'])</literal>
+        <returnvalue>"a"=&gt;"1", "b"=&gt;"2"</returnvalue>
+       </para>
+       <para>
+        <literal>hstore(ARRAY[['c','3'],['d','4']])</literal>
+        <returnvalue>"c"=&gt;"3", "d"=&gt;"4"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>hstore</function> ( <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        从一个数组构造<type>hstore</type>，可以是键/值数组，也可以是二维数组。
+       </para>
+       <para>
+        <literal>hstore(ARRAY['a','1','b','2'])</literal>
+        <returnvalue>"a"=&gt;"1", "b"=&gt;"2"</returnvalue>
+       </para>
+       <para>
+        <literal>hstore(ARRAY[['c','3'],['d','4']])</literal>
+        <returnvalue>"c"=&gt;"3", "d"=&gt;"4"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f6ee1d6222a63ce8fb54f1bb752ebae6 -->
+
+<!-- pgdoc-cn_start sig_en=9499ddcb78b97addbf0d76fcc1741eba sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>hstore</function> ( <type>text[]</type>, <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Constructs an <type>hstore</type> from separate key and value arrays.
+       </para>
+       <para>
+        <literal>hstore(ARRAY['a','b'], ARRAY['1','2'])</literal>
+        <returnvalue>"a"=&gt;"1", "b"=&gt;"2"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>hstore</function> ( <type>text[]</type>, <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        从单独的键和值数组构造一个<type>hstore</type>。
+       </para>
+       <para>
+        <literal>hstore(ARRAY['a','b'], ARRAY['1','2'])</literal>
+        <returnvalue>"a"=&gt;"1", "b"=&gt;"2"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=9499ddcb78b97addbf0d76fcc1741eba -->
+
+<!-- pgdoc-cn_start sig_en=daf84520c039b824fe357703da44b2a0 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>hstore</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Makes a single-item <type>hstore</type>.
+       </para>
+       <para>
+        <literal>hstore('a', 'b')</literal>
+        <returnvalue>"a"=&gt;"b"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>hstore</function> ( <type>text</type>, <type>text</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        创建一个单项<type>hstore</type>。
+       </para>
+       <para>
+        <literal>hstore('a', 'b')</literal>
+        <returnvalue>"a"=&gt;"b"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=daf84520c039b824fe357703da44b2a0 -->
+
+<!-- pgdoc-cn_start sig_en=51ed8f308c9de1ab924c8598a630b958 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>akeys</primary></indexterm>
+        <function>akeys</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s keys as an array.
+       </para>
+       <para>
+        <literal>akeys('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{a,b}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>akeys</primary></indexterm>
+        <function>akeys</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        提取一个<type>hstore</type>的键作为数组。
+       </para>
+       <para>
+        <literal>akeys('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{a,b}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=51ed8f308c9de1ab924c8598a630b958 -->
+
+<!-- pgdoc-cn_start sig_en=1177f08788db98ae9c9906e9edf19f4f sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>skeys</primary></indexterm>
+        <function>skeys</function> ( <type>hstore</type> )
+        <returnvalue>setof text</returnvalue>
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s keys as a set.
+       </para>
+       <para>
+        <literal>skeys('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue></returnvalue>
+<programlisting>
+a
+b
+</programlisting>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>skeys</primary></indexterm>
+        <function>skeys</function> ( <type>hstore</type> )
+        <returnvalue>setof text</returnvalue>
+       </para>
+       <para>
+        提取一个<type>hstore</type>的键作为一个集合。
+       </para>
+       <para>
+        <literal>skeys('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue></returnvalue>
+<programlisting>
+a
+b
+</programlisting>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=1177f08788db98ae9c9906e9edf19f4f -->
+
+<!-- pgdoc-cn_start sig_en=a150add5859d8b2c4b66172017f27531 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>avals</primary></indexterm>
+        <function>avals</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s values as an array.
+       </para>
+       <para>
+        <literal>avals('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{1,2}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>avals</primary></indexterm>
+        <function>avals</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        提取一个<type>hstore</type>的值作为数组。
+       </para>
+       <para>
+        <literal>avals('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{1,2}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=a150add5859d8b2c4b66172017f27531 -->
+
+<!-- pgdoc-cn_start sig_en=b2731ecd8ab103136309c23418709b5b sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>svals</primary></indexterm>
+        <function>svals</function> ( <type>hstore</type> )
+        <returnvalue>setof text</returnvalue>
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s values as a set.
+       </para>
+       <para>
+        <literal>svals('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue></returnvalue>
+<programlisting>
+1
+2
+</programlisting>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>svals</primary></indexterm>
+        <function>svals</function> ( <type>hstore</type> )
+        <returnvalue>setof text</returnvalue>
+       </para>
+       <para>
+        提取一个<type>hstore</type>的值作为一个集合。
+       </para>
+       <para>
+        <literal>svals('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue></returnvalue>
+<programlisting>
+1
+2
+</programlisting>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=b2731ecd8ab103136309c23418709b5b -->
+
+<!-- pgdoc-cn_start sig_en=3a36601917fc16de199ec8c4f5c2f494 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_array</primary></indexterm>
+        <function>hstore_to_array</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s keys and values as an array of
+        alternating keys and values.
+       </para>
+       <para>
+        <literal>hstore_to_array('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{a,1,b,2}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_array</primary></indexterm>
+        <function>hstore_to_array</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        提取一个<type>hstore</type>的键和值为键和值交替数组。
+       </para>
+       <para>
+        <literal>hstore_to_array('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{a,1,b,2}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=3a36601917fc16de199ec8c4f5c2f494 -->
+
+<!-- pgdoc-cn_start sig_en=a2b9157327c61c76e48d89de96c89258 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_matrix</primary></indexterm>
+        <function>hstore_to_matrix</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s keys and values as a two-dimensional
+        array.
+       </para>
+       <para>
+        <literal>hstore_to_matrix('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{{a,1},{b,2}}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_matrix</primary></indexterm>
+        <function>hstore_to_matrix</function> ( <type>hstore</type> )
+        <returnvalue>text[]</returnvalue>
+       </para>
+       <para>
+        提取一个<type>hstore</type>的键和值为二维数组。
+       </para>
+       <para>
+        <literal>hstore_to_matrix('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue>{{a,1},{b,2}}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=a2b9157327c61c76e48d89de96c89258 -->
+
+<!-- pgdoc-cn_start sig_en=87b73e5b4659442a2120fe590b147cd9 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_json</primary></indexterm>
+        <function>hstore_to_json</function> ( <type>hstore</type> )
+        <returnvalue>json</returnvalue>
+       </para>
+       <para>
+        Converts an <type>hstore</type> to a <type>json</type> value,
+        converting all non-null values to JSON strings.
+       </para>
+       <para>
+        This function is used implicitly when an <type>hstore</type> value is
+        cast to <type>json</type>.
+       </para>
+       <para>
+        <literal>hstore_to_json('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": "1", "b": "t", "c": null, "d": "12345", "e": "012345", "f": "1.234", "g": "2.345e+4"}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_json</primary></indexterm>
+        <function>hstore_to_json</function> ( <type>hstore</type> )
+        <returnvalue>json</returnvalue>
+       </para>
+       <para>
+        将<type>hstore</type>转换为<type>json</type>值，将所有非空值转换为JSON字符串。
+       </para>
+       <para>
+        当<type>hstore</type>值被转换为<type>json</type>时，隐式使用此函数。
+       </para>
+       <para>
+        <literal>hstore_to_json('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": "1", "b": "t", "c": null, "d": "12345", "e": "012345", "f": "1.234", "g": "2.345e+4"}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=87b73e5b4659442a2120fe590b147cd9 -->
+
+<!-- pgdoc-cn_start sig_en=932c0d728552f68fbae2b9dab7cdc4f5 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_jsonb</primary></indexterm>
+        <function>hstore_to_jsonb</function> ( <type>hstore</type> )
+        <returnvalue>jsonb</returnvalue>
+       </para>
+       <para>
+        Converts an <type>hstore</type> to a <type>jsonb</type> value,
+        converting all non-null values to JSON strings.
+       </para>
+       <para>
+        This function is used implicitly when an <type>hstore</type> value is
+        cast to <type>jsonb</type>.
+       </para>
+       <para>
+        <literal>hstore_to_jsonb('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": "1", "b": "t", "c": null, "d": "12345", "e": "012345", "f": "1.234", "g": "2.345e+4"}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_jsonb</primary></indexterm>
+        <function>hstore_to_jsonb</function> ( <type>hstore</type> )
+        <returnvalue>jsonb</returnvalue>
+       </para>
+       <para>
+        将<type>hstore</type>转换为<type>jsonb</type>值，将所有非空值转换为JSON字符串。
+       </para>
+       <para>
+        当<type>hstore</type>值转换为<type>jsonb</type>时，隐式使用此函数。
+       </para>
+       <para>
+        <literal>hstore_to_jsonb('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": "1", "b": "t", "c": null, "d": "12345", "e": "012345", "f": "1.234", "g": "2.345e+4"}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=932c0d728552f68fbae2b9dab7cdc4f5 -->
+
+<!-- pgdoc-cn_start sig_en=be743df0740a4445c7b872ad3e70a25a sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_json_loose</primary></indexterm>
+        <function>hstore_to_json_loose</function> ( <type>hstore</type> )
+        <returnvalue>json</returnvalue>
+       </para>
+       <para>
+        Converts an <type>hstore</type> to a <type>json</type> value, but
+        attempts to distinguish numerical and Boolean values so they are
+        unquoted in the JSON.
+       </para>
+       <para>
+        <literal>hstore_to_json_loose('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": 1, "b": true, "c": null, "d": 12345, "e": "012345", "f": 1.234, "g": 2.345e+4}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_json_loose</primary></indexterm>
+        <function>hstore_to_json_loose</function> ( <type>hstore</type> )
+        <returnvalue>json</returnvalue>
+       </para>
+       <para>
+        将<type>hstore</type>转换为<type>json</type>值，但尝试区分数值和布尔值，使它们在JSON中未引用。
+       </para>
+       <para>
+        <literal>hstore_to_json_loose('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": 1, "b": true, "c": null, "d": 12345, "e": "012345", "f": 1.234, "g": 2.345e+4}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=be743df0740a4445c7b872ad3e70a25a -->
+
+<!-- pgdoc-cn_start sig_en=576e4e7ca0b1ef010ba8380ef9322ed4 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_jsonb_loose</primary></indexterm>
+        <function>hstore_to_jsonb_loose</function> ( <type>hstore</type> )
+        <returnvalue>jsonb</returnvalue>
+       </para>
+       <para>
+        Converts an <type>hstore</type> to a <type>jsonb</type> value, but
+        attempts to distinguish numerical and Boolean values so they are
+        unquoted in the JSON.
+       </para>
+       <para>
+        <literal>hstore_to_jsonb_loose('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": 1, "b": true, "c": null, "d": 12345, "e": "012345", "f": 1.234, "g": 2.345e+4}</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>hstore_to_jsonb_loose</primary></indexterm>
+        <function>hstore_to_jsonb_loose</function> ( <type>hstore</type> )
+        <returnvalue>jsonb</returnvalue>
+       </para>
+       <para>
+        将<type>hstore</type>转换为<type>jsonb</type>值，但试图区分数值和布尔值，使它们在JSON中不带引号。
+       </para>
+       <para>
+        <literal>hstore_to_jsonb_loose('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal>
+        <returnvalue>{"a key": 1, "b": true, "c": null, "d": 12345, "e": "012345", "f": 1.234, "g": 2.345e+4}</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=576e4e7ca0b1ef010ba8380ef9322ed4 -->
+
+<!-- pgdoc-cn_start sig_en=e789dcfe943908cf51ef963a30eec5a9 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>slice</primary></indexterm>
+        <function>slice</function> ( <type>hstore</type>, <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Extracts a subset of an <type>hstore</type> containing only the
+        specified keys.
+       </para>
+       <para>
+        <literal>slice('a=&gt;1,b=&gt;2,c=&gt;3'::hstore, ARRAY['b','c','x'])</literal>
+        <returnvalue>"b"=&gt;"2", "c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>slice</primary></indexterm>
+        <function>slice</function> ( <type>hstore</type>, <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        提取仅包含指定键的<type>hstore</type>的子集。
+       </para>
+       <para>
+        <literal>slice('a=&gt;1,b=&gt;2,c=&gt;3'::hstore, ARRAY['b','c','x'])</literal>
+        <returnvalue>"b"=&gt;"2", "c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=e789dcfe943908cf51ef963a30eec5a9 -->
+
+<!-- pgdoc-cn_start sig_en=e31cd01ff592a74101ab78ab40e60de0 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>each</primary></indexterm>
+        <function>each</function> ( <type>hstore</type> )
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>key</parameter> <type>text</type>,
+        <parameter>value</parameter> <type>text</type> )
+       </para>
+       <para>
+        Extracts an <type>hstore</type>'s keys and values as a set of records.
+       </para>
+       <para>
+        <literal>select * from each('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue></returnvalue>
+<programlisting>
+ key | value
+-&minus;-&minus;-+-&minus;-&minus;-&minus;-
+ a   | 1
+ b   | 2
+</programlisting>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>each</primary></indexterm>
+        <function>each</function> ( <type>hstore</type> )
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>key</parameter> <type>text</type>,
+        <parameter>value</parameter> <type>text</type> )
+       </para>
+       <para>
+        提取<type>hstore</type>的键和值作为一组记录。
+       </para>
+       <para>
+        <literal>select * from each('a=&gt;1,b=&gt;2')</literal>
+        <returnvalue></returnvalue>
+<programlisting>
+ key | value
+-----+-------
+ a   | 1
+ b   | 2
+</programlisting>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=e31cd01ff592a74101ab78ab40e60de0 -->
+
+<!-- pgdoc-cn_start sig_en=f4bd272491e48df339609b6351ba819e sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>exist</primary></indexterm>
+        <function>exist</function> ( <type>hstore</type>, <type>text</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Does <type>hstore</type> contain key?
+       </para>
+       <para>
+        <literal>exist('a=&gt;1', 'a')</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>exist</primary></indexterm>
+        <function>exist</function> ( <type>hstore</type>, <type>text</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <type>hstore</type> 是否包含键?
+       </para>
+       <para>
+        <literal>exist('a=&gt;1', 'a')</literal>
+        <returnvalue>t</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=f4bd272491e48df339609b6351ba819e -->
+
+<!-- pgdoc-cn_start sig_en=90c7505a5e86249aa42cd5d15633ee98 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>defined</primary></indexterm>
+        <function>defined</function> ( <type>hstore</type>, <type>text</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Does <type>hstore</type> contain a non-<literal>NULL</literal> value
+        for key?
+       </para>
+       <para>
+        <literal>defined('a=&gt;NULL', 'a')</literal>
+        <returnvalue>f</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>defined</primary></indexterm>
+        <function>defined</function> ( <type>hstore</type>, <type>text</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        <type>hstore</type> 是否包含针对键的非<literal>NULL</literal>值？
+       </para>
+       <para>
+        <literal>defined('a=&gt;NULL', 'a')</literal>
+        <returnvalue>f</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=90c7505a5e86249aa42cd5d15633ee98 -->
+
+<!-- pgdoc-cn_start sig_en=43e6133bfbbb8873c7bffeebdac830b1 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>delete</primary></indexterm>
+        <function>delete</function> ( <type>hstore</type>, <type>text</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Deletes pair with matching key.
+       </para>
+       <para>
+        <literal>delete('a=&gt;1,b=&gt;2', 'b')</literal>
+        <returnvalue>"a"=&gt;"1"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>delete</primary></indexterm>
+        <function>delete</function> ( <type>hstore</type>, <type>text</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        删除带有匹配键的对。
+       </para>
+       <para>
+        <literal>delete('a=&gt;1,b=&gt;2', 'b')</literal>
+        <returnvalue>"a"=&gt;"1"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=43e6133bfbbb8873c7bffeebdac830b1 -->
+
+<!-- pgdoc-cn_start sig_en=c8477cd4be9c44e5dc823a75a812fa28 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>delete</function> ( <type>hstore</type>, <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Deletes pairs with matching keys.
+       </para>
+       <para>
+        <literal>delete('a=&gt;1,b=&gt;2,c=&gt;3', ARRAY['a','b'])</literal>
+        <returnvalue>"c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>delete</function> ( <type>hstore</type>, <type>text[]</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        删除带有匹配键的对。
+       </para>
+       <para>
+        <literal>delete('a=&gt;1,b=&gt;2,c=&gt;3', ARRAY['a','b'])</literal>
+        <returnvalue>"c"=&gt;"3"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=c8477cd4be9c44e5dc823a75a812fa28 -->
+
+<!-- pgdoc-cn_start sig_en=4d336787d2a1c95e8f8c11359362c5e1 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>delete</function> ( <type>hstore</type>, <type>hstore</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        Deletes pairs matching those in the second argument.
+       </para>
+       <para>
+        <literal>delete('a=&gt;1,b=&gt;2', 'a=&gt;4,b=&gt;2'::hstore)</literal>
+        <returnvalue>"a"=&gt;"1"</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <function>delete</function> ( <type>hstore</type>, <type>hstore</type> )
+        <returnvalue>hstore</returnvalue>
+       </para>
+       <para>
+        删除在第二个参数中匹配的对。
+       </para>
+       <para>
+        <literal>delete('a=&gt;1,b=&gt;2', 'a=&gt;4,b=&gt;2'::hstore)</literal>
+        <returnvalue>"a"=&gt;"1"</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=4d336787d2a1c95e8f8c11359362c5e1 -->
+
+<!-- pgdoc-cn_start sig_en=47e16f943a16234a675c46915952e7e8 sig_cn_org=None source=14.1 
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>populate_record</primary></indexterm>
+        <function>populate_record</function> ( <type>anyelement</type>, <type>hstore</type> )
+        <returnvalue>anyelement</returnvalue>
+       </para>
+       <para>
+        Replaces fields in the left operand (which must be a composite type)
+        with matching values from <type>hstore</type>.
+       </para>
+       <para>
+        <literal>populate_record(ROW(1,2), 'f1=>42'::hstore)</literal>
+        <returnvalue>(42,2)</returnvalue>
+       </para></entry>
+      </row>
+________________________________________________________-->
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm><primary>populate_record</primary></indexterm>
+        <function>populate_record</function> ( <type>anyelement</type>, <type>hstore</type> )
+        <returnvalue>anyelement</returnvalue>
+       </para>
+       <para>
+        用<type>hstore</type>中的匹配值替换左操作数（必须是复合类型）中的字段。
+       </para>
+       <para>
+        <literal>populate_record(ROW(1,2), 'f1=>42'::hstore)</literal>
+        <returnvalue>(42,2)</returnvalue>
+       </para></entry>
+      </row>
+<!-- pgdoc-cn_end sig_en=47e16f943a16234a675c46915952e7e8 -->
+    </tbody>
+   </tgroup>
+  </table>
+
+<!-- pgdoc-cn_start sig_en=09176db955c1744f5b4d65386cb338fe sig_cn_org=None source=14.1 
+  <para>
+   In addition to these operators and functions, values of
+   the <type>hstore</type> type can be subscripted, allowing them to act
+   like associative arrays.  Only a single subscript of type <type>text</type>
+   can be specified; it is interpreted as a key and the corresponding
+   value is fetched or stored.  For example,
+
+<programlisting>
+CREATE TABLE mytable (h hstore);
+INSERT INTO mytable VALUES ('a=>b, c=>d');
+SELECT h['a'] FROM mytable;
+ h
+-&minus;-
+ b
+(1 row)
+
+UPDATE mytable SET h['c'] = 'new';
+SELECT h FROM mytable;
+          h
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;
+ "a"=>"b", "c"=>"new"
+(1 row)
+</programlisting>
+
+   A subscripted fetch returns <literal>NULL</literal> if the subscript
+   is <literal>NULL</literal> or that key does not exist in
+   the <type>hstore</type>.  (Thus, a subscripted fetch is not greatly
+   different from the <literal>-&gt;</literal> operator.)
+   A subscripted update fails if the subscript is <literal>NULL</literal>;
+   otherwise, it replaces the value for that key, adding an entry to
+   the <type>hstore</type> if the key does not already exist.
+  </para>
+________________________________________________________-->
+  <para>
+  除了这些运算符和函数之外，<type>hstore</type>类型的值可以被索引，在这种情况下它们的行为就像关联数组。 只允许该类型的单个下标。下标被解释为一个键，并检索或存储相应的值。例如，
+<programlisting>
+CREATE TABLE mytable (h hstore);
+INSERT INTO mytable VALUES ('a=>b, c=>d');
+SELECT h['a'] FROM mytable;
+ h
+----
+ b
+(1 row)
+
+UPDATE mytable SET h['c'] = 'new';
+SELECT h FROM mytable;
+          h
+---------------------------------
+ "a"=>"b", "c"=>"new"
+(1 row)
+</programlisting>
+
+  如果索引是<literal>NULL</literal>，或者该键在<type>hstore</type>中不存在，则按索引获取<literal>NULL</literal>返回。（所以下标检索与<literal>-&gt;</literal>操作符没有太大区别。）如果下标是<literal>NULL</literal>，则下标更新失败；否则，它会替换与该键对应的值，如果该键不存在，则添加一个条目到<type>hstore</type>中。
+  </para>
+<!-- pgdoc-cn_end sig_en=09176db955c1744f5b4d65386cb338fe -->
+ </sect2>
+
+ <sect2 id="hstore-indexes">
+<!-- pgdoc-cn_start sig_en=1dd306ead6471d4aaa831b08d5684b3f sig_cn_org=None source=14.1 
+  <title>Indexes</title>
+________________________________________________________-->
+  <title>索引</title>
+<!-- pgdoc-cn_end sig_en=1dd306ead6471d4aaa831b08d5684b3f -->
+
+<!-- pgdoc-cn_start sig_en=bf5f90f3bb09cc9666253e5cb41fc951 sig_cn_org=None source=14.1 
+  <para>
+   <type>hstore</type> has GiST and GIN index support for the <literal>@&gt;</literal>,
+   <literal>?</literal>, <literal>?&amp;</literal> and <literal>?|</literal> operators. For example:
+  </para>
+________________________________________________________-->
+  <para>
+   <type>hstore</type>有对<literal>@&gt;</literal>、<literal>?</literal>、<literal>?&amp;</literal>和<literal>?|</literal>操作符的 GiST 和 GIN 索引支持。例如：
+  </para>
+<!-- pgdoc-cn_end sig_en=bf5f90f3bb09cc9666253e5cb41fc951 -->
+<!-- pgdoc-cn_start sig_en=ddfbd8bddf8060ce6e4aeaa69b99fe39 sig_cn_org=None source=14.1 
+<programlisting>
+CREATE INDEX hidx ON testhstore USING GIST (h);
+
+CREATE INDEX hidx ON testhstore USING GIN (h);
+</programlisting>
+________________________________________________________-->
+<programlisting>
+CREATE INDEX hidx ON testhstore USING GIST (h);
+
+CREATE INDEX hidx ON testhstore USING GIN (h);
+</programlisting>
+<!-- pgdoc-cn_end sig_en=ddfbd8bddf8060ce6e4aeaa69b99fe39 -->
+
+<!-- pgdoc-cn_start sig_en=b229a8914ad2e83dfc8d4acb8221dbdc sig_cn_org=None source=14.1 
+  <para>
+   <literal>gist_hstore_ops</literal> GiST opclass approximates a set of
+   key/value pairs as a bitmap signature.  Its optional integer parameter
+   <literal>siglen</literal> determines the
+   signature length in bytes.  The default length is 16 bytes.
+   Valid values of signature length are between 1 and 2024 bytes.  Longer
+   signatures lead to a more precise search (scanning a smaller fraction of the index and
+   fewer heap pages), at the cost of a larger index.
+  </para>
+________________________________________________________-->
+  <para>
+   <literal>gist_hstore_ops</literal> GiST 操作符类(opclass)将一组键/值对近似计算为位图签名。它的可选整数参数<literal>siglen</literal>决定了签名的字节长度。
+   默认长度为16字节。签名长度的有效值在1到2024字节之间。
+   更长的签名将导致更精确的搜索(扫描更小的索引部分和更少的堆页)，以更大的索引为代价。
+  </para>
+<!-- pgdoc-cn_end sig_en=b229a8914ad2e83dfc8d4acb8221dbdc -->
+
+<!-- pgdoc-cn_start sig_en=bc574d990313d67abd4af58d6c324c09 sig_cn_org=None source=14.1 
+  <para>
+   Example of creating such an index with a signature length of 32 bytes:
+<programlisting>
+CREATE INDEX hidx ON testhstore USING GIST (h gist_hstore_ops(siglen=32));
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   创建这样的一个带有32字节签名长度的示例：
+<programlisting>
+CREATE INDEX hidx ON testhstore USING GIST (h gist_hstore_ops(siglen=32));
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=bc574d990313d67abd4af58d6c324c09 -->
+
+<!-- pgdoc-cn_start sig_en=7636813ddf30936c361c9a350e2ede11 sig_cn_org=None source=14.1 
+  <para>
+   <type>hstore</type> also supports <type>btree</type> or <type>hash</type> indexes for
+   the <literal>=</literal> operator. This allows <type>hstore</type> columns to be
+   declared <literal>UNIQUE</literal>, or to be used in <literal>GROUP BY</literal>,
+   <literal>ORDER BY</literal> or <literal>DISTINCT</literal> expressions. The sort ordering
+   for <type>hstore</type> values is not particularly useful, but these indexes
+   may be useful for equivalence lookups. Create indexes for <literal>=</literal>
+   comparisons as follows:
+  </para>
+________________________________________________________-->
+  <para>
+   <type>hstore</type>也为<literal>=</literal>操作符支持<type>btree</type>或<type>hash</type>索引。这允许<type>hstore</type>列被声明为<literal>UNIQUE</literal>或者被使用在<literal>GROUP BY</literal>、<literal>ORDER BY</literal>或<literal>DISTINCT</literal>表达式中。<type>hstore</type>值的排序顺序不是特别有用，但是这些索引可能对等值查找有用。为<literal>=</literal>比较创建以下索引：
+  </para>
+<!-- pgdoc-cn_end sig_en=7636813ddf30936c361c9a350e2ede11 -->
+<!-- pgdoc-cn_start sig_en=bcca4d7b1f2bda279602e7f30798387a sig_cn_org=None source=14.1 
+<programlisting>
+CREATE INDEX hidx ON testhstore USING BTREE (h);
+
+CREATE INDEX hidx ON testhstore USING HASH (h);
+</programlisting>
+________________________________________________________-->
+<programlisting>
+CREATE INDEX hidx ON testhstore USING BTREE (h);
+
+CREATE INDEX hidx ON testhstore USING HASH (h);
+</programlisting>
+<!-- pgdoc-cn_end sig_en=bcca4d7b1f2bda279602e7f30798387a -->
+ </sect2>
+
+ <sect2 id="hstore-examples">
+<!-- pgdoc-cn_start sig_en=8f24ed0a9e4d47ffa2be9a1f3e09fa6d sig_cn_org=None source=14.1 
+  <title>Examples</title>
+________________________________________________________-->
+  <title>示例</title>
+<!-- pgdoc-cn_end sig_en=8f24ed0a9e4d47ffa2be9a1f3e09fa6d -->
+
+<!-- pgdoc-cn_start sig_en=6319549501838dbb9a07cf06c39c40a8 sig_cn_org=None source=14.1 
+  <para>
+   Add a key, or update an existing key with a new value:
+<programlisting>
+UPDATE tab SET h['c'] = '3';
+</programlisting>
+   Another way to do the same thing is:
+<programlisting>
+UPDATE tab SET h = h || hstore('c', '3');
+</programlisting>
+   If multiple keys are to be added or changed in one operation,
+   the concatenation approach is more efficient than subscripting:
+<programlisting>
+UPDATE tab SET h = h || hstore(array['q', 'w'], array['11', '12']);
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   增加一个键，或者用一个新值更新一个现有的键：
+<programlisting>
+UPDATE tab SET h['c'] = '3';
+</programlisting>
+   另一种方法是：
+<programlisting>
+UPDATE tab SET h = h || hstore('c', '3');
+</programlisting>
+   在单个操作中添加或修改多个键时，连接比下标更高效：
+<programlisting>
+UPDATE tab SET h = h || hstore(array['q', 'w'], array['11', '12']);
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=6319549501838dbb9a07cf06c39c40a8 -->
+
+<!-- pgdoc-cn_start sig_en=ff9758b97b32a8e23a84456bd9246608 sig_cn_org=None source=14.1 
+  <para>
+   Delete a key:
+<programlisting>
+UPDATE tab SET h = delete(h, 'k1');
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   删除一个键：
+<programlisting>
+UPDATE tab SET h = delete(h, 'k1');
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=ff9758b97b32a8e23a84456bd9246608 -->
+
+<!-- pgdoc-cn_start sig_en=1fcf68086fadc8f291dd625d356ab852 sig_cn_org=f754627a9bc8974dbeb8085d87f3eeba source=15.7 
+  <para>
+   Convert a <type>record</type> to an <type>hstore</type>:
+<programlisting>
+CREATE TABLE test (col1 integer, col2 text, col3 text);
+INSERT INTO test VALUES (123, 'foo', 'bar');
+
+SELECT hstore(t) FROM test AS t;
+                   hstore
+-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-&minus;-
+ "col1"=&gt;"123", "col2"=&gt;"foo", "col3"=&gt;"bar"
+(1 row)
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   将<type>record</type>转换为<type>hstore</type>：
+<programlisting>
+CREATE TABLE test (col1 integer, col2 text, col3 text);
+INSERT INTO test VALUES (123, 'foo', 'bar');
+
+SELECT hstore(t) FROM test AS t;
+                   hstore
+---------------------------------------------
+ "col1"=&gt;"123", "col2"=&gt;"foo", "col3"=&gt;"bar"
+(1 row)
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=1fcf68086fadc8f291dd625d356ab852 -->
+
+<!-- pgdoc-cn_start sig_en=2e1f50be1eea976298b6b477b2229845 sig_cn_org=576e1b2a1e22e62ee2328c039771123b source=15.7 
+  <para>
+   Convert an <type>hstore</type> to a predefined <type>record</type> type:
+<programlisting>
+CREATE TABLE test (col1 integer, col2 text, col3 text);
+
+SELECT * FROM populate_record(null::test,
+                              '"col1"=&gt;"456", "col2"=&gt;"zzz"');
+ col1 | col2 | col3
+-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;
+  456 | zzz  |
+(1 row)
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   将<type>hstore</type>转换为预定义的<type>record</type>类型：
+<programlisting>
+CREATE TABLE test (col1 integer, col2 text, col3 text);
+
+SELECT * FROM populate_record(null::test,
+                              '"col1"=&gt;"456", "col2"=&gt;"zzz"');
+ col1 | col2 | col3
+------+------+------
+  456 | zzz  |
+(1 row)
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=2e1f50be1eea976298b6b477b2229845 -->
+
+<!-- pgdoc-cn_start sig_en=8f92c10b0eeb2639c1a838c22671ea49 sig_cn_org=7a12073781e4a708a279feb260a41ac8 source=15.7 
+  <para>
+   Modify an existing record using the values from an <type>hstore</type>:
+<programlisting>
+CREATE TABLE test (col1 integer, col2 text, col3 text);
+INSERT INTO test VALUES (123, 'foo', 'bar');
+
+SELECT (r).* FROM (SELECT t #= '"col3"=&gt;"baz"' AS r FROM test t) s;
+ col1 | col2 | col3
+-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;+-&minus;-&minus;-&minus;
+  123 | foo  | baz
+(1 row)
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   使用<type>hstore</type>中的值修改现有记录：
+<programlisting>
+CREATE TABLE test (col1 integer, col2 text, col3 text);
+INSERT INTO test VALUES (123, 'foo', 'bar');
+
+SELECT (r).* FROM (SELECT t #= '"col3"=&gt;"baz"' AS r FROM test t) s;
+ col1 | col2 | col3
+------+------+------
+  123 | foo  | baz
+(1 row)
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=8f92c10b0eeb2639c1a838c22671ea49 -->
+ </sect2>
+
+ <sect2 id="hstore-statistics">
+<!-- pgdoc-cn_start sig_en=f1a3f390a3e63ccb3fe565b359aa7a01 sig_cn_org=None source=14.1 
+  <title>Statistics</title>
+________________________________________________________-->
+  <title>统计</title>
+<!-- pgdoc-cn_end sig_en=f1a3f390a3e63ccb3fe565b359aa7a01 -->
+
+<!-- pgdoc-cn_start sig_en=dc2abdc2b0beb4bd03011dee7357a819 sig_cn_org=None source=14.1 
+  <para>
+   The <type>hstore</type> type, because of its intrinsic liberality, could
+   contain a lot of different keys. Checking for valid keys is the task of the
+   application. The following examples demonstrate several techniques for
+   checking keys and obtaining statistics.
+  </para>
+________________________________________________________-->
+  <para>
+   由于<type>hstore</type>类型本质的宽大性，它能够包含许多不同的键。检查合法键是应用的任务。下列例子验证了用于检查键以及获得统计的一些技术。
+  </para>
+<!-- pgdoc-cn_end sig_en=dc2abdc2b0beb4bd03011dee7357a819 -->
+
+<!-- pgdoc-cn_start sig_en=0b56df3d655c69dcf00d580a0618bd13 sig_cn_org=None source=14.1 
+  <para>
+   Simple example:
+<programlisting>
+SELECT * FROM each('aaa=&gt;bq, b=&gt;NULL, ""=&gt;1');
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   简单例子：
+<programlisting>
+SELECT * FROM each('aaa=&gt;bq, b=&gt;NULL, ""=&gt;1');
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=0b56df3d655c69dcf00d580a0618bd13 -->
+
+<!-- pgdoc-cn_start sig_en=5d80d915e0695aa507c14df3f513db67 sig_cn_org=None source=14.1 
+  <para>
+   Using a table:
+<programlisting>
+CREATE TABLE stat AS SELECT (each(h)).key, (each(h)).value FROM testhstore;
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   使用一个表：
+<programlisting>
+CREATE TABLE stat AS SELECT (each(h)).key, (each(h)).value FROM testhstore;
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=5d80d915e0695aa507c14df3f513db67 -->
+
+<!-- pgdoc-cn_start sig_en=1a946dd938f9419b6e7cd9bd819cbf76 sig_cn_org=None source=14.1 
+  <para>
+   Online statistics:
+<programlisting>
+SELECT key, count(*) FROM
+  (SELECT (each(h)).key FROM testhstore) AS stat
+  GROUP BY key
+  ORDER BY count DESC, key;
+    key    | count
+-&minus;-&minus;-&minus;-&minus;-&minus;-+-&minus;-&minus;-&minus;-
+ line      |   883
+ query     |   207
+ pos       |   203
+ node      |   202
+ space     |   197
+ status    |   195
+ public    |   194
+ title     |   190
+ org       |   189
+...................
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   在线统计：
+<programlisting>
+SELECT key, count(*) FROM
+  (SELECT (each(h)).key FROM testhstore) AS stat
+  GROUP BY key
+  ORDER BY count DESC, key;
+    key    | count
+-----------+-------
+ line      |   883
+ query     |   207
+ pos       |   203
+ node      |   202
+ space     |   197
+ status    |   195
+ public    |   194
+ title     |   190
+ org       |   189
+...................
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=1a946dd938f9419b6e7cd9bd819cbf76 -->
+ </sect2>
+
+ <sect2 id="hstore-compatibility">
+<!-- pgdoc-cn_start sig_en=b38d493f3c2d2d5d9a7a49d257da9811 sig_cn_org=None source=14.1 
+  <title>Compatibility</title>
+________________________________________________________-->
+  <title>兼容性</title>
+<!-- pgdoc-cn_end sig_en=b38d493f3c2d2d5d9a7a49d257da9811 -->
+
+<!-- pgdoc-cn_start sig_en=2ca2d2b2ba4e7df8cc06efcbee4324f3 sig_cn_org=None source=14.1 
+  <para>
+   As of PostgreSQL 9.0, <type>hstore</type> uses a different internal
+   representation than previous versions. This presents no obstacle for
+   dump/restore upgrades since the text representation (used in the dump) is
+   unchanged.
+  </para>
+________________________________________________________-->
+  <para>
+   从 PostgreSQL 9.0 开始，<type>hstore</type>使用了与之前版本不同的内部表示。这不会为转储/恢复升级造成障碍，因为文本表示（用于转储）没有改变。
+  </para>
+<!-- pgdoc-cn_end sig_en=2ca2d2b2ba4e7df8cc06efcbee4324f3 -->
+
+<!-- pgdoc-cn_start sig_en=a9165147643d28db52d25c3679ff3c11 sig_cn_org=None source=14.1 
+  <para>
+   In the event of a binary upgrade, upward compatibility is maintained by
+   having the new code recognize old-format data. This will entail a slight
+   performance penalty when processing data that has not yet been modified by
+   the new code. It is possible to force an upgrade of all values in a table
+   column by doing an <literal>UPDATE</literal> statement as follows:
+<programlisting>
+UPDATE tablename SET hstorecol = hstorecol || '';
+</programlisting>
+  </para>
+________________________________________________________-->
+  <para>
+   在一次二进制升级中，通过让新代码识别旧格式数据来维持向上兼容。当处理还没有被新代码修改过的数据时，这会带来一定的性能惩罚。可以通过执行一个下面的<literal>UPDATE</literal>语句来强制升级表中的所有值：
+<programlisting>
+UPDATE tablename SET hstorecol = hstorecol || '';
+</programlisting>
+  </para>
+<!-- pgdoc-cn_end sig_en=a9165147643d28db52d25c3679ff3c11 -->
+
+<!-- pgdoc-cn_start sig_en=fcbb246d03145ae235b27e7ab393e31c sig_cn_org=None source=14.1 
+  <para>
+   Another way to do it is:
+<programlisting>
+ALTER TABLE tablename ALTER hstorecol TYPE hstore USING hstorecol || '';
+</programlisting>
+   The <command>ALTER TABLE</command> method requires an
+   <literal>ACCESS EXCLUSIVE</literal> lock on the table,
+   but does not result in bloating the table with old row versions.
+  </para>
+________________________________________________________-->
+  <para>
+   另一种方法：
+<programlisting>
+ALTER TABLE tablename ALTER hstorecol TYPE hstore USING hstorecol || '';
+</programlisting>
+   <command>ALTER TABLE</command>方法要求表上的一个<literal>ACCESS EXCLUSIVE</literal> 锁，但是不会导致表因为旧行版本而膨胀。
+  </para>
+<!-- pgdoc-cn_end sig_en=fcbb246d03145ae235b27e7ab393e31c -->
+
+ </sect2>
+
+ <sect2 id="hstore-transforms">
+<!-- pgdoc-cn_start sig_en=86ddd9561f97c5e93df34c49b9e90ef8 sig_cn_org=None source=14.1 
+  <title>Transforms</title>
+________________________________________________________-->
+  <title>转换</title>
+<!-- pgdoc-cn_end sig_en=86ddd9561f97c5e93df34c49b9e90ef8 -->
+
+<!-- pgdoc-cn_start sig_en=f942883b9d0365568339b36f531f4c71 sig_cn_org=504fc6a71f313e18b0553d10b361db29 source=15.7 
+  <para>
+   Additional extensions are available that implement transforms for
+   the <type>hstore</type> type for the languages PL/Perl and PL/Python.  The
+   extensions for PL/Perl are called <literal>hstore_plperl</literal>
+   and <literal>hstore_plperlu</literal>, for trusted and untrusted PL/Perl.
+   If you install these transforms and specify them when creating a
+   function, <type>hstore</type> values are mapped to Perl hashes.  The
+   extension for PL/Python is called <literal>hstore_plpython3u</literal>.
+   If you use it, <type>hstore</type> values are mapped to Python dictionaries.
+  </para>
+________________________________________________________-->
+  <para>
+   可以使用附加的扩展来实现对<type>hstore</type>类型的转换，适用于PL/Perl和PL/Python语言。
+   用于PL/Perl的扩展称为<literal>hstore_plperl</literal>和<literal>hstore_plperlu</literal>，
+   分别用于受信任和不受信任的PL/Perl。如果安装这些转换并在创建函数时指定它们，
+   <type>hstore</type>值将映射到Perl哈希。用于PL/Python的扩展称为<literal>hstore_plpython3u</literal>。
+   如果使用它，<type>hstore</type>值将映射到Python字典。
+  </para>
+<!-- pgdoc-cn_end sig_en=f942883b9d0365568339b36f531f4c71 -->
+ </sect2>
+
+ <sect2 id="hstore-authors">
+<!-- pgdoc-cn_start sig_en=c9d18a21a6b8c7d5325e8feeb56b7420 sig_cn_org=None source=14.1 
+  <title>Authors</title>
+________________________________________________________-->
+  <title>作者</title>
+<!-- pgdoc-cn_end sig_en=c9d18a21a6b8c7d5325e8feeb56b7420 -->
+
+<!-- pgdoc-cn_start sig_en=da8e1e5ab6d4b351f5bb45b4cb8c8125 sig_cn_org=None source=14.1 
+  <para>
+   Oleg Bartunov <email>oleg@sai.msu.su</email>, Moscow, Moscow University, Russia
+  </para>
+________________________________________________________-->
+  <para>
+   Oleg Bartunov <email>oleg@sai.msu.su</email>，俄罗斯莫斯科大学
+  </para>
+<!-- pgdoc-cn_end sig_en=da8e1e5ab6d4b351f5bb45b4cb8c8125 -->
+
+<!-- pgdoc-cn_start sig_en=906d9ec02ccc1d0eeb75cbdc7632e478 sig_cn_org=None source=14.1 
+  <para>
+   Teodor Sigaev <email>teodor@sigaev.ru</email>, Moscow, Delta-Soft Ltd., Russia
+  </para>
+________________________________________________________-->
+  <para>
+   Teodor Sigaev <email>teodor@sigaev.ru</email>，俄罗斯德尔塔软件有限公司
+  </para>
+<!-- pgdoc-cn_end sig_en=906d9ec02ccc1d0eeb75cbdc7632e478 -->
+
+<!-- pgdoc-cn_start sig_en=06c6286eaa5bbad8735a4b91f6527a05 sig_cn_org=None source=14.1 
+  <para>
+   Additional enhancements by Andrew Gierth <email>andrew@tao11.riddles.org.uk</email>,
+   United Kingdom
+  </para>
+________________________________________________________-->
+  <para>
+   额外的增强由英国的 Andrew Gierth <email>andrew@tao11.riddles.org.uk</email> 提供
+  </para>
+<!-- pgdoc-cn_end sig_en=06c6286eaa5bbad8735a4b91f6527a05 -->
+ </sect2>
+
+</sect1>
