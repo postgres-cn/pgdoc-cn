@@ -1,25 +1,31 @@
-# PostgreSQL中文手册翻译计划   
-PostgreSQL官方手册是PostgreSQL非常重要的学习和参考资料。为促进PostgreSQL在国内的普及，2013年12月PostgreSQL中国用户会成立了由志愿者组成的新的PG中文手册翻译小组，在社区第一代功勋laser所翻译的8.2.3中文手册的基础上开启了9.3.1版本的手册翻译工作并于2015年7月翻译完成。之后又于2016年4月完成了9.4.4的翻译，绝大部分翻译工作由瀚高软件的韩悦悦和其他同事完成。9.5的翻译工作基于武汉大学的彭煜玮副教授独自翻译的《PostgreSQL 9.4.4文档》和社区之前翻译的《PostgreSQL9.4.4中文手册》。9.6基于彭煜玮副教授翻译的《PostgreSQL 9.6.0 文档》，Release Notes中9.6和9.5未变化的部分来自上一版的社区中文手册《PostgreSQL 9.5.3 中文手册》。10以后的手册都基于上一版中文手册翻译。
+# PostgreSQL中文手册翻译项目   
+为促进PostgreSQL在国内的普及，2013年12月PostgreSQL中国用户会成立了由志愿者组成的手册翻译小组致力于PostgreSQL中文手册的翻译，翻译项目主要演进历史如下：
+1. 2015年7月，基于何伟平先生的《PostgreSQL 8.2.3中文文档》，完成9.3.1版本的手册翻译。
+2. 2016年4月，基于前一版本，完成9.4.4的翻译，瀚高软件的韩悦悦完成了绝大部分翻译工作。
+3. 2017年4月，基于彭煜玮副教授独自翻译的 《PostgreSQL 9.4.4 文档》和社区之前翻译的《PostgreSQL9.4.4中文手册》，完成9.5.3的翻译。
+4. 2017年6月，基于彭煜玮副教授翻译的《PostgreSQL 9.6.0 文档》补充"版本说明"的翻译，完成9.6.0的翻译工作。10及以后的版本基于前一版本翻译。
+5. 2025年3月，基于大模型翻译+人工校对的方式完成15.7的翻译，后续版本沿用。
+6. 2026年4月，大模型翻译+大模型校对为主，个别翻译质量问题通过用户反馈改进。
 
-## 文档翻译群
-### 1. 微信群
-- “PostgreSQL文档翻译管理组”：主要用于讨论文档翻译相关事宜。
-- “PGXX翻译”：由实际参加PGXX翻译的志愿者组成。
-
-我们常年招募PG文档翻译自愿者，欢迎兴趣者加入。如果想加入PG文档翻译组，或沟通其他与PG文档翻译相关事宜，可以和陈华军联系(微信号chenhj_07)。
-
-## Github托管仓库
+## Github代码仓库
 https://github.com/postgres-cn/pgdoc-cn
 
-本Github仓库存放已翻译好的sgml文件，通过这些sgml文件可编译成html和pdf等各种格式的文档。
-本Github仓库接受对已翻译好的文档的质量改善，欢迎读者的反馈和修正（通过Issues和Pull requests）。
+Github仓库存放已翻译好的sgml文件，通过这些sgml文件可编译成html和pdf等各种格式的文档。
+发现翻译文档中的问题，可在Github仓库中发行Issue反馈（请注明问题内容及所在的章节段落位置）；或提交PR修复。
 
-## 翻译管理
-https://github.com/postgres-cn/pgdoc-cn/wiki
+## Gitee镜像仓库
+https://gitee.com/postgres-cn/pgdoc-cn
 
-## 分支管理
-master分支对于正在翻译的版本，当前是13.1，各个分支对应于PostgreSQL文档的版本如下。
+Gitee镜像仓库方便国内访问，可接受Issues反馈，但不支持Pull requests
 
+## 文档管理
+每个PostgreSQL大版本选择一个具体发布版本的文档进行翻译，各版本文档的sgml文件保存在docs目录下，对应的详细版本如下：
+- 15：15.7
+- 16：16.8
+- 17：17.5
+- 18：18.3
+
+9.3~14的历史版本保存在历史分支里，分支名为大版本号。
 - 9.3：9.3.1
 - 9.4：9.4.4
 - 9.5：9.5.3
@@ -28,7 +34,8 @@ master分支对于正在翻译的版本，当前是13.1，各个分支对应于P
 - 11：11.2
 - 12：12.2
 - 13：13.1
-- master：14.1
+- 14：14.1
+
 
 ## 文档的编译
 
@@ -80,37 +87,14 @@ postgresql-10.1/doc/src/sgml/html/index.html
 参考[PostgreSQL离线手册发布步骤](https://github.com/postgres-cn/pgdoc-cn/wiki/PostgreSQL离线手册发布步骤) 生成PDF等格式的离线文档
 
 
-
-
 ## 在线中文手册
-- http://www.postgres.cn/docs/9.3  
-- http://www.postgres.cn/docs/9.4  
-- http://www.postgres.cn/docs/9.5  
-- http://www.postgres.cn/docs/9.6  
-- http://www.postgres.cn/docs/10 
-- http://www.postgres.cn/docs/11 
-- http://www.postgres.cn/docs/12
-- http://www.postgres.cn/docs/13 
+- http://www.postgres.cn/docs/current/index.html
 
-通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到Github仓库中的相应位置报告问题或在线修改。
-
+通过在线中文手册上每个页面右上角的“问题报告”和“纠错本页面”链接可直接跳转到代码仓库中的相应位置报告问题或在线修改。
 
 ## 离线中文手册
-https://github.com/postgres-cn/pgdoc-cn/releases
-
-从Release页面，可以下载html和pdf格式的离线手册
-
-
-## 参与和协助翻译计划
-### 1. 意见反馈
-发现翻译文档中的问题后，通过在本Github仓库中[发行Issue](https://github.com/postgres-cn/pgdoc-cn/issues/new)反映问题（请注明问题内容及所在的章节段落位置）或提出建议
-
-
-### 2. 错误纠正
-发现翻译文档中的个别问题后，直接修正对应的sgml文件，并通过Pull Request向本Github仓库提交。
-之后由系统管理员接受Pull Request。
-
-关于html页面和sgml文件的对应关系，可通过点击“在线阅读”web页面右上角的“纠错本页面”链接跳转到Github仓库中的相应sgml文件的编辑页面。
+- https://pan.baidu.com/s/1mgGebEw#list/path=%2Fpgdoccn-releases&parentPath=%2F
+- https://github.com/postgres-cn/pgdoc-cn/releases
 
 
 ## 关于许可
@@ -118,8 +102,7 @@ https://github.com/postgres-cn/pgdoc-cn/releases
 
 
 ## 其它
-1. Github仓库中的sgml文件编码是UTF8。
-2. Github仓库中的修正会由不定期的反映到在线中文手册中，如果发生了编译错误，可查看相应版本的日志文件，比如：[http://postgres.cn/docs/13/build.log](http://postgres.cn/docs/13/build.log)。
+1. sgml文件编码是UTF8，换行符是UNIX风格。
 
 
 
